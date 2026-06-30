@@ -1,0 +1,21 @@
+{
+  "name": "council-newsletter-poc",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "P0 PoC: 縦書きWord出力の再現度 / 取り込み・正規化ワークベンチの操作感を検証",
+  "scripts": {
+    "poc:docx": "node src/01-vertical-docx.mjs",
+    "poc:make-sample": "node src/00-make-sample-submission.mjs",
+    "poc:import": "node src/02-import-word.mjs",
+    "poc:render": "node src/04-render-and-pdf.mjs",
+    "poc:all": "npm run poc:make-sample && npm run poc:import && npm run poc:docx && npm run poc:render"
+  },
+  "dependencies": {
+    "docx": "^9.0.0",
+    "mammoth": "^1.8.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
