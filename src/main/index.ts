@@ -20,7 +20,7 @@ function createWindow(): void {
     height: 820,
     minWidth: 960,
     minHeight: 640,
-    title: '議会だより作成支援',
+    title: '議会だより編集部',
     show: false,
     webPreferences: {
       // セキュリティ: ノード統合は無効、コンテキスト分離は有効（仕様書 §8）

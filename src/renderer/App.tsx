@@ -62,7 +62,7 @@ export function App(): JSX.Element {
   return (
     <div className="app">
       <header className="toolbar">
-        <strong>議会だより作成支援</strong>
+        <strong>議会だより編集部</strong>
         <div className="spacer" />
         <button onClick={onNew}>新規</button>
         <button onClick={onOpen}>開く</button>
@@ -86,7 +86,7 @@ export function App(): JSX.Element {
           />
         ) : (
           <div className="empty">
-            <h1>議会だより作成支援</h1>
+            <h1>議会だより編集部</h1>
             <p>「新規」で号を作成するか、「開く」で既存のプロジェクトフォルダを選んでください。</p>
             <div className="empty-actions">
               <button className="primary" onClick={onNew}>

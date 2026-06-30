@@ -2,7 +2,7 @@
   "name": "council-newsletter",
   "version": "0.1.0",
   "private": true,
-  "description": "議会だより作成支援ソフト（Electron デスクトップアプリ）",
+  "description": "議会だより編集部（Electron デスクトップアプリ）",
   "author": "",
   "main": "out/main/index.js",
   "type": "module",
