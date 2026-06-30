@@ -19,6 +19,19 @@
 - Electron によるデスクトップアプリ（Windows / Mac）
 - オフライン・ローカル完結（原稿や議員情報を外部送信しない）
 
+## 開発
+
+```bash
+npm install
+npm run dev        # 開発起動
+npm run build      # ビルド
+npm run test:core  # 中核ロジックの単体テスト
+```
+
+詳細は [開発セットアップ](docs/dev-setup.md) を参照。
+
 ## ドキュメント
 
 - [設計・仕様書](docs/design-spec.md) — まずこちらをご覧ください。
+- [開発セットアップ](docs/dev-setup.md) — 実行・ビルド手順。
+- [P0 PoC 結果](docs/poc-p0-results.md) — 縦書き出力等の技術検証。

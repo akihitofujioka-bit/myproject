@@ -1,0 +1,19 @@
+appId: jp.example.council-newsletter
+productName: 議会だより作成支援
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+# 手動配布（R-6）。インストーラを各PCへ配布する。
+win:
+  target:
+    - nsis
+mac:
+  target:
+    - dmg
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
