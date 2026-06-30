@@ -32,6 +32,7 @@ npm run test:core  # 中核ロジックの単体テスト
 
 ## ドキュメント
 
+- [進捗・再開ガイド](docs/progress.md) — **中断/再開時はまずこれ**。経緯と次の一手の一覧。
 - [設計・仕様書](docs/design-spec.md) — まずこちらをご覧ください。
 - [開発セットアップ](docs/dev-setup.md) — 実行・ビルド手順。
 - [P0 PoC 結果](docs/poc-p0-results.md) — 縦書き出力等の技術検証。
