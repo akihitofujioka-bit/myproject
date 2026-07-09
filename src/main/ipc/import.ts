@@ -87,6 +87,34 @@ export function registerImportIpc(): void {
     }
   );
 
+  // 写真（画像）を assets へ取り込む
+  ipcMain.handle(
+    IpcChannels.importImage,
+    async (event, dirPath: string): Promise<IpcResult<ImportedScan>> => {
+      if (!dirPath) {
+        return {
+          ok: false,
+          canceled: false,
+          error: '画像を取り込む前にプロジェクトを保存してください。',
+        };
+      }
+      const res = await dialog.showOpenDialog(winOf(event)!, {
+        title: '写真・画像を取り込む',
+        properties: ['openFile'],
+        filters: [{ name: '画像', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }],
+      });
+      if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true };
+      try {
+        const src = res.filePaths[0];
+        const relativePath = await copyIntoAssets(dirPath, src);
+        const dataUrl = await readAssetDataUrl(dirPath, relativePath);
+        return { ok: true, value: { relativePath, dataUrl, sourceFile: path.basename(src) } };
+      } catch (e) {
+        return { ok: false, canceled: false, error: errMessage(e) };
+      }
+    }
+  );
+
   // 議員名簿(Excel)を取り込み、下書きを抽出
   ipcMain.handle(IpcChannels.importRoster, async (event): Promise<IpcResult<MemberDraft[]>> => {
     const res = await dialog.showOpenDialog(winOf(event)!, {

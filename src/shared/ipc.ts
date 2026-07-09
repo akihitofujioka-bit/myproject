@@ -9,6 +9,7 @@ export const IpcChannels = {
   projectSaveAs: 'project:saveAs',
   importDocuments: 'import:documents',
   importScan: 'import:scan',
+  importImage: 'import:image',
   importRoster: 'import:roster',
   assetReadDataUrl: 'asset:readDataUrl',
 } as const;
@@ -49,6 +50,8 @@ export interface ImportApi {
   extractDocuments(): Promise<IpcResult<ArticleDraft[]>>;
   /** 手書きスキャン（画像/PDF）を1つ選び assets へ取り込む。要保存済みプロジェクト（dirPath） */
   addScan(dirPath: string): Promise<IpcResult<ImportedScan>>;
+  /** 写真（画像）を1つ選び assets へ取り込む。要保存済みプロジェクト（dirPath） */
+  addImage(dirPath: string): Promise<IpcResult<ImportedScan>>;
   /** 保存済み assets の画像を表示用 data URL として読み出す（再オープン時のスキャン表示用） */
   readAsset(dirPath: string, relativePath: string): Promise<IpcResult<string>>;
   /** 議員名簿(Excel)を選び、議員の下書きを抽出する */

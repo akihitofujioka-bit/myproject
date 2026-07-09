@@ -500,3 +500,147 @@ button.danger.sm {
   border-radius: 6px;
   font-size: 13px;
 }
+
+/* 画像編集 */
+.img-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.thumb-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.thumb {
+  width: 84px;
+  height: 64px;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #f3f4f6;
+}
+.thumb.selected {
+  border-color: var(--accent);
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.thumb-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+}
+.img-editor {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafbfc;
+}
+.img-edit-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.pane-label {
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 6px;
+}
+.crop-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  background: #eceff3;
+}
+.crop-stage img {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+}
+.crop-rect {
+  position: absolute;
+  border: 2px solid #ffcc00;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.result-view {
+  width: 100%;
+  max-height: 320px;
+  background-repeat: no-repeat;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.dpi-warn {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #f0d488;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.img-controls {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.ctl-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.chk {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+.slabel {
+  width: 90px;
+  font-size: 13px;
+  color: #555;
+}
+.slider-row input[type='range'] {
+  flex: 1;
+}
+.sval {
+  width: 40px;
+  text-align: right;
+  font-size: 12px;
+  color: #666;
+}
+button.sm {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+.cap-label {
+  display: block;
+  font-size: 12px;
+  color: #555;
+  margin: 12px 0 4px;
+}
+.cap-input {
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 14px;
+}

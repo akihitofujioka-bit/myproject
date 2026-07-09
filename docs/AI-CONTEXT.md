@@ -3,7 +3,7 @@
 > 目的: このファイル 1 つで、リポジトリを見なくても
 > 「何を作っているか / どう決めたか / 今どこまで / 次に何をするか」を
 > AI（別セッションの Claude 等）が正確に把握し、作業を再開できるようにする。
-> 最終更新: 2026-06-30 / 対応リポジトリ状態: 設計 v0.8・P4 完了時点
+> 最終更新: 2026-06-30 / 対応リポジトリ状態: 設計 v0.9・P5 完了時点
 
 ---
 
@@ -15,7 +15,7 @@
   いったん同じ「記事データ」に整える（＝ワンクッション）。以後の工程は形式を意識しない。
 - **出力**: **PDF＝完成版** / **Word＝出力後に微修正できる近似版**。
 - **紙面**: **縦書き必須**。
-- **進捗**: 設計 ✅ / P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / P4 記事編集 ✅ / 次は **P5 画像編集**。
+- **進捗**: 設計 ✅ / P0〜P4 ✅ / P5 画像編集 ✅ / 次は **P6 レイアウト**。
 - **ブランチ**: `claude/council-newsletter-layout-1shkqc`（push 済み、PR 未作成）。
 
 ---
@@ -125,7 +125,8 @@ Project
 | **P2 取り込み・正規化** | ✅ | Word/Excel/テキスト/手書きスキャンを取り込み、同一Articleへ正規化。保存→再オープンで残る（テスト19件○） |
 | **P3 議員・掲載順** | ✅ | 名簿(Excel)取込（実データ10名）・編集・並べ替え（議席/党派/五十音＋▲▼手動）。テスト26件○ |
 | **P4 記事編集** | ✅ | 本文リッチ編集（見出し/太字/箇条書き/ルビ）＋あふれ警告。body→bodyHtml移行。テスト31件○ |
-| P5 画像編集 | ⬜ 次はここ | 切り抜き/回転/明るさ（非破壊） |
+| **P5 画像編集** | ✅ | 切り抜き/回転/反転/明るさ・コントラスト・彩度（非破壊）＋解像度警告・キャプション。テスト36件○ |
+| P6 レイアウト | ⬜ 次はここ | テンプレ流し込み・縦書きプレビュー・あふれ警告 |
 | P4 記事編集 | ⬜ | リッチ編集・文字数・ルビ |
 | P5 画像編集 | ⬜ | 切り抜き/回転/明るさ（非破壊） |
 | P6 レイアウト | ⬜ | テンプレ流し込み・プレビュー・あふれ警告 |
@@ -154,9 +155,9 @@ myproject/
 │   │              ipc/{project,import}.ts, importers/{word,excel,text,normalize,roster}.ts
 │   ├─ preload/    index.ts（contextBridgeで window.api={project,import} 公開）
 │   ├─ renderer/   index.html, main.tsx, App.tsx(タブ:ホーム/取り込み/議員/記事編集), styles.css,
-│   │              components/RichEditor.tsx, pages/{HomePage,ImportWorkbench,MembersPage,ArticleEditPage}.tsx
-│   └─ shared/     types.ts（モデル/ArticleDraft/MemberDraft）, project.ts（articleFromDraft/memberFromDraft/sortMembersByPreset等）, richtext.ts（本文HTMLヘルパー）, ipc.ts
-├─ test/           project / normalize / import.e2e / roster / richtext .test.ts（計31件）
+│   │              components/{RichEditor,ImageEditor}.tsx, pages/{HomePage,ImportWorkbench,MembersPage,ArticleEditPage,ImagesPage}.tsx
+│   └─ shared/     types.ts, project.ts, richtext.ts（本文HTML）, imageedit.ts（画像CSS変換）, ipc.ts
+├─ test/           project / normalize / import.e2e / roster / richtext / imageedit .test.ts（計36件）
 ├─ poc/            P0検証コード（本体と独立。01=縦書きdocx, 02=Word取込, 03=HTML試作, 04=描画/PDF）
 └─ docs/
     ├─ design-spec.md      設計・仕様書（最新 v0.5、変更履歴あり）
@@ -179,25 +180,23 @@ npm run dist           # インストーラ作成
 
 ---
 
-## 8. 次にやること（P5: 画像編集）
+## 8. 次にやること（P6: レイアウト）
 
-目的: **写真の簡単な編集（切り抜き・回転・明るさ）を非破壊で**（F-IMG-1〜6）。
+目的: **テンプレートの枠に記事・写真を流し込み、縦書き紙面をプレビュー**（F-LAY-1〜7）。
 
 手順（推奨）:
-1. 画像編集画面: 記事の画像（`Article.images`/`ImageAsset`）を編集。切り抜きは `Cropper.js` 等を検討。
-2. 非破壊: 調整値を `ImageAsset.edits`（crop/rotate/flip/brightness/contrast/saturation。型は既存）に保存。
-   元画像 `relativePath` は保持し、表示時に edits を適用。明るさ等は Canvas フィルタ。
-3. 解像度チェック（`dpiWarning`）、キャプション（`ArticleImageRef.caption`）。
+1. テンプレート/枠（`Template.frames[]` 型あり）を選択/編集。紙面サイズ・段組・余白・フォント・`writingMode`。
+2. `Layout.pages[].frameAssignments[]` に記事/画像を割り当て、あふれ警告。
+3. 縦書きプレビュー: PoC `poc/src/03-vertical-preview.html`（`writing-mode: vertical-rl`）を React 化。
+   本文は `bodyHtml`、写真は `imageedit.ts`（`cssFilterFor`/`cssTransformFor`/`cropBackgroundStyle`）で適用。
+4. 掲載順 `CouncilMember.order` を反映して記事を並べる。
 
-足場: `src/main/assetStore.ts`（画像複製/data URL）、`window.api.import.addScan/readAsset`、
-`createDefaultImageEdits()/createImageAsset()`（P2で実装済み）。
+足場: `Template`/`FrameDef`/`Layout`/`LayoutPage`/`FrameAssignment`（types.ts。既定テンプレ=縦書きA4・3段）、
+縦書き知見=PoC、画像適用=`imageedit.ts`。R-4（既存号）が届けば標準枠を具体化（未着なら汎用で進行）。
 
-判断ポイント: 編集結果は「表示時に適用」か「書き出し時に焼き込み」か → 出力(P7)と合わせて決める。
-
-> P4（記事編集）は完了。実装は `src/shared/richtext.ts`（paragraphsToHtml/htmlToPlainText/countCharsFromHtml、
-> ルビの読みは文字数に数えない）、`src/renderer/components/RichEditor.tsx`（contentEditable+execCommand、
-> Chromium単一環境前提）、`pages/ArticleEditPage.tsx`（charLimit であふれ警告）。
-> データモデル: `Article.body: string[]` → `bodyHtml: string` に移行済み。
+> P5（画像編集）は完了。実装は `src/shared/imageedit.ts`（非破壊編集→CSS。切り抜きは background-image で回転/フィルタと合成）、
+> `src/renderer/components/ImageEditor.tsx`（ドラッグ切り抜き＋スライダー）、`pages/ImagesPage.tsx`。
+> 画像適用は「表示時に edits を適用」で統一 → 出力(P7)でも同方式で焼き込む。
 
 ---
 
@@ -231,6 +230,7 @@ npm run dist           # インストーラ作成
     掲載順プリセット＋手動並べ替え。テスト26件通過（v0.7）。名簿の個人情報はコミットしない方針。
 12. **P4(記事編集)実装** → 本文リッチエディタ(見出し/太字/箇条書き/ルビ)＋あふれ警告。
     `Article.body: string[]` → `bodyHtml: string` に移行し `richtext.ts` を追加。テスト31件通過（v0.8）。
+13. **P5(画像編集)実装** → 切り抜き/回転/反転/明るさ・コントラスト・彩度を非破壊で。`imageedit.ts` 追加。テスト36件通過（v0.9）。
 
 ---
 

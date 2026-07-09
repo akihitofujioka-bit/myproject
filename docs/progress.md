@@ -44,13 +44,14 @@
 
 | フェーズ | 状態 | 成果物 |
 | --- | --- | --- |
-| 設計・仕様書 | ✅ v0.8 | `docs/design-spec.md` |
+| 設計・仕様書 | ✅ v0.9 | `docs/design-spec.md` |
 | **P0 PoC（要素検証）** | ✅ 完了 | `poc/` 一式、`docs/poc-p0-results.md` |
 | **P1 基盤** | ✅ 完了 | `src/`（main/preload/renderer/shared）、`test/` |
 | **P2 取り込み・正規化** | ✅ 完了 | `src/main/importers/`、`src/renderer/pages/ImportWorkbench.tsx` |
 | **P3 議員・掲載順** | ✅ 完了 | `src/main/importers/roster.ts`、`src/renderer/pages/MembersPage.tsx` |
 | **P4 記事編集** | ✅ 完了 | `src/shared/richtext.ts`、`src/renderer/components/RichEditor.tsx`、`pages/ArticleEditPage.tsx` |
-| P5 画像編集 | ⬜ 次はここ | — |
+| **P5 画像編集** | ✅ 完了 | `src/shared/imageedit.ts`、`src/renderer/components/ImageEditor.tsx`、`pages/ImagesPage.tsx` |
+| P6 レイアウト | ⬜ 次はここ | — |
 | P5 画像編集 | ⬜ | — |
 | P6 レイアウト | ⬜ | — |
 | P7 出力（PDF/Word） | ⬜ | — |
@@ -104,6 +105,17 @@
 - 取り込み(ArticleDraft)は段落配列のまま。`articleFromDraft` で HTML 化。
 - 検証: 型チェック○ / ビルド○ / 単体テスト **31件**○。
 
+### P5 で実装済み
+
+- 画像 非破壊編集: 切り抜き（正規化矩形をドラッグ指定）・90°回転・左右/上下反転・明るさ/コントラスト/彩度。
+  調整値は `ImageAsset.edits` に保存し、元画像は保持。仕上がりプレビュー・解像度警告・キャプション。
+- CSS変換の純粋ヘルパー `src/shared/imageedit.ts`（`cssFilterFor`/`cssTransformFor`/`clampCrop`/
+  `cropBackgroundStyle`/`effectiveLongEdge`/`isLowResolution`）。切り抜きは background-image で再現（回転/フィルタと合成）。
+- `src/renderer/components/ImageEditor.tsx`、`pages/ImagesPage.tsx`（記事→写真→編集）。App に「画像編集」タブ。
+- 写真取り込み IPC `import:image`（`window.api.import.addImage`。assets へ複製）。
+- 検証: 型チェック○ / ビルド○ / 単体テスト **36件**○。
+- メモ: `url()` の data URL は括弧混入に備え `url("...")` と引用（SVGサンプルで発覚。実写真=base64は無問題）。
+
 ---
 
 ## 4. リポジトリ構成（現在）
@@ -146,29 +158,28 @@ npm run test:core    # 中核ロジックのテスト
 
 ---
 
-## 6. 次にやること（P5: 画像編集）
+## 6. 次にやること（P6: レイアウト）
 
-**目的**: 写真・画像の簡単な編集（切り抜き・回転・明るさ調整）を非破壊で行う（F-IMG-1〜6）。
+**目的**: テンプレートの枠に記事・写真を流し込み、縦書き紙面をプレビューする（F-LAY-1〜7）。
 
 着手の取っ掛かり:
 
-1. **画像編集画面** — 記事に紐づく画像（`Article.images` / `ImageAsset`）を編集。
-   - 切り抜き（トリミング）: `Cropper.js` 等の導入を検討。回転/左右反転。
-   - 明るさ・コントラスト・彩度: Canvas フィルタ（PoC の知見あり）。
-2. **非破壊編集** — `ImageAsset.edits`（既に型あり: crop/rotate/flip/brightness/contrast/saturation）に調整値を保存。
-   元画像 `relativePath` は保持。プレビューは編集値を適用して表示。
-3. **解像度チェック**（F-IMG-4）: 印刷に耐える解像度か警告（`ImageAsset.dpiWarning`）。
-4. **キャプション**（F-IMG-6）: `ArticleImageRef.caption`。
+1. **テンプレート/枠の定義** — `Template.frames[]`（既に型あり: 位置・サイズ・用途）を編集/選択。
+   紙面サイズ・段組・余白・フォント・縦書き（`writingMode`）はテンプレートで持つ。
+2. **枠への割り当て** — `Layout.pages[].frameAssignments[]` に記事/画像を割り当て。あふれ（オーバーフロー）警告。
+3. **プレビュー** — PoC の縦書きHTML/CSS（`writing-mode: vertical-rl`、`poc/src/03-vertical-preview.html`）を
+   React 化。記事本文は `bodyHtml`、写真は `ImageAsset.edits` を適用（`cssFilterFor`/`cssTransformFor`/`cropBackgroundStyle`）。
+4. 掲載順（`CouncilMember.order`）を反映して記事を並べる。
 
 実装の足場（すでにある）:
-- `ImageAsset`（`src/shared/types.ts`）: `relativePath` / `edits`（非破壊パラメータ）/ `caption` / `dpiWarning`。
-- 画像取り込み・data URL 読み出し: `src/main/assetStore.ts`、`window.api.import.addScan / readAsset`（P2で実装）。
-- `createDefaultImageEdits()` / `createImageAsset()`（`src/shared/project.ts`）。
+- `Template` / `FrameDef` / `Layout` / `LayoutPage` / `FrameAssignment`（`src/shared/types.ts`）。既定テンプレは縦書き・A4・3段。
+- 縦書き描画の知見: PoC（`poc/`）。画像適用ヘルパー: `src/shared/imageedit.ts`。
+- R-4（既存号）が届けば標準テンプレの枠を具体化できる（未着なら汎用テンプレで進める）。
 
-完了条件: **写真を切り抜き/回転/明るさ調整（非破壊）し、記事に配置。保存→再オープンで調整が残る。**
+完了条件: **1ページを自動レイアウトし、縦書きプレビューで確認。あふれ警告が出る。保存→再オープンで残る。**
 
-> P4（記事編集）は完了済み。実装は `src/shared/richtext.ts`・`src/renderer/components/RichEditor.tsx`・`pages/ArticleEditPage.tsx`。
-> 判断ポイント: 画像編集の適用結果は「表示時に edits を適用」か「書き出し時に焼き込み」か。出力(P7)と合わせて決める。
+> P5（画像編集）は完了済み。実装は `src/shared/imageedit.ts`・`src/renderer/components/ImageEditor.tsx`・`pages/ImagesPage.tsx`。
+> 判断ポイント: 画像編集の適用は「表示時に edits を適用」で統一（切り抜きは background-image、色/回転は filter/transform）。出力(P7)でも同方式で焼き込む。
 
 ---
 

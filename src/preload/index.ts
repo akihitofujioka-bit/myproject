@@ -14,6 +14,7 @@ const projectApi: ProjectApi = {
 const importApi: ImportApi = {
   extractDocuments: () => ipcRenderer.invoke(IpcChannels.importDocuments),
   addScan: (dirPath: string) => ipcRenderer.invoke(IpcChannels.importScan, dirPath),
+  addImage: (dirPath: string) => ipcRenderer.invoke(IpcChannels.importImage, dirPath),
   readAsset: (dirPath: string, relativePath: string) =>
     ipcRenderer.invoke(IpcChannels.assetReadDataUrl, dirPath, relativePath),
   importRoster: () => ipcRenderer.invoke(IpcChannels.importRoster),

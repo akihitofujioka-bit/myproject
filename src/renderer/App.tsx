@@ -5,6 +5,7 @@ import { HomePage } from './pages/HomePage.js';
 import { ImportWorkbench } from './pages/ImportWorkbench.js';
 import { MembersPage } from './pages/MembersPage.js';
 import { ArticleEditPage } from './pages/ArticleEditPage.js';
+import { ImagesPage } from './pages/ImagesPage.js';
 
 /** 現在開いているプロジェクトの状態 */
 interface Session {
@@ -13,7 +14,7 @@ interface Session {
   dirty: boolean; // 未保存の変更があるか
 }
 
-type View = 'home' | 'import' | 'members' | 'edit';
+type View = 'home' | 'import' | 'members' | 'edit' | 'images';
 
 export function App(): JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
@@ -94,6 +95,12 @@ export function App(): JSX.Element {
             >
               記事編集
             </button>
+            <button
+              className={view === 'images' ? 'tab active' : 'tab'}
+              onClick={() => setView('images')}
+            >
+              画像編集
+            </button>
           </nav>
         )}
         <div className="spacer" />
@@ -137,8 +144,15 @@ export function App(): JSX.Element {
           />
         ) : view === 'members' ? (
           <MembersPage project={session.project} onChange={onChangeProject} notify={notify} />
-        ) : (
+        ) : view === 'edit' ? (
           <ArticleEditPage project={session.project} onChange={onChangeProject} />
+        ) : (
+          <ImagesPage
+            project={session.project}
+            dirPath={session.dirPath}
+            onChange={onChangeProject}
+            notify={notify}
+          />
         )}
       </main>
     </div>
