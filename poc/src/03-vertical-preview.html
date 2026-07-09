@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>縦書き紙面プレビュー（PoC）</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  html, body { margin:0; padding:0; }
+  /* 実機(Win/Mac)では明朝(游明朝/ヒラギノ明朝)を想定。本PoC環境はIPAゴシックで代替。 */
+  body { font-family: "Yu Mincho","Hiragino Mincho ProN","Noto Serif JP","IPAGothic",serif; background:#888; }
+
+  /* A4 1ページ相当 */
+  .page {
+    width: 210mm; height: 297mm; background:#fff; margin:0 auto;
+    padding: 16mm; box-sizing: border-box;
+    /* ★ 縦書きの肝: 右から左へ縦に流す。日本語は既定の text-orientation: mixed が正解
+       （英数字は横向き、かな漢字は正立。upright は字間が崩れるため使わない）。 */
+    writing-mode: vertical-rl;
+  }
+  .masthead {
+    border-bottom: 3px double #333; padding-bottom:6px; margin-bottom:10px;
+    display:flex; justify-content:space-between; align-items:baseline;
+  }
+  .masthead .name { font-size: 30pt; font-weight:bold; letter-spacing:4pt; }
+  .masthead .meta { font-size: 11pt; color:#444; }
+
+  .article { margin-left: 8mm; }
+  .article h1 {
+    font-size: 18pt; font-weight:bold; margin:0 0 4mm 0;
+    border-right: 4px solid #1f3a5f; padding-right: 3mm;
+  }
+  .article .author { font-size: 11pt; color:#333; margin: 0 0 4mm 0; }
+  .article p { font-size: 11pt; line-height: 1.9; margin: 0; text-align: justify; }
+  .photo {
+    float: right; /* 縦書き中では上側に回り込む */
+    width: 45mm; height: 34mm; background:#7aa0c8; margin: 0 0 3mm 4mm;
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:9pt;
+    writing-mode: horizontal-tb;
+  }
+  .caption { font-size: 8.5pt; color:#555; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="masthead">
+      <div class="name">議会だより　○○市</div>
+      <div class="meta">第128号／令和8年7月発行</div>
+    </div>
+
+    <div class="article">
+      <h1>一般質問　防災対策について</h1>
+      <div class="author">山田 太郎（市民クラブ）</div>
+      <div class="photo">写真<br/>（防災訓練）</div>
+      <p>私は今回の一般質問で、近年頻発する集中豪雨への備えについて市の見解を質しました。特に高齢者世帯への避難情報の伝達手段について、防災無線に加え、戸別受信機の配布拡大を提案しました。市長は「来年度に向けて前向きに検討する」と答弁し、来年度予算での対応に期待が持てる内容となりました。引き続き、誰一人取り残さない防災体制の構築を求めてまいります。</p>
+    </div>
+  </div>
+</body>
+</html>
