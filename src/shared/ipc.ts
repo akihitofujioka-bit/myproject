@@ -1,5 +1,5 @@
 // main / preload / renderer 間で共有する IPC 契約。
-import type { Project, ArticleDraft } from './types.js';
+import type { Project, ArticleDraft, MemberDraft } from './types.js';
 
 /** IPC チャンネル名 */
 export const IpcChannels = {
@@ -9,6 +9,7 @@ export const IpcChannels = {
   projectSaveAs: 'project:saveAs',
   importDocuments: 'import:documents',
   importScan: 'import:scan',
+  importRoster: 'import:roster',
   assetReadDataUrl: 'asset:readDataUrl',
 } as const;
 
@@ -50,6 +51,8 @@ export interface ImportApi {
   addScan(dirPath: string): Promise<IpcResult<ImportedScan>>;
   /** 保存済み assets の画像を表示用 data URL として読み出す（再オープン時のスキャン表示用） */
   readAsset(dirPath: string, relativePath: string): Promise<IpcResult<string>>;
+  /** 議員名簿(Excel)を選び、議員の下書きを抽出する */
+  importRoster(): Promise<IpcResult<MemberDraft[]>>;
 }
 
 declare global {

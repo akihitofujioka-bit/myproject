@@ -3,6 +3,7 @@ import type { Project } from '../shared/types.js';
 import type { IpcResult, OpenedProject } from '../shared/ipc.js';
 import { HomePage } from './pages/HomePage.js';
 import { ImportWorkbench } from './pages/ImportWorkbench.js';
+import { MembersPage } from './pages/MembersPage.js';
 
 /** 現在開いているプロジェクトの状態 */
 interface Session {
@@ -11,7 +12,7 @@ interface Session {
   dirty: boolean; // 未保存の変更があるか
 }
 
-type View = 'home' | 'import';
+type View = 'home' | 'import' | 'members';
 
 export function App(): JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
@@ -80,6 +81,12 @@ export function App(): JSX.Element {
             >
               取り込み・正規化
             </button>
+            <button
+              className={view === 'members' ? 'tab active' : 'tab'}
+              onClick={() => setView('members')}
+            >
+              議員・掲載順
+            </button>
           </nav>
         )}
         <div className="spacer" />
@@ -114,13 +121,15 @@ export function App(): JSX.Element {
             dirty={session.dirty}
             onChange={onChangeProject}
           />
-        ) : (
+        ) : view === 'import' ? (
           <ImportWorkbench
             project={session.project}
             dirPath={session.dirPath}
             onChange={onChangeProject}
             notify={notify}
           />
+        ) : (
+          <MembersPage project={session.project} onChange={onChangeProject} notify={notify} />
         )}
       </main>
     </div>

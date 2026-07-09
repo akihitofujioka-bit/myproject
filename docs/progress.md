@@ -44,12 +44,12 @@
 
 | フェーズ | 状態 | 成果物 |
 | --- | --- | --- |
-| 設計・仕様書 | ✅ v0.6 | `docs/design-spec.md` |
+| 設計・仕様書 | ✅ v0.7 | `docs/design-spec.md` |
 | **P0 PoC（要素検証）** | ✅ 完了 | `poc/` 一式、`docs/poc-p0-results.md` |
 | **P1 基盤** | ✅ 完了 | `src/`（main/preload/renderer/shared）、`test/` |
 | **P2 取り込み・正規化** | ✅ 完了 | `src/main/importers/`、`src/renderer/pages/ImportWorkbench.tsx` |
-| P3 議員・掲載順 | ⬜ | — |
-| P4 記事編集 | ⬜ | — |
+| **P3 議員・掲載順** | ✅ 完了 | `src/main/importers/roster.ts`、`src/renderer/pages/MembersPage.tsx` |
+| P4 記事編集 | ⬜ 次はここ | — |
 | P5 画像編集 | ⬜ | — |
 | P6 レイアウト | ⬜ | — |
 | P7 出力（PDF/Word） | ⬜ | — |
@@ -79,6 +79,17 @@
 - 検証: 型チェック○ / ビルド○ / 単体テスト **19件**○（取り込み→正規化→保存→再オープンの実I/O込み実証）。
 - 実装メモ: `xlsx` は Vite(ESM)と tsx(CJS)で export 形が異なる二形態のため、
   `import * as` して `default ?? namespace` で両対応させた（`src/main/importers/excel.ts`）。
+
+### P3 で実装済み
+
+- 議員名簿(Excel)取り込み `src/main/importers/roster.ts`（「氏名」列でヘッダ検出→列位置特定→議員行を正規化）。
+  実提供の日高村議会 名簿=10名を正しく抽出（議席/氏名/党派/期別/役職。複数役職は／区切り）。
+- 議員管理画面 `src/renderer/pages/MembersPage.tsx`（名簿取込・編集・追加・削除、掲載順プリセット＋▲▼手動並べ替え）。
+- `CouncilMember` に `term`(期別)・`role`(役職名) を追加。`sortMembersByPreset`（seat/faction/kana/manual）を実装。
+- ワークベンチの議員ドロップダウンが名簿を参照 → 記事に議員を割り当て可能。
+- 個人情報（住所/電話/生年月日）は既定で取り込まない。ふりがなは名簿に無いのでアプリで手入力。
+- 検証: 型チェック○ / ビルド○ / 単体テスト **26件**○。
+- 注意: 実名簿は個人情報を含むためリポジトリにコミットしない（テストは擬似データ）。
 
 ---
 
@@ -122,26 +133,27 @@ npm run test:core    # 中核ロジックのテスト
 
 ---
 
-## 6. 次にやること（P3: 議員・掲載順）
+## 6. 次にやること（P4: 記事編集）
 
-**目的**: 議員名簿を管理し、掲載順をドラッグ＆ドロップで決める（F-ORD-1〜5）。
+**目的**: 取り込んだ記事本文をリッチに編集し、文字数チェック・ルビ等を可能にする（F-EDIT-1〜6）。
 
 着手の取っ掛かり:
 
-1. **議員管理画面** — `src/renderer/pages/MembersPage.tsx`（新規）。App のタブに「議員」を追加。
-   - 名簿の登録/編集（氏名・ふりがな・会派・議席番号・顔写真）。`CouncilMember` 型は既にある。
-   - 顔写真は P2 の `assets` 取り込み（`window.api.import.addScan` 相当）を流用可。
-2. **掲載順の並べ替え** — ドラッグ＆ドロップ（`@dnd-kit` 等の導入を検討）。
-   - プリセット: 会派順 / 議席番号順 / 五十音順(`nameKana`) / 手動。`order` に確定値を保存。
-3. **記事との連携** — 取り込み済み記事の `memberId` 割り当て（ワークベンチの議員ドロップダウンが名簿を参照）。
+1. **本文エディタの導入** — `Tiptap`（ProseMirror系）を検討。まずは見出し/段落/太字/箇条書き/表。
+   - 現状 `Article.body` は `string[]`（段落配列）。リッチ化に合わせ本文の構造化を検討（互換に注意）。
+2. **ルビ（ふりがな）** — 議会だよりで需要大（F-EDIT-2）。エディタ拡張で対応。
+3. **文字数・体裁チェック** — `countArticleChars()` を活用。枠上限に対する超過/不足の警告（F-EDIT-6）。
+4. 記事編集画面 or ワークベンチ内編集の拡張として実装。
 
 実装の足場（すでにある）:
-- `CouncilMember`（`src/shared/types.ts`）: `name/nameKana/faction/seatNumber/portraitImageId/order`。
-- ワークベンチの議員選択は `project.councilMembers` を参照済み（名簿を作ればすぐ選べる）。
+- 文字数: `countArticleChars()`（`src/shared/project.ts`）。
+- 記事データ: `Article`（`src/shared/types.ts`）。P2 の正規化フォームが編集の起点。
 
-完了条件: **名簿を登録し、並べ替え（プリセット/手動）を保存→再オープンで残る。記事に議員を割り当てられる。**
+完了条件: **本文を編集（見出し/太字/ルビ等）し、保存→再オープンで残る。文字数超過が視覚的に分かる。**
 
-> P2（取り込み・正規化）は完了済み。実装は `src/main/importers/`・`src/renderer/pages/ImportWorkbench.tsx`。
+> 判断ポイント: `body` を段落配列のまま拡張するか、リッチテキスト構造(JSON)へ移行するか（データ移行に注意）。
+
+> P3（議員・掲載順）は完了済み。実装は `src/main/importers/roster.ts`・`src/renderer/pages/MembersPage.tsx`。
 
 ---
 

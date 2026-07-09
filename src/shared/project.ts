@@ -9,6 +9,9 @@ import {
   type ArticleDraft,
   type ImageAsset,
   type ImageEdits,
+  type CouncilMember,
+  type MemberDraft,
+  type OrderPreset,
 } from './types.js';
 
 /** プロジェクトフォルダ内の固定ファイル名 */
@@ -78,6 +81,53 @@ export function createEmptyProject(opts: CreateProjectOptions = {}): Project {
 /** 本文の文字数を数える（空白・改行を除く）。F-IMP-6 / F-EDIT-6 の基礎。 */
 export function countArticleChars(article: Pick<Article, 'body'>): number {
   return article.body.join('').replace(/\s/g, '').length;
+}
+
+/** 名簿の下書き(MemberDraft)から CouncilMember を作る。 */
+export function memberFromDraft(
+  draft: MemberDraft,
+  opts: { id?: string; order?: number } = {}
+): CouncilMember {
+  return {
+    id: opts.id ?? generateId('mem'),
+    name: draft.name,
+    nameKana: draft.nameKana,
+    faction: draft.faction,
+    seatNumber: draft.seatNumber,
+    term: draft.term,
+    role: draft.role,
+    portraitImageId: null,
+    order: opts.order ?? 0,
+  };
+}
+
+/** 空の議員を1名作る（手動追加用）。 */
+export function createEmptyMember(opts: { id?: string; order?: number } = {}): CouncilMember {
+  return memberFromDraft(
+    { seatNumber: null, name: '', nameKana: '', faction: '', term: '', role: '' },
+    opts
+  );
+}
+
+/**
+ * プリセットに従って議員を並べ替え、order を振り直して返す（F-ORD-3/4）。
+ * manual は現在の並び順を保持したまま order を正規化する。
+ */
+export function sortMembersByPreset(
+  members: CouncilMember[],
+  preset: OrderPreset
+): CouncilMember[] {
+  const seat = (m: CouncilMember): number => m.seatNumber ?? Number.MAX_SAFE_INTEGER;
+  const arr = members.slice();
+  if (preset === 'seat') {
+    arr.sort((a, b) => seat(a) - seat(b));
+  } else if (preset === 'kana') {
+    arr.sort((a, b) => (a.nameKana || '').localeCompare(b.nameKana || '', 'ja') || seat(a) - seat(b));
+  } else if (preset === 'faction') {
+    arr.sort((a, b) => a.faction.localeCompare(b.faction, 'ja') || seat(a) - seat(b));
+  }
+  // manual は並びを保持
+  return arr.map((m, i) => ({ ...m, order: i }));
 }
 
 /** 画像編集パラメータの初期値（非破壊編集の起点）。 */

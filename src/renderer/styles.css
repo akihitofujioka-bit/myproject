@@ -319,3 +319,89 @@ button.danger {
   color: #a4262c;
   border-color: #e5b4b6;
 }
+button.danger.sm {
+  margin-top: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* 議員・掲載順 */
+.mem-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mem-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #555;
+  margin-left: 8px;
+}
+.mem-presets button {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.mem-hint {
+  font-size: 12px;
+  color: #888;
+}
+.mem-table-wrap {
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.mem-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.mem-table th,
+.mem-table td {
+  border-bottom: 1px solid #eef0f3;
+  padding: 6px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+.mem-table thead th {
+  background: #eef1f5;
+  position: sticky;
+  top: 0;
+  font-weight: bold;
+}
+.mem-table input {
+  width: 100%;
+  min-width: 90px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 13px;
+}
+.mem-table input.c-seat,
+.mem-table input.c-term {
+  min-width: 48px;
+  width: 56px;
+}
+.mem-table input.c-faction {
+  min-width: 70px;
+  width: 90px;
+}
+.mem-order {
+  text-align: center;
+  white-space: nowrap;
+}
+.mem-order button {
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  margin: 0 2px;
+}
+.mem-order span {
+  display: inline-block;
+  min-width: 20px;
+  color: #666;
+}

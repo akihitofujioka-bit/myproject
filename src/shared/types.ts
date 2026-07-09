@@ -23,12 +23,27 @@ export type ArticleSource =
 export interface CouncilMember {
   id: string;
   name: string;
-  nameKana: string;
-  faction: string; // 会派
+  nameKana: string; // ふりがな（五十音順用。名簿に無いためアプリで手入力）
+  faction: string; // 党派/会派
   seatNumber: number | null; // 議席番号
+  term: string; // 期別（例: 3期）
+  role: string; // 役職名（例: 議長。複数は／区切り）
   portraitImageId: string | null; // ImageAsset.id への参照（顔写真）
   order: number; // 掲載順（手動並べ替え時の確定値）
 }
+
+/** 名簿(Excel)取り込み時の下書き（正規化前）。 */
+export interface MemberDraft {
+  seatNumber: number | null;
+  name: string;
+  nameKana: string;
+  faction: string;
+  term: string;
+  role: string;
+}
+
+/** 掲載順の並べ替えプリセット（F-ORD-3） */
+export type OrderPreset = 'seat' | 'faction' | 'kana' | 'manual';
 
 /** 記事内に置かれる画像の参照とキャプション */
 export interface ArticleImageRef {

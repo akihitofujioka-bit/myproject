@@ -2,10 +2,11 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { IpcChannels, type IpcResult, type ImportedScan } from '../../shared/ipc.js';
-import type { ArticleDraft } from '../../shared/types.js';
+import type { ArticleDraft, MemberDraft } from '../../shared/types.js';
 import { extractWordDraft } from '../importers/word.js';
 import { extractExcelDraft } from '../importers/excel.js';
 import { extractTextDraft } from '../importers/text.js';
+import { extractMembersFromRoster } from '../importers/roster.js';
 import { copyIntoAssets, readAssetDataUrl } from '../assetStore.js';
 
 function errMessage(e: unknown): string {
@@ -85,6 +86,29 @@ export function registerImportIpc(): void {
       }
     }
   );
+
+  // 議員名簿(Excel)を取り込み、下書きを抽出
+  ipcMain.handle(IpcChannels.importRoster, async (event): Promise<IpcResult<MemberDraft[]>> => {
+    const res = await dialog.showOpenDialog(winOf(event)!, {
+      title: '議員名簿を取り込む（Excel）',
+      properties: ['openFile'],
+      filters: [{ name: 'Excel', extensions: ['xlsx', 'xls'] }],
+    });
+    if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true };
+    try {
+      const members = extractMembersFromRoster(res.filePaths[0]);
+      if (members.length === 0) {
+        return {
+          ok: false,
+          canceled: false,
+          error: '名簿の行を読み取れませんでした（「氏名」列を含むシートかご確認ください）。',
+        };
+      }
+      return { ok: true, value: members };
+    } catch (e) {
+      return { ok: false, canceled: false, error: errMessage(e) };
+    }
+  });
 
   // 保存済み assets の画像を data URL で読み出す（再オープン時の表示用）
   ipcMain.handle(

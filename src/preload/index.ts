@@ -16,6 +16,7 @@ const importApi: ImportApi = {
   addScan: (dirPath: string) => ipcRenderer.invoke(IpcChannels.importScan, dirPath),
   readAsset: (dirPath: string, relativePath: string) =>
     ipcRenderer.invoke(IpcChannels.assetReadDataUrl, dirPath, relativePath),
+  importRoster: () => ipcRenderer.invoke(IpcChannels.importRoster),
 };
 
 contextBridge.exposeInMainWorld('api', { project: projectApi, import: importApi });

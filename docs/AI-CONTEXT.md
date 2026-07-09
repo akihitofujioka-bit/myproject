@@ -3,7 +3,7 @@
 > 目的: このファイル 1 つで、リポジトリを見なくても
 > 「何を作っているか / どう決めたか / 今どこまで / 次に何をするか」を
 > AI（別セッションの Claude 等）が正確に把握し、作業を再開できるようにする。
-> 最終更新: 2026-06-30 / 対応リポジトリ状態: 設計 v0.6・P2 完了時点
+> 最終更新: 2026-06-30 / 対応リポジトリ状態: 設計 v0.7・P3 完了時点
 
 ---
 
@@ -15,7 +15,7 @@
   いったん同じ「記事データ」に整える（＝ワンクッション）。以後の工程は形式を意識しない。
 - **出力**: **PDF＝完成版** / **Word＝出力後に微修正できる近似版**。
 - **紙面**: **縦書き必須**。
-- **進捗**: 設計仕様書 ✅ / P0 PoC ✅ / P1 基盤 ✅ / P2 取り込み・正規化 ✅ / 次は **P3 議員・掲載順**。
+- **進捗**: 設計 ✅ / P0 ✅ / P1 ✅ / P2 取り込み・正規化 ✅ / P3 議員・掲載順 ✅ / 次は **P4 記事編集**。
 - **ブランチ**: `claude/council-newsletter-layout-1shkqc`（push 済み、PR 未作成）。
 
 ---
@@ -97,7 +97,7 @@ Renderer（React UI）  ── IPC ──▶  Main（Node.js）  ──▶  ロ�
 Project
 ├─ schemaVersion (=1)   ← 互換性チェック。非対応はロード時にエラー
 ├─ id, meta{ issueNumber, publishDate, municipality, pageSize }
-├─ councilMembers[]  { id, name, nameKana, faction, seatNumber, portraitImageId, order }
+├─ councilMembers[]  { id, name, nameKana, faction, seatNumber, term, role, portraitImageId, order }
 ├─ articles[]        { id, memberId, sectionId, title, subtitle, body[],
 │                       images[], source, sourceFile, sourceScanImageId, charCount }
 ├─ images[]          { id, relativePath, edits{crop,rotate,flip,brightness,...},
@@ -123,7 +123,8 @@ Project
 | **P0 PoC** | ✅ | 縦書き.docx / 縦書きプレビュー+PDF / Word取込 / ワークベンチUI を実コードで検証 |
 | **P1 基盤** | ✅ | アプリ骨格＋プロジェクト新規/保存/読込。型チェック○・ビルド○・単体テスト7件○ |
 | **P2 取り込み・正規化** | ✅ | Word/Excel/テキスト/手書きスキャンを取り込み、同一Articleへ正規化。保存→再オープンで残る（テスト19件○） |
-| P3 議員・掲載順 | ⬜ 次はここ | 名簿・D&D並べ替え・プリセット |
+| **P3 議員・掲載順** | ✅ | 名簿(Excel)取込（実データ10名）・編集・並べ替え（議席/党派/五十音＋▲▼手動）。テスト26件○ |
+| P4 記事編集 | ⬜ 次はここ | リッチ編集・文字数・ルビ |
 | P4 記事編集 | ⬜ | リッチ編集・文字数・ルビ |
 | P5 画像編集 | ⬜ | 切り抜き/回転/明るさ（非破壊） |
 | P6 レイアウト | ⬜ | テンプレ流し込み・プレビュー・あふれ警告 |
@@ -149,12 +150,12 @@ myproject/
 ├─ package.json / electron.vite.config.ts / tsconfig{,.node,.web}.json / electron-builder.yml
 ├─ src/
 │   ├─ main/       index.ts(ウィンドウ/app:///IPC登録), projectStore.ts, assetStore.ts,
-│   │              ipc/{project,import}.ts, importers/{word,excel,text,normalize}.ts
+│   │              ipc/{project,import}.ts, importers/{word,excel,text,normalize,roster}.ts
 │   ├─ preload/    index.ts（contextBridgeで window.api={project,import} 公開）
-│   ├─ renderer/   index.html, main.tsx, App.tsx(タブ:ホーム/取り込み・正規化), styles.css,
-│   │              pages/{HomePage,ImportWorkbench}.tsx
-│   └─ shared/     types.ts（データモデル/ArticleDraft）, project.ts（生成/直列化/検証/articleFromDraft等）, ipc.ts
-├─ test/           project.test.ts, normalize.test.ts, import.e2e.test.ts（計19件）
+│   ├─ renderer/   index.html, main.tsx, App.tsx(タブ:ホーム/取り込み/議員), styles.css,
+│   │              pages/{HomePage,ImportWorkbench,MembersPage}.tsx
+│   └─ shared/     types.ts（モデル/ArticleDraft/MemberDraft）, project.ts（articleFromDraft/memberFromDraft/sortMembersByPreset等）, ipc.ts
+├─ test/           project / normalize / import.e2e / roster .test.ts（計26件）
 ├─ poc/            P0検証コード（本体と独立。01=縦書きdocx, 02=Word取込, 03=HTML試作, 04=描画/PDF）
 └─ docs/
     ├─ design-spec.md      設計・仕様書（最新 v0.5、変更履歴あり）
@@ -177,22 +178,23 @@ npm run dist           # インストーラ作成
 
 ---
 
-## 8. 次にやること（P3: 議員・掲載順）
+## 8. 次にやること（P4: 記事編集）
 
-目的: **議員名簿の管理と、掲載順の決定（D&D並べ替え・プリセット）**。
+目的: **記事本文をリッチに編集（見出し/太字/箇条書き/表/ルビ）し、文字数チェックを可能に**（F-EDIT-1〜6）。
 
 手順（推奨）:
-1. 議員管理画面 `src/renderer/pages/MembersPage.tsx` を新設し、App のタブに「議員」を追加。
-   - 名簿の登録/編集（氏名・ふりがな・会派・議席番号・顔写真）。`CouncilMember` 型は既存。
-   - 顔写真取り込みは P2 の assets 取り込み（`window.api.import.addScan` 相当）を流用。
-2. 掲載順の並べ替え: ドラッグ＆ドロップ（`@dnd-kit` 等の導入を検討）。
-   - プリセット: 会派順 / 議席番号順 / 五十音順(`nameKana`) / 手動 → `order` に確定値を保存。
-3. 記事との連携: ワークベンチの議員ドロップダウン（既に `project.councilMembers` 参照）で `memberId` を割り当て。
+1. 本文エディタ導入: `Tiptap`(ProseMirror系)。まず見出し/段落/太字/箇条書き/表。
+2. ルビ(ふりがな)対応（F-EDIT-2、議会だよりで需要大）。
+3. 文字数・体裁チェック（`countArticleChars()` 活用、枠上限の超過/不足を警告）。
 
-完了条件: 名簿を登録し、並べ替え（プリセット/手動）が保存→再オープンで残る。記事に議員を割り当てられる。
+判断ポイント: `Article.body` は現状 `string[]`（段落配列）。リッチ化に合わせ
+リッチテキスト構造(JSON)へ移行するか、段落配列を維持するか（**データ移行に注意**）。
 
-> P2（取り込み・正規化）は完了。実装は `src/main/importers/{word,excel,text,normalize}.ts`、
-> `src/main/assetStore.ts`、`src/main/ipc/import.ts`、`src/renderer/pages/ImportWorkbench.tsx`。
+完了条件: 本文を編集し保存→再オープンで残る。文字数超過が視覚的に分かる。
+
+> P3（議員・掲載順）は完了。実装は `src/main/importers/roster.ts`（「氏名」列でヘッダ検出→列特定→正規化）、
+> `src/renderer/pages/MembersPage.tsx`、並べ替えは `sortMembersByPreset()`（seat/faction/kana/manual）。
+> 名簿の個人情報(住所/電話/生年月日)は既定で取り込まない。ふりがなはアプリで手入力。
 
 ---
 
@@ -222,6 +224,8 @@ npm run dist           # インストーラ作成
 9. AI向けコンテキスト（本ファイル）を作成し、Googleドライブにも保存。
 10. **P2(取り込み・正規化)実装** → Word/Excel/テキスト/手書きスキャンの取り込みとワークベンチ、テスト19件通過（v0.6）。
     実装中に xlsx の二形態ハザードを踏み `default ?? namespace` で解消。
+11. **P3(議員・掲載順)実装** → ユーザー提供の名簿Excel(日高村議会10名)を取り込む roster importer、議員管理画面、
+    掲載順プリセット＋手動並べ替え。テスト26件通過（v0.7）。名簿の個人情報はコミットしない方針。
 
 ---
 
