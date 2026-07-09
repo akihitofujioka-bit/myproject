@@ -3,7 +3,7 @@
 > 目的: このファイル 1 つで、リポジトリを見なくても
 > 「何を作っているか / どう決めたか / 今どこまで / 次に何をするか」を
 > AI（別セッションの Claude 等）が正確に把握し、作業を再開できるようにする。
-> 最終更新: 2026-06-30 / 対応リポジトリ状態: 設計 v0.5・P1 完了時点
+> 最終更新: 2026-06-30 / 対応リポジトリ状態: 設計 v0.6・P2 完了時点
 
 ---
 
@@ -15,7 +15,7 @@
   いったん同じ「記事データ」に整える（＝ワンクッション）。以後の工程は形式を意識しない。
 - **出力**: **PDF＝完成版** / **Word＝出力後に微修正できる近似版**。
 - **紙面**: **縦書き必須**。
-- **進捗**: 設計仕様書 ✅ / P0 技術検証(PoC) ✅ / P1 基盤(アプリ骨格・保存読込) ✅ / 次は **P2 取り込み・正規化**。
+- **進捗**: 設計仕様書 ✅ / P0 PoC ✅ / P1 基盤 ✅ / P2 取り込み・正規化 ✅ / 次は **P3 議員・掲載順**。
 - **ブランチ**: `claude/council-newsletter-layout-1shkqc`（push 済み、PR 未作成）。
 
 ---
@@ -122,20 +122,23 @@ Project
 | 設計・仕様書 | ✅ v0.5 | `docs/design-spec.md` |
 | **P0 PoC** | ✅ | 縦書き.docx / 縦書きプレビュー+PDF / Word取込 / ワークベンチUI を実コードで検証 |
 | **P1 基盤** | ✅ | アプリ骨格＋プロジェクト新規/保存/読込。型チェック○・ビルド○・単体テスト7件○ |
-| P2 取り込み・正規化 | ⬜ 次はここ | 提出物を正規化して記事一覧に並び、保存→再オープンで残る |
-| P3 議員・掲載順 | ⬜ | 名簿・D&D並べ替え・プリセット |
+| **P2 取り込み・正規化** | ✅ | Word/Excel/テキスト/手書きスキャンを取り込み、同一Articleへ正規化。保存→再オープンで残る（テスト19件○） |
+| P3 議員・掲載順 | ⬜ 次はここ | 名簿・D&D並べ替え・プリセット |
 | P4 記事編集 | ⬜ | リッチ編集・文字数・ルビ |
 | P5 画像編集 | ⬜ | 切り抜き/回転/明るさ（非破壊） |
 | P6 レイアウト | ⬜ | テンプレ流し込み・プレビュー・あふれ警告 |
 | P7 出力 | ⬜ | PDF / Word 出力 |
 | P8 仕上げ | ⬜ | 自動保存・複製・インストーラ |
 
-### P0 で技術的に実証済みの要点（重要な既知の解）
+### P0/P2 で技術的に実証済みの要点（重要な既知の解）
 - 縦書き .docx: `docx` の `page.textDirection = PageTextDirectionType.TOP_TO_BOTTOM_RIGHT_TO_LEFT`（"tbRl"）。
   生成物の `word/document.xml` の `<w:sectPr>` に `<w:textDirection w:val="tbRl"/>` が入ることを確認。画像埋め込みも可。
 - 縦書き表示: CSS `writing-mode: vertical-rl`。**`text-orientation` は既定の `mixed` が正解**
   （`upright` は字間が崩れて重なる、という失敗を経験済み）。縦書きメトリクスを持つ日本語フォント同梱が前提。
 - Word取込: `mammoth.convertToHtml` の `styleMap` でスタイル名→項目（title/author/body）判別が成立。
+- **xlsx の二形態ハザード**: Vite は ESM(`xlsx.mjs`, 名前空間に関数・default無し)、tsx/CJS は default に実体。
+  → `import * as ns from 'xlsx'; const XLSX = ns.default ?? ns;` で両対応（`src/main/importers/excel.ts`）。
+  同様の CJS ライブラリは名前付き import が壊れ得るので注意。
 
 ---
 
@@ -145,11 +148,13 @@ Project
 myproject/
 ├─ package.json / electron.vite.config.ts / tsconfig{,.node,.web}.json / electron-builder.yml
 ├─ src/
-│   ├─ main/       index.ts(ウィンドウ/app://プロトコル/IPC登録), projectStore.ts(fs), ipc/project.ts
-│   ├─ preload/    index.ts（contextBridgeで window.api 公開）
-│   ├─ renderer/   index.html, main.tsx, App.tsx, styles.css, pages/HomePage.tsx
-│   └─ shared/     types.ts（データモデル）, project.ts（生成/直列化/検証/複製・純粋関数）, ipc.ts（IPC契約）
-├─ test/           project.test.ts（中核ロジック単体テスト・7件）
+│   ├─ main/       index.ts(ウィンドウ/app:///IPC登録), projectStore.ts, assetStore.ts,
+│   │              ipc/{project,import}.ts, importers/{word,excel,text,normalize}.ts
+│   ├─ preload/    index.ts（contextBridgeで window.api={project,import} 公開）
+│   ├─ renderer/   index.html, main.tsx, App.tsx(タブ:ホーム/取り込み・正規化), styles.css,
+│   │              pages/{HomePage,ImportWorkbench}.tsx
+│   └─ shared/     types.ts（データモデル/ArticleDraft）, project.ts（生成/直列化/検証/articleFromDraft等）, ipc.ts
+├─ test/           project.test.ts, normalize.test.ts, import.e2e.test.ts（計19件）
 ├─ poc/            P0検証コード（本体と独立。01=縦書きdocx, 02=Word取込, 03=HTML試作, 04=描画/PDF）
 └─ docs/
     ├─ design-spec.md      設計・仕様書（最新 v0.5、変更履歴あり）
@@ -172,22 +177,22 @@ npm run dist           # インストーラ作成
 
 ---
 
-## 8. 次にやること（P2: 取り込み・正規化ワークベンチ）
+## 8. 次にやること（P3: 議員・掲載順）
 
-目的: **どの形式の提出物も「記事データ」に整えて記事一覧へ**。
+目的: **議員名簿の管理と、掲載順の決定（D&D並べ替え・プリセット）**。
 
 手順（推奨）:
-1. 取り込み IPC を新設: `src/main/ipc/import.ts`
-   - Word=mammoth（PoC `poc/src/02-import-word.mjs` のstyleMapを移植）、Excel=SheetJS、
-     画像/PDFスキャン=`assets/` へコピーして `ImageAsset` 化。
-   - `src/shared/ipc.ts` の契約に import 系を追加、preload で公開。
-   - 本体 `package.json` に `mammoth` `xlsx` を追加（PoCでは検証済み）。
-2. 正規化ワークベンチ画面: `src/renderer/pages/ImportWorkbench.tsx`
-   - 左=スキャン画像プレビュー、右=記事フォーム（PoC `poc/src/03-workbench.html` の構成をReact化）。
-   - Word/Excelは自動抽出を初期値に、手書きは空フォーム＋スキャン参照。文字数は `countArticleChars()`。
-3. `Article` を `project.articles` に追加して保存。
+1. 議員管理画面 `src/renderer/pages/MembersPage.tsx` を新設し、App のタブに「議員」を追加。
+   - 名簿の登録/編集（氏名・ふりがな・会派・議席番号・顔写真）。`CouncilMember` 型は既存。
+   - 顔写真取り込みは P2 の assets 取り込み（`window.api.import.addScan` 相当）を流用。
+2. 掲載順の並べ替え: ドラッグ＆ドロップ（`@dnd-kit` 等の導入を検討）。
+   - プリセット: 会派順 / 議席番号順 / 五十音順(`nameKana`) / 手動 → `order` に確定値を保存。
+3. 記事との連携: ワークベンチの議員ドロップダウン（既に `project.councilMembers` 参照）で `memberId` を割り当て。
 
-完了条件: 提出物（Word/手書きスキャン）を取り込み・正規化して一覧に並び、保存→再オープンで残る。
+完了条件: 名簿を登録し、並べ替え（プリセット/手動）が保存→再オープンで残る。記事に議員を割り当てられる。
+
+> P2（取り込み・正規化）は完了。実装は `src/main/importers/{word,excel,text,normalize}.ts`、
+> `src/main/assetStore.ts`、`src/main/ipc/import.ts`、`src/renderer/pages/ImportWorkbench.tsx`。
 
 ---
 
@@ -214,7 +219,9 @@ npm run dist           # インストーラ作成
    実装中に file:// の真っ白問題を発見し app:// 方式で解消。
 7. 進捗を `docs/progress.md` に集約。
 8. プロダクト名を **議会だより編集部** に変更。
-9. （本ファイル）AI向けコンテキストを作成。
+9. AI向けコンテキスト（本ファイル）を作成し、Googleドライブにも保存。
+10. **P2(取り込み・正規化)実装** → Word/Excel/テキスト/手書きスキャンの取り込みとワークベンチ、テスト19件通過（v0.6）。
+    実装中に xlsx の二形態ハザードを踏み `default ?? namespace` で解消。
 
 ---
 

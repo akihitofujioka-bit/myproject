@@ -44,10 +44,10 @@
 
 | フェーズ | 状態 | 成果物 |
 | --- | --- | --- |
-| 設計・仕様書 | ✅ v0.5 | `docs/design-spec.md` |
+| 設計・仕様書 | ✅ v0.6 | `docs/design-spec.md` |
 | **P0 PoC（要素検証）** | ✅ 完了 | `poc/` 一式、`docs/poc-p0-results.md` |
 | **P1 基盤** | ✅ 完了 | `src/`（main/preload/renderer/shared）、`test/` |
-| P2 取り込み・正規化 | ⬜ 未着手（次はここ推奨） | — |
+| **P2 取り込み・正規化** | ✅ 完了 | `src/main/importers/`、`src/renderer/pages/ImportWorkbench.tsx` |
 | P3 議員・掲載順 | ⬜ | — |
 | P4 記事編集 | ⬜ | — |
 | P5 画像編集 | ⬜ | — |
@@ -69,6 +69,16 @@
 - プロジェクトの新規/保存/読込（フォルダ形式 `project.json` + `assets/`）
 - ホーム画面（号の基本情報編集・状態表示）
 - 検証: 型チェック○ / ビルド○ / 単体テスト 7件○
+
+### P2 で実装済み
+
+- 取り込み: Word(`mammoth`) / Excel(`xlsx`) / テキスト / 手書きスキャン(画像・PDF)。
+  `src/main/importers/`（word/excel/text/normalize）、`src/main/assetStore.ts`、`src/main/ipc/import.ts`。
+- 正規化ワークベンチ画面 `src/renderer/pages/ImportWorkbench.tsx`（記事一覧＋正規化フォーム＋スキャン参照）。
+- どの形式も同じ `Article` に整えて `project.articles` に追加。手書きはスキャンを `assets/` に複製し `ImageAsset` 化。
+- 検証: 型チェック○ / ビルド○ / 単体テスト **19件**○（取り込み→正規化→保存→再オープンの実I/O込み実証）。
+- 実装メモ: `xlsx` は Vite(ESM)と tsx(CJS)で export 形が異なる二形態のため、
+  `import * as` して `default ?? namespace` で両対応させた（`src/main/importers/excel.ts`）。
 
 ---
 
@@ -112,29 +122,26 @@ npm run test:core    # 中核ロジックのテスト
 
 ---
 
-## 6. 次にやること（P2: 取り込み・正規化ワークベンチ）
+## 6. 次にやること（P3: 議員・掲載順）
 
-**目的**: どの形式の提出物も「記事データ（タイトル/本文/写真/キャプション）」に整えて一覧に並べる。
+**目的**: 議員名簿を管理し、掲載順をドラッグ＆ドロップで決める（F-ORD-1〜5）。
 
 着手の取っ掛かり:
 
-1. **取り込み IPC を追加** — `src/main/ipc/import.ts`（新規）。
-   - Word: `mammoth`（PoC `poc/src/02-import-word.mjs` のスタイルマッピングを移植）。
-   - Excel: `SheetJS`。
-   - 画像/PDF(スキャン): ファイルを `assets/` へコピーし `ImageAsset` 化。
-   - preload `window.api` に `import` 系を追加（`src/shared/ipc.ts` の契約を拡張）。
-2. **正規化ワークベンチ画面** — `src/renderer/pages/ImportWorkbench.tsx`（新規）。
-   - 左: スキャン画像プレビュー、右: 記事フォーム（PoC `poc/src/03-workbench.html` の構成を React 化）。
-   - Word/Excel は自動抽出結果を初期値として流し込み、手書きは空フォーム＋スキャン参照。
-   - 文字数カウント（`countArticleChars` を使用）。
-3. **記事をプロジェクトに追加** — `Article` を `project.articles` に push し保存。
+1. **議員管理画面** — `src/renderer/pages/MembersPage.tsx`（新規）。App のタブに「議員」を追加。
+   - 名簿の登録/編集（氏名・ふりがな・会派・議席番号・顔写真）。`CouncilMember` 型は既にある。
+   - 顔写真は P2 の `assets` 取り込み（`window.api.import.addScan` 相当）を流用可。
+2. **掲載順の並べ替え** — ドラッグ＆ドロップ（`@dnd-kit` 等の導入を検討）。
+   - プリセット: 会派順 / 議席番号順 / 五十音順(`nameKana`) / 手動。`order` に確定値を保存。
+3. **記事との連携** — 取り込み済み記事の `memberId` 割り当て（ワークベンチの議員ドロップダウンが名簿を参照）。
 
 実装の足場（すでにある）:
-- 記事の型: `Article`（`src/shared/types.ts`）。`source` に取り込み元種別、`sourceScanImageId` に手書き参照。
-- 文字数: `countArticleChars()`（`src/shared/project.ts`）。
-- 追加に必要なライブラリ: `mammoth`, `xlsx`（本体 `package.json` へ追加。PoC では検証済み）。
+- `CouncilMember`（`src/shared/types.ts`）: `name/nameKana/faction/seatNumber/portraitImageId/order`。
+- ワークベンチの議員選択は `project.councilMembers` を参照済み（名簿を作ればすぐ選べる）。
 
-完了条件: **提出物（Word/手書きスキャン）を取り込み、正規化して記事一覧に並び、保存→再オープンで残る。**
+完了条件: **名簿を登録し、並べ替え（プリセット/手動）を保存→再オープンで残る。記事に議員を割り当てられる。**
+
+> P2（取り込み・正規化）は完了済み。実装は `src/main/importers/`・`src/renderer/pages/ImportWorkbench.tsx`。
 
 ---
 

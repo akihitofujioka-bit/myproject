@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Project } from '../shared/types.js';
 import type { IpcResult, OpenedProject } from '../shared/ipc.js';
 import { HomePage } from './pages/HomePage.js';
+import { ImportWorkbench } from './pages/ImportWorkbench.js';
 
 /** 現在開いているプロジェクトの状態 */
 interface Session {
@@ -10,8 +11,11 @@ interface Session {
   dirty: boolean; // 未保存の変更があるか
 }
 
+type View = 'home' | 'import';
+
 export function App(): JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
+  const [view, setView] = useState<View>('home');
   const [message, setMessage] = useState<string | null>(null);
 
   const handleResult = useCallback(
@@ -52,6 +56,8 @@ export function App(): JSX.Element {
     setSession((s) => (s ? { ...s, project, dirty: true } : s));
   }, []);
 
+  const notify = useCallback((m: string) => setMessage(m), []);
+
   // メッセージは数秒で消す
   useEffect(() => {
     if (!message) return;
@@ -63,11 +69,24 @@ export function App(): JSX.Element {
     <div className="app">
       <header className="toolbar">
         <strong>議会だより編集部</strong>
+        {session && (
+          <nav className="tabs">
+            <button className={view === 'home' ? 'tab active' : 'tab'} onClick={() => setView('home')}>
+              ホーム
+            </button>
+            <button
+              className={view === 'import' ? 'tab active' : 'tab'}
+              onClick={() => setView('import')}
+            >
+              取り込み・正規化
+            </button>
+          </nav>
+        )}
         <div className="spacer" />
         <button onClick={onNew}>新規</button>
         <button onClick={onOpen}>開く</button>
         <button onClick={onSave} disabled={!session}>
-          保存
+          保存{session?.dirty ? ' *' : ''}
         </button>
         <button onClick={onSaveAs} disabled={!session}>
           名前を付けて保存
@@ -77,14 +96,7 @@ export function App(): JSX.Element {
       {message && <div className="message">{message}</div>}
 
       <main className="content">
-        {session ? (
-          <HomePage
-            project={session.project}
-            dirPath={session.dirPath}
-            dirty={session.dirty}
-            onChange={onChangeProject}
-          />
-        ) : (
+        {!session ? (
           <div className="empty">
             <h1>議会だより編集部</h1>
             <p>「新規」で号を作成するか、「開く」で既存のプロジェクトフォルダを選んでください。</p>
@@ -95,6 +107,20 @@ export function App(): JSX.Element {
               <button onClick={onOpen}>既存の号を開く</button>
             </div>
           </div>
+        ) : view === 'home' ? (
+          <HomePage
+            project={session.project}
+            dirPath={session.dirPath}
+            dirty={session.dirty}
+            onChange={onChangeProject}
+          />
+        ) : (
+          <ImportWorkbench
+            project={session.project}
+            dirPath={session.dirPath}
+            onChange={onChangeProject}
+            notify={notify}
+          />
         )}
       </main>
     </div>

@@ -127,6 +127,23 @@ export interface ProjectMeta {
   pageSize: PageSize;
 }
 
+/**
+ * 取り込み直後の下書き（正規化前）。
+ * どの形式（手書き/Word/Excel/PDF/テキスト）でも、この共通形に落としてから
+ * ワークベンチで補正し、Article に確定する。
+ */
+export interface ArticleDraft {
+  source: ArticleSource;
+  sourceFile: string | null;
+  title: string;
+  subtitle: string;
+  /** 抽出できた氏名（議員照合のヒント。確定は担当者がフォームで行う） */
+  authorName: string;
+  body: string[];
+  /** 手書き時の参照スキャン画像（assets 内の相対パス。無ければ null） */
+  sourceScanRelativePath: string | null;
+}
+
 /** プロジェクト全体（1号分。§6） */
 export interface Project {
   schemaVersion: typeof PROJECT_SCHEMA_VERSION;

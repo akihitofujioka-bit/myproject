@@ -3,6 +3,7 @@ import { app, BrowserWindow, shell, protocol, net } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerProjectIpc } from './ipc/project.js';
+import { registerImportIpc } from './ipc/import.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererDir = path.join(__dirname, '../renderer');
@@ -68,6 +69,7 @@ app.whenReady().then(() => {
   });
 
   registerProjectIpc();
+  registerImportIpc();
   createWindow();
 
   app.on('activate', () => {

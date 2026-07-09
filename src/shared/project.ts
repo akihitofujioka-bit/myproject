@@ -6,6 +6,9 @@ import {
   type ProjectMeta,
   type Template,
   type Article,
+  type ArticleDraft,
+  type ImageAsset,
+  type ImageEdits,
 } from './types.js';
 
 /** プロジェクトフォルダ内の固定ファイル名 */
@@ -75,6 +78,51 @@ export function createEmptyProject(opts: CreateProjectOptions = {}): Project {
 /** 本文の文字数を数える（空白・改行を除く）。F-IMP-6 / F-EDIT-6 の基礎。 */
 export function countArticleChars(article: Pick<Article, 'body'>): number {
   return article.body.join('').replace(/\s/g, '').length;
+}
+
+/** 画像編集パラメータの初期値（非破壊編集の起点）。 */
+export function createDefaultImageEdits(): ImageEdits {
+  return {
+    crop: null,
+    rotate: 0,
+    flipH: false,
+    flipV: false,
+    brightness: 0,
+    contrast: 0,
+    saturation: 0,
+  };
+}
+
+/** assets 内の相対パスから ImageAsset を作る。 */
+export function createImageAsset(relativePath: string, opts: { id?: string } = {}): ImageAsset {
+  return {
+    id: opts.id ?? generateId('img'),
+    relativePath,
+    edits: createDefaultImageEdits(),
+    caption: '',
+    dpiWarning: false,
+  };
+}
+
+/** 取り込み下書き(ArticleDraft)から Article を確定する。文字数を自動計算。 */
+export function articleFromDraft(
+  draft: ArticleDraft,
+  opts: { id?: string; sourceScanImageId?: string | null } = {}
+): Article {
+  const body = draft.body.slice();
+  return {
+    id: opts.id ?? generateId('art'),
+    memberId: null,
+    sectionId: '',
+    title: draft.title,
+    subtitle: draft.subtitle,
+    body,
+    images: [],
+    source: draft.source,
+    sourceFile: draft.sourceFile,
+    sourceScanImageId: opts.sourceScanImageId ?? null,
+    charCount: countArticleChars({ body }),
+  };
 }
 
 /** プロジェクトを JSON 文字列へ直列化する。 */
