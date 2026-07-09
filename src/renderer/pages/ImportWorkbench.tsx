@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Project, Article } from '../../shared/types.js';
 import { articleFromDraft, createImageAsset, countArticleChars } from '../../shared/project.js';
+import { htmlToPlainText, paragraphsToHtml } from '../../shared/richtext.js';
 
 interface Props {
   project: Project;
@@ -190,13 +191,13 @@ export function ImportWorkbench({ project, dirPath, onChange, notify }: Props): 
                   ))}
                 </select>
 
-                <label>本文（1行1段落。手書きは書き起こし）</label>
+                <label>本文（1行1段落。手書きは書き起こし。装飾やルビは「記事編集」タブで）</label>
                 <textarea
-                  value={selected.body.join('\n')}
+                  value={htmlToPlainText(selected.bodyHtml)}
                   rows={12}
                   onChange={(e) =>
                     updateArticle(selected.id, {
-                      body: e.target.value.split('\n'),
+                      bodyHtml: paragraphsToHtml(e.target.value.split('\n')),
                     })
                   }
                 />

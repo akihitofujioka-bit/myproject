@@ -55,6 +55,6 @@ test('duplicateProject: 新IDを採番し中身を引き継ぐ（次号のひな
   assert.equal(dup.createdAt, '2026-07-01T00:00:00.000Z');
 });
 
-test('countArticleChars: 空白・改行を除いて数える', () => {
-  assert.equal(countArticleChars({ body: ['あいう', ' え お\n'] }), 5);
+test('countArticleChars: 本文HTMLから空白・改行を除いて数える', () => {
+  assert.equal(countArticleChars({ bodyHtml: '<p>あいう</p><p> え お</p>' }), 5);
 });

@@ -58,13 +58,15 @@ export interface Article {
   sectionId: string; // 配置するコーナー/枠の種類
   title: string;
   subtitle: string;
-  /** 本文。P1 では段落配列の簡易構造。後フェーズでリッチテキスト化。 */
-  body: string[];
+  /** 本文（リッチテキスト。最小限のHTML: p / h3 / ul>li / strong / ruby>rt）。 */
+  bodyHtml: string;
   images: ArticleImageRef[];
   source: ArticleSource;
   sourceFile: string | null; // 取り込み元ファイル名
   sourceScanImageId: string | null; // 手書き時の参照スキャン画像
-  charCount: number; // 文字数（自動計算）
+  charCount: number; // 文字数（自動計算。ルビの読みは数えない）
+  /** 枠の文字数上限（あふれ警告用。未設定は null）。F-EDIT-6 */
+  charLimit: number | null;
 }
 
 /** 画像の非破壊編集パラメータ（§6.3 / F-IMG-5） */

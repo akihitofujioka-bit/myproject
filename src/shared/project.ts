@@ -13,6 +13,7 @@ import {
   type MemberDraft,
   type OrderPreset,
 } from './types.js';
+import { paragraphsToHtml, countCharsFromHtml } from './richtext.js';
 
 /** プロジェクトフォルダ内の固定ファイル名 */
 export const PROJECT_FILE = 'project.json';
@@ -78,9 +79,9 @@ export function createEmptyProject(opts: CreateProjectOptions = {}): Project {
   };
 }
 
-/** 本文の文字数を数える（空白・改行を除く）。F-IMP-6 / F-EDIT-6 の基礎。 */
-export function countArticleChars(article: Pick<Article, 'body'>): number {
-  return article.body.join('').replace(/\s/g, '').length;
+/** 記事本文の文字数を数える（空白・改行・ルビの読みを除く）。F-IMP-6 / F-EDIT-6。 */
+export function countArticleChars(article: Pick<Article, 'bodyHtml'>): number {
+  return countCharsFromHtml(article.bodyHtml);
 }
 
 /** 名簿の下書き(MemberDraft)から CouncilMember を作る。 */
@@ -154,24 +155,25 @@ export function createImageAsset(relativePath: string, opts: { id?: string } = {
   };
 }
 
-/** 取り込み下書き(ArticleDraft)から Article を確定する。文字数を自動計算。 */
+/** 取り込み下書き(ArticleDraft)から Article を確定する。段落配列→本文HTML、文字数を自動計算。 */
 export function articleFromDraft(
   draft: ArticleDraft,
   opts: { id?: string; sourceScanImageId?: string | null } = {}
 ): Article {
-  const body = draft.body.slice();
+  const bodyHtml = paragraphsToHtml(draft.body);
   return {
     id: opts.id ?? generateId('art'),
     memberId: null,
     sectionId: '',
     title: draft.title,
     subtitle: draft.subtitle,
-    body,
+    bodyHtml,
     images: [],
     source: draft.source,
     sourceFile: draft.sourceFile,
     sourceScanImageId: opts.sourceScanImageId ?? null,
-    charCount: countArticleChars({ body }),
+    charCount: countCharsFromHtml(bodyHtml),
+    charLimit: null,
   };
 }
 

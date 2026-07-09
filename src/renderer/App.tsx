@@ -4,6 +4,7 @@ import type { IpcResult, OpenedProject } from '../shared/ipc.js';
 import { HomePage } from './pages/HomePage.js';
 import { ImportWorkbench } from './pages/ImportWorkbench.js';
 import { MembersPage } from './pages/MembersPage.js';
+import { ArticleEditPage } from './pages/ArticleEditPage.js';
 
 /** 現在開いているプロジェクトの状態 */
 interface Session {
@@ -12,7 +13,7 @@ interface Session {
   dirty: boolean; // 未保存の変更があるか
 }
 
-type View = 'home' | 'import' | 'members';
+type View = 'home' | 'import' | 'members' | 'edit';
 
 export function App(): JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
@@ -87,6 +88,12 @@ export function App(): JSX.Element {
             >
               議員・掲載順
             </button>
+            <button
+              className={view === 'edit' ? 'tab active' : 'tab'}
+              onClick={() => setView('edit')}
+            >
+              記事編集
+            </button>
           </nav>
         )}
         <div className="spacer" />
@@ -128,8 +135,10 @@ export function App(): JSX.Element {
             onChange={onChangeProject}
             notify={notify}
           />
-        ) : (
+        ) : view === 'members' ? (
           <MembersPage project={session.project} onChange={onChangeProject} notify={notify} />
+        ) : (
+          <ArticleEditPage project={session.project} onChange={onChangeProject} />
         )}
       </main>
     </div>

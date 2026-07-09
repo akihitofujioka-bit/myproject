@@ -44,12 +44,13 @@
 
 | フェーズ | 状態 | 成果物 |
 | --- | --- | --- |
-| 設計・仕様書 | ✅ v0.7 | `docs/design-spec.md` |
+| 設計・仕様書 | ✅ v0.8 | `docs/design-spec.md` |
 | **P0 PoC（要素検証）** | ✅ 完了 | `poc/` 一式、`docs/poc-p0-results.md` |
 | **P1 基盤** | ✅ 完了 | `src/`（main/preload/renderer/shared）、`test/` |
 | **P2 取り込み・正規化** | ✅ 完了 | `src/main/importers/`、`src/renderer/pages/ImportWorkbench.tsx` |
 | **P3 議員・掲載順** | ✅ 完了 | `src/main/importers/roster.ts`、`src/renderer/pages/MembersPage.tsx` |
-| P4 記事編集 | ⬜ 次はここ | — |
+| **P4 記事編集** | ✅ 完了 | `src/shared/richtext.ts`、`src/renderer/components/RichEditor.tsx`、`pages/ArticleEditPage.tsx` |
+| P5 画像編集 | ⬜ 次はここ | — |
 | P5 画像編集 | ⬜ | — |
 | P6 レイアウト | ⬜ | — |
 | P7 出力（PDF/Word） | ⬜ | — |
@@ -90,6 +91,18 @@
 - 個人情報（住所/電話/生年月日）は既定で取り込まない。ふりがなは名簿に無いのでアプリで手入力。
 - 検証: 型チェック○ / ビルド○ / 単体テスト **26件**○。
 - 注意: 実名簿は個人情報を含むためリポジトリにコミットしない（テストは擬似データ）。
+
+### P4 で実装済み
+
+- 本文リッチエディタ `src/renderer/components/RichEditor.tsx`（contentEditable + execCommand。
+  対象が Electron の Chromium 単一環境なので安定）。太字/見出し(h3)/本文(p)/箇条書き/**ルビ**。
+- 記事編集画面 `src/renderer/pages/ArticleEditPage.tsx`（記事一覧＋タイトル/小見出し/本文編集、
+  文字数と **枠の上限(charLimit)** による**あふれ警告**）。App に「記事編集」タブ追加。
+- **データモデル移行**: `Article.body: string[]` → `bodyHtml: string`（最小HTML: p/h3/ul>li/strong/ruby）。
+  `charLimit: number|null` を追加。本文HTMLの純粋ヘルパー `src/shared/richtext.ts`
+  （`paragraphsToHtml`/`htmlToPlainText`/`countCharsFromHtml`。ルビの読みは文字数に数えない）。
+- 取り込み(ArticleDraft)は段落配列のまま。`articleFromDraft` で HTML 化。
+- 検証: 型チェック○ / ビルド○ / 単体テスト **31件**○。
 
 ---
 
@@ -133,27 +146,29 @@ npm run test:core    # 中核ロジックのテスト
 
 ---
 
-## 6. 次にやること（P4: 記事編集）
+## 6. 次にやること（P5: 画像編集）
 
-**目的**: 取り込んだ記事本文をリッチに編集し、文字数チェック・ルビ等を可能にする（F-EDIT-1〜6）。
+**目的**: 写真・画像の簡単な編集（切り抜き・回転・明るさ調整）を非破壊で行う（F-IMG-1〜6）。
 
 着手の取っ掛かり:
 
-1. **本文エディタの導入** — `Tiptap`（ProseMirror系）を検討。まずは見出し/段落/太字/箇条書き/表。
-   - 現状 `Article.body` は `string[]`（段落配列）。リッチ化に合わせ本文の構造化を検討（互換に注意）。
-2. **ルビ（ふりがな）** — 議会だよりで需要大（F-EDIT-2）。エディタ拡張で対応。
-3. **文字数・体裁チェック** — `countArticleChars()` を活用。枠上限に対する超過/不足の警告（F-EDIT-6）。
-4. 記事編集画面 or ワークベンチ内編集の拡張として実装。
+1. **画像編集画面** — 記事に紐づく画像（`Article.images` / `ImageAsset`）を編集。
+   - 切り抜き（トリミング）: `Cropper.js` 等の導入を検討。回転/左右反転。
+   - 明るさ・コントラスト・彩度: Canvas フィルタ（PoC の知見あり）。
+2. **非破壊編集** — `ImageAsset.edits`（既に型あり: crop/rotate/flip/brightness/contrast/saturation）に調整値を保存。
+   元画像 `relativePath` は保持。プレビューは編集値を適用して表示。
+3. **解像度チェック**（F-IMG-4）: 印刷に耐える解像度か警告（`ImageAsset.dpiWarning`）。
+4. **キャプション**（F-IMG-6）: `ArticleImageRef.caption`。
 
 実装の足場（すでにある）:
-- 文字数: `countArticleChars()`（`src/shared/project.ts`）。
-- 記事データ: `Article`（`src/shared/types.ts`）。P2 の正規化フォームが編集の起点。
+- `ImageAsset`（`src/shared/types.ts`）: `relativePath` / `edits`（非破壊パラメータ）/ `caption` / `dpiWarning`。
+- 画像取り込み・data URL 読み出し: `src/main/assetStore.ts`、`window.api.import.addScan / readAsset`（P2で実装）。
+- `createDefaultImageEdits()` / `createImageAsset()`（`src/shared/project.ts`）。
 
-完了条件: **本文を編集（見出し/太字/ルビ等）し、保存→再オープンで残る。文字数超過が視覚的に分かる。**
+完了条件: **写真を切り抜き/回転/明るさ調整（非破壊）し、記事に配置。保存→再オープンで調整が残る。**
 
-> 判断ポイント: `body` を段落配列のまま拡張するか、リッチテキスト構造(JSON)へ移行するか（データ移行に注意）。
-
-> P3（議員・掲載順）は完了済み。実装は `src/main/importers/roster.ts`・`src/renderer/pages/MembersPage.tsx`。
+> P4（記事編集）は完了済み。実装は `src/shared/richtext.ts`・`src/renderer/components/RichEditor.tsx`・`pages/ArticleEditPage.tsx`。
+> 判断ポイント: 画像編集の適用結果は「表示時に edits を適用」か「書き出し時に焼き込み」か。出力(P7)と合わせて決める。
 
 ---
 
