@@ -1,0 +1,5 @@
+# 端末ごとのUI状態・キャッシュは共有しない
+workspace.json
+workspace-mobile.json
+workspace
+cache
