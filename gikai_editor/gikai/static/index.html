@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>議会だより 原稿編集ツール</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">議会だより 原稿編集ツール</div>
+  <div class="proj" id="projLabel">プロジェクト未選択</div>
+  <div class="spacer"></div>
+  <span class="offline" title="外部への通信は行いません">オフライン動作</span>
+  <button class="ghost" id="btnSettings">設定</button>
+</header>
+
+<nav class="steps" id="steps">
+  <button data-step="project" class="on">① 号を作る</button>
+  <button data-step="import">② 原稿を集める</button>
+  <button data-step="edit">③ 校正・要約</button>
+  <button data-step="photo">④ 写真</button>
+  <button data-step="layout">⑤ 様式に流し込む</button>
+  <button data-step="export">⑥ 書き出し</button>
+</nav>
+
+<main>
+
+<!-- ①  ------------------------------------------------------------- -->
+<section id="pane-project" class="pane on">
+  <h1>号を作る</h1>
+  <p class="hint">1つの号ぶんの作業を、パソコンの中のフォルダにまとめて保存します。外部には送信しません。</p>
+
+  <div class="card">
+    <h2>新しい号をはじめる</h2>
+    <div class="row">
+      <label>号の名前<input id="newTitle" placeholder="例: 第204号"></label>
+      <label>号数<input id="newNo" placeholder="例: 204"></label>
+      <label>発行日<input id="newDate" placeholder="例: 令和8年10月31日"></label>
+      <button class="primary" id="btnCreate">作成</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>保存済みの号を開く</h2>
+    <div id="projectList" class="list"></div>
+    <p class="hint" id="wsPath"></p>
+  </div>
+</section>
+
+<!-- ②  ------------------------------------------------------------- -->
+<section id="pane-import" class="pane">
+  <h1>原稿を集める</h1>
+  <p class="hint">議員から届いたファイルを、様式がばらばらのままここに入れてください。
+    Word（.docx / .doc）・テキスト・PDF・リッチテキストに対応します。</p>
+
+  <div class="card">
+    <div class="drop" id="dropManu">
+      <strong>ここにファイルをドラッグ＆ドロップ</strong>
+      <span>または</span>
+      <button class="primary" id="btnPickManu">ファイルを選ぶ</button>
+      <input type="file" id="fileManu" multiple hidden
+             accept=".docx,.doc,.txt,.md,.rtf,.pdf,.odt,.csv">
+    </div>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="optNormalize" checked>
+        取り込むときに表記を整える（半角カナ→全角、数字の全角半角、句読点）</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>直接貼り付ける</h2>
+    <div class="row">
+      <label>見出し<input id="pasteTitle" placeholder="未入力でも構いません"></label>
+      <label>執筆者<input id="pasteAuthor" placeholder="例: 森下けい子"></label>
+    </div>
+    <textarea id="pasteText" rows="6" placeholder="メール本文などをそのまま貼り付けてください"></textarea>
+    <button class="primary" id="btnPaste">記事として追加</button>
+  </div>
+
+  <div class="card">
+    <h2>取り込んだ原稿（<span id="artCount">0</span>件）</h2>
+    <div id="importList" class="list"></div>
+  </div>
+</section>
+
+<!-- ③  ------------------------------------------------------------- -->
+<section id="pane-edit" class="pane">
+  <h1>校正・要約</h1>
+  <div class="split">
+    <aside class="sidelist">
+      <div id="editArticleList" class="list compact"></div>
+    </aside>
+
+    <div class="editor" id="editorArea">
+      <p class="empty">左の一覧から記事を選んでください。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ④  ------------------------------------------------------------- -->
+<section id="pane-photo" class="pane">
+  <h1>写真</h1>
+  <p class="hint">写真は枠の縦横比に合わせて自動で切り出します（洋服の裾上げと同じ考え方）。
+    印刷に耐える解像度かどうかも判定します。</p>
+  <div class="card">
+    <div class="drop" id="dropPhoto">
+      <strong>写真をドラッグ＆ドロップ</strong>
+      <span>または</span>
+      <button class="primary" id="btnPickPhoto">写真を選ぶ</button>
+      <input type="file" id="filePhoto" multiple hidden accept="image/*">
+    </div>
+  </div>
+  <div id="photoGrid" class="photogrid"></div>
+</section>
+
+<!-- ⑤  ------------------------------------------------------------- -->
+<section id="pane-layout" class="pane">
+  <h1>様式に流し込む</h1>
+  <div class="card">
+    <h2>様式（Word）</h2>
+    <p class="hint">前号の Word ファイルをそのまま様式として使えます。
+      レイアウトには一切手を加えず、文字と写真の中身だけを差し替えます。</p>
+    <div class="row">
+      <button class="primary" id="btnPickTemplate">様式を読み込む</button>
+      <input type="file" id="fileTemplate" hidden accept=".docx,.doc">
+      <span id="templateState" class="hint">未読み込み</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>差し込み先の割り当て</h2>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="slotFilterText" checked> 文字が入っている枠だけ表示</label>
+      <label>絞り込み<input id="slotSearch" placeholder="枠の中身で検索"></label>
+    </div>
+    <div class="tablewrap">
+      <table id="slotTable">
+        <thead><tr>
+          <th>頁</th><th>枠</th><th>種類</th><th>いまの中身（前号）</th><th>字数</th><th>差し込む記事</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>写真の差し替え先</h2>
+    <div id="imageSlots" class="list"></div>
+  </div>
+</section>
+
+<!-- ⑥  ------------------------------------------------------------- -->
+<section id="pane-export" class="pane">
+  <h1>書き出し</h1>
+  <div class="card">
+    <div class="row">
+      <label>ファイル名<input id="expName" placeholder="議会だより第204号_差込.docx"></label>
+      <label class="check"><input type="checkbox" id="expPdf"> PDF も作る（LibreOffice が必要）</label>
+      <button class="primary" id="btnExport">Word に書き出す</button>
+      <button class="ghost" id="btnPreview">紙面プレビュー</button>
+    </div>
+    <div id="exportResult"></div>
+  </div>
+  <div class="card">
+    <h2>仕上げの手順</h2>
+    <ol class="hint">
+      <li>書き出した Word ファイルを Word で開きます。</li>
+      <li>枠からあふれた文字がないか、見開きで確認します（あふれた場合は③に戻って字数を詰めます）。</li>
+      <li>色・網かけ・罫線は様式が持っているので、そのまま印刷所に渡せます。</li>
+    </ol>
+  </div>
+</section>
+
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modalbox">
+    <div class="modalhead"><span id="modalTitle"></span><button class="ghost" id="modalClose">閉じる</button></div>
+    <div class="modalbody" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

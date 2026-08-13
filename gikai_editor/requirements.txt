@@ -1,0 +1,11 @@
+# このツールは Python の標準ライブラリだけでも動きます。
+# 下のものを入れると、できることが増えます（いずれも任意）。
+
+Pillow>=10.0        # 写真のトリミング・向き補正・解像度チェック
+pymupdf>=1.24       # PDF で届いた原稿の読み込み
+
+# 旧形式(.doc)の読み込みと PDF 書き出しには LibreOffice が必要です。
+# これは pip ではなく、アプリとしてインストールしてください。
+#   Windows : https://ja.libreoffice.org/download/
+#   macOS   : https://ja.libreoffice.org/download/
+#   Linux   : sudo apt install libreoffice-writer
