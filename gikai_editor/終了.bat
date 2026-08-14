@@ -4,12 +4,10 @@ cd /d "%~dp0"
 
 title 議会だより 原稿編集ツール の終了
 
-set "PY="
-where py     >nul 2>&1 && set "PY=py"
-if not defined PY ( where python >nul 2>&1 && set "PY=python" )
+call "%~dp0_find_python.bat"
 
-if not defined PY (
-    echo Python が見つかりませんでした。
+if not defined PYFOUND (
+    echo 使える Python が見つかりませんでした。
     pause
     exit /b 1
 )

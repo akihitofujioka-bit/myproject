@@ -915,10 +915,12 @@ def test_batch_files_are_cp932():
     (CP932) として読むため、UTF-8 で保存すると画面が文字化けする。
     """
     for name in ("起動.bat", "終了.bat", "デスクトップにアイコンを作る.bat",
-                 "追加部品のインストール.bat"):
+                 "追加部品のインストール.bat", "_find_python.bat"):
         raw = (ROOT / name).read_bytes()
         text = raw.decode("cp932")           # 例外が出たら CP932 ではない
-        assert "議会だより" in text, f"{name} の日本語が壊れている"
+        # 日本語が読める形で入っていること（文字化けしていない）
+        assert any(w in text for w in ("議会だより", "Python", "使える")), \
+            f"{name} の日本語が壊れている"
         assert b"\r\n" in raw, f"{name} の改行が CRLF ではない"
         try:
             raw.decode("ascii")
@@ -927,11 +929,60 @@ def test_batch_files_are_cp932():
             pass  # 日本語が入っているのが正しい
 
 
+def test_python_detection_is_verified_not_assumed():
+    """壊れた Python を掴んでしまう不具合の再発防止。
+
+    ほかのソフトが PATH に置いた Python が壊れていると
+    「Unable to create process」で止まる。コマンドの有無だけで
+    判断せず、実際に動かして確かめていること。
+    """
+    s = _bat("_find_python.bat")
+    # 実際に動かして確認する
+    assert "_pycheck.py" in s, "動作確認をしていない"
+    assert "if not exist" in s and "PYCHK" in s, "結果を確認していない"
+    # 候補を複数試す
+    for cand in ("py ", "python", "python3", "Python3*"):
+        assert cand in s, f"{cand} を試していない"
+    # 実際に動く行だけを見る（説明のための rem 行は除く）
+    body = "\n".join(l for l in s.splitlines() if not l.strip().startswith("rem"))
+    # 呼び出し元に値を返すため setlocal を使わない
+    assert "setlocal" not in body, "setlocal があると呼び出し元に値が返らない"
+    # 括弧を含む文字列を展開しない（for ブロックが途中で閉じるのを防ぐ）
+    assert body.count("(") == body.count(")"), "括弧の対応が取れていない"
+
+    # 動作確認用の小さな道具が同梱されていること
+    probe = ROOT / "_pycheck.py"
+    assert probe.exists()
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "check.txt"
+        import subprocess
+
+        subprocess.run([sys.executable, str(probe), str(out)], check=True, timeout=30)
+        assert out.read_text() == "ok"
+
+
+def test_all_launchers_use_shared_detection():
+    for name in ("起動.bat", "終了.bat", "追加部品のインストール.bat"):
+        s = _bat(name)
+        assert 'call "%~dp0_find_python.bat"' in s, f"{name} が検出処理を呼んでいない"
+        assert "PYFOUND" in s, f"{name} が検出結果を確認していない"
+        # 古い「あるかどうかだけ見る」やり方が残っていないこと
+        assert "where py " not in s and "where python" not in s, \
+            f"{name} に古い判定が残っている"
+
+
+def test_installer_shows_python_location_on_error():
+    """どの Python を使おうとしたかが分かること。"""
+    s = _bat("追加部品のインストール.bat")
+    assert "sys.executable" in s, "使った Python の場所を表示していない"
+    assert "wheels フォルダに7個" in s or "7個のファイル" in s
+
+
 def test_launcher_closes_after_start():
     """起動できたら黒い画面が残らないこと。"""
     text = _bat("起動.bat")
-    # 画面なしの Python を使う
-    assert "pythonw" in text and "pyw" in text
+    # 画面なしの Python を使う（検出処理が PYW に入れる）
+    assert "%PYW%" in text
     assert "start " in text, "別プロセスとして起動していない"
     # 起動できたときは pause せずに終わる
     ready = text.split(":ready", 1)[1]
