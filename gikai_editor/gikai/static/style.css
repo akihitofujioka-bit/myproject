@@ -109,8 +109,13 @@ td select{min-width:150px}
   padding:7px 12px;font-size:13px;color:var(--sub)}
 .tabs button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
 
-.modal{position:fixed;inset:0;background:rgba(20,24,32,.45);display:flex;
+/* hidden 属性が付いているあいだは必ず消えていること。
+   ここで display:flex を無条件に指定すると、ブラウザ標準の
+   [hidden]{display:none} を上書きしてしまい、空のダイアログが
+   出たまま画面全体を覆ってしまう。既定は none、開いたときだけ flex。 */
+.modal{position:fixed;inset:0;background:rgba(20,24,32,.45);display:none;
   align-items:center;justify-content:center;z-index:60;padding:20px}
+.modal:not([hidden]){display:flex}
 .modalbox{background:#fff;border-radius:10px;max-width:1000px;width:100%;
   max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
 .modalhead{display:flex;justify-content:space-between;align-items:center;
@@ -121,7 +126,8 @@ td select{min-width:150px}
 
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
   background:#1f2430;color:#fff;padding:10px 20px;border-radius:8px;z-index:80;
-  box-shadow:0 4px 18px rgba(0,0,0,.22);font-size:13px;max-width:80vw}
+  box-shadow:0 4px 18px rgba(0,0,0,.22);font-size:13px;max-width:80vw;display:block}
+.toast[hidden]{display:none}
 .toast.err{background:var(--err)}
 
 .diff{display:grid;grid-template-columns:1fr 1fr;gap:12px}

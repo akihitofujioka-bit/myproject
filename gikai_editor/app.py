@@ -5,6 +5,9 @@
     python app.py --no-browser       サーバだけ起動
     python app.py --workspace PATH   保存先フォルダを指定
 
+保存先の既定はデスクトップの「議会だより」フォルダ。
+無い場合は自動で作成する。
+
 外部への通信は行わない。127.0.0.1（このパソコンの中）だけで動く。
 """
 
@@ -19,20 +22,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from gikai.server import serve  # noqa: E402
-
-DEFAULT_WORKSPACE = Path.home() / "議会だより"
+from gikai.workspace import default_workspace, ensure_workspace  # noqa: E402
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="議会だより 原稿編集ツール")
-    ap.add_argument("--workspace", "-w", default=str(DEFAULT_WORKSPACE),
-                    help=f"保存先フォルダ（既定: {DEFAULT_WORKSPACE}）")
+    ap.add_argument("--workspace", "-w", default=None,
+                    help=f"保存先フォルダ（既定: {default_workspace()}）")
     ap.add_argument("--port", "-p", type=int, default=0, help="ポート番号")
     ap.add_argument("--no-browser", action="store_true", help="ブラウザを自動で開かない")
     args = ap.parse_args()
 
-    ws = Path(args.workspace).expanduser()
-    ws.mkdir(parents=True, exist_ok=True)
+    ws, note = ensure_workspace(args.workspace)
 
     httpd = serve(ws, args.port)
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
@@ -43,6 +44,9 @@ def main() -> int:
     print(f"  画面      : {url}")
     print(f"  保存先    : {ws}")
     print("  通信範囲  : このパソコンの中だけ（外部には接続しません）")
+    if note:
+        print("")
+        print(f"  {note}")
     print("")
     print("  終了するには、この画面で Ctrl+C を押してください。")
     print("=" * 62)

@@ -71,24 +71,54 @@ function showStep(name) {
   if (name === "edit") renderArticleList();
 }
 
+/* ダイアログ。開くのは modal()、閉じるのは closeModal() に集約する。
+   中身が空のまま開くことがないよう、開くときに必ず内容を入れる。 */
 function modal(title, html) {
-  $("#modalTitle").textContent = title;
-  $("#modalBody").innerHTML = html;
+  $("#modalTitle").textContent = title || "";
+  $("#modalBody").innerHTML = html || "";
   $("#modal").hidden = false;
+  // 「閉じる」にキーボードの焦点を当てる（Enter でも閉じられるように）
+  setTimeout(() => $("#modalClose").focus(), 0);
 }
-$("#modalClose").addEventListener("click", () => ($("#modal").hidden = true));
+
+function closeModal() {
+  const m = $("#modal");
+  if (m.hidden) return;
+  m.hidden = true;
+  // 中身を空にして、次に開くまで残らないようにする
+  $("#modalTitle").textContent = "";
+  $("#modalBody").innerHTML = "";
+}
+
+$("#modalClose").addEventListener("click", closeModal);
+// 背景（暗い部分）をクリックしても閉じる
 $("#modal").addEventListener("click", (e) => {
-  if (e.target.id === "modal") $("#modal").hidden = true;
+  if (e.target.id === "modal") closeModal();
 });
+// Esc キーで閉じる
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" || e.key === "Esc") closeModal();
+});
+// 念のため、読み込み直後は必ず閉じた状態から始める
+$("#modal").hidden = true;
 
 // ------------------------------------------------------------------ ① 号
 
 async function loadWorkspace() {
-  const d = await api("workspace");
-  $("#wsPath").textContent = "保存先: " + d.workspace;
   const el = $("#projectList");
+  let d;
+  try {
+    d = await api("workspace");
+  } catch (e) {
+    // 一覧が取れなくても、画面が空白のまま固まらないようにする
+    el.innerHTML = "<p class='empty'>保存済みの号を読み込めませんでした。" +
+      esc(e.message) + "</p>";
+    throw e;
+  }
+  $("#wsPath").textContent = "保存先: " + d.workspace;
   if (!d.projects.length) {
-    el.innerHTML = "<p class='empty'>保存済みの号はまだありません。</p>";
+    el.innerHTML = "<p class='empty'>保存済みの号はありません。" +
+      "上の「新しい号をはじめる」から作成してください。</p>";
     return;
   }
   el.innerHTML = d.projects.map((p) => `
@@ -332,10 +362,10 @@ function openArticle(id) {
         <button data-lead="${esc(r.lead)}">これにする</button></div>` : ""}
     </div>`);
     $$("[data-pick]").forEach((b) => b.addEventListener("click", () => {
-      $("#fTitle").value = b.dataset.pick; $("#modal").hidden = true;
+      $("#fTitle").value = b.dataset.pick; closeModal();
     }));
     $$("[data-lead]").forEach((b) => b.addEventListener("click", () => {
-      $("#fLead").value = b.dataset.lead; $("#modal").hidden = true;
+      $("#fLead").value = b.dataset.lead; closeModal();
     }));
   }));
   $("#btnRevert").addEventListener("click", () => guard(async () => {
@@ -476,10 +506,10 @@ function showDiff(title, before, after, note) {
   $("#btnApplyDiff").addEventListener("click", () => {
     $("#fBody").value = $("#diffAfter").value;
     updateCounter();
-    $("#modal").hidden = true;
+    closeModal();
     toast("反映しました（「保存」を押すと確定します）");
   });
-  $("#btnCancelDiff").addEventListener("click", () => ($("#modal").hidden = true));
+  $("#btnCancelDiff").addEventListener("click", closeModal);
 }
 
 function renderArticlePhotos(id) {
@@ -787,7 +817,7 @@ $("#btnSettings").addEventListener("click", () => guard(async () => {
       },
     });
     await refresh();
-    $("#modal").hidden = true;
+    closeModal();
     toast("設定を保存しました");
   }));
 }));

@@ -73,6 +73,8 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
 
     # ---------------- プロジェクト ----------------
     if path == "workspace":
+        # フォルダが消されていても一覧が失敗しないよう、毎回作り直す
+        state.workspace.mkdir(parents=True, exist_ok=True)
         items = []
         for d in sorted(state.workspace.iterdir()):
             if (d / "project.json").exists():
@@ -94,6 +96,7 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         title = (body.get("title") or "").strip()
         if not title:
             raise ApiError("号の名前を入力してください（例: 第204号）")
+        state.workspace.mkdir(parents=True, exist_ok=True)
         root = state.workspace / re.sub(r'[<>:"/\\|?*]', "_", title)
         if root.exists():
             raise ApiError(f"「{title}」はすでにあります")

@@ -394,6 +394,133 @@ def test_project_preview_html():
         assert "writing-mode: vertical-rl" in html
 
 
+# ====================================================== 画面（不具合の再発防止）
+
+STATIC = Path(__file__).resolve().parents[1] / "gikai" / "static"
+
+
+def _css() -> str:
+    return (STATIC / "style.css").read_text(encoding="utf-8")
+
+
+def _js() -> str:
+    return (STATIC / "app.js").read_text(encoding="utf-8")
+
+
+def _rule_body(css: str, selector: str) -> str:
+    """CSS から指定セレクタの宣言部だけを取り出す。"""
+    import re as _re
+
+    m = _re.search(
+        r"(?:^|\})\s*" + _re.escape(selector) + r"\s*\{([^}]*)\}", css, _re.MULTILINE
+    )
+    return m.group(1) if m else ""
+
+
+def test_modal_is_hidden_by_default():
+    """空のダイアログが出たまま操作できなくなる不具合の再発防止。
+
+    .modal に無条件の display:flex を書くと、ブラウザ標準の
+    [hidden]{display:none} を上書きしてしまい、中身が空のダイアログが
+    起動直後から画面全体を覆ってしまう。
+    """
+    css = _css()
+    base = _rule_body(css, ".modal").replace(" ", "")
+    assert "display:none" in base, ".modal の既定は display:none でなければならない"
+    assert "display:flex" not in base, ".modal に無条件の display:flex を書いてはいけない"
+    assert ".modal:not([hidden])" in css, "開いたときだけ表示する指定が無い"
+
+    # トースト（画面下の通知）も同じ理由で崩れないこと
+    assert ".toast[hidden]" in css
+
+
+def test_modal_html_starts_hidden():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert 'id="modal" hidden' in html, "ダイアログは hidden 付きで始めること"
+    assert 'id="modalClose"' in html
+
+
+def test_modal_can_be_closed_by_button_and_escape():
+    js = _js()
+    assert "function closeModal()" in js
+    # 「閉じる」ボタン
+    assert '$("#modalClose").addEventListener("click", closeModal)' in js
+    # Esc キー
+    assert '"Escape"' in js and "closeModal()" in js
+    # 背景クリック
+    assert 'e.target.id === "modal"' in js
+    # 閉じる処理が1か所に集約されていること（閉じ忘れを防ぐ）
+    assert js.count('$("#modal").hidden = true') == 1, \
+        "閉じる処理は closeModal() に集約すること"
+
+
+def test_empty_project_list_message():
+    js = _js()
+    assert "保存済みの号はありません" in js
+    # 一覧の取得に失敗しても画面が空白のまま固まらないこと
+    assert "保存済みの号を読み込めませんでした" in js
+
+
+# ====================================================== 保存先フォルダ
+
+def test_default_workspace_is_under_desktop():
+    from gikai.workspace import WORKSPACE_NAME, default_workspace, desktop_dir
+
+    ws = default_workspace()
+    assert ws.name == WORKSPACE_NAME
+    desktop = desktop_dir()
+    if desktop is not None:
+        assert ws.parent == desktop, "既定の保存先はデスクトップの下"
+    else:
+        # デスクトップが無い環境ではホームの下に置く
+        assert ws.parent == Path.home()
+
+
+def test_ensure_workspace_creates_missing_folder():
+    from gikai.workspace import ensure_workspace
+
+    with tempfile.TemporaryDirectory() as d:
+        target = Path(d) / "デスクトップ" / "議会だより"
+        assert not target.exists()
+        got, note = ensure_workspace(target)
+        assert got == target
+        assert got.is_dir(), "保存先フォルダが自動で作られていない"
+        assert "作成しました" in note
+
+        # 2回目は既にあるので、わざわざ知らせない
+        got2, note2 = ensure_workspace(target)
+        assert got2 == target and note2 == ""
+
+
+def test_ensure_workspace_falls_back_when_uncreatable():
+    """作れない場所を指定されても起動できること。"""
+    from gikai.workspace import ensure_workspace
+
+    with tempfile.TemporaryDirectory() as d:
+        blocker = Path(d) / "ふさがっている"
+        blocker.write_text("これはフォルダではなくファイル", encoding="utf-8")
+        got, note = ensure_workspace(blocker / "議会だより")
+        assert got.is_dir(), "代わりの保存先が用意されていない"
+        assert got != blocker / "議会だより"
+        assert note, "場所が変わったことを利用者に伝えていない"
+
+
+def test_workspace_api_recreates_deleted_folder():
+    """保存先を消されても一覧が失敗しないこと。"""
+    import shutil as _shutil
+
+    from gikai.server import AppState, handle_api
+
+    with tempfile.TemporaryDirectory() as d:
+        ws = Path(d) / "議会だより"
+        state = AppState(ws)
+        assert ws.is_dir()
+        _shutil.rmtree(ws)
+        result = handle_api(state, "workspace", {}, {})
+        assert result["projects"] == []
+        assert ws.is_dir(), "消えた保存先が作り直されていない"
+
+
 # ====================================================== 実行
 
 def _run():
