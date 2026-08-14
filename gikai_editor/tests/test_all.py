@@ -631,7 +631,8 @@ def test_batch_files_are_cp932():
     日本語版 Windows の cmd.exe は .bat をシステムの ANSI コードページ
     (CP932) として読むため、UTF-8 で保存すると画面が文字化けする。
     """
-    for name in ("起動.bat", "終了.bat", "デスクトップにアイコンを作る.bat"):
+    for name in ("起動.bat", "終了.bat", "デスクトップにアイコンを作る.bat",
+                 "追加部品のインストール.bat"):
         raw = (ROOT / name).read_bytes()
         text = raw.decode("cp932")           # 例外が出たら CP932 ではない
         assert "議会だより" in text, f"{name} の日本語が壊れている"

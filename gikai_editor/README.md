@@ -35,7 +35,8 @@ Word の様式に流し込む**までを支援するツールです。
 - **LibreOffice**（任意）— 旧形式（`.doc`）の読み込みと PDF 書き出しに使います
   <https://ja.libreoffice.org/download/>
 
-追加分をまとめて入れる場合:
+追加分をまとめて入れる場合は、**`追加部品のインストール.bat` をダブルクリック**してください
+（この作業のときだけインターネットに接続します）。手動で入れる場合:
 
 ```
 pip install -r requirements.txt
@@ -303,6 +304,7 @@ gikai_editor/
   起動.bat                        起動（Windows・終わると自動で閉じる）
   終了.bat                        終了（Windows）
   デスクトップにアイコンを作る.bat   ショートカット作成（Windows）
+  追加部品のインストール.bat        Pillow / PyMuPDF の導入（Windows）
   start.sh                        起動（macOS / Linux）
   icon.ico / icon.png             アイコン
   tools/make_icon.py              アイコンを作り直すとき
