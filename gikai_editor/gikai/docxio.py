@@ -109,6 +109,22 @@ def _has_page_break(p: ET.Element) -> bool:
     return False
 
 
+def _image_ids(p: ET.Element) -> list[str]:
+    """段落の中で参照されている画像の関係 ID を、出てくる順に返す。"""
+    out: list[str] = []
+    for node in p.iter():
+        tag = node.tag
+        if tag == q(A, "blip"):                       # 新しい形式（DrawingML）
+            rid = node.get(q(R, "embed")) or node.get(q(R, "link"))
+            if rid:
+                out.append(rid)
+        elif tag == q(V, "imagedata"):                # 古い形式（VML）
+            rid = node.get(q(R, "id"))
+            if rid:
+                out.append(rid)
+    return out
+
+
 def _textbox_groups(p: ET.Element) -> list[tuple[ET.Element, list[list[ET.Element]]]]:
     """段落の中にあるテキストボックスを取り出す。
 
@@ -326,6 +342,45 @@ class DocxTemplate:
         if target not in self._blobs:
             raise KeyError(f"様式に {media_name} という画像はありません")
         self._blobs[target] = data
+
+    def image_anchors(self) -> list[dict]:
+        """様式の中で、画像がどの位置（何ページ目・何番目）にあるかを調べる。
+
+        写真を記事のそばへ自動で置くために使う。同じ画像が複数の場所で
+        使われている場合は、最初に出てきた位置を採用する。
+        """
+        rels = self._image_rels()
+        body = self.root.find(q(W, "body"))
+        if body is None:
+            return []
+
+        found: dict[str, dict] = {}
+        page, order = 1, 0
+        for para in body.iter(q(W, "p")):
+            if _has_page_break(para):
+                page += 1
+            for rid in _image_ids(para):
+                name = rels.get(rid)
+                if not name or name in found:
+                    continue
+                order += 1
+                found[name] = {"name": name, "page": page, "order": order}
+        # 本文に出てこない画像（ヘッダなど）も一覧には残す
+        for img in self.images():
+            found.setdefault(img["name"], {"name": img["name"], "page": 0, "order": 999})
+        return sorted(found.values(), key=lambda d: (d["order"], d["name"]))
+
+    def _image_rels(self) -> dict[str, str]:
+        """関係 ID → 画像ファイル名。"""
+        raw = self._blobs.get("word/_rels/document.xml.rels")
+        if not raw:
+            return {}
+        out: dict[str, str] = {}
+        for rel in ET.fromstring(raw):
+            target = rel.get("Target") or ""
+            if "media/" in target:
+                out[rel.get("Id") or ""] = Path(target).name
+        return out
 
     def image_bytes(self, media_name: str) -> bytes | None:
         """様式に入っている画像のバイト列（差し替え前の確認・縦横比の判定用）。"""

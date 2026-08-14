@@ -541,8 +541,16 @@ function uploadPhotos(files) {
   });
 }
 
+function articleOfPhoto(pid) {
+  return (state.project?.articles || []).find((a) => a.photos.includes(pid));
+}
+
 function photoCard(p) {
   const info = p.info || {};
+  const art = articleOfPhoto(p.id);
+  const link = art
+    ? `<span class="link">記事: ${esc(art.title || art.author || "無題")}</span>`
+    : '<span class="link none">記事に未結び付け</span>';
   const note = info.warning
     ? `<div class="warn">⚠ ${esc(info.warning)}</div>`
     : `<div class="ok">${info.width}×${info.height}px ／ ${esc(info.orientation || "")}
@@ -554,6 +562,7 @@ function photoCard(p) {
   return `<div class="photocard" data-photo="${p.id}">
     <img src="/api/photo/thumb?id=${encodeURIComponent(p.id)}" alt="" loading="lazy">
     <div class="pc-body">
+      ${link}
       ${note}
       <input data-f="caption" value="${esc(p.caption)}" placeholder="写真の説明文">
       <input data-f="credit" value="${esc(p.credit)}" placeholder="撮影者（任意）">
@@ -566,6 +575,15 @@ function photoCard(p) {
   </div>`;
 }
 
+/* 様式の枠・画像の一覧を用意する。写真の画面でも差し込み先を
+   選べるようにするため、⑤ を開いていなくても読み込んでおく。 */
+async function ensureTemplateInfo() {
+  if (state.slots.length || !state.project || !state.project.has_template) return;
+  const r = await api("template/slots");
+  state.slots = r.slots;
+  state.images = r.images;
+}
+
 function renderPhotos() {
   const el = $("#photoGrid");
   if (!el) return;
@@ -574,6 +592,15 @@ function renderPhotos() {
     ? ps.map(photoCard).join("")
     : "<p class='empty'>写真がありません。</p>";
   wirePhotoCards(el);
+  // 差し込み先の一覧がまだ無ければ読み込んで、選択状態を反映し直す
+  if (ps.length && !state.images.length && state.project?.has_template) {
+    guard(async () => {
+      await ensureTemplateInfo();
+      const el2 = $("#photoGrid");
+      el2.innerHTML = state.project.photos.map(photoCard).join("");
+      wirePhotoCards(el2);
+    });
+  }
 }
 
 function wirePhotoCards(root) {
@@ -603,6 +630,46 @@ function wirePhotoCards(root) {
       <img src="${q}" style="max-width:100%;border:1px solid var(--line)">
     </div>`);
   }));
+}
+
+$("#btnAutoLayout").addEventListener("click", () => guard(async () => {
+  if (!state.project) throw new Error("先に号を作成または選択してください");
+  const withSlots = $("#autoSlots").checked;
+  if (withSlots && !state.project.has_template) {
+    throw new Error("様式が読み込まれていません。⑤ で様式を読み込むか、"
+      + "「様式の写真枠まで割り当てる」のチェックを外してください");
+  }
+  toast("割り付けています…");
+  const r = await api("photo/autolayout", { assign_slots: withSlots });
+  await refresh();
+  state.slots = []; state.images = [];
+  await ensureTemplateInfo();
+  renderPhotos();
+  showAutoReport(r);
+}));
+
+function showAutoReport(r) {
+  const rows = (list, cls) => list.map((m) => `
+    <div class="line">
+      <span class="nm">${esc(m.photo_name)}</span>
+      <span class="to">${cls === "ok" ? "→ " + esc(m.article_label) : "—"}</span>
+      <span class="why">${esc(m.reason)}</span>
+    </div>`).join("");
+
+  const total = r.matched.length + r.unmatched.length;
+  modal("自動割り付けの結果", `<div class="pad report">
+    ${r.message ? `<p class="hint">${esc(r.message)}</p>` : ""}
+    <p>写真 ${total} 枚のうち <b>${r.matched.length} 枚</b>を記事に結び付け、
+      <b>${r.slots.length} 枚</b>を様式の写真枠に入れました。
+      ${r.captions ? `説明文の枠 ${r.captions} か所も押さえました。` : ""}</p>
+    ${r.matched.length ? `<h3>結び付いた写真</h3>${rows(r.matched, "ok")}` : ""}
+    ${r.unmatched.length ? `<h3>判定できなかった写真</h3>
+      <p class="hint">ファイル名を原稿に合わせるか、下の一覧で手で選んでください。</p>
+      ${rows(r.unmatched, "ng")}` : ""}
+    <p class="hint" style="margin-top:14px">
+      結果は写真の一覧に反映されています。違っているものは、
+      各写真の「差し込み先」で選び直せます。</p>
+  </div>`);
 }
 
 // ------------------------------------------------------------------ ⑤ 割付

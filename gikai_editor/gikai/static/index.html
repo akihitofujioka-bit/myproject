@@ -116,6 +116,27 @@
       <input type="file" id="filePhoto" multiple hidden accept="image/*">
     </div>
   </div>
+
+  <div class="card autobox">
+    <h2>原稿の名前で自動割り付け</h2>
+    <p class="hint" style="margin-bottom:10px">
+      <b>写真のファイル名を原稿と同じにしておくと、その記事に結びつけて、
+      記事が載るページの写真枠へ自動で入れます。</b>
+      説明文（キャプション）の枠も、写真のそばのものを押さえます。</p>
+    <table class="namerule">
+      <tr><th>原稿</th><td><code>森下けい子_原稿.docx</code></td></tr>
+      <tr><th>写真</th><td><code>森下けい子_原稿.jpg</code>
+        複数あるときは <code>森下けい子_原稿1.jpg</code>
+        <code>森下けい子_原稿2.jpg</code>（番号順に並びます）</td></tr>
+    </table>
+    <p class="hint">議員名だけ（<code>森下けい子.jpg</code>）でも結びつきます。
+      判定できなかった写真は手で選べます。</p>
+    <div class="row" style="margin:12px 0 0">
+      <button class="primary" id="btnAutoLayout">自動で割り付ける</button>
+      <label class="check"><input type="checkbox" id="autoSlots" checked>
+        様式の写真枠まで割り当てる（外すと記事との結びつけだけ）</label>
+    </div>
+  </div>
   <div id="photoGrid" class="photogrid"></div>
 </section>
 

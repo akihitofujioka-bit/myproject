@@ -2,7 +2,7 @@
 
 対応形式:
   .docx  標準 (zipfile + XML、外部ライブラリ不要)
-  .doc   LibreOffice がインストールされていれば docx に変換して取り込む
+  .doc   Word 97-2003 形式。追加ソフト無しで読める（doc97）
   .txt / .md / .csv  文字コードを自動判定して読む
   .rtf   簡易パーサ
   .pdf   PyMuPDF があればそれで、無ければ pypdf でテキスト抽出
@@ -15,13 +15,16 @@ from __future__ import annotations
 
 import re
 import shutil
+import struct
 import subprocess
+import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from . import doc97
 from .textutil import normalize_manuscript, normalize_space
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -184,19 +187,76 @@ def convert_with_soffice(path: Path | str, to: str = "docx") -> Path | None:
     return out if out.exists() else None
 
 
+def convert_with_word(path: Path | str) -> Path | None:
+    """Windows の Word 本体を使って .doc を .docx に変換する。
+
+    役場のパソコンには Word が入っているので、LibreOffice を
+    入れなくても様式を読み込めるようにするための道。
+    Windows 以外、または Word が無い場合は None。
+    """
+    if sys.platform != "win32":
+        return None
+    path = Path(path).resolve()
+    outdir = Path(tempfile.mkdtemp(prefix="gikai_word_"))
+    out = outdir / (path.stem + ".docx")
+    script = (
+        "$ErrorActionPreference='Stop';"
+        "$w=New-Object -ComObject Word.Application;"
+        "$w.Visible=$false;$w.DisplayAlerts=0;"
+        f"$d=$w.Documents.Open('{path}',$false,$true);"
+        f"$d.SaveAs2('{out}',16);"
+        "$d.Close($false);$w.Quit()"
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            check=True, capture_output=True, timeout=180,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return None
+    return out if out.exists() else None
+
+
+def convert_doc_to_docx(path: Path | str) -> Path | None:
+    """.doc を .docx にする。Word → LibreOffice の順に試す。
+
+    Word のほうがレイアウトの再現が正確なうえ、役場のパソコンには
+    たいてい入っているため、そちらを先に試す。
+    """
+    return convert_with_word(path) or convert_with_soffice(path, "docx")
+
+
 def read_doc(path: Path | str) -> ImportedDoc:
-    """旧 .doc 形式。LibreOffice があれば変換して読む。"""
+    """旧 .doc 形式（Word 97-2003）。
+
+    まず自前の読み取り（doc97）で文字を取り出す。これは追加の
+    ソフトを何も必要としないので、どのパソコンでも動く。
+    うまくいかなかったときだけ、Word や LibreOffice での変換を試す。
+    """
     path = Path(path)
-    converted = convert_with_soffice(path, "docx")
-    if converted:
-        doc = read_docx(converted)
-        doc.source = path.name
-        doc.kind = "doc"
-        return doc
     doc = ImportedDoc(source=path.name, kind="doc")
+
+    try:
+        text = doc97.extract_text(path)
+    except (doc97.DocError, OSError, struct.error, ValueError, IndexError):
+        text = ""
+
+    if text.strip():
+        doc.text = normalize_space(text)
+        return doc
+
+    # 自前で読めなかった場合の予備
+    converted = convert_doc_to_docx(path)
+    if converted:
+        got = read_docx(converted)
+        got.source = path.name
+        got.kind = "doc"
+        return got
+
     doc.warnings.append(
-        "旧形式（.doc）の読み込みには LibreOffice が必要です。"
-        "Word で「.docx」形式に保存し直してから取り込んでください。"
+        "この .doc から文字を取り出せませんでした。"
+        "Word で開いて「名前を付けて保存」→「Word 文書（.docx）」に"
+        "してから取り込んでください。"
     )
     return doc
 

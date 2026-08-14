@@ -315,6 +315,18 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         p.delete_photo(body.get("id", ""))
         return {"ok": True}
 
+    if path == "photo/autolayout":
+        p = state.require()
+        return p.auto_layout(
+            match_names=body.get("match_names", True),
+            assign_slots=body.get("assign_slots", True),
+        )
+
+    if path == "template/images":
+        p = state.require()
+        tpl = p.template()
+        return {"anchors": tpl.image_anchors()}
+
     if path == "photo/thumb":
         p = state.require()
         pid = query.get("id", [""])[0]

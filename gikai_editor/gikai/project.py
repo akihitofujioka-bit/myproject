@@ -50,6 +50,7 @@ class Photo:
     caption: str = ""
     credit: str = ""
     slot: str = ""  # 差し込み先（様式の画像名）
+    caption_slot: str = ""  # 説明文を入れる枠（スロット ID）
     focus: list[float] = field(default_factory=lambda: [0.5, 0.4])
     info: dict = field(default_factory=dict)
 
@@ -174,14 +175,17 @@ class Project:
         if src.suffix.lower() == ".docx":
             shutil.copy2(src, dest)
         else:
-            from .importers import convert_with_soffice
+            # 様式はレイアウトごと扱うため、旧形式は .docx に変換する。
+            # Word が入っていればそれを使い、無ければ LibreOffice を試す。
+            from .importers import convert_doc_to_docx
 
-            converted = convert_with_soffice(src, "docx")
+            converted = convert_doc_to_docx(src)
             if converted is None:
                 raise RuntimeError(
-                    "旧形式（.doc）の様式を変換できませんでした。"
-                    "Word で「.docx」形式に保存し直してから読み込んでください。"
-                    "（または LibreOffice をインストールしてください）"
+                    "旧形式（.doc）の様式を .docx に変換できませんでした。\n"
+                    "Word で様式を開き、「名前を付けて保存」→"
+                    "「Word 文書（.docx）」で保存し直してから読み込んでください。\n"
+                    "（原稿としての .doc の読み込みは、変換なしでできます）"
                 )
             shutil.copy2(converted, dest)
         self.data["template"] = "template.docx"
@@ -365,6 +369,12 @@ class Project:
             "lead": lead_sentence(art.body),
         }
 
+    def auto_layout(self, **kw) -> dict:
+        """写真の名前から、記事と様式の枠を自動で割り当てる。"""
+        from .autolayout import auto_layout
+
+        return auto_layout(self, **kw)
+
     # ------------------------------------------------------------ 書き出し
 
     def export(self, filename: str = "", *, make_pdf: bool = False) -> dict:
@@ -386,7 +396,11 @@ class Project:
             if art.author_slot and art.author:
                 values[art.author_slot] = art.author
 
-        # 写真のキャプション（写真枠に紐づくテキストスロット）
+        # 写真の説明文（写真枠のそばのテキスト枠）
+        for ph in self.photos():
+            if ph.caption_slot and ph.caption:
+                values[ph.caption_slot] = ph.caption
+
         photo_reports: list[dict] = []
         template_images = {i["name"]: i for i in t.images()}
         for ph in self.photos():

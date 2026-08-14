@@ -291,6 +291,289 @@ def test_docx_read_back():
         assert "二段落目。" in doc.text
 
 
+# ====================================================== 旧形式 .doc
+
+def test_doc97_reads_real_word97_file():
+    """LibreOffice なしで .doc の文字を取り出せること。"""
+    from gikai import doc97
+
+    src = Path("/root/.claude/uploads/d73a01c8-6462-5062-90f7-c398f9a71e47")
+    docs = list(src.glob("*.doc")) if src.exists() else []
+    if not docs:
+        print("  (見本の .doc が無いため省略)")
+        return
+    path = docs[0]
+    assert doc97.is_doc(path)
+    text = doc97.extract_text(path)
+    assert len(text) > 5000, "本文が短すぎる"
+    # テキストボックスの中身まで拾えていること
+    assert "行政報告" in text
+    assert "リョーマゴルフ" in text
+    # 制御文字が残っていないこと
+    assert "\r" not in text and "\x07" not in text and "\x13" not in text
+
+
+def test_doc97_rejects_non_doc():
+    from gikai import doc97
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "ただのテキスト.doc"
+        f.write_text("これは Word ではありません", encoding="utf-8")
+        assert not doc97.is_doc(f)
+        try:
+            doc97.extract_text(f)
+            raise AssertionError("例外が出るべき")
+        except doc97.DocError:
+            pass
+
+
+def test_read_any_handles_doc_without_libreoffice():
+    """.doc の取り込みが、外部ソフト無しの経路を通ること。"""
+    import gikai.importers as imp
+
+    src = Path("/root/.claude/uploads/d73a01c8-6462-5062-90f7-c398f9a71e47")
+    docs = list(src.glob("*.doc")) if src.exists() else []
+    if not docs:
+        return
+    orig_so, orig_word = imp.convert_with_soffice, imp.convert_with_word
+    imp.convert_with_soffice = lambda *a, **k: None   # 変換の道を塞ぐ
+    imp.convert_with_word = lambda *a, **k: None
+    try:
+        doc = imp.read_any(docs[0])
+        assert doc.kind == "doc"
+        assert len(doc.text) > 5000
+        assert not doc.warnings
+    finally:
+        imp.convert_with_soffice, imp.convert_with_word = orig_so, orig_word
+
+
+# ====================================================== 写真の自動割り付け
+
+def test_split_number_and_key():
+    from gikai.autolayout import normalize_key, split_number
+
+    assert split_number("森下けい子_原稿2") == ("森下けい子_原稿", 2)
+    assert split_number("視察報告①") == ("視察報告", 1)
+    assert split_number("原稿") == ("原稿", 0)
+    assert normalize_key("森下 けい子（原稿）") == normalize_key("森下けい子原稿")
+
+
+def test_match_photo_by_filename():
+    from gikai.autolayout import match_photo
+    from gikai.project import Article
+
+    arts = [
+        Article(id="a1", title="スーパー誘致", author="森下けい子",
+                source_file="森下けい子_原稿.docx"),
+        Article(id="a2", title="治水対策", author="大川内慎治",
+                source_file="大川内慎治_視察報告.doc"),
+    ]
+    assert match_photo("森下けい子_原稿.jpg", arts).article_id == "a1"
+    assert match_photo("森下けい子_原稿2.JPG", arts).order == 2
+    assert match_photo("大川内慎治_視察報告①.png", arts).article_id == "a2"
+    assert match_photo("大川内慎治.jpeg", arts).article_id == "a2"
+    # 関係のない名前は結びつけない
+    assert match_photo("IMG_2024.jpg", arts).article_id == ""
+
+
+def _png(color=(80, 120, 90), size=(1600, 1200)) -> bytes:
+    from PIL import Image
+    import io
+
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _make_docx_with_images(path: Path, pages: int = 3):
+    """写真枠と説明文の枠を持つ、複数ページの様式を作る。"""
+    body_parts = []
+    rels = []
+    media = {}
+    for i in range(1, pages + 1):
+        rid = f"rId{100 + i}"
+        rels.append(
+            f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/'
+            f'officeDocument/2006/relationships/image" Target="media/photo{i}.png"/>'
+        )
+        media[f"word/media/photo{i}.png"] = _png(size=(400, 300))
+        body_parts.append(
+            f'<w:p><w:r><w:t xml:space="preserve">見出し{i}</w:t></w:r></w:p>'
+            f'<w:p/>'
+            f'<w:p><w:r><w:t xml:space="preserve">{i}ページ目の本文です。'
+            f'ここに記事が入ります。</w:t></w:r></w:p>'
+            f'<w:p/>'
+            # 写真
+            f'<w:p><w:r><w:drawing><wp:inline><a:graphic><a:graphicData>'
+            f'<pic:pic><pic:blipFill><a:blip r:embed="{rid}"/></pic:blipFill></pic:pic>'
+            f'</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+            # 説明文のテキストボックス
+            f'<w:p><w:r><w:pict><v:shape><v:textbox><w:txbxContent>'
+            f'<w:p><w:r><w:t xml:space="preserve">前号の説明文{i}</w:t></w:r></w:p>'
+            f'</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>'
+            f'<w:p/>'
+        )
+        if i < pages:
+            body_parts.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+
+    doc = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+        ' xmlns:v="urn:schemas-microsoft-com:vml"'
+        ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"'
+        ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+        ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+        ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f'<w:body>{"".join(body_parts)}</w:body></w:document>'
+    )
+    ct = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+          '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+          '<Default Extension="xml" ContentType="application/xml"/>'
+          '<Default Extension="png" ContentType="image/png"/>'
+          '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-'
+          'officedocument.wordprocessingml.document.main+xml"/></Types>')
+    root_rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                 '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                 '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/'
+                 '2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+    doc_rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                + "".join(rels) + "</Relationships>")
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", ct)
+        z.writestr("_rels/.rels", root_rels)
+        z.writestr("word/document.xml", doc)
+        z.writestr("word/_rels/document.xml.rels", doc_rels)
+        for name, blob in media.items():
+            z.writestr(name, blob)
+
+
+def test_image_anchors_have_page_and_order():
+    with tempfile.TemporaryDirectory() as d:
+        tpl = Path(d) / "様式.docx"
+        _make_docx_with_images(tpl, pages=3)
+        t = DocxTemplate(tpl)
+        anchors = t.image_anchors()
+        assert len(anchors) == 3
+        assert [a["name"] for a in anchors] == ["photo1.png", "photo2.png", "photo3.png"]
+        assert [a["page"] for a in anchors] == [1, 2, 3], f"ページが違う: {anchors}"
+
+
+def test_auto_layout_places_photos_near_their_article():
+    """写真の名前を原稿に合わせておくと、その記事のページの枠に入ること。"""
+    from gikai.project import Project
+
+    if not HAS_PIL:
+        print("  (Pillow が無いため省略)")
+        return
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "第204号"
+        p = Project.create(root, "第204号")
+        tpl = Path(d) / "様式.docx"
+        _make_docx_with_images(tpl, pages=3)
+        p.set_template(tpl)
+
+        slots = p.template_slots()["slots"]
+        body_slots = [s for s in slots if s["kind"] == "body" and s["chars"] > 10]
+        assert len(body_slots) >= 3
+
+        # 3人ぶんの原稿を取り込み、それぞれ別のページの枠に割り当てる
+        names = ["森下けい子_原稿", "大川内慎治_視察報告", "池田雄_一般質問"]
+        for i, name in enumerate(names):
+            f = Path(d) / f"{name}.txt"
+            f.write_text(f"{name}の見出し\n本文です。" * 3, encoding="utf-8")
+            art = p.import_manuscript(f)
+            art.slot = body_slots[i]["id"]
+            p.put_article(art)
+
+        # 写真は原稿と同じ名前にしてある
+        for i, name in enumerate(names):
+            f = Path(d) / f"{name}.png"
+            f.write_bytes(_png(color=(60 + i * 40, 100, 120)))
+            p.import_photo(f)
+
+        report = p.auto_layout()
+
+        assert len(report["matched"]) == 3, f"名前の突き合わせが不足: {report}"
+        assert not report["unmatched"]
+        assert len(report["slots"]) == 3, f"写真枠の割り当てが不足: {report}"
+
+        # 記事のページと写真枠のページが一致していること
+        anchors = {a["name"]: a for a in p.template().image_anchors()}
+        slots_by_id = {s["id"]: s for s in p.template_slots()["slots"]}
+        for art in p.articles():
+            page = slots_by_id[art.slot]["page_hint"]
+            for pid in art.photos:
+                photo = p.get_photo(pid)
+                assert photo.slot, "写真枠が未割り当て"
+                assert anchors[photo.slot]["page"] == page, (
+                    f"{art.title} は {page} ページなのに写真は "
+                    f"{anchors[photo.slot]['page']} ページの枠に入った"
+                )
+                assert photo.caption_slot, "説明文の枠が押さえられていない"
+
+
+def test_auto_layout_keeps_photo_order():
+    """同じ記事の写真は、連番の順に並ぶこと。"""
+    from gikai.project import Project
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第205号", "第205号")
+        f = Path(d) / "森下けい子_原稿.txt"
+        f.write_text("見出し\n本文です。", encoding="utf-8")
+        p.import_manuscript(f)
+        for n in (3, 1, 2):
+            g = Path(d) / f"森下けい子_原稿{n}.png"
+            g.write_bytes(_png(size=(300, 200)))
+            p.import_photo(g)
+
+        p.auto_layout(assign_slots=False)
+        art = p.articles()[0]
+        names = [p.get_photo(pid).info["name"] for pid in art.photos]
+        assert names == ["森下けい子_原稿1.png", "森下けい子_原稿2.png",
+                         "森下けい子_原稿3.png"], names
+
+
+def test_auto_layout_fills_caption_on_export():
+    """割り当てた説明文が、書き出した Word に入ること。"""
+    from gikai.project import Project
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第206号", "第206号")
+        tpl = Path(d) / "様式.docx"
+        _make_docx_with_images(tpl, pages=2)
+        p.set_template(tpl)
+        slots = [s for s in p.template_slots()["slots"]
+                 if s["kind"] == "body" and s["chars"] > 10]
+
+        f = Path(d) / "森下けい子_原稿.txt"
+        f.write_text("見出し\n本文です。", encoding="utf-8")
+        art = p.import_manuscript(f)
+        art.slot = slots[0]["id"]
+        p.put_article(art)
+
+        g = Path(d) / "森下けい子_原稿.png"
+        g.write_bytes(_png())
+        photo = p.import_photo(g)
+        photo.caption = "買い物環境の確保に向け協議を継続"
+        p.put_photo(photo)
+
+        p.auto_layout()
+        out = p.export("確認.docx")
+        assert Path(out["docx"]).exists()
+        assert all(r["ok"] for r in out["photos"]), out["photos"]
+
+        t = DocxTemplate(out["docx"])
+        allsample = " ".join(s.sample for s in t.slots())
+        assert "買い物環境の確保に向け協議を継続" in allsample, "説明文が入っていない"
+
+
 # ====================================================== photos
 
 def test_photo_inspect_and_crop():
