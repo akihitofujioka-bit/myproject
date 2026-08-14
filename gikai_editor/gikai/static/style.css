@@ -29,7 +29,16 @@ h2{font-size:15px;margin:0 0 10px}
 
 .topbar{display:flex;align-items:center;gap:14px;padding:10px 18px;background:#fff;
   border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.applogo{width:24px;height:24px;display:block;flex:0 0 auto}
 .brand{font-weight:700;color:var(--accent)}
+#btnQuit{color:var(--err);border-color:#f0c6c2}
+
+/* 終了後の画面 */
+.farewell{max-width:520px;margin:16vh auto;text-align:center;background:#fff;
+  border:1px solid var(--line);border-radius:12px;padding:36px 28px}
+.farewell img{width:72px;height:72px;margin-bottom:14px}
+.farewell h1{font-size:18px;margin-bottom:8px}
+.farewell p{color:var(--sub);font-size:13.5px;margin:6px 0}
 .proj{font-size:13px;color:var(--sub)}
 .spacer{flex:1}
 .offline{font-size:11px;background:#eef4f0;color:var(--accent);

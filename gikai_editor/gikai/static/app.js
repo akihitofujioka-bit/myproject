@@ -822,6 +822,27 @@ $("#btnSettings").addEventListener("click", () => guard(async () => {
   }));
 }));
 
+// ------------------------------------------------------------------ 終了
+
+$("#btnQuit").addEventListener("click", () => guard(async () => {
+  if (!confirm(
+    "議会だより 原稿編集ツールを終了します。よろしいですか？\n\n" +
+    "編集中の内容で保存していないものがあれば、先に「保存」を押してください。"
+  )) return;
+  try {
+    await api("quit", {});
+  } catch (e) {
+    // 終了処理の途中で通信が切れることがあるが、それは正常
+  }
+  document.body.innerHTML = `
+    <div class="farewell">
+      <img src="icon.png" alt="">
+      <h1>終了しました</h1>
+      <p>このタブは閉じてかまいません。</p>
+      <p>もう一度使うときは、デスクトップのアイコンから起動してください。</p>
+    </div>`;
+}));
+
 // ------------------------------------------------------------------ 起動
 
 guard(loadWorkspace);

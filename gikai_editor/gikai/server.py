@@ -46,6 +46,8 @@ class AppState:
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.project: Project | None = None
         self.lock = threading.Lock()
+        # サーバを止めるための呼び出し口（serve() が差し込む）
+        self.shutdown_server = None
 
     def require(self) -> Project:
         if self.project is None:
@@ -70,6 +72,25 @@ def _decode_upload(payload: dict) -> tuple[str, bytes]:
 
 def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
     """API の入口。path は "/api/" を除いたもの。"""
+
+    # ---------------- 稼働確認・終了 ----------------
+    if path == "ping":
+        # 起動しているかどうかの確認。バッチファイルと二重起動の判定に使う。
+        from . import __version__
+
+        return {
+            "app": "gikai_editor",
+            "version": __version__,
+            "workspace": str(state.workspace),
+            "project": state.project.root.name if state.project else "",
+        }
+
+    if path == "quit":
+        # 黒い画面を閉じたあとでも終われるようにするための出口。
+        # 応答を返しきってから止めたいので、少し遅らせて実行する。
+        if state.shutdown_server is not None:
+            threading.Timer(0.4, state.shutdown_server).start()
+        return {"ok": True, "message": "終了しました"}
 
     # ---------------- プロジェクト ----------------
     if path == "workspace":
@@ -488,4 +509,6 @@ def serve(workspace: Path | str, port: int = 0) -> ThreadingHTTPServer:
     Handler.state = state
     port = port or find_free_port()
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    # 画面の「終了」ボタンからサーバを止められるようにする
+    state.shutdown_server = httpd.shutdown
     return httpd

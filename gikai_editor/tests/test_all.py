@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import zipfile
@@ -519,6 +520,148 @@ def test_workspace_api_recreates_deleted_folder():
         result = handle_api(state, "workspace", {}, {})
         assert result["projects"] == []
         assert ws.is_dir(), "消えた保存先が作り直されていない"
+
+
+# ====================================================== 起動まわり
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_runstate_roundtrip():
+    from gikai import runstate
+
+    original = runstate.STATE_FILE
+    with tempfile.TemporaryDirectory() as d:
+        runstate.STATE_FILE = Path(d) / "run.json"
+        try:
+            assert runstate.read() is None
+            runstate.write("http://127.0.0.1:9999/", 9999, "/tmp/ws")
+            got = runstate.read()
+            assert got["app"] == "gikai_editor"
+            assert got["port"] == 9999
+            assert got["workspace"] == "/tmp/ws"
+            # 応答が無いので、古い記録として片付けられる
+            assert runstate.find_running() is None
+            assert not runstate.STATE_FILE.exists()
+        finally:
+            runstate.STATE_FILE = original
+
+
+def test_ping_and_quit_api():
+    """画面の「終了」ボタンでサーバを止められること。"""
+    import threading as _th
+    import time as _time
+    import urllib.request as _req
+
+    from gikai import runstate
+    from gikai.server import serve
+
+    with tempfile.TemporaryDirectory() as d:
+        httpd = serve(Path(d) / "議会だより")
+        port = httpd.server_address[1]
+        url = f"http://127.0.0.1:{port}/"
+        _th.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            _time.sleep(0.3)
+            with _req.urlopen(url + "api/ping", timeout=3) as r:
+                info = json.loads(r.read())
+            assert info["app"] == "gikai_editor"
+
+            # 動いていると判定できること
+            original = runstate.STATE_FILE
+            runstate.STATE_FILE = Path(d) / "run.json"
+            try:
+                runstate.write(url, port, d)
+                assert runstate.find_running() is not None
+                assert runstate.request_quit(url) is True
+            finally:
+                runstate.STATE_FILE = original
+
+            _time.sleep(1.2)
+            try:
+                _req.urlopen(url + "api/ping", timeout=1.5)
+                raise AssertionError("終了したはずのサーバが応答している")
+            except AssertionError:
+                raise
+            except Exception:
+                pass  # 応答が無いのが正しい
+        finally:
+            httpd.server_close()
+
+
+# ====================================================== アイコン・起動ファイル
+
+def test_icon_files_exist():
+    from PIL import Image
+
+    for rel in ("icon.ico", "icon.png",
+                "gikai/static/favicon.ico", "gikai/static/icon.png"):
+        f = ROOT / rel
+        assert f.exists(), f"{rel} がありません"
+        with Image.open(f) as im:
+            assert im.size[0] >= 16
+
+    # ショートカット用は複数の大きさを含んでいること
+    with Image.open(ROOT / "icon.ico") as im:
+        sizes = {s for s in getattr(im, "info", {}).get("sizes", set())} or set(im.ico.sizes())
+        assert (16, 16) in sizes and (256, 256) in sizes, f"大きさが足りない: {sizes}"
+
+
+def test_favicon_is_linked():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert 'rel="icon"' in html and "favicon.ico" in html
+    assert 'id="btnQuit"' in html, "「終了」ボタンが無い"
+
+
+def test_quit_button_wired():
+    js = _js()
+    assert '$("#btnQuit")' in js
+    assert 'api("quit"' in js
+    assert "終了しました" in js
+
+
+def _bat(name: str) -> str:
+    """バッチファイルを CP932 として読む（Windows の cmd と同じ扱い）。"""
+    return (ROOT / name).read_bytes().decode("cp932")
+
+
+def test_batch_files_are_cp932():
+    """バッチファイルの文字化け再発防止。
+
+    日本語版 Windows の cmd.exe は .bat をシステムの ANSI コードページ
+    (CP932) として読むため、UTF-8 で保存すると画面が文字化けする。
+    """
+    for name in ("起動.bat", "終了.bat", "デスクトップにアイコンを作る.bat"):
+        raw = (ROOT / name).read_bytes()
+        text = raw.decode("cp932")           # 例外が出たら CP932 ではない
+        assert "議会だより" in text, f"{name} の日本語が壊れている"
+        assert b"\r\n" in raw, f"{name} の改行が CRLF ではない"
+        try:
+            raw.decode("ascii")
+            raise AssertionError(f"{name} に日本語が含まれていない")
+        except UnicodeDecodeError:
+            pass  # 日本語が入っているのが正しい
+
+
+def test_launcher_closes_after_start():
+    """起動できたら黒い画面が残らないこと。"""
+    text = _bat("起動.bat")
+    # 画面なしの Python を使う
+    assert "pythonw" in text and "pyw" in text
+    assert "start " in text, "別プロセスとして起動していない"
+    # 起動できたときは pause せずに終わる
+    ready = text.split(":ready", 1)[1]
+    assert "pause" not in ready, "起動成功時に画面が残ってしまう"
+    assert "exit /b 0" in ready
+    # 失敗したときは、原因が見えるように画面を残す
+    assert "pause" in text.split(":ready", 1)[0]
+
+
+def test_quit_batch_and_shortcut_batch():
+    assert "--quit" in _bat("終了.bat")
+    s = _bat("デスクトップにアイコンを作る.bat")
+    assert "icon.ico" in s and "起動.bat" in s
+    assert "CreateShortcut" in s
 
 
 # ====================================================== 実行
