@@ -1,16 +1,42 @@
 @echo off
-rem è­°ä¼šã ã‚ˆã‚Š åŽŸç¨¿ç·¨é›†ãƒ„ãƒ¼ãƒ«ï¼ˆWindows ç”¨ï¼‰
-chcp 65001 > nul
+setlocal
 cd /d "%~dp0"
 
-where python > nul 2>&1
-if errorlevel 1 (
-  echo Python ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚
-  echo https://www.python.org/downloads/windows/ ã‹ã‚‰ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«ã—ã¦ãã ã•ã„ã€‚
-  echo ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«æ™‚ã«ã€ŒAdd Python to PATHã€ã«å¿…ãšãƒã‚§ãƒƒã‚¯ã‚’å…¥ã‚Œã¦ãã ã•ã„ã€‚
-  pause
-  exit /b 1
+echo ============================================================
+echo   ‹c‰ï‚¾‚æ‚è Œ´e•ÒWƒc[ƒ‹
+echo ============================================================
+echo.
+echo ‹N“®‚µ‚Ä‚¢‚Ü‚·B‚µ‚Î‚ç‚­‚¨‘Ò‚¿‚­‚¾‚³‚¢...
+echo ƒuƒ‰ƒEƒU‚ªŽ©“®‚ÅŠJ‚«‚Ü‚·B
+echo.
+echo I—¹‚·‚é‚Æ‚«‚ÍA‚±‚Ì•‚¢‰æ–Ê‚Å Ctrl ƒL[‚ð‰Ÿ‚µ‚È‚ª‚ç C ‚ð‰Ÿ‚µ‚Ä‚­‚¾‚³‚¢B
+echo ============================================================
+echo.
+
+rem Python ‚ð’T‚·ipy ƒ‰ƒ“ƒ`ƒƒ[‚ð—Dæj
+where py >nul 2>&1
+if %errorlevel%==0 (
+    py -3 app.py %*
+    goto :end
 )
 
-python app.py %*
+where python >nul 2>&1
+if %errorlevel%==0 (
+    python app.py %*
+    goto :end
+)
+
+echo.
+echo [ƒGƒ‰[] Python ‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñ‚Å‚µ‚½B
+echo.
+echo ‰º‚Ìƒy[ƒW‚©‚ç Python ‚ðƒCƒ“ƒXƒg[ƒ‹‚µ‚Ä‚­‚¾‚³‚¢B
+echo    https://www.python.org/downloads/windows/
+echo.
+echo ƒCƒ“ƒXƒg[ƒ‹‰æ–Ê‚Ìˆê”Ô‰º‚É‚ ‚é
+echo uAdd Python to PATHv‚É•K‚¸ƒ`ƒFƒbƒN‚ð“ü‚ê‚Ä‚­‚¾‚³‚¢B
+echo ‚±‚ê‚ð–Y‚ê‚é‚ÆA‚±‚Ìƒc[ƒ‹‚Í‹N“®‚Å‚«‚Ü‚¹‚ñB
+echo.
+
+:end
+echo.
 pause
