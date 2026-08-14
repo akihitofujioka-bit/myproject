@@ -658,6 +658,55 @@ def test_launcher_closes_after_start():
     assert "pause" in text.split(":ready", 1)[0]
 
 
+def test_bundled_wheels_cover_supported_pythons():
+    """インターネットにつながらない環境でも導入できること。"""
+    wheels = ROOT / "wheels"
+    assert wheels.is_dir(), "wheels フォルダが無い"
+    names = [p.name for p in wheels.glob("*.whl")]
+
+    # Pillow は Python のバージョンごとに必要
+    for tag in ("cp310", "cp311", "cp312", "cp313", "cp314"):
+        assert any(n.startswith("pillow-") and tag in n for n in names), \
+            f"Python {tag} 用の Pillow が入っていない"
+    # PyMuPDF は abi3 なので 1 つで 3.10 以降に対応する
+    assert any(n.startswith("pymupdf-") and "abi3" in n for n in names), \
+        "PyMuPDF（abi3）が入っていない"
+    # pypdf は純 Python なのでどこでも動く
+    assert any(n.startswith("pypdf-") and "py3-none-any" in n for n in names), \
+        "予備の pypdf が入っていない"
+    assert (wheels / "README.txt").exists()
+
+
+def test_installer_works_offline():
+    """導入用バッチが外部に接続しない指定になっていること。"""
+    s = _bat("追加部品のインストール.bat")
+    assert "--no-index" in s, "--no-index が無いと外部に取りに行ってしまう"
+    assert "--find-links" in s and "wheels" in s
+    assert "インターネットには接続しません" in s
+    # 以前あった pip 自体の更新（要インターネット）が残っていないこと
+    assert "install --upgrade pip" not in s
+    assert "Pillow pymupdf pypdf" in s
+
+
+def test_pdf_falls_back_to_pypdf():
+    """PyMuPDF が無くても PDF を読もうとすること。"""
+    import gikai.importers as imp
+
+    orig = imp._pdf_text_pymupdf
+    imp._pdf_text_pymupdf = lambda p: None
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "空.pdf"
+            f.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            doc = imp.read_pdf(f)
+        # pypdf があれば「簡易的な方法」の注意書き、無ければ導入の案内
+        assert doc.warnings
+        joined = " ".join(doc.warnings)
+        assert "簡易的な方法" in joined or "追加部品" in joined or "文字が取り出せません" in joined
+    finally:
+        imp._pdf_text_pymupdf = orig
+
+
 def test_quit_batch_and_shortcut_batch():
     assert "--quit" in _bat("終了.bat")
     s = _bat("デスクトップにアイコンを作る.bat")

@@ -31,16 +31,22 @@ Word の様式に流し込む**までを支援するツールです。
   インストール時に **「Add Python to PATH」に必ずチェック**を入れてください。
 
 - **Pillow**（推奨）— 写真の切り出し・向き補正・解像度チェックに使います
-- **PyMuPDF**（任意）— PDF で届いた原稿を読むときに使います
+- **PyMuPDF**（推奨）— PDF で届いた原稿を読むときに使います
 - **LibreOffice**（任意）— 旧形式（`.doc`）の読み込みと PDF 書き出しに使います
   <https://ja.libreoffice.org/download/>
 
-追加分をまとめて入れる場合は、**`追加部品のインストール.bat` をダブルクリック**してください
-（この作業のときだけインターネットに接続します）。手動で入れる場合:
+Pillow・PyMuPDF は **`wheels` フォルダに同梱してあります。**
+`追加部品のインストール.bat` をダブルクリックすれば、**インターネットに
+つながっていないパソコンでも入ります**（同梱ファイルだけを見に行きます）。
+
+同梱の対象は **Windows 64ビット版 / Python 3.10〜3.14** です。
+macOS・Linux では同梱ファイルを使えないので、インターネット経由で入れてください:
 
 ```
 pip install -r requirements.txt
 ```
+
+`wheels` フォルダを新しくする方法は `wheels/README.txt` に書いてあります。
 
 ※ 何も入れなくても、`.docx`・テキスト原稿の取り込みと Word への差し込みは動きます。
 
@@ -136,7 +142,8 @@ python app.py --workspace "D:\議会だより"
 - `.docx` — 本文・表・テキストボックスの中身まで拾います。埋め込み写真も取り込みます
 - `.doc` — LibreOffice があれば読めます。無い場合は Word で `.docx` に保存し直してください
 - `.txt` — Shift-JIS（CP932）・UTF-8・EUC-JP を自動判別します
-- `.pdf` — PyMuPDF があれば読めます（スキャンした画像だけの PDF は読めません）
+- `.pdf` — PyMuPDF で読みます。無い場合は pypdf で読みますが、日本語 PDF では
+  文字が乱れることがあります（スキャンした画像だけの PDF はどちらでも読めません）
 - `.rtf` — 書式を捨てて文字だけ取り出します
 - メール本文などは「直接貼り付ける」欄に貼れます
 
@@ -304,7 +311,8 @@ gikai_editor/
   起動.bat                        起動（Windows・終わると自動で閉じる）
   終了.bat                        終了（Windows）
   デスクトップにアイコンを作る.bat   ショートカット作成（Windows）
-  追加部品のインストール.bat        Pillow / PyMuPDF の導入（Windows）
+  追加部品のインストール.bat        追加部品の導入（同梱ファイルから・要ネット接続なし）
+  wheels/                         同梱した追加部品（Windows 64bit / Python 3.10〜3.14）
   start.sh                        起動（macOS / Linux）
   icon.ico / icon.png             アイコン
   tools/make_icon.py              アイコンを作り直すとき

@@ -5,7 +5,7 @@
   .doc   LibreOffice がインストールされていれば docx に変換して取り込む
   .txt / .md / .csv  文字コードを自動判定して読む
   .rtf   簡易パーサ
-  .pdf   PyMuPDF があればテキスト抽出（任意）
+  .pdf   PyMuPDF があればそれで、無ければ pypdf でテキスト抽出
   画像   ファイル名だけを取り込み、写真として登録
 
 すべてローカル処理。ネットワークには接続しない。
@@ -238,29 +238,59 @@ def read_rtf(path: Path | str) -> ImportedDoc:
 
 # ---------------------------------------------------------------- PDF
 
-def read_pdf(path: Path | str) -> ImportedDoc:
-    path = Path(path)
-    doc = ImportedDoc(source=path.name, kind="pdf")
+def _pdf_text_pymupdf(path: Path) -> str | None:
+    """PyMuPDF で読む。無ければ None。段組みの解釈がいちばん正確。"""
     try:
         import pymupdf  # type: ignore
     except ImportError:
         try:
             import fitz as pymupdf  # type: ignore
         except ImportError:
-            doc.warnings.append(
-                "PDF の読み込みには PyMuPDF が必要です。"
-                "`pip install pymupdf` を実行するか、テキストをコピーして貼り付けてください。"
-            )
-            return doc
+            return None
     with pymupdf.open(path) as pdf:
-        pages = []
-        for page in pdf:
-            pages.append(page.get_text())
-        doc.text = normalize_space("\n".join(pages))
-        if not doc.text.strip():
+        return "\n".join(page.get_text() for page in pdf)
+
+
+def _pdf_text_pypdf(path: Path) -> str | None:
+    """pypdf で読む。無ければ None。
+
+    pypdf は純 Python 製で、どの Python でもそのまま動くため
+    オフライン導入用に同梱している。PyMuPDF より取り出しの精度は
+    劣るが、文字の入った PDF なら十分読める。
+    """
+    try:
+        from pypdf import PdfReader  # type: ignore
+    except ImportError:
+        return None
+    reader = PdfReader(str(path))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def read_pdf(path: Path | str) -> ImportedDoc:
+    path = Path(path)
+    doc = ImportedDoc(source=path.name, kind="pdf")
+
+    text = _pdf_text_pymupdf(path)
+    if text is None:
+        text = _pdf_text_pypdf(path)
+        if text is not None:
             doc.warnings.append(
-                "文字が取り出せませんでした。画像として取り込まれた PDF（スキャン原稿）の可能性があります。"
+                "簡易的な方法で読み取りました。段組みの原稿では文字の順序が"
+                "入れ替わることがあるので、本文を確認してください。"
             )
+    if text is None:
+        doc.warnings.append(
+            "PDF を読み取る部品が入っていません。"
+            "「追加部品のインストール.bat」を実行するか、"
+            "テキストをコピーして「直接貼り付ける」欄に貼ってください。"
+        )
+        return doc
+
+    doc.text = normalize_space(text)
+    if not doc.text.strip():
+        doc.warnings.append(
+            "文字が取り出せませんでした。画像として取り込まれた PDF（スキャン原稿）の可能性があります。"
+        )
     return doc
 
 
