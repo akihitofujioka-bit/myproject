@@ -1201,6 +1201,39 @@ def test_quit_batch_and_shortcut_batch():
     assert "CreateShortcut" in s
 
 
+# ====================================================== 仕様書
+
+def test_spec_document_is_generated_and_valid():
+    """仕様書がコードから作れて、体裁が崩れていないこと。"""
+    import subprocess
+
+    gen = ROOT / "tools" / "make_docs.py"
+    assert gen.exists()
+    r = subprocess.run([sys.executable, str(gen)], capture_output=True,
+                       text=True, cwd=str(ROOT), timeout=120)
+    assert r.returncode == 0, r.stderr
+
+    doc = ROOT / "仕様書.md"
+    assert doc.exists()
+    text = doc.read_text(encoding="utf-8")
+
+    # コードブロックの開き閉じが対応していること
+    fences = [l for l in text.splitlines() if l.startswith("```")]
+    assert len(fences) % 2 == 0, f"コードブロックが閉じていない: {len(fences)}"
+
+    # 仕様と全ソースが入っていること
+    assert "# 第1部　仕様" in text and "# 第2部　ソースコード" in text
+    for name in ("app.py", "gikai/compose.py", "gikai/proofread.py",
+                 "gikai/static/app.js", "起動.bat"):
+        assert f"### `{name}`" in text, f"{name} が収録されていない"
+
+    # 数字が実物から取られていること（書き置きになっていない）
+    from gikai.compose import LayoutSpec
+
+    m = LayoutSpec().metrics()
+    assert f"1段 {m['chars_per_line']} 字" in text
+
+
 # ====================================================== 実行
 
 def _run():
