@@ -66,7 +66,7 @@ $$("#steps button").forEach((b) =>
 function showStep(name) {
   $$("#steps button").forEach((b) => b.classList.toggle("on", b.dataset.step === name));
   $$(".pane").forEach((p) => p.classList.toggle("on", p.id === "pane-" + name));
-  if (name === "layout") loadSlots();
+  if (name === "layout") guard(loadLayout);
   if (name === "photo") renderPhotos();
   if (name === "edit") renderArticleList();
 }
@@ -672,7 +672,114 @@ function showAutoReport(r) {
   </div>`);
 }
 
-// ------------------------------------------------------------------ ⑤ 割付
+// ------------------------------------------------------------------ ⑤ 紙面に組む
+
+const LY = {
+  columns: "lyCols", body_pt: "lyBody", heading_pt: "lyHead", line_spacing: "lyLine",
+  margin_top_mm: "lyMT", margin_bottom_mm: "lyMB", column_gap_mm: "lyGap",
+  body_font: "lyFont", heading_font: "lyHFont", photo_height_ratio: "lyPhoto",
+};
+
+function currentMode() {
+  return $('input[name="mode"]:checked')?.value || "auto";
+}
+
+function applyMode() {
+  const auto = currentMode() === "auto";
+  $("#autoPane").hidden = !auto;
+  $("#pagePane").hidden = !auto;
+  $("#slotsPane").hidden = auto;
+  $$(".slotsOnly").forEach((el) => (el.hidden = auto));
+  if (!auto) loadSlots();
+}
+
+$$('input[name="mode"]').forEach((r) =>
+  r.addEventListener("change", () => guard(async () => {
+    applyMode();
+    await api("layout/save", { settings: { compose_mode: currentMode() } });
+  })));
+
+async function loadLayout() {
+  if (!state.project) return;
+  const r = await api("layout/get", {});
+  for (const [key, id] of Object.entries(LY)) {
+    const el = $("#" + id);
+    if (el && r.layout[key] !== undefined) el.value = r.layout[key];
+  }
+  const mx = r.layout.margin_left_mm;
+  if ($("#lyMX") && mx !== undefined) $("#lyMX").value = mx;
+  const st = r.settings || {};
+  const mode = st.compose_mode || "auto";
+  $$('input[name="mode"]').forEach((x) => (x.checked = x.value === mode));
+  if (st.target_pages) $("#lyTarget").value = st.target_pages;
+  showMetrics(r.metrics);
+  applyMode();
+}
+
+function showMetrics(m) {
+  if (!m) return;
+  $("#lyMetrics").textContent =
+    `1段 ${m.chars_per_line} 字 × ${m.lines_per_column} 行` +
+    `（段の高さ ${m.column_height_mm} mm）／ 1ページ 約 ${m.chars_per_page} 字`;
+}
+
+$("#btnSaveLayout").addEventListener("click", () => guard(async () => {
+  const layout = {};
+  for (const [key, id] of Object.entries(LY)) {
+    const v = $("#" + id).value;
+    layout[key] = isNaN(Number(v)) || v === "" ? v : Number(v);
+  }
+  const mx = Number($("#lyMX").value);
+  layout.margin_left_mm = mx; layout.margin_right_mm = mx;
+  const r = await api("layout/save", { layout, settings: { compose_mode: currentMode() } });
+  showMetrics(r.metrics);
+  toast("紙面の決まりごとを保存しました");
+}));
+
+$("#btnPlan").addEventListener("click", () => guard(async () => {
+  const r = await api("layout/plan", { target_pages: Number($("#lyTarget").value) || 0 });
+  renderPlan(r, false);
+}));
+
+$("#btnFitPages").addEventListener("click", () => guard(async () => {
+  const target = Number($("#lyTarget").value) || 0;
+  if (target <= 0) throw new Error("目標ページ数を入れてください");
+  if (!confirm(
+    `目標 ${target} ページに収まるよう、すべての記事をまとめて詰めます。\n\n` +
+    "本文が短くなります。元に戻したいときは、③ の各記事で\n" +
+    "「取り込んだ原稿に戻す」を押してください。\n\nよろしいですか？"
+  )) return;
+  toast("詰めています…");
+  const r = await api("layout/fit", { target_pages: target });
+  await refresh();
+  renderPlan(r, true);
+}));
+
+function renderPlan(r, applied) {
+  const el = $("#planResult");
+  if (!r.need_cut) {
+    el.innerHTML = `<p class="metrics">${esc(r.message)}</p>`;
+    return;
+  }
+  const rows = (applied ? r.applied || [] : r.plan).map((x) => `
+    <div class="r">
+      <span class="nm">${esc(x.label)}</span>
+      ${applied
+        ? `<span class="n">${x.before} 字 → ${x.after} 字</span>
+           <span class="cut">${esc(x.method)}</span>`
+        : `<span class="n">いま ${x.now} 字</span>
+           <span class="cut">${x.cut > 0 ? "−" + x.cut + " 字" : "そのまま"}</span>`}
+    </div>`).join("");
+  el.innerHTML = `
+    <p class="metrics">${esc(r.message)}
+      ${applied && r.pages_after ? `　→ 詰めたあと 約 ${r.pages_after} ページ` : ""}</p>
+    <div class="planlist">${rows}</div>
+    ${applied ? `<p class="hint" style="margin-top:10px">
+      <b>要約は機械的な処理です。</b>③ の各記事で内容を必ず確認してください。
+      元に戻すときは「取り込んだ原稿に戻す」を押します。</p>` : ""}`;
+}
+
+// ------------------------------------------------------------------ ⑤ 割付（差し込み方式）
 
 $("#btnPickTemplate").addEventListener("click", () => $("#fileTemplate").click());
 $("#fileTemplate").addEventListener("change", (e) => guard(async () => {
@@ -795,6 +902,29 @@ function renderImageSlots() {
 $("#btnExport").addEventListener("click", () => guard(async () => {
   if (!state.project) throw new Error("先に号を作成または選択してください");
   toast("書き出しています…");
+
+  if (currentMode() === "auto") {
+    const c = await api("compose", { filename: $("#expName").value.trim() });
+    const base = c.docx.split(/[\\/]/).pop();
+    $("#exportResult").innerHTML = `
+      <div class="card" style="margin-top:12px">
+        <h2>組み上がりました</h2>
+        <p>${esc(c.docx)}</p>
+        <p class="metrics">本文 ${c.chars} 字 ／ 写真 ${c.photos} 枚 ／
+          <b>約 ${c.pages} ページ</b>（${c.lines_used} 行 ÷ 1ページ ${c.lines_per_page} 行）</p>
+        ${c.warnings.length ? `<p style="color:var(--warn)">⚠ ${c.warnings.map(esc).join("／")}</p>` : ""}
+        <p class="hint">ページ数の目安は Word で開くと確定します。
+          1ページ ${$("#lyCols").value} 段・縦書きは固定で、分量に応じて段送りと
+          ページ数が調節されています。</p>
+        <div class="row"><button id="btnDl">Word をダウンロード</button></div>
+      </div>`;
+    $("#btnDl").addEventListener("click", () => {
+      window.location = "/api/download?file=" + encodeURIComponent(base);
+    });
+    toast("組み上がりました");
+    return;
+  }
+
   const r = await api("export", {
     filename: $("#expName").value.trim(),
     pdf: $("#expPdf").checked,

@@ -574,6 +574,159 @@ def test_auto_layout_fills_caption_on_export():
         assert "買い物環境の確保に向け協議を継続" in allsample, "説明文が入っていない"
 
 
+# ====================================================== 自動組版
+
+def _sample_project(d: Path, n_articles=4, n_photos=2, repeat=3):
+    from gikai.project import Project
+
+    p = Project.create(d / "第204号", "議会だより")
+    p.data["issue_no"] = "第204号"
+    p.save()
+    body = ("質問　スーパー誘致の進捗状況について問う。\n"
+            "答弁　松岡村長　現在も事業者との協議を継続している。"
+            "小規模店舗を含めさまざまな可能性を検討し、村民の買い物環境の確保に努めていく。\n")
+    names = ["森下けい子", "大川内慎治", "池田雄", "西村玲子", "藤原利彦", "横山泰昌"]
+    for i in range(n_articles):
+        a = names[i % len(names)] + f"{i}"
+        f = d / f"{a}_原稿.txt"
+        f.write_text(f"見出し{i}について問う\n" + body * repeat, encoding="utf-8")
+        art = p.import_manuscript(f)
+        art.author = a
+        p.put_article(art)
+    if HAS_PIL:
+        for i in range(n_photos):
+            g = d / f"{names[i % len(names)]}{i}_原稿.jpg"
+            g.write_bytes(_png(size=(1800, 1300)))
+            p.import_photo(g)
+        if n_photos:
+            p.auto_layout(assign_slots=False)
+            for ph in p.photos():
+                ph.caption = "現地を視察する委員"
+                p.put_photo(ph)
+    return p
+
+
+def test_layout_spec_metrics():
+    """1ページ5段・縦書きの寸法計算。"""
+    from gikai.compose import LayoutSpec
+
+    spec = LayoutSpec()
+    assert spec.columns == 5
+    m = spec.metrics()
+    # A4・5段・10.5pt なら 1段13字前後になる
+    assert 11 <= m["chars_per_line"] <= 15, m
+    assert m["lines_per_column"] > 20
+    assert m["chars_per_page"] == m["chars_per_column"] * 5
+
+    # 段を増やせば1段は短くなる（＝1行の字数が減る）
+    narrow = LayoutSpec(columns=8).metrics()
+    assert narrow["chars_per_line"] < m["chars_per_line"]
+    # 文字を大きくしても同じ
+    big = LayoutSpec(body_pt=14).metrics()
+    assert big["chars_per_line"] < m["chars_per_line"]
+
+
+def test_compose_produces_vertical_five_columns():
+    """組み上がった Word が、5段・縦書きの指定を持っていること。"""
+    from gikai.compose import LayoutSpec, compose
+
+    with tempfile.TemporaryDirectory() as d:
+        p = _sample_project(Path(d))
+        res = compose(p, LayoutSpec())
+        assert res.path.exists()
+        with zipfile.ZipFile(res.path) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+        assert '<w:cols w:num="5"' in xml, "5段の指定が無い"
+        assert '<w:textDirection w:val="tbRl"/>' in xml, "縦書きの指定が無い"
+        assert "見出し0について問う" in xml
+        # A4 縦（twip）
+        assert 'w:w="11906"' in xml and 'w:h="16838"' in xml
+
+
+def test_compose_page_count_grows_with_content():
+    """原稿が増えればページが増えること（分量に応じた自動調節）。"""
+    from gikai.compose import compose
+
+    with tempfile.TemporaryDirectory() as d:
+        small = compose(_sample_project(Path(d) / "a", n_articles=2, n_photos=0))
+        large = compose(_sample_project(Path(d) / "b", n_articles=16, n_photos=0, repeat=6))
+        assert large.pages_estimated > small.pages_estimated, \
+            f"原稿を増やしてもページが増えていない: {small.pages_estimated} → {large.pages_estimated}"
+
+
+def test_compose_photos_take_space():
+    """写真を入れると、その分だけ紙面を使うこと。"""
+    if not HAS_PIL:
+        return
+    from gikai.compose import compose
+
+    with tempfile.TemporaryDirectory() as d:
+        without = compose(_sample_project(Path(d) / "a", n_articles=4, n_photos=0))
+        with_photos = compose(_sample_project(Path(d) / "b", n_articles=4, n_photos=4))
+        assert with_photos.photos == 4
+        assert with_photos.lines_used > without.lines_used, "写真の場所が数えられていない"
+        with zipfile.ZipFile(with_photos.path) as z:
+            media = [n for n in z.namelist() if n.startswith("word/media/")]
+        assert len(media) == 4, media
+
+
+def test_compose_layout_is_fixed_regardless_of_content():
+    """中身が変わっても、段数・縦書き・判型は変わらないこと。"""
+    from gikai.compose import compose
+
+    xmls = []
+    for n in (1, 12):
+        with tempfile.TemporaryDirectory() as d:
+            res = compose(_sample_project(Path(d), n_articles=n, n_photos=0))
+            with zipfile.ZipFile(res.path) as z:
+                xml = z.read("word/document.xml").decode("utf-8")
+            xmls.append(xml[xml.index("<w:sectPr>"):])
+    assert xmls[0] == xmls[1], "中身によって紙面の決まりごとが変わってしまっている"
+
+
+def test_plan_and_fit_pages():
+    """目標ページ数に合わせて詰められること。"""
+    with tempfile.TemporaryDirectory() as d:
+        p = _sample_project(Path(d), n_articles=8, n_photos=4, repeat=5)
+        now = p.plan_pages(0)["pages_now"]
+        assert now >= 2, f"見本が小さすぎる: {now}"
+
+        # 目標が今より大きければ、詰める必要はない
+        loose = p.plan_pages(now + 2)
+        assert not loose["need_cut"]
+
+        tight = p.plan_pages(now - 1)
+        assert tight["need_cut"]
+        assert sum(x["cut"] for x in tight["plan"]) > 0
+
+        res = p.fit_to_pages(now - 1)
+        assert res["applied"], "詰められていない"
+        assert res["pages_after"] <= now - 1, res["message"]
+        # 元の原稿は残っている（戻せる）
+        for art in p.articles():
+            assert art.raw, "取り込んだ原稿が失われている"
+
+
+def test_fit_pages_reports_when_impossible():
+    """どうやっても入らないときは、そう伝えること。"""
+    with tempfile.TemporaryDirectory() as d:
+        p = _sample_project(Path(d), n_articles=10, n_photos=8, repeat=5)
+        res = p.fit_to_pages(1)
+        assert "これ以上は縮まず" in res["message"] or res["pages_after"] <= 1
+
+
+def test_compose_survives_without_articles():
+    from gikai.compose import compose
+    from gikai.project import Project
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "空", "空の号")
+        res = compose(p)
+        assert res.path.exists()
+        assert res.pages_estimated == 1
+        assert any("記事がありません" in w for w in res.warnings)
+
+
 # ====================================================== photos
 
 def test_photo_inspect_and_crop():

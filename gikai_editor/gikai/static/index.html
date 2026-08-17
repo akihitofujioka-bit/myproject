@@ -25,7 +25,7 @@
   <button data-step="import">② 原稿を集める</button>
   <button data-step="edit">③ 校正・要約</button>
   <button data-step="photo">④ 写真</button>
-  <button data-step="layout">⑤ 様式に流し込む</button>
+  <button data-step="layout">⑤ 紙面に組む</button>
   <button data-step="export">⑥ 書き出し</button>
 </nav>
 
@@ -142,8 +142,64 @@
 
 <!-- ⑤  ------------------------------------------------------------- -->
 <section id="pane-layout" class="pane">
-  <h1>様式に流し込む</h1>
-  <div class="card">
+  <h1>紙面に組む</h1>
+
+  <div class="card autobox">
+    <h2>組み方を選ぶ</h2>
+    <div class="modes">
+      <label class="mode">
+        <input type="radio" name="mode" value="auto" checked>
+        <span class="t">自動組版（おすすめ）</span>
+        <span class="d">1ページ5段・縦書きは固定したまま、原稿と写真の分量に合わせて
+          <b>ページ数と段送りを自動で調節</b>します。原稿が増えればページが増えます。</span>
+      </label>
+      <label class="mode">
+        <input type="radio" name="mode" value="slots">
+        <span class="t">前号の様式に差し込む</span>
+        <span class="d">前号の Word の枠に、文字と写真だけを入れ替えます。
+          レイアウトは前号のままなので、<b>枠の数と大きさは変わりません</b>。</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card" id="autoPane">
+    <h2>紙面の決まりごと</h2>
+    <p class="hint">ここで決めた形は、中身によらず変わりません。</p>
+    <div class="row">
+      <label>段数（1ページ）<input id="lyCols" type="number" min="1" max="10" value="5"></label>
+      <label>本文の大きさ（pt）<input id="lyBody" type="number" step="0.5" min="7" max="16" value="10.5"></label>
+      <label>見出しの大きさ（pt）<input id="lyHead" type="number" step="0.5" min="9" max="30" value="16"></label>
+      <label>行送り（倍）<input id="lyLine" type="number" step="0.05" min="1" max="2.5" value="1.45"></label>
+    </div>
+    <div class="row">
+      <label>上の余白（mm）<input id="lyMT" type="number" step="1" value="15"></label>
+      <label>下の余白（mm）<input id="lyMB" type="number" step="1" value="12"></label>
+      <label>左右の余白（mm）<input id="lyMX" type="number" step="1" value="15"></label>
+      <label>段間（mm）<input id="lyGap" type="number" step="0.5" value="6"></label>
+    </div>
+    <div class="row">
+      <label>本文のフォント<input id="lyFont" value="ＭＳ 明朝"></label>
+      <label>見出しのフォント<input id="lyHFont" value="ＭＳ ゴシック"></label>
+      <label>写真の大きさ（段の高さに対する割合）<input id="lyPhoto" type="number" step="0.05" min="0.2" max="1" value="0.62"></label>
+      <button id="btnSaveLayout">保存</button>
+    </div>
+    <p class="metrics" id="lyMetrics"></p>
+  </div>
+
+  <div class="card" id="pagePane">
+    <h2>ページ数を合わせる</h2>
+    <p class="hint">目標のページ数を入れると、いまの分量で何ページになるか、
+      収めるには何字詰めればよいかを計算します。</p>
+    <div class="row">
+      <label>目標ページ数<input id="lyTarget" type="number" min="0" max="64" value="0"
+        placeholder="0 なら成り行き"></label>
+      <button id="btnPlan">いまの分量を見る</button>
+      <button id="btnFitPages">目標に合わせてまとめて詰める</button>
+    </div>
+    <div id="planResult"></div>
+  </div>
+
+  <div class="card" id="slotsPane" hidden>
     <h2>様式（Word）</h2>
     <p class="hint">前号の Word ファイルをそのまま様式として使えます。
       レイアウトには一切手を加えず、文字と写真の中身だけを差し替えます。</p>
@@ -154,7 +210,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card slotsOnly" hidden>
     <h2>差し込み先の割り当て</h2>
     <div class="row">
       <label class="check"><input type="checkbox" id="slotFilterText" checked> 文字が入っている枠だけ表示</label>
@@ -170,7 +226,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card slotsOnly" hidden>
     <h2>写真の差し替え先</h2>
     <div id="imageSlots" class="list"></div>
   </div>

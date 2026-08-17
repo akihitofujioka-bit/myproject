@@ -99,7 +99,10 @@ class Project:
             "template": "",
             "articles": [],
             "photos": [],
+            "layout": {},          # 紙面の決まりごと（自動組版で使う）
             "settings": {
+                "compose_mode": "auto",   # auto=自動組版 / slots=前号の様式に差し込む
+                "target_pages": 0,        # 0 なら成り行き
                 "max_sentence": 90,
                 "checks": ["style", "typo", "confusion", "grammar", "punct", "read", "ruby", "noun"],
                 "normalize_numbers": True,
@@ -368,6 +371,133 @@ class Project:
             "titles": headline_candidates(art.body, max_chars=max_chars),
             "lead": lead_sentence(art.body),
         }
+
+    # ------------------------------------------------------------ 自動組版
+
+    @property
+    def layout_spec(self):
+        from .compose import LayoutSpec
+
+        return LayoutSpec.from_dict(self.data.get("layout"))
+
+    def set_layout(self, spec_dict: dict) -> dict:
+        from .compose import LayoutSpec
+
+        spec = LayoutSpec.from_dict({**self.data.get("layout", {}), **(spec_dict or {})})
+        self.data["layout"] = spec.to_dict()
+        self.save()
+        return {"layout": spec.to_dict(), "metrics": spec.metrics()}
+
+    def compose(self, filename: str = "") -> dict:
+        """5段縦書きの紙面を、中身に合わせて組み上げる。"""
+        from .compose import compose as _compose
+
+        return _compose(self, self.layout_spec, filename).to_dict()
+
+    def plan_pages(self, target_pages: int) -> dict:
+        """目標ページ数に収めるために、各記事を何字にすればよいかを出す。
+
+        いきなり本文を書き換えず、記事ごとの字数上限を決めて返す。
+        実際に詰めるかどうかは利用者が決める。
+        """
+        from .compose import compose as _compose
+
+        spec = self.layout_spec
+        m = spec.metrics()
+        now = _compose(self, spec, "_見積もり用.docx")
+        # 見積もり用に作ったファイルは残さない
+        Path(now.path).unlink(missing_ok=True)
+
+        per_page = max(1, now.lines_per_page)
+        if target_pages <= 0 or now.pages_estimated <= target_pages:
+            return {
+                "pages_now": now.pages_estimated,
+                "target": target_pages,
+                "need_cut": False,
+                "plan": [],
+                "message": (f"いまの分量は約 {now.pages_estimated} ページです。"
+                            + (f"目標の {target_pages} ページに収まっています。"
+                               if target_pages > 0 else "")),
+            }
+
+        # 削るべき行数を、記事の長さに応じて割り振る
+        over_lines = now.lines_used - target_pages * per_page
+        arts = [a for a in self.articles() if a.body.strip()]
+        total = sum(count_chars(a.body) for a in arts) or 1
+        cpl = m["chars_per_line"]
+        plan = []
+        for a in arts:
+            cur = count_chars(a.body)
+            share = over_lines * (cur / total)
+            cut = int(share * cpl)
+            plan.append({
+                "id": a.id,
+                "label": a.title or a.author or a.id,
+                "now": cur,
+                "target": max(60, cur - cut),
+                "cut": min(cut, max(0, cur - 60)),
+            })
+        return {
+            "pages_now": now.pages_estimated,
+            "target": target_pages,
+            "need_cut": True,
+            "over_lines": over_lines,
+            "plan": plan,
+            "message": (f"いまの分量は約 {now.pages_estimated} ページです。"
+                        f"{target_pages} ページに収めるには、全体で約 "
+                        f"{sum(p['cut'] for p in plan)} 字を詰める必要があります。"),
+        }
+
+    def fit_to_pages(self, target_pages: int) -> dict:
+        """目標ページ数に合わせて、全記事をまとめて詰める。
+
+        記事ごとの結果を返す。元の原稿は manuscripts/ に残っているので、
+        画面の「取り込んだ原稿に戻す」でいつでも戻せる。
+        """
+        plan = self.plan_pages(target_pages)
+        if not plan.get("need_cut"):
+            # 詰める必要が無くても、呼び出し側が同じ形で扱えるようにそろえる
+            return {**plan, "applied": [], "pages_after": plan["pages_now"]}
+
+        # 詰めると行の折り返しが変わるので、目標に届くまで数回くり返す。
+        # （1回では、削った字数のわりにページが減らないことがある）
+        first: dict[str, int] = {}
+        applied: dict[str, dict] = {}
+        current = plan
+        for _ in range(4):
+            if not current.get("need_cut"):
+                break
+            changed = False
+            for item in current["plan"]:
+                if item["cut"] <= 0:
+                    continue
+                art = self.get_article(item["id"])
+                if not art:
+                    continue
+                before = count_chars(art.body)
+                res = summarize(art.body, target_chars=item["target"])
+                if res.chars >= before:
+                    continue          # これ以上は縮まない
+                first.setdefault(art.id, before)
+                art.body = res.text
+                self.put_article(art)
+                applied[art.id] = {
+                    "id": art.id, "label": item["label"],
+                    "before": first[art.id], "after": res.chars, "method": res.method,
+                }
+                changed = True
+            if not changed:
+                break
+            current = self.plan_pages(target_pages)
+
+        after = self.plan_pages(target_pages)
+        out = {**plan, "applied": list(applied.values()), "pages_after": after["pages_now"]}
+        if after["pages_now"] > target_pages:
+            out["message"] = (
+                plan["message"] + f" これ以上は縮まず、約 {after['pages_now']} ページまでになりました。"
+                "写真を減らすか、記事を次号に回すことを検討してください。"
+            )
+        return out
 
     def auto_layout(self, **kw) -> dict:
         """写真の名前から、記事と様式の枠を自動で割り当てる。"""

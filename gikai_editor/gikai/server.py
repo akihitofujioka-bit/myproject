@@ -343,6 +343,33 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
             data = photos_mod.prepare_for_slot(data, slot, original)
         return {"_binary": photos_mod.to_thumbnail(data, 480), "_mime": "image/jpeg"}
 
+    # ---------------- 自動組版 ----------------
+    if path == "layout/get":
+        p = state.require()
+        spec = p.layout_spec
+        return {"layout": spec.to_dict(), "metrics": spec.metrics(),
+                "settings": p.data.get("settings", {})}
+
+    if path == "layout/save":
+        p = state.require()
+        out = p.set_layout(body.get("layout") or {})
+        if "settings" in body:
+            p.data["settings"].update(body["settings"])
+            p.save()
+        return out
+
+    if path == "compose":
+        p = state.require()
+        return p.compose(body.get("filename", ""))
+
+    if path == "layout/plan":
+        p = state.require()
+        return p.plan_pages(int(body.get("target_pages") or 0))
+
+    if path == "layout/fit":
+        p = state.require()
+        return p.fit_to_pages(int(body.get("target_pages") or 0))
+
     # ---------------- 書き出し ----------------
     if path == "export":
         p = state.require()
