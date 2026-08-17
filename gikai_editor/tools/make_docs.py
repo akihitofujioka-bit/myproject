@@ -73,6 +73,7 @@ SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("start.sh", "macOS / Linux 用の起動。"),
     ]),
     ("その他", [
+        ("CLAUDE.md", "コードをさわる人・AI 向けの約束ごと。踏んではいけない罠の一覧。"),
         ("requirements.txt", "追加部品の一覧。"),
         ("wheels/README.txt", "同梱した部品の説明と更新方法。"),
         ("tools/make_icon.py", "アイコンを作り直すとき。"),

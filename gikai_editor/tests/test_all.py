@@ -1234,6 +1234,34 @@ def test_spec_document_is_generated_and_valid():
     assert f"1段 {m['chars_per_line']} 字" in text
 
 
+def test_claude_md_references_are_real():
+    """開発用の約束ごとが、実物とずれていないこと。
+
+    CLAUDE.md には「この罠はこのテストが守っている」と書いてあるので、
+    テスト名を変えたらここで気づけるようにする。
+    """
+    import re
+
+    doc = ROOT / "CLAUDE.md"
+    assert doc.exists(), "gikai_editor/CLAUDE.md が無い"
+    text = doc.read_text(encoding="utf-8")
+    tests_src = (ROOT / "tests" / "test_all.py").read_text(encoding="utf-8")
+
+    named = set(re.findall(r"`(test_\w+)`", text))
+    assert named, "守っているテストが1つも書かれていない"
+    for name in sorted(named):
+        assert f"def {name}(" in tests_src, \
+            f"CLAUDE.md が参照している {name} が見つからない"
+
+    # 参照しているファイルが実在すること
+    for rel in sorted(set(re.findall(r"`((?:gikai|tools|tests)/[\w./\-]+)`", text))):
+        assert (ROOT / rel).exists(), f"CLAUDE.md が参照している {rel} が無い"
+
+    # 譲れない前提が書かれていること
+    for must in ("オフライン", "CP932", "抽出型", "pytest"):
+        assert must in text, f"{must} の記載が消えている"
+
+
 # ====================================================== 実行
 
 def _run():
