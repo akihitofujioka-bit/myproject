@@ -11,6 +11,8 @@ const state = {
   images: [],
   currentArticle: null,
   issues: [],
+  outline: null,        // 構成（表紙→行政報告→…）ごとに記事をまとめたもの
+  picked: new Set(),    // ②で選んでいる原稿の id（一括削除に使う）
 };
 
 // ------------------------------------------------------------------ 通信
@@ -68,7 +70,7 @@ function showStep(name) {
   $$(".pane").forEach((p) => p.classList.toggle("on", p.id === "pane-" + name));
   if (name === "layout") guard(loadLayout);
   if (name === "photo") renderPhotos();
-  if (name === "edit") renderArticleList();
+  if (name === "edit") guard(refreshOutline);
 }
 
 /* ダイアログ。開くのは modal()、閉じるのは closeModal() に集約する。
@@ -88,6 +90,34 @@ function closeModal() {
   // 中身を空にして、次に開くまで残らないようにする
   $("#modalTitle").textContent = "";
   $("#modalBody").innerHTML = "";
+  // 「閉じられた」ことを確認ダイアログ側が知る必要があるので知らせる
+  m.dispatchEvent(new CustomEvent("modalclosed"));
+}
+
+/* 取り返しのつかない操作の前に出す確認ダイアログ。
+   何をするのか・元に戻せるのかを日本語で書いて見せる。
+   閉じる・Esc・背景クリックはすべて「やめる」扱いにする。 */
+function confirmModal(title, html, okLabel = "実行する") {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      $("#modal").removeEventListener("modalclosed", onClosed);
+      if (v) closeModal();
+      resolve(v);
+    };
+    const onClosed = () => finish(false);
+    modal(title, `<div class="pad">${html}
+      <div class="row" style="margin-top:16px">
+        <button class="danger" id="cfmOk">${esc(okLabel)}</button>
+        <button class="ghost" id="cfmNo">やめる</button>
+      </div></div>`);
+    $("#modal").addEventListener("modalclosed", onClosed);
+    $("#cfmOk").addEventListener("click", () => finish(true));
+    $("#cfmNo").addEventListener("click", () => closeModal());
+    setTimeout(() => $("#cfmNo").focus(), 0);
+  });
 }
 
 $("#modalClose").addEventListener("click", closeModal);
@@ -132,7 +162,7 @@ async function loadWorkspace() {
   $$("[data-open]", el).forEach((b) =>
     b.addEventListener("click", () => guard(async () => {
       const r = await api("project/open", { name: b.dataset.open });
-      setProject(r.project);
+      await setProject(r.project);
       toast("「" + r.project.title + "」を開きました");
       showStep("import");
     })));
@@ -144,24 +174,52 @@ $("#btnCreate").addEventListener("click", () => guard(async () => {
     issue_no: $("#newNo").value.trim(),
     issue_date: $("#newDate").value.trim(),
   });
-  setProject(r.project);
+  await setProject(r.project);
   toast("作成しました: " + r.project.root);
   await loadWorkspace();
   showStep("import");
 }));
 
-function setProject(p) {
+async function setProject(p) {
   state.project = p;
   $("#projLabel").textContent = p ? p.title + "（" + p.articles.length + "件）" : "プロジェクト未選択";
   $("#templateState").textContent = p && p.has_template ? "読み込み済み" : "未読み込み";
+  await loadOutline();
   renderImportList();
-  renderArticleList();
+  renderOutline();
   renderPhotos();
 }
 
 async function refresh() {
   const r = await api("project");
-  setProject(r.project);
+  await setProject(r.project);
+}
+
+/* 構成（表紙→行政報告→…）を読み直す。
+   一覧が出せないだけで作業が止まらないよう、失敗しても投げない。 */
+async function loadOutline() {
+  if (!state.project) { state.outline = null; return; }
+  try {
+    state.outline = await api("outline");
+  } catch (e) {
+    state.outline = null;
+    toast("構成を読み込めませんでした: " + e.message, true);
+  }
+}
+
+async function refreshOutline() {
+  await loadOutline();
+  renderOutline();
+  renderImportList();
+}
+
+/** 画面で選べる区分の一覧（「未分類」は区分ではないので外す）。 */
+function sectionDefs() {
+  return (state.outline?.sections || []).filter((s) => s.id);
+}
+
+function sectionName(id) {
+  return sectionDefs().find((s) => s.id === id)?.name || "";
 }
 
 // ------------------------------------------------------------------ ② 取り込み
@@ -213,28 +271,148 @@ function renderImportList() {
   const el = $("#importList");
   const arts = state.project ? state.project.articles : [];
   $("#artCount").textContent = arts.length;
+
+  // 消えた記事が選択に残らないようにする
+  const alive = new Set(arts.map((a) => a.id));
+  [...state.picked].forEach((id) => { if (!alive.has(id)) state.picked.delete(id); });
+
   if (!arts.length) {
     el.innerHTML = "<p class='empty'>まだ原稿がありません。</p>";
+    updateSelInfo();
     return;
   }
-  el.innerHTML = arts.map((a) => `
-    <div class="item">
+
+  const defs = sectionDefs();
+  el.innerHTML = arts.map((a) => {
+    const picked = state.picked.has(a.id);
+    const opts = defs.map((s) =>
+      `<option value="${esc(s.id)}" ${s.id === a.section ? "selected" : ""}>${esc(s.name)}</option>`).join("");
+    const why = a.section_why ? "判定のもと: " + a.section_why : "区分をお選びください";
+    return `
+    <div class="item ${picked ? "picked" : ""}">
+      <input class="pick" type="checkbox" data-pick="${a.id}" ${picked ? "checked" : ""}
+             title="まとめて削除するときに選びます">
       <div class="main">
         <div class="name">${esc(a.title || a.source_file || "（見出し未設定）")}</div>
         <div class="meta">${esc(a.author || "執筆者不明")} ／ ${countOf(a.body)} 字 ／ ${esc(a.status)}</div>
       </div>
+      ${defs.length
+        ? `<select class="secpick" data-sec="${a.id}" title="${esc(why)}">
+             <option value="" ${a.section ? "" : "selected"}>（未分類）</option>${opts}
+           </select>`
+        : `<span class="secbadge ${a.section ? "" : "none"}">${esc(sectionName(a.section) || "未分類")}</span>`}
       <button data-edit="${a.id}">編集</button>
       <button class="danger" data-del="${a.id}">削除</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
+
+  $$("[data-pick]", el).forEach((c) =>
+    c.addEventListener("change", () => {
+      if (c.checked) state.picked.add(c.dataset.pick);
+      else state.picked.delete(c.dataset.pick);
+      c.closest(".item").classList.toggle("picked", c.checked);
+      updateSelInfo();
+    }));
+
+  // 区分の選び直し。自動判定が外れていても手で直せるようにしてある
+  $$("[data-sec]", el).forEach((s) =>
+    s.addEventListener("change", () => guard(async () => {
+      await api("article/save", {
+        article: { id: s.dataset.sec, section: s.value, order: 999,
+                   section_why: s.value ? "手で選びました" : "" },
+      });
+      await refresh();
+      toast(s.value ? "「" + sectionName(s.value) + "」に入れました" : "未分類に戻しました");
+    })));
+
   $$("[data-edit]", el).forEach((b) =>
     b.addEventListener("click", () => { showStep("edit"); openArticle(b.dataset.edit); }));
   $$("[data-del]", el).forEach((b) =>
-    b.addEventListener("click", () => guard(async () => {
-      if (!confirm("この記事を削除します。よろしいですか？\n（元の原稿ファイルは残ります）")) return;
-      await api("article/delete", { id: b.dataset.del });
-      await refresh();
-      toast("削除しました");
-    })));
+    b.addEventListener("click", () => guard(() => deleteArticles([b.dataset.del]))));
+
+  updateSelInfo();
+}
+
+function updateSelInfo() {
+  const n = state.picked.size;
+  const total = state.project ? state.project.articles.length : 0;
+  $("#selInfo").textContent = n + " 件を選択中";
+  $("#btnDeleteSel").disabled = n === 0;
+  const all = $("#chkAll");
+  all.checked = total > 0 && n === total;
+  all.indeterminate = n > 0 && n < total;
+}
+
+$("#chkAll").addEventListener("change", () => {
+  const arts = state.project ? state.project.articles : [];
+  state.picked = $("#chkAll").checked ? new Set(arts.map((a) => a.id)) : new Set();
+  renderImportList();
+});
+
+$("#btnDeleteSel").addEventListener("click", () =>
+  guard(() => deleteArticles([...state.picked])));
+
+/* 記事の削除。取り込んだ原本は消さないので、消しても取り込み直せる。
+   何を消すのかを一覧で見せてから実行する。 */
+async function deleteArticles(ids) {
+  ids = (ids || []).filter(Boolean);
+  if (!ids.length) return;
+  const arts = (state.project?.articles || []).filter((a) => ids.includes(a.id));
+  const names = arts.map((a) =>
+    `<li>${esc(a.title || a.source_file || a.author || a.id)}</li>`).join("");
+  const ok = await confirmModal(
+    ids.length > 1 ? "選んだ原稿をまとめて削除します" : "この原稿を削除します",
+    `<p>次の <b>${ids.length} 件</b>を、この号の記事一覧から取り除きます。</p>
+     <ul class="hint" style="margin:8px 0 12px 18px">${names}</ul>
+     <p class="hint"><b>消えるもの:</b> 記事としての登録（見出し・本文の編集内容・区分・写真との結びつけ）。</p>
+     <p class="hint"><b>残るもの:</b> 取り込んだ元のファイル（<code>manuscripts</code> フォルダ）と、
+       写真（<code>photos</code> フォルダ）。消したあとでも取り込み直せます。</p>
+     <p class="hint">ただし、<b>ここで直した本文や要約は元に戻せません。</b>
+       手を入れた原稿が含まれていないか確かめてください。</p>`,
+    ids.length > 1 ? `${ids.length} 件を削除する` : "削除する");
+  if (!ok) return;
+  const r = await api("article/delete_many", { ids });
+  ids.forEach((id) => state.picked.delete(id));
+  if (ids.includes(state.currentArticle)) {
+    state.currentArticle = null;
+    $("#editorArea").innerHTML = "<p class='empty'>左の一覧から記事を選んでください。</p>";
+  }
+  await refresh();
+  toast(r.deleted + " 件を削除しました（元の原稿ファイルは残っています）");
+}
+
+// 区分の自動振り分け
+$("#btnAssignSections").addEventListener("click", () =>
+  guard(() => assignSections(true)));
+
+async function assignSections(onlyUnassigned) {
+  const r = await api("outline/assign", { only_unassigned: onlyUnassigned });
+  await refresh();
+  const done = r.assigned.map((x) =>
+    `<div class="item"><div class="main">
+       <div class="name">${esc(x.label)}</div>
+       <div class="meta">${esc(x.why)}</div></div>
+     <span class="secbadge">${esc(x.section_name || x.section)}</span></div>`).join("");
+  const ng = r.unknown.map((x) =>
+    `<div class="item"><div class="main">
+       <div class="name">${esc(x.label)}</div>
+       <div class="meta">${esc(x.why)}</div></div>
+     <span class="secbadge none">未分類</span></div>`).join("");
+  modal("区分の振り分け結果", `<div class="pad">
+    <p class="hint">ファイル名・見出し・本文の書き出しから見当を付けた結果です。
+      違っていれば一覧の選択欄で直してください。</p>
+    <h2>振り分けた（${r.assigned.length} 件）</h2>
+    <div class="list">${done || "<p class='empty'>ありませんでした。</p>"}</div>
+    <h2 style="margin-top:16px">判定できなかった（${r.unknown.length} 件）</h2>
+    <div class="list">${ng || "<p class='empty'>ありませんでした。</p>"}</div>
+    <div class="row" style="margin-top:16px">
+      <button id="btnAssignAll">すでに区分がついたものも含めて、すべて振り分け直す</button>
+    </div>
+    <p class="hint">※ 手で直した区分も上書きされます。</p>
+  </div>`);
+  $("#btnAssignAll")?.addEventListener("click", () => guard(() => assignSections(false)));
+  toast(`${r.assigned.length} 件を振り分けました` +
+    (r.unknown.length ? `（${r.unknown.length} 件は判定できませんでした）` : ""));
 }
 
 function countOf(s) {
@@ -248,22 +426,64 @@ function countOf(s) {
 
 // ------------------------------------------------------------------ ③ 校正
 
-function renderArticleList() {
-  const el = $("#editArticleList");
-  const arts = state.project ? state.project.articles : [];
-  if (!arts.length) {
-    el.innerHTML = "<p class='empty'>原稿がありません。</p>";
+/* 紙面の並び（表紙 → 行政報告 → … → 最終ページ）どおりに記事を出す。
+   上から順に片付けていけば1号ぶんが仕上がる、という形にしてある。 */
+function renderOutline() {
+  const el = $("#outlineList");
+  if (!el) return;
+  if (!state.project) {
+    el.innerHTML = "<p class='empty'>先に①で号を作成するか、保存済みの号を開いてください。</p>";
     return;
   }
-  el.innerHTML = arts.map((a) => `
-    <div class="item ${state.currentArticle === a.id ? "on" : ""}" data-open="${a.id}">
-      <div class="main">
-        <div class="name">${esc(a.title || "（見出し未設定）")}</div>
-        <div class="meta">${esc(a.author || "—")} ／ ${countOf(a.body)} 字</div>
-      </div>
-    </div>`).join("");
+  const groups = state.outline?.sections || [];
+  if (!groups.length) {
+    el.innerHTML = "<p class='empty'>構成を読み込めませんでした。</p>";
+    return;
+  }
+  const total = groups.reduce((n, g) => n + g.count, 0);
+  if (!total) {
+    el.innerHTML = "<p class='empty'>原稿がありません。②で取り込んでください。</p>";
+    return;
+  }
+
+  el.innerHTML = `<div class="outline">` + groups.map((g) => {
+    const body = g.count
+      ? g.articles.map((a, i) => oitem(a, i, g.count)).join("")
+      : `<div class="oempty">${g.optional
+          ? "この号は無し（ある号だけ使います）"
+          : "まだ原稿がありません"}</div>`;
+    return `<div class="ogroup ${g.count ? "" : "empty"}">
+      <div class="ohead" title="${esc(g.note)}">${esc(g.name)}
+        <span class="n">${g.count ? `${g.done}/${g.count} 本 ・ ${g.chars} 字` : "0 本"}</span>
+      </div>${body}</div>`;
+  }).join("") + `</div>`;
+
   $$("[data-open]", el).forEach((b) =>
     b.addEventListener("click", () => openArticle(b.dataset.open)));
+  $$("[data-mv]", el).forEach((b) =>
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      guard(async () => {
+        state.outline = await api("outline/move",
+          { id: b.dataset.mv, delta: Number(b.dataset.delta) });
+        renderOutline();
+      });
+    }));
+}
+
+function oitem(a, i, n) {
+  const done = ["校正済み", "割付済み", "確定"].includes(a.status);
+  return `<div class="oitem ${state.currentArticle === a.id ? "on" : ""}" data-open="${a.id}">
+    <div class="main">
+      <div class="nm">${esc(a.title || a.source_file || "（見出し未設定）")}</div>
+      <div class="mt">${esc(a.author || "—")} ／ ${countOf(a.body)} 字</div>
+    </div>
+    <span class="ostat ${done ? "done" : "draft"}">${esc(a.status)}</span>
+    <span class="mv">
+      <button data-mv="${a.id}" data-delta="-1" title="1つ上へ" ${i === 0 ? "disabled" : ""}>▲</button>
+      <button data-mv="${a.id}" data-delta="1" title="1つ下へ" ${i === n - 1 ? "disabled" : ""}>▼</button>
+    </span>
+  </div>`;
 }
 
 function article(id) {
@@ -272,7 +492,7 @@ function article(id) {
 
 function openArticle(id) {
   state.currentArticle = id;
-  renderArticleList();
+  renderOutline();
   const a = article(id);
   if (!a) return;
   $("#editorArea").innerHTML = `
@@ -284,7 +504,13 @@ function openArticle(id) {
       </div>
       <div class="row">
         <label>リード文<input id="fLead" value="${esc(a.lead)}"></label>
+        <label>紙面の区分<select id="fSection">
+          <option value="" ${a.section ? "" : "selected"}>（未分類）</option>
+          ${sectionDefs().map((s) =>
+            `<option value="${esc(s.id)}" ${s.id === a.section ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
+        </select></label>
       </div>
+      ${a.section_why ? `<p class="hint">区分の判定のもと: ${esc(a.section_why)}</p>` : ""}
       <div class="row">
         <label>字数上限<input id="fLimit" type="number" min="0" value="${a.limit_chars || 0}"></label>
         <label>1行の字数<input id="fCpl" type="number" min="0" value="${a.chars_per_line || 0}"></label>
@@ -405,22 +631,30 @@ function updateCounter() {
 async function saveArticle(quiet = false) {
   const id = state.currentArticle;
   if (!id) return;
-  const r = await api("article/save", {
-    article: {
-      id,
-      title: $("#fTitle").value,
-      author: $("#fAuthor").value,
-      lead: $("#fLead").value,
-      body: $("#fBody").value,
-      limit_chars: Number($("#fLimit").value) || 0,
-      chars_per_line: Number($("#fCpl").value) || 0,
-      lines: Number($("#fLines").value) || 0,
-      status: $("#fStatus").value,
-    },
-  });
+  const before = article(id);
+  const sect = $("#fSection") ? $("#fSection").value : (before?.section || "");
+  const payload = {
+    id,
+    title: $("#fTitle").value,
+    author: $("#fAuthor").value,
+    lead: $("#fLead").value,
+    body: $("#fBody").value,
+    limit_chars: Number($("#fLimit").value) || 0,
+    chars_per_line: Number($("#fCpl").value) || 0,
+    lines: Number($("#fLines").value) || 0,
+    status: $("#fStatus").value,
+    section: sect,
+  };
+  // 区分を手で変えたときは、移った先の区分の末尾に置く
+  if (before && sect !== before.section) {
+    payload.order = 999;
+    payload.section_why = sect ? "手で選びました" : "";
+  }
+  const r = await api("article/save", { article: payload });
   const i = state.project.articles.findIndex((a) => a.id === id);
   if (i >= 0) state.project.articles[i] = r.article;
-  renderArticleList();
+  // 見出しや状態が変わると構成の一覧の見え方も変わるので読み直す
+  await refreshOutline();
   if (!quiet) toast("保存しました");
 }
 

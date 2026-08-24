@@ -139,8 +139,14 @@ def _rpr(spec: LayoutSpec, *, font: str, pt: float, bold: bool = False,
 
 
 def _para(text: str, rpr: str, *, indent: bool = False, spacing_before: int = 0,
-          align: str = "", border: bool = False) -> str:
+          align: str = "", border: bool = False, keep: bool = False) -> str:
     ppr = "<w:pPr>"
+    if keep:
+        # 見出しは段や頁の切れ目で割らない。
+        # 行送りを本文の高さに固定してあるので、本文より大きい見出しが
+        # 段の終わりに掛かると隣の行に重なって出る（実機で確認済み）。
+        # keepLines で段の頭へ送り、keepNext で本文と離れないようにする。
+        ppr += "<w:keepNext/><w:keepLines/>"
     if border:
         # 縦書きでは「下の罫線」が見出しの左側に出る
         ppr += ('<w:pBdr><w:bottom w:val="single" w:sz="12" w:space="2" '
@@ -172,6 +178,18 @@ def _image_para(rid: str, width_mm: float, height_mm: float, name: str, idx: int
         '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
         '</pic:pic></a:graphicData></a:graphic></wp:inline>'
         "</w:drawing></w:r></w:p>"
+    )
+
+
+def _section_head(name: str, rpr: str, spec: LayoutSpec) -> str:
+    """区分の見出し（行政報告・一般質問…）。地色を敷いて目立たせる。"""
+    return (
+        '<w:p><w:pPr>'
+        '<w:keepNext/><w:keepLines/>'
+        '<w:shd w:val="clear" w:color="auto" w:fill="1F6F4A"/>'
+        f'<w:spacing w:before="{mm2twip(3)}"/>'
+        '<w:jc w:val="center"/>'
+        f'</w:pPr><w:r>{rpr}<w:t xml:space="preserve">　{_esc(name)}　</w:t></w:r></w:p>'
     )
 
 
@@ -260,70 +278,91 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
                                       color="1F6F4A"), border=True))
     body.append(_para("", body_rpr))
 
-    articles = project.articles()
-    if not articles:
+    # 構成（表紙 → 行政報告 → … → 最終ページ）の順に組む
+    from . import sections as sec
+
+    groups = sec.group_articles(project.sections, project.articles())
+    if not any(g["articles"] for g in groups):
         warnings.append("記事がありません。原稿を取り込んでから組んでください。")
 
-    for art in articles:
-        if art.title:
-            body.append(_para(art.title, head_rpr, spacing_before=240, border=True))
-            # 見出しは本文より大きいので、その分だけ行を余分に使う
-            head_lines = -(-count_chars(art.title) * spec.heading_pt // (cpl * spec.body_pt))
-            lines_used += max(1, int(head_lines)) * 2 + 1
-        if art.author:
-            body.append(_para(art.author, name_rpr, align="right"))
-            lines_used += 1
-        if art.lead:
-            body.append(_para(art.lead, lead_rpr))
-            lines_used += max(1, -(-count_chars(art.lead) // cpl))
+    sec_rpr = _rpr(spec, font=spec.heading_font, pt=spec.heading_pt + 1,
+                   bold=True, color="FFFFFF")
 
-        for line in art.body.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            n = count_chars(line)
-            chars_total += n
-            lines_used += max(1, -(-n // cpl))
-            body.append(_para(line, body_rpr, indent=spec.indent_first))
+    for group in groups:
+        arts = group["articles"]
+        if not arts:
+            continue          # 「特集」など、その号に無い区分は飛ばす
 
-        # この記事の写真
-        for pid in art.photos:
-            photo = project.get_photo(pid)
-            if not photo:
-                continue
-            src = project.photos_dir / photo.file
-            if not src.exists():
-                continue
-            data, w_mm, h_mm, note = _fit_photo(src.read_bytes(), spec)
-            if note:
-                warnings.append(f"{photo.info.get('name', photo.file)}: {note}")
-            photo_count += 1
-            idx = photo_count
-            ext = ".jpg" if HAS_PIL else Path(photo.file).suffix.lower() or ".jpg"
-            media_name = f"photo{idx}{ext}"
-            media[f"word/media/{media_name}"] = data
-            rid = f"rIdImg{idx}"
-            rels.append(
-                f'<Relationship Id="{rid}" Type="{R}/image" Target="media/{media_name}"/>'
-            )
-            body.append(_image_para(rid, w_mm, h_mm, media_name, 1000 + idx))
-            # 写真は、行が並ぶ方向にその幅のぶんだけ場所を取る。
-            # さらに、写真は段をまたげないので、段の変わり目で
-            # 手前に空きができる。平均すると写真1枚の半分ぶん。
-            photo_lines = max(1, int(-(-w_mm // line_mm)))
-            lines_used += photo_lines + photo_lines // 2 + 1
-            if photo.caption:
-                body.append(_para(photo.caption, cap_rpr, align="center"))
-                chars_total += count_chars(photo.caption)
-                lines_used += max(1, -(-count_chars(photo.caption) // cpl))
-            if photo.credit:
-                body.append(_para(f"（撮影: {photo.credit}）", cap_rpr, align="center"))
+        # 区分の見出し（表紙は題字があるので付けない）
+        if group["id"] != "cover":
+            body.append(_section_head(group["name"], sec_rpr, spec))
+            lines_used += 3
+
+        for art in arts:
+            if art.title:
+                body.append(_para(art.title, head_rpr, spacing_before=240, border=True,
+                                  keep=True))
+                # 見出しは本文より大きいので、その分だけ行を余分に使う。
+                # さらに、段の途中に掛かる見出しは丸ごと次の段へ送られる
+                # （keepLines）ので、その空きを見出しの高さの半分として見込む
+                # ＝写真の段またぎと同じ考え方。実測10通りで確かめてある。
+                head_lines = max(1, int(
+                    -(-count_chars(art.title) * spec.heading_pt // (cpl * spec.body_pt))))
+                lines_used += head_lines * 2 + 1 + head_lines // 2
+            if art.author:
+                body.append(_para(art.author, name_rpr, align="right", keep=True))
                 lines_used += 1
+            if art.lead:
+                body.append(_para(art.lead, lead_rpr))
+                lines_used += max(1, -(-count_chars(art.lead) // cpl))
 
-        body.append(_para("", body_rpr))
-        # 記事の切れ目では、段の変わり目に半端な空きができる。
-        # 実際の刷り上がりと突き合わせて求めた補正。
-        lines_used += 7
+            for line in art.body.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                n = count_chars(line)
+                chars_total += n
+                lines_used += max(1, -(-n // cpl))
+                body.append(_para(line, body_rpr, indent=spec.indent_first))
+
+            # この記事の写真
+            for pid in art.photos:
+                photo = project.get_photo(pid)
+                if not photo:
+                    continue
+                src = project.photos_dir / photo.file
+                if not src.exists():
+                    continue
+                data, w_mm, h_mm, note = _fit_photo(src.read_bytes(), spec)
+                if note:
+                    warnings.append(f"{photo.info.get('name', photo.file)}: {note}")
+                photo_count += 1
+                idx = photo_count
+                ext = ".jpg" if HAS_PIL else Path(photo.file).suffix.lower() or ".jpg"
+                media_name = f"photo{idx}{ext}"
+                media[f"word/media/{media_name}"] = data
+                rid = f"rIdImg{idx}"
+                rels.append(
+                    f'<Relationship Id="{rid}" Type="{R}/image" Target="media/{media_name}"/>'
+                )
+                body.append(_image_para(rid, w_mm, h_mm, media_name, 1000 + idx))
+                # 写真は、行が並ぶ方向にその幅のぶんだけ場所を取る。
+                # さらに、写真は段をまたげないので、段の変わり目で
+                # 手前に空きができる。平均すると写真1枚の半分ぶん。
+                photo_lines = max(1, int(-(-w_mm // line_mm)))
+                lines_used += photo_lines + photo_lines // 2 + 1
+                if photo.caption:
+                    body.append(_para(photo.caption, cap_rpr, align="center"))
+                    chars_total += count_chars(photo.caption)
+                    lines_used += max(1, -(-count_chars(photo.caption) // cpl))
+                if photo.credit:
+                    body.append(_para(f"（撮影: {photo.credit}）", cap_rpr, align="center"))
+                    lines_used += 1
+
+            body.append(_para("", body_rpr))
+            # 記事の切れ目では、段の変わり目に半端な空きができる。
+            # 実際の刷り上がりと突き合わせて求めた補正。
+            lines_used += 7
 
     # ---- 書き出し
     doc = (

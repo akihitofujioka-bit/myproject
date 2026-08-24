@@ -49,6 +49,9 @@ SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("gikai/preview.py", "画面で見る下見用の紙面（HTML）。"),
     ]),
     ("全体のとりまとめ", [
+        ("gikai/sections.py",
+         "議会だよりの構成（表紙→行政報告→…→最終ページ）。"
+         "原稿がどの区分のものかの判定もここ。"),
         ("gikai/project.py", "1号ぶんの作業データ。記事・写真・設定の保存と読み出し。"),
         ("gikai/server.py", "ローカル専用サーバ。画面とのやりとりはすべてここを通る。"),
         ("gikai/__init__.py", "版数。"),
@@ -104,6 +107,11 @@ API_DESC = {
     "article/list": "記事の一覧",
     "article/save": "記事を保存する",
     "article/delete": "記事を削除する",
+    "article/delete_many": "選んだ記事をまとめて削除する（元の原稿ファイルは残す）",
+    "outline": "構成（表紙→行政報告→…）の順に並べた記事の一覧",
+    "outline/sections": "構成そのものを変える（区分の追加・削除・並べ替え）",
+    "outline/assign": "原稿の名前や見出しから、どの区分かを自動で振り分ける",
+    "outline/move": "区分の中で記事を1つ上／下へ動かす",
     "article/proofread": "記事を校正する",
     "article/autofix": "自動で直せる指摘をまとめて直す",
     "article/fit": "枠に合わせて要約する",

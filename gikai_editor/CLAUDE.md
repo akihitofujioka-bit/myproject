@@ -45,8 +45,13 @@
 
 ### 2-3. 自動処理は必ず結果を見せる
 
-写真の自動割り付け・ページ数調整・一括修正は、**やったことを全件返して
-画面に出す**。判定できなかったものも隠さず出し、手で直せるようにする。
+写真の自動割り付け・区分の自動振り分け・ページ数調整・一括修正は、
+**やったことを全件返して画面に出す**。判定できなかったものも隠さず出し、
+手で直せるようにする（`sections.py` の `guess_section` は判定の理由も返す。
+これは画面に出すためのもので、消さないこと）。
+
+一括削除も同じ考え方で、**何が消えるのかを一覧で見せてから実行する**。
+記事を消しても `manuscripts/` `photos/` の原本は消さない（2-2 のとおり）。
 
 ## 3. さわる前に知っておくこと（過去に踏んだ罠）
 
@@ -62,6 +67,7 @@
 | **バッチの括弧** | `for` / `if` ブロック内で、括弧を含む文字列を変数展開しない。cmd がブロックを途中で閉じる。`call :label` 方式にする | 同上 |
 | **sectPr の要素順** | OOXML はスキーマ順が決まっている。`w:cols` → `w:textDirection` → `w:docGrid` の順（逆にすると Word が読めない） | `test_compose_produces_vertical_five_columns` |
 | **テキストボックスの二重化** | `.docx` のテキストボックスは `mc:Choice` と `mc:Fallback` に同じ内容が入る。**両方に書き込む**（片方だけだと Word と LibreOffice で表示が食い違う） | `test_docx_slot_detect_and_fill` |
+| **区分の並び** | 構成の並びは「紙面の順」そのもの。③の一覧・自動組版の両方がこの順に従う。片方だけ並べ替えない | `test_outline_lists_sections_in_order_with_unassigned_last` / `test_compose_lays_out_sections_in_order` |
 | **pypdf と日本語** | pypdf は日本語 PDF で文字化けする。PyMuPDF を優先し、pypdf を使ったときは画面に注意書きを出す | — |
 
 ## 4. どこを直せばよいか
@@ -74,6 +80,7 @@
 | 画面を変える | `gikai/static/`（`index.html` / `style.css` / `app.js`） |
 | 窓口（API）を足す | `gikai/server.py` の `handle_api`。**追加したら `tools/make_docs.py` の `API_DESC` にも説明を足す** |
 | 保存する項目を足す | `gikai/project.py` の `Article` / `Photo` dataclass（既存プロジェクトを壊さないよう既定値を付ける） |
+| 紙面の構成（台割）を変える | `gikai/sections.py` の `DEFAULT_SECTIONS`（**区分の並び＝紙面の並び＝③の編集順＝自動組版の順**。3か所が同じ順で動くので、ここだけ直せばよい） |
 
 ### 出力方式は2つある。どちらも壊さないこと
 
@@ -118,7 +125,12 @@ Linux コンテナ上でも、次は実際に動かして確かめられる。**
 `compose.py` の行数の数え方は、**LibreOffice で実際に組んだ結果と
 突き合わせて補正してある**（記事1〜18本・写真0〜14枚の10通りで実測と一致）。
 レイアウトに関わる変更をしたら、同じやり方で測り直すこと。
-補正値（記事の切れ目 7 行、写真の段またぎ ½）を根拠なく動かさない。
+補正値（記事の切れ目 7 行、写真の段またぎ ½、見出しの段送り ½）を
+根拠なく動かさない。
+
+見出しには `keepNext` / `keepLines` を付けてある。行送りを本文の高さに
+**固定**しているため、これを外すと大きい見出しが隣の行に重なって印刷される
+（`test_compose_headings_are_not_split_across_columns`）。
 
 ## 7. 書き方の約束
 

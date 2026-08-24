@@ -222,6 +222,28 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         p.delete_article(body.get("id", ""))
         return {"ok": True}
 
+    if path == "article/delete_many":
+        p = state.require()
+        return p.delete_articles(body.get("ids") or [])
+
+    if path == "outline":
+        p = state.require()
+        return p.outline()
+
+    if path == "outline/sections":
+        p = state.require()
+        return p.set_sections(body.get("sections") or [])
+
+    if path == "outline/assign":
+        p = state.require()
+        report = p.assign_sections(
+            only_unassigned=body.get("only_unassigned", True))
+        return {**report, "outline": p.outline()}
+
+    if path == "outline/move":
+        p = state.require()
+        return p.move_article(body.get("id", ""), int(body.get("delta") or 0))
+
     if path == "article/proofread":
         p = state.require()
         return p.proofread_article(body.get("id", ""))

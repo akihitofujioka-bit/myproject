@@ -1262,6 +1262,160 @@ def test_claude_md_references_are_real():
         assert must in text, f"{must} の記載が消えている"
 
 
+# ====================================================== 構成（台割）
+
+def test_sections_have_the_house_order():
+    """紙面の並びは日高村議会だよりの構成そのままであること。"""
+    from gikai import sections as sec
+
+    names = [s.name for s in sec.default_sections()]
+    assert names == ["表紙", "行政報告", "審議したこと・決まったこと",
+                     "閉会中の委員会活動報告", "一般質問", "特集", "最終ページ"]
+    # 「特集」は無い号があるので、空でも催促しない
+    opt = [s.id for s in sec.default_sections() if s.optional]
+    assert opt == ["tokushu"]
+
+
+def test_guess_section_from_filename_and_title():
+    from gikai import sections as sec
+
+    secs = sec.default_sections()
+    sid, why = sec.guess_section(secs, filename="03_一般質問_森下けい子.docx")
+    assert sid == "ippan" and "ファイル名" in why
+
+    sid, _ = sec.guess_section(secs, title="行政報告（令和8年6月定例会）")
+    assert sid == "gyosei"
+
+    sid, _ = sec.guess_section(secs, title="編集後記")
+    assert sid == "saishu"
+
+    # ファイル名は見出しより強い（届いた名前のほうが当てになる）
+    sid, why = sec.guess_section(
+        secs, filename="特集_治水の取り組み.docx", title="一般質問")
+    assert sid == "tokushu", why
+
+    # 手がかりが無ければ、当て推量せず未分類にする
+    sid, why = sec.guess_section(secs, filename="20260601.txt", title="")
+    assert sid == "" and why
+
+
+def test_outline_lists_sections_in_order_with_unassigned_last():
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第207号", "第207号")
+        for name, body in [
+            ("行政報告.txt", "村長から令和8年度の行政報告がありました。"),
+            ("一般質問_森下.txt", "一般質問で防災について問う。"),
+            ("なぞの原稿.txt", "どこにも当てはまらない文章です。"),
+        ]:
+            f = Path(d) / name
+            f.write_text(body, encoding="utf-8")
+            p.import_manuscript(f)
+
+        out = p.outline()
+        names = [g["name"] for g in out["sections"]]
+        # 構成の順どおりで、判定できなかったものは最後にまとまる
+        assert names[:7] == ["表紙", "行政報告", "審議したこと・決まったこと",
+                             "閉会中の委員会活動報告", "一般質問", "特集", "最終ページ"]
+        assert names[-1] == "未分類"
+        assert out["unassigned"] == 1
+
+        by_id = {g["id"]: g for g in out["sections"]}
+        assert by_id["gyosei"]["count"] == 1
+        assert by_id["ippan"]["count"] == 1
+        assert by_id["cover"]["count"] == 0     # 無い区分も並びを見せるため残す
+
+
+def test_move_article_reorders_within_its_section():
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第208号", "第208号")
+        ids = []
+        for i in (1, 2, 3):
+            f = Path(d) / f"一般質問_{i}.txt"
+            f.write_text(f"一般質問その{i}について問う。", encoding="utf-8")
+            ids.append(p.import_manuscript(f).id)
+
+        order = lambda o: [a["id"] for g in o["sections"]
+                           if g["id"] == "ippan" for a in g["articles"]]
+        assert order(p.outline()) == ids
+
+        out = p.move_article(ids[2], -1)         # 3番目を1つ上へ
+        assert order(out) == [ids[0], ids[2], ids[1]]
+
+        # 端では動かない（押しても壊れない）
+        out = p.move_article(ids[0], -1)
+        assert order(out) == [ids[0], ids[2], ids[1]]
+
+
+def test_delete_articles_keeps_the_original_manuscripts():
+    """一括削除しても、議員から預かった原本には手を付けないこと。"""
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第209号", "第209号")
+        ids = []
+        for i in (1, 2, 3):
+            f = Path(d) / f"原稿{i}.txt"
+            f.write_text(f"本文その{i}です。", encoding="utf-8")
+            ids.append(p.import_manuscript(f).id)
+        kept = sorted(x.name for x in (p.root / "manuscripts").iterdir())
+        assert len(kept) == 3
+
+        r = p.delete_articles(ids[:2])
+        assert r["deleted"] == 2
+        assert len(r["titles"]) == 2
+        assert [a.id for a in p.articles()] == [ids[2]]
+
+        # 原本はそのまま残っている＝取り込み直せる
+        assert sorted(x.name for x in (p.root / "manuscripts").iterdir()) == kept
+
+        # 保存し直しても消えたまま（画面を開き直しても戻らない）
+        again = Project.open(p.root)
+        assert [a.id for a in again.articles()] == [ids[2]]
+
+        # 空で呼んでも何も起きない
+        assert p.delete_articles([])["deleted"] == 0
+
+
+def test_compose_headings_are_not_split_across_columns():
+    """見出しが段の切れ目で割れないこと。
+
+    行送りを本文の高さに固定してあるため、本文より大きい見出しが段の
+    終わりに掛かると、隣の行に重なって印刷される（実機で確認済み）。
+    keepLines で丸ごと次の段へ送ることで避けている。
+    """
+    from gikai.compose import compose
+
+    with tempfile.TemporaryDirectory() as d:
+        res = compose(_sample_project(Path(d), n_articles=6, n_photos=0))
+        with zipfile.ZipFile(res.path) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+        # 見出しの段落には必ず keepLines が付いている
+        heads = xml.count('<w:pBdr>')
+        assert heads >= 6, heads
+        assert xml.count("<w:keepNext/><w:keepLines/>") >= heads, \
+            "見出しが段の切れ目で割れる（隣の行に重なって出る）"
+
+
+def test_compose_lays_out_sections_in_order():
+    """自動組版が、構成の順に区分見出しを立てて組むこと。"""
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第210号", "第210号")
+        for name, body in [
+            ("最終ページ_編集後記.txt", "編集後記です。" + "あ" * 60),
+            ("行政報告.txt", "行政報告です。" + "い" * 60),
+            ("一般質問_森下.txt", "一般質問です。" + "う" * 60),
+        ]:
+            f = Path(d) / name
+            f.write_text(body, encoding="utf-8")
+            p.import_manuscript(f)
+
+        res = p.compose()
+        with zipfile.ZipFile(Path(res["docx"])) as z:
+            text = z.read("word/document.xml").decode("utf-8")
+        pos = [text.find(x) for x in ("行政報告", "一般質問", "編集後記")]
+        assert all(i >= 0 for i in pos), "区分の見出しが紙面に入っていない"
+        # 取り込んだ順ではなく、紙面の並びの順に組まれていること
+        assert pos == sorted(pos), "構成の順に組まれていない"
+
+
 # ====================================================== 実行
 
 def _run():

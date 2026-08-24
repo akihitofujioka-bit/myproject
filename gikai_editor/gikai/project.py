@@ -65,6 +65,9 @@ class Article:
     id: str
     title: str = ""
     author: str = ""
+    section: str = ""      # 構成のどの区分か（sections.py の id）
+    order: int = 0         # 区分の中での並び順
+    section_why: str = ""  # 区分をどう判定したか（画面で見せる）
     source_file: str = ""  # manuscripts/ からの相対パス
     raw: str = ""  # 取り込んだままの原稿
     body: str = ""  # 編集後の本文（これを様式に差し込む）
@@ -100,6 +103,7 @@ class Project:
             "articles": [],
             "photos": [],
             "layout": {},          # 紙面の決まりごと（自動組版で使う）
+            "sections": [],        # 構成（台割）。空なら既定の並び
             "settings": {
                 "compose_mode": "auto",   # auto=自動組版 / slots=前号の様式に差し込む
                 "target_pages": 0,        # 0 なら成り行き
@@ -257,6 +261,14 @@ class Project:
             raw=doc.text,
             body=text,
         )
+        # どの区分の原稿かを、名前と見出しから見当を付ける
+        from . import sections as sec
+
+        art.section, art.section_why = sec.guess_section(
+            self.sections, filename=dest.name, title=doc.title, body=text)
+        # 同じ区分の末尾に置く（届いた順に並ぶ）
+        art.order = 1 + max(
+            [a.order for a in self.articles() if a.section == art.section] or [0])
 
         # 原稿に埋め込まれていた写真も取り込む
         for img in doc.images:
@@ -371,6 +383,127 @@ class Project:
             "titles": headline_candidates(art.body, max_chars=max_chars),
             "lead": lead_sentence(art.body),
         }
+
+    # ------------------------------------------------------------ 構成（台割）
+
+    @property
+    def sections(self):
+        from . import sections as sec
+
+        return sec.load(self.data.get("sections"))
+
+    def set_sections(self, items: list[dict]) -> dict:
+        """構成を保存する。区分の追加・削除・並べ替えに使う。"""
+        from . import sections as sec
+
+        loaded = sec.load(items)
+        self.data["sections"] = [x.to_dict() for x in loaded]
+        self.save()
+        return self.outline()
+
+    def outline(self) -> dict:
+        """構成の順に記事を並べた一覧。編集の進み具合もここで見る。"""
+        from . import sections as sec
+
+        groups = sec.group_articles(self.sections, self.articles())
+        out = []
+        for g in groups:
+            arts = g["articles"]
+            out.append({
+                "id": g["id"],
+                "name": g["name"],
+                "note": g["note"],
+                "optional": g["optional"],
+                "target_pages": g["target_pages"],
+                "count": len(arts),
+                "chars": sum(count_chars(a.body) for a in arts),
+                "done": sum(1 for a in arts if a.status in ("校正済み", "割付済み", "確定")),
+                "articles": [a.to_dict() for a in arts],
+            })
+        return {"sections": out, "unassigned": sum(
+            1 for a in self.articles() if not a.section)}
+
+    def assign_sections(self, *, only_unassigned: bool = True) -> dict:
+        """原稿の名前や見出しから、どの区分のものかを推測して割り当てる。
+
+        判定した理由も残すので、画面で確かめて直せる。
+        """
+        from . import sections as sec
+
+        secs = self.sections
+        report = {"assigned": [], "unknown": []}
+        for art in self.articles():
+            if only_unassigned and art.section:
+                continue
+            sid, why = sec.guess_section(
+                secs, filename=art.source_file, title=art.title, body=art.body)
+            row = {"id": art.id, "label": art.title or art.author or art.id,
+                   "section": sid, "why": why}
+            if sid:
+                art.section = sid
+                art.section_why = why
+                self.put_article(art)
+                row["section_name"] = next(
+                    (x.name for x in secs if x.id == sid), sid)
+                report["assigned"].append(row)
+            else:
+                report["unknown"].append(row)
+        self.renumber()
+        return report
+
+    def renumber(self) -> None:
+        """区分ごとに、記事の並び順を 1 から振り直す。"""
+        from . import sections as sec
+
+        for group in sec.group_articles(self.sections, self.articles()):
+            for i, art in enumerate(group["articles"], 1):
+                if art.order != i:
+                    art.order = i
+                    self.put_article(art)
+
+    def move_article(self, aid: str, delta: int) -> dict:
+        """区分の中で、記事を1つ上／下へ動かす。"""
+        from . import sections as sec
+
+        art = self.get_article(aid)
+        if not art:
+            raise KeyError(aid)
+        siblings = [
+            a for a in self.articles() if a.section == art.section
+        ]
+        siblings.sort(key=lambda a: (a.order, a.id))
+        idx = next((i for i, a in enumerate(siblings) if a.id == aid), -1)
+        if idx < 0:
+            raise KeyError(aid)
+        new = idx + delta
+        if not (0 <= new < len(siblings)):
+            return self.outline()
+        siblings[idx], siblings[new] = siblings[new], siblings[idx]
+        for i, a in enumerate(siblings, 1):
+            a.order = i
+            self.put_article(a)
+        return self.outline()
+
+    def delete_articles(self, ids: list[str]) -> dict:
+        """選んだ原稿をまとめて削除する。
+
+        記事の登録を消すだけで、`manuscripts/` の原本には手を付けない。
+        写真も消さない（別の記事で使うことがあるため）。
+        """
+        ids = [i for i in (ids or []) if i]
+        if not ids:
+            return {"deleted": 0, "titles": []}
+        titles = [
+            (a.title or a.author or a.source_file or a.id)
+            for a in self.articles() if a.id in ids
+        ]
+        before = len(self.data["articles"])
+        self.data["articles"] = [
+            a for a in self.data["articles"] if a["id"] not in ids
+        ]
+        self.save()
+        self.renumber()
+        return {"deleted": before - len(self.data["articles"]), "titles": titles}
 
     # ------------------------------------------------------------ 自動組版
 
