@@ -1,0 +1,349 @@
+:root{
+  --bg:#f4f6f9; --card:#fff; --ink:#1f2430; --sub:#6b7280; --line:#dfe3ea;
+  --accent:#1f6f4a; --accent-ink:#fff; --warn:#b26a00; --err:#b3261e; --info:#41618c;
+  --ok:#1f6f4a;
+}
+*{box-sizing:border-box}
+/* hidden を付けた要素は必ず消える。
+   ブラウザ標準の [hidden]{display:none} は詳細度が最低で、
+   .steps{display:flex} のような何気ない指定に負けてしまう。
+   実際にこれで、空のダイアログが画面を覆う／隠したはずのタブが出たままになる
+   不具合を2回出した。ここで一度きり押さえておく。 */
+[hidden]{display:none !important}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink); font-size:14px; line-height:1.6;
+  font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+}
+button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--line);
+  background:#fff;padding:7px 14px}
+button:hover{background:#f0f2f6}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.primary:hover{filter:brightness(1.08)}
+button.ghost{background:transparent}
+button.danger{color:var(--err);border-color:#f0c6c2}
+button:disabled{opacity:.5;cursor:not-allowed}
+input,textarea,select{font:inherit;padding:6px 9px;border:1px solid var(--line);
+  border-radius:6px;background:#fff;color:inherit;width:100%}
+textarea{width:100%;resize:vertical;line-height:1.8}
+label{display:block;font-size:12px;color:var(--sub)}
+label>input,label>select{margin-top:3px;color:var(--ink)}
+label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink)}
+label.check>input{width:auto;margin:0}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:15px;margin:0 0 10px}
+
+.topbar{display:flex;align-items:center;gap:14px;padding:10px 18px;background:#fff;
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.applogo{width:24px;height:24px;display:block;flex:0 0 auto}
+.brand{font-weight:700;color:var(--accent)}
+#btnQuit{color:var(--err);border-color:#f0c6c2}
+
+/* 終了後の画面 */
+.farewell{max-width:520px;margin:16vh auto;text-align:center;background:#fff;
+  border:1px solid var(--line);border-radius:12px;padding:36px 28px}
+.farewell img{width:72px;height:72px;margin-bottom:14px}
+.farewell h1{font-size:18px;margin-bottom:8px}
+.farewell p{color:var(--sub);font-size:13.5px;margin:6px 0}
+.proj{font-size:13px;color:var(--sub)}
+.spacer{flex:1}
+.offline{font-size:11px;background:#eef4f0;color:var(--accent);
+  padding:3px 10px;border-radius:999px}
+
+/* hidden 属性が効くよう、display は無条件に書かない
+   （ブラウザ標準の [hidden]{display:none} を上書きしてしまうため） */
+.steps{display:none}
+.steps:not([hidden]){display:flex;gap:6px;padding:10px 18px;background:#fff;
+  border-bottom:1px solid var(--line);overflow-x:auto;position:sticky;top:49px;z-index:19}
+.steps button{white-space:nowrap;font-size:13px}
+.steps button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+main{padding:18px;max-width:1180px;margin:0 auto}
+.pane{display:none}
+.pane.on{display:block}
+.hint{color:var(--sub);font-size:12.5px;margin:4px 0 12px}
+.empty{color:var(--sub);font-style:italic}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:9px;
+  padding:16px;margin-bottom:14px}
+.row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
+.row>label{flex:1;min-width:150px}
+.row>button{flex:0 0 auto}
+
+.drop{border:2px dashed var(--line);border-radius:9px;padding:26px;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--sub)}
+.drop.hot{border-color:var(--accent);background:#f2f8f5}
+.drop strong{color:var(--ink);font-size:15px}
+
+.list{display:flex;flex-direction:column;gap:8px}
+.list .item{display:flex;gap:12px;align-items:center;padding:10px 12px;
+  border:1px solid var(--line);border-radius:7px;background:#fff}
+.list .item:hover{border-color:var(--accent)}
+.list .item.on{border-color:var(--accent);background:#f2f8f5}
+.item .main{flex:1;min-width:0}
+.item .name{font-weight:600}
+.item .meta{font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.list.compact .item{padding:8px 10px;cursor:pointer}
+
+.split{display:grid;grid-template-columns:250px 1fr;gap:14px;align-items:start}
+.sidelist{position:sticky;top:104px;max-height:calc(100vh - 130px);overflow:auto}
+.editor{min-width:0}
+
+.counter{display:inline-flex;gap:5px;align-items:center;font-size:12px;
+  padding:2px 9px;border-radius:999px;background:#eef1f5;color:var(--sub)}
+.counter.over{background:#fdecee;color:var(--err);font-weight:700}
+.counter.ok{background:#eef4f0;color:var(--ok)}
+
+.issues{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow:auto}
+.issue{display:flex;gap:9px;align-items:flex-start;padding:8px 10px;border-radius:6px;
+  border:1px solid var(--line);background:#fff;font-size:13px}
+.issue .sev{font-size:11px;padding:1px 7px;border-radius:999px;flex:0 0 auto;margin-top:2px}
+.sev.error{background:#fdecee;color:var(--err)}
+.sev.warn{background:#fdf3e3;color:var(--warn)}
+.sev.info{background:#eef2f8;color:var(--info)}
+.issue .body{flex:1;min-width:0}
+.issue .frag{font-weight:700;background:#fff6d5;padding:0 3px;border-radius:3px}
+.issue .acts{display:flex;gap:5px;flex:0 0 auto}
+.issue button{padding:3px 9px;font-size:12px}
+
+.tablewrap{overflow:auto;max-height:460px;border:1px solid var(--line);border-radius:7px}
+table{border-collapse:collapse;width:100%;font-size:13px;background:#fff}
+th,td{border-bottom:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#f7f9fc;position:sticky;top:0;font-size:12px;color:var(--sub);z-index:1}
+td.sample{max-width:340px;color:var(--sub)}
+td select{min-width:150px}
+
+.toolbar{align-items:center;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.toolbar .spacer{flex:1}
+.selinfo{font-size:12.5px;color:var(--sub)}
+.list .item .pick{width:auto;margin:0;flex:0 0 auto}
+.list .item.picked{background:#f2f8f5;border-color:var(--accent)}
+.secbadge{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;
+  background:#eef4f0;color:var(--accent);margin-right:6px;white-space:nowrap}
+.secbadge.none{background:#fdf3e3;color:var(--warn)}
+.item select.secpick{width:auto;min-width:150px;font-size:12.5px;flex:0 0 auto}
+
+/* ③ 構成順の一覧 */
+.outline{display:flex;flex-direction:column;gap:10px}
+.ogroup{border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden}
+.ogroup>.ohead{background:#eef4f0;color:var(--accent);font-weight:700;font-size:12.5px;
+  padding:7px 11px;display:flex;gap:8px;align-items:baseline}
+.ogroup>.ohead .n{margin-left:auto;font-weight:400;color:var(--sub);font-size:11.5px;
+  white-space:nowrap}
+.ogroup.empty>.ohead{background:#f4f6f9;color:var(--sub)}
+.ogroup .oempty{padding:8px 11px;font-size:12px;color:var(--sub);font-style:italic}
+.oitem{display:flex;gap:6px;align-items:center;padding:7px 10px;cursor:pointer;
+  border-top:1px solid var(--line)}
+.oitem:hover{background:#f7f9fc}
+.oitem.on{background:#f2f8f5;box-shadow:inset 3px 0 0 var(--accent)}
+.oitem .main{flex:1;min-width:0}
+.oitem .nm{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.oitem .mt{font-size:11px;color:var(--sub)}
+.oitem .mv{display:flex;flex-direction:column;gap:1px;flex:0 0 auto}
+.oitem .mv button{padding:0 5px;font-size:10px;line-height:1.35;border-radius:3px}
+.ostat{font-size:10.5px;padding:0 5px;border-radius:3px;flex:0 0 auto}
+.ostat.done{background:#eef4f0;color:var(--ok)}
+.ostat.draft{background:#eef1f5;color:var(--sub)}
+
+.autobox{border-color:var(--accent);background:#fbfdfc}
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.mode{display:block;border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+  background:#fff;cursor:pointer}
+.mode:has(input:checked){border-color:var(--accent);background:#f2f8f5;
+  box-shadow:0 0 0 1px var(--accent) inset}
+.mode input{width:auto;margin:0 8px 0 0}
+.mode .t{font-weight:700;font-size:14px}
+.mode .d{display:block;font-size:12.5px;color:var(--sub);margin-top:5px;line-height:1.65}
+.metrics{font-size:13px;background:#eef4f0;color:var(--accent);padding:9px 13px;
+  border-radius:7px;margin:6px 0 0;font-weight:700}
+.planlist{display:flex;flex-direction:column;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:7px;overflow:hidden;margin-top:10px}
+.planlist .r{display:flex;gap:12px;background:#fff;padding:8px 12px;font-size:13px}
+.planlist .r .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.planlist .r .n{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--sub)}
+.planlist .r .cut{color:var(--err);font-weight:700;white-space:nowrap}
+.namerule{border-collapse:collapse;font-size:13px;margin:4px 0 8px}
+.namerule th{background:#eef4f0;color:var(--accent);text-align:left;
+  padding:5px 12px;white-space:nowrap;font-size:12px;border-radius:4px 0 0 4px}
+.namerule td{padding:5px 12px}
+.namerule code{background:#eef1f5;padding:1px 6px;border-radius:4px;font-size:12.5px}
+.photocard .link{font-size:12px;color:var(--accent);background:#eef4f0;
+  padding:2px 8px;border-radius:999px;display:inline-block;margin-bottom:6px}
+.photocard .link.none{color:var(--sub);background:#eef1f5}
+.report{font-size:13.5px}
+.report h3{font-size:13px;margin:14px 0 6px;color:var(--sub)}
+.report .line{display:flex;gap:10px;padding:6px 10px;border-bottom:1px solid var(--line)}
+.report .line .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.report .line .to{color:var(--accent);font-weight:700;white-space:nowrap}
+.report .line .why{color:var(--sub);font-size:12px;white-space:nowrap}
+.photogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.photocard{background:#fff;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.photocard img{width:100%;height:150px;object-fit:cover;display:block;background:#eceff3}
+.photocard .pc-body{padding:9px}
+.photocard .pc-body input,.photocard .pc-body select{margin-bottom:6px;font-size:12.5px}
+.photocard .warn{font-size:11.5px;color:var(--warn);margin-bottom:6px}
+.photocard .ok{font-size:11.5px;color:var(--sub);margin-bottom:6px}
+
+.tabs{display:flex;gap:5px;margin-bottom:10px;border-bottom:1px solid var(--line)}
+.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;background:none;
+  padding:7px 12px;font-size:13px;color:var(--sub)}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+
+/* hidden 属性が付いているあいだは必ず消えていること。
+   ここで display:flex を無条件に指定すると、ブラウザ標準の
+   [hidden]{display:none} を上書きしてしまい、空のダイアログが
+   出たまま画面全体を覆ってしまう。既定は none、開いたときだけ flex。 */
+.modal{position:fixed;inset:0;background:rgba(20,24,32,.45);display:none;
+  align-items:center;justify-content:center;z-index:60;padding:20px}
+.modal:not([hidden]){display:flex}
+.modalbox{background:#fff;border-radius:10px;max-width:1000px;width:100%;
+  max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+.modalhead{display:flex;justify-content:space-between;align-items:center;
+  padding:12px 16px;border-bottom:1px solid var(--line);font-weight:700}
+.modalbody{padding:0;overflow:auto;flex:1}
+.modalbody iframe{width:100%;height:74vh;border:0;display:block}
+.modalbody .pad{padding:16px}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+  background:#1f2430;color:#fff;padding:10px 20px;border-radius:8px;z-index:80;
+  box-shadow:0 4px 18px rgba(0,0,0,.22);font-size:13px;max-width:80vw;display:block}
+.toast[hidden]{display:none}
+.toast.err{background:var(--err)}
+
+.diff{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.diff textarea{height:280px;font-size:13px}
+.diff h3{font-size:13px;margin:0 0 5px;color:var(--sub)}
+
+@media (max-width:900px){
+  .split{grid-template-columns:1fr}
+  .sidelist{position:static;max-height:none}
+  .diff{grid-template-columns:1fr}
+}
+
+/* ---------------------------------------------- かんたん作成 */
+.modebar{display:flex;align-items:center;gap:8px;padding:10px 18px 0;background:var(--bg)}
+.modebar .mode{border-radius:999px;padding:7px 18px;font-weight:600;color:var(--sub)}
+.modebar .mode.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.modehint{font-size:12px;color:var(--sub);margin-left:6px}
+
+.card.ez{padding:18px 20px}
+.ezhead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ezhead h2{margin:0;font-size:16px}
+.ezhead .num{flex:0 0 auto;width:26px;height:26px;border-radius:50%;
+  background:var(--accent);color:#fff;font-weight:700;display:flex;
+  align-items:center;justify-content:center;font-size:14px}
+.ezproj{font-size:13px;font-weight:600;color:var(--accent)}
+.card.ez.off{opacity:.5;pointer-events:none}
+/* 号を作る前でも使い方だけは読めるようにする。
+   まさにその時に読みたいものなので、まとめて止めてはいけない */
+.card.ez.off .whatis{pointer-events:auto;opacity:1}
+
+.bigbtn{background:var(--accent);color:#fff;border-color:var(--accent);
+  font-size:17px;font-weight:700;padding:14px 34px;border-radius:8px}
+.bigbtn:hover{filter:brightness(1.08);background:var(--accent)}
+.bigbtn:disabled{filter:none}
+
+.folders{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
+  gap:10px;margin:12px 0 4px}
+.fold{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fff}
+.fold .fname{font-weight:600;font-size:13px}
+.fold .fnote{font-size:11px;color:var(--sub);margin-top:1px}
+.fold .fcount{font-size:12px;margin-top:6px;color:var(--accent);font-weight:600}
+.fold.zero{background:#fafbfc}
+.fold.zero .fcount{color:var(--sub);font-weight:400}
+.fold .flist{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.fold .chip{font-size:11px;padding:2px 8px;border-radius:999px;line-height:1.5;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:#f4f6f9;color:var(--ink)}
+.fold .chip:hover{background:#e7ecf3;border-color:var(--accent)}
+.fold .chip.img{background:#fdf7ee;color:var(--warn)}
+.fold .chip.img:hover{background:#f8eeda}
+.fold .renum{font-size:11px;padding:3px 10px;margin-top:8px}
+
+.tips{margin-top:10px;font-size:13px}
+.tips summary{cursor:pointer;color:var(--accent);font-weight:600}
+.tips ul{margin:8px 0 0 18px;padding:0}
+.tips li{margin-bottom:4px}
+
+.ezbox{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-top:12px;
+  background:#fafbfc}
+.ezbox h3{margin:0 0 6px;font-size:13px}
+.ezbig{font-size:15px;font-weight:700;color:var(--accent);margin-bottom:8px}
+.ezbig.over{color:var(--warn)}
+.ezrows{font-size:12px;color:var(--sub);line-height:1.7}
+.ezrows b{color:var(--ink)}
+.pagebar{display:flex;gap:3px;margin:8px 0 10px;flex-wrap:wrap}
+.pagebar i{width:22px;height:30px;border:1px solid var(--accent);border-radius:2px;
+  background:#eef4f0;display:block}
+.pagebar i.over{border-color:var(--warn);background:#fdf3e3}
+
+.pv{margin-top:12px;border:1px solid var(--line);border-radius:8px;overflow:hidden;
+  background:#e9ecf1}
+.pv embed,.pv iframe{width:100%;height:70vh;border:0;display:block}
+.pvnote{padding:10px 14px;font-size:13px;background:#fff;border-top:1px solid var(--line)}
+
+/* ---------------------------------------------- 写真を原稿に割り当てる */
+.assign{max-height:64vh;overflow:auto;padding-right:4px}
+.asec{margin-bottom:18px}
+.asec > h3{font-size:13px;margin:0 0 8px;color:var(--accent);
+  border-bottom:1px solid var(--line);padding-bottom:5px}
+.asec .none{font-size:12px;color:var(--sub);font-style:italic}
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
+.pcard{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.pcard.todo{border-color:var(--warn);box-shadow:0 0 0 1px #f3dfc0 inset}
+.pcard .shot{width:100%;height:110px;object-fit:cover;display:block;background:#eef1f5}
+.pcard .pn{font-size:11px;color:var(--sub);padding:5px 7px 0;word-break:break-all}
+.pcard select{font-size:12px;border:0;border-top:1px solid var(--line);border-radius:0;
+  margin-top:5px}
+.pcard select.todo{background:#fdf3e3;color:var(--warn);font-weight:600}
+
+/* ---------------------------------------------- 使い方 */
+.ezhead .whatis{margin-left:auto;width:24px;height:24px;padding:0;border-radius:50%;
+  font-weight:700;color:var(--accent);border-color:var(--line);line-height:1}
+.ezhead .whatis:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+.helpnav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;
+  padding-bottom:12px;border-bottom:1px solid var(--line)}
+.helpnav button{font-size:12px;padding:5px 12px;border-radius:999px}
+.helpnav button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.help{max-height:62vh;overflow:auto;padding-right:6px;line-height:1.85}
+.help h3{font-size:15px;color:var(--accent);margin:22px 0 8px;
+  padding-bottom:5px;border-bottom:1px solid var(--line);scroll-margin-top:6px}
+.help h3:first-child{margin-top:0}
+.help p{margin:0 0 10px}
+.help ul,.help ol{margin:0 0 12px;padding-left:22px}
+.help li{margin-bottom:5px}
+.help ol{counter-reset:hstep;list-style:none;padding-left:0}
+.help ol li{position:relative;padding-left:32px;margin-bottom:8px}
+.help ol li::before{counter-increment:hstep;content:counter(hstep);
+  position:absolute;left:0;top:2px;width:21px;height:21px;border-radius:50%;
+  background:var(--accent);color:#fff;font-size:12px;font-weight:700;
+  display:flex;align-items:center;justify-content:center}
+.help code{background:#eef1f5;padding:1px 5px;border-radius:4px;font-size:12.5px}
+.help pre{background:#f7f9fc;border:1px solid var(--line);border-radius:6px;
+  padding:10px 12px;font-size:12.5px;line-height:1.7;overflow-x:auto;margin:0 0 12px}
+.help table{border-collapse:collapse;width:100%;margin:0 0 12px;font-size:13px}
+.help th,.help td{border:1px solid var(--line);padding:6px 9px;text-align:left;
+  vertical-align:top}
+.help th{background:#f4f6f9;font-weight:600;white-space:nowrap}
+.help .hnote{background:#f7f9fc;border-left:3px solid var(--line);
+  padding:9px 12px;margin:0 0 12px;font-size:13px}
+.help .hwarn{background:#fdf3e3;border-left:3px solid var(--warn);
+  padding:9px 12px;margin:0 0 12px;font-size:13px}
+.helpfoot{display:flex;gap:8px;align-items:center;margin-top:14px;
+  padding-top:12px;border-top:1px solid var(--line)}
+
+/* 使い方を紙に出せるようにする（パソコンの横に置いて使えるように） */
+@media print{
+  body > *:not(#modal){display:none !important}
+  #modal{position:static;background:none;display:block !important}
+  .modalbox{box-shadow:none;border:0;max-width:none;width:auto;max-height:none}
+  .modalhead button,.helpnav,.helpfoot{display:none !important}
+  .help{max-height:none;overflow:visible}
+}
+.ezbox .warnhint{color:var(--warn);font-weight:600}
+.fold.need{border-color:#e8cfa0;background:#fffdf8}
+.fold.need .fcount{color:var(--warn)}
+.foldbtns{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
