@@ -148,7 +148,13 @@ def _rpr(spec: LayoutSpec, *, font: str, pt: float, bold: bool = False,
 
 def _para(text: str, rpr: str, *, indent: bool = False, spacing_before: int = 0,
           align: str = "", border: bool = False, keep: bool = False,
-          shade: str = "") -> str:
+          shade: str = "", big: bool = False) -> str:
+    """段落1つ。
+
+    `big` は「本文より大きい字」の印。紙面は行のグリッドに合わせて組んで
+    いるが、**大きい字をグリッドに吸着させると隣の行に重なる**ので、
+    見出しなどはグリッドから外す（Word の日本語の書式でも同じ扱い）。
+    """
     ppr = "<w:pPr>"
     if keep:
         # 見出しは段や頁の切れ目で割らない。
@@ -162,6 +168,9 @@ def _para(text: str, rpr: str, *, indent: bool = False, spacing_before: int = 0,
                 f'w:color="{INK_ACCENT}"/></w:pBdr>')
     if shade:
         ppr += f'<w:shd w:val="clear" w:color="auto" w:fill="{shade}"/>'
+    if big:
+        # スキーマの順番が決まっている。snapToGrid は spacing より前
+        ppr += '<w:snapToGrid w:val="0"/>'
     if spacing_before:
         ppr += f'<w:spacing w:before="{spacing_before}"/>'
     if indent:
@@ -239,7 +248,7 @@ def _photo_frame(spec: LayoutSpec, caption: str = "") -> tuple[str, float]:
         '<w:vAlign w:val="center"/></w:tcPr>'
         '<w:p><w:pPr><w:jc w:val="center"/>'
         f'<w:spacing w:line="{mm2twip(spec.caption_pt * MM_PER_PT * 1.4)}" '
-        'w:lineRule="exact"/></w:pPr>'
+        'w:lineRule="atLeast"/></w:pPr>'
         f'<w:r>{rpr}<w:t xml:space="preserve">{_esc(label)}</w:t></w:r>'
         "</w:p></w:tc></w:tr></w:tbl>", w)
 
@@ -347,6 +356,7 @@ def _section_head(name: str, rpr: str, spec: LayoutSpec) -> str:
     return (
         '<w:p><w:pPr>'
         '<w:keepNext/><w:keepLines/>'
+        '<w:snapToGrid w:val="0"/>'
         f'<w:shd w:val="clear" w:color="auto" w:fill="{INK_BAND}"/>'
         f'<w:spacing w:before="{mm2twip(3)}"/>'
         '<w:jc w:val="center"/>'
@@ -412,7 +422,7 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
                 f'<w:tc><w:tcPr><w:tcW w:w="{widths[j]}" w:type="dxa"/>{shd}'
                 '<w:vAlign w:val="center"/></w:tcPr>'
                 f'<w:p><w:pPr><w:jc w:val="{align}"/>'
-                f'<w:spacing w:line="{cell_line}" w:lineRule="exact" '
+                f'<w:spacing w:line="{cell_line}" w:lineRule="atLeast" '
                 'w:before="20" w:after="20"/></w:pPr>'
                 f'<w:r>{head_rpr if i == 0 else body_rpr}'
                 f'<w:t xml:space="preserve">{_esc(text)}</w:t></w:r></w:p></w:tc>')
@@ -440,7 +450,7 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
     if title:
         head = _para(title, _rpr(spec, font=spec.heading_font, pt=spec.heading_pt,
                                  bold=True, color=INK_ACCENT),
-                     border=True, keep=True)
+                     border=True, keep=True, big=True)
     # 段組みを切り替える段落そのものは、場所を取らせない。
     # 表がページいっぱいのとき、この段落だけで次のページができてしまう
     tiny = '<w:spacing w:line="20" w:lineRule="exact" w:before="0" w:after="0"/>'
@@ -537,7 +547,7 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
     head_line = "　".join(parts)
     body.append(_para(head_line, _rpr(spec, font=spec.heading_font,
                                       pt=spec.heading_pt + 2, bold=True,
-                                      color=INK_ACCENT), border=True))
+                                      color=INK_ACCENT), border=True, big=True))
     body.append(_para("", body_rpr))
 
     # 構成（表紙 → 行政報告 → … → 最終ページ）の順に組む
@@ -579,8 +589,8 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
             # 別々にすると、見出しが5段の中に残って表と離れてしまう
             table_only = bool(getattr(art, "table", None)) and not art.body.strip()
             if art.title and not table_only:
-                body.append(_para(art.title, head_rpr, spacing_before=240, border=True,
-                                  keep=True))
+                body.append(_para(art.title, head_rpr, spacing_before=240,
+                                  border=True, keep=True, big=True))
                 # 見出しは本文より大きいので、その分だけ行を余分に使う。
                 # さらに、段の途中に掛かる見出しは丸ごと次の段へ送られる
                 # （keepLines）ので、その空きを見出しの高さの半分として見込む
@@ -742,7 +752,11 @@ def _styles_xml(spec: LayoutSpec) -> str:
         f'<w:sz w:val="{pt2half(spec.body_pt)}"/>'
         f'<w:szCs w:val="{pt2half(spec.body_pt)}"/>'
         "</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr>"
-        f'<w:spacing w:line="{line_twip}" w:lineRule="exact" w:after="0"/>'
+        # 行送りは「これ以上」にする。**exact にしてはいけない。**
+        # exact だと、本文より大きい字（見出し・区分の帯）が行の高さに
+        # 収まらず、隣の行に重なって印刷される。LibreOffice は大目に
+        # 見てくれるが Word は重ねる。実際の刷り上がりで重なった
+        f'<w:spacing w:line="{line_twip}" w:lineRule="atLeast" w:after="0"/>'
         '<w:jc w:val="both"/>'
         "</w:pPr></w:pPrDefault></w:docDefaults></w:styles>"
     )

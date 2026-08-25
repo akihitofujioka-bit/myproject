@@ -69,6 +69,9 @@
 | **テキストボックスの二重化** | `.docx` のテキストボックスは `mc:Choice` と `mc:Fallback` に同じ内容が入る。**両方に書き込む**（片方だけだと Word と LibreOffice で表示が食い違う） | `test_docx_slot_detect_and_fill` |
 | **区分の並び** | 構成の並びは「紙面の順」そのもの。③の一覧・自動組版の両方がこの順に従う。片方だけ並べ替えない | `test_outline_lists_sections_in_order_with_unassigned_last` / `test_compose_lays_out_sections_in_order` |
 | **pypdf と日本語** | pypdf は日本語 PDF で文字化けする。PyMuPDF を優先し、pypdf を使ったときは画面に注意書きを出す | — |
+| **行送りの `exact`** | 行送りを `w:lineRule="exact"` で固定しない。本文より大きい字（見出し・区分の帯）が行の高さに収まらず、**隣の行に重なって刷り上がる**。`atLeast` にすること。字の入らない見えない段落（改ページ・段の切り替え）だけは例外 | `test_lines_do_not_sit_on_top_of_each_other` |
+| **大きい字とグリッド** | 紙面は `w:docGrid` の行グリッドに合わせて組んでいる。Word は行をグリッドに吸着させるので、`atLeast` にしても大きい字は重なる。見出しの段落には `<w:snapToGrid w:val="0"/>` を付けてグリッドから外す。スキーマ順は keepNext → keepLines → pBdr → shd → **snapToGrid** → spacing → ind → jc | 同上 |
+| **Word でしか出ない崩れ** | 上の2つは **LibreOffice では再現しない**。この環境の `soffice` は行の高さをはみ出した字を大目に見るため、こちらの PDF は正常に見えるのに実物の Word では重なる。組版まわりを直したときは「LibreOffice で確認できた＝直った」と書かないこと。事務局の Word で見てもらうまでは未確認 | — |
 
 ## 4. どこを直せばよいか
 

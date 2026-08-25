@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import zipfile
@@ -2369,6 +2370,55 @@ def test_table_is_laid_out_as_a_table_not_as_text():
         assert '<w:type w:val="continuous"/>' in xml
         # 見出しの罫線が表の直前にある＝見出しと表が離れていない
         assert xml.index("議案に対する賛否") < xml.index("<w:tbl>")
+
+
+def test_lines_do_not_sit_on_top_of_each_other():
+    """行が重ならないこと（Word でだけ起きた不具合の再発を止める）。
+
+    紙面は行のグリッドに合わせて組んでいるが、これを固く縛りすぎると
+    本文より大きい字（見出し・区分の帯）が行の高さに収まらず、隣の行に
+    重なって刷り上がる。LibreOffice は大目に見てくれるので、こちらの
+    確認では見えず、実物で初めて分かった。二度と戻さないために縛る。
+    """
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        _make_xlsx(inbox / "03_審議したこと・決まったこと" / "02_議案に対する賛否.xlsx",
+                   SANPI)
+        res = easy.build(p, max_pages=0)
+        with zipfile.ZipFile(Path(res["compose"]["docx"])) as z:
+            doc = z.read("word/document.xml").decode("utf-8")
+            styles = z.read("word/styles.xml").decode("utf-8")
+
+    # (1) 文書ぜんたいの行送りを exact（＝この高さぴったり）にしない。
+    #     exact だと大きい字がはみ出した分がそのまま隣の行に重なる。
+    head = styles[:styles.index("</w:docDefaults>")]
+    assert 'w:lineRule="exact"' not in head, (
+        "docDefaults の行送りが exact になっている。"
+        "大きい字が隣の行に重なるので atLeast にすること")
+    assert 'w:lineRule="atLeast"' in head, "docDefaults に行送りの指定が無い"
+
+    # (2) 本文より大きい字は、行のグリッドから外す。
+    #     外さないと Word がグリッドに吸着させ、やはり隣の行に重なる。
+    assert '<w:snapToGrid w:val="0"/>' in doc, (
+        "大きい字がグリッドに吸着したままになっている")
+    # スキーマの順番（snapToGrid は spacing より前）を守っていること。
+    # 逆だと Word がファイルを開けない。
+    for chunk in doc.split('<w:snapToGrid w:val="0"/>')[1:]:
+        ppr = chunk[:chunk.index("</w:pPr>")]
+        assert "<w:jc" not in ppr.split("<w:spacing")[0], \
+            "snapToGrid の位置がスキーマの順番と違う"
+
+    # (3) 中身のある段落で exact が残っていないこと。
+    #     高さゼロの見えない段落（改ページ・段の切り替え）だけは例外。
+    for para in doc.split("<w:p>")[1:]:
+        body = para[:para.index("</w:p>")] if "</w:p>" in para else para
+        if 'w:lineRule="exact"' not in body:
+            continue
+        # <w:type> などと間違えないよう、字そのものが入る <w:t> だけを見る
+        letters = re.search(r"<w:t[ >]", body)
+        assert not letters, f"字のある行が exact になっている: {body[:120]}"
 
 
 def test_write_note_saves_into_the_section_folder():
