@@ -62,7 +62,7 @@
 |---|---|---|
 | **バッチの文字コード** | `.bat` は CP932 + CRLF で保存する。UTF-8 だと日本語版 Windows で文字化けする | `test_batch_files_are_cp932` |
 | **ZIP のファイル名** | 日本語名を含む ZIP は Python の `zipfile` で作る。Info-ZIP の `zip` は UTF-8 フラグを立てず Windows で化ける | — |
-| **CSS の `display`** | `hidden` 属性を使う要素に無条件の `display` を書かない。ブラウザ標準の `[hidden]{display:none}` を上書きし、空のダイアログが画面を覆う | `test_modal_is_hidden_by_default` |
+| **CSS の `display`** | `hidden` 属性を使う要素に無条件の `display` を書かない。ブラウザ標準の `[hidden]{display:none}` は詳細度が最低で、`.steps{display:flex}` 程度の指定にも負ける。2回踏んだので `[hidden]{display:none !important}` を1つ置いてある。**これを消さない** | `test_modal_is_hidden_by_default` / `test_hidden_elements_are_really_hidden` |
 | **Python の探し方** | `where` で「あるか」だけ見ない。**実際に走らせて確かめる**（`_find_python.bat` → `_pycheck.py`）。壊れた Python が PATH に残っている端末がある | `test_python_detection_is_verified_not_assumed` |
 | **バッチの括弧** | `for` / `if` ブロック内で、括弧を含む文字列を変数展開しない。cmd がブロックを途中で閉じる。`call :label` 方式にする | 同上 |
 | **sectPr の要素順** | OOXML はスキーマ順が決まっている。`w:cols` → `w:textDirection` → `w:docGrid` の順（逆にすると Word が読めない） | `test_compose_produces_vertical_five_columns` |
@@ -81,11 +81,30 @@
 | 窓口（API）を足す | `gikai/server.py` の `handle_api`。**追加したら `tools/make_docs.py` の `API_DESC` にも説明を足す** |
 | 保存する項目を足す | `gikai/project.py` の `Article` / `Photo` dataclass（既存プロジェクトを壊さないよう既定値を付ける） |
 | 紙面の構成（台割）を変える | `gikai/sections.py` の `DEFAULT_SECTIONS`（**区分の並び＝紙面の並び＝③の編集順＝自動組版の順**。3か所が同じ順で動くので、ここだけ直せばよい） |
+| かんたん作成の作りを変える | `gikai/easy.py`（**フォルダの中身がそのまま紙面**、という一点だけで動いている。ここに条件分岐を足す前に、その規則で説明できないか考える） |
+
+### 画面は2つある。かんたん作成が既定
+
+- **かんたん作成** — 最大ページ数を決める → 区分ごとのフォルダに原稿と写真を
+  入れる → ボタン1つ → プレビュー → 書き出し。事務局の通常運用はこちら
+- **くわしく編集** — いままでの①〜⑥。1本ずつ校正したいときだけ
+
+**かんたん作成に設定項目を足さない。** 「いろいろ設定がありすぎる」という
+声から生まれた画面なので、増やすなら「くわしく編集」側に置くこと。
+
+`easy.build()` は毎回フォルダから組み直す（同じフォルダからは同じ紙面ができる）。
+画面で直した本文は消えるので、`hand_edited` が立っている記事があるときだけ
+確認を出す。この往復の作りを崩さないこと
+（`test_easy_build_is_repeatable`）。
 
 ### 出力方式は2つある。どちらも壊さないこと
 
 - **自動組版**（`compose.py`）— 1ページ5段・縦書きは固定、ページ数は分量しだい。既定
 - **差し込み**（`docxio.py`）— 前号の様式の枠に文字と写真を入れ替える
+
+写真は記事の本文の**中に**挟む（`_weave_photos`）。末尾にまとめると、
+長い記事では写真が何段も離れ、次のページに出てしまう
+（`test_easy_photos_are_placed_inside_their_article`）。
 
 ## 5. 開発の作法
 

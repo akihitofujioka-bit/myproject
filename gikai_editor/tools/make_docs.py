@@ -49,6 +49,10 @@ SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("gikai/preview.py", "画面で見る下見用の紙面（HTML）。"),
     ]),
     ("全体のとりまとめ", [
+        ("gikai/easy.py",
+         "かんたん作成。区分ごとのフォルダの中身から、1号ぶんを組み立てる。"),
+        ("gikai/shellopen.py",
+         "フォルダやファイルを、パソコンの標準の方法で開く。"),
         ("gikai/sections.py",
          "議会だよりの構成（表紙→行政報告→…→最終ページ）。"
          "原稿がどの区分のものかの判定もここ。"),
@@ -112,6 +116,12 @@ API_DESC = {
     "outline/sections": "構成そのものを変える（区分の追加・削除・並べ替え）",
     "outline/assign": "原稿の名前や見出しから、どの区分かを自動で振り分ける",
     "outline/move": "区分の中で記事を1つ上／下へ動かす",
+    "easy/state": "かんたん作成の画面の状態（フォルダの中身・最大ページ数）",
+    "easy/folders": "区分ごとの原稿フォルダを作る",
+    "easy/max_pages": "最大ページ数を決める",
+    "easy/build": "フォルダの中身から1号ぶんを組み立てる（かんたん作成の本体）",
+    "easy/pdf": "組み上がった Word を PDF にする（できあがりの確認用）",
+    "open": "フォルダやファイルをパソコンの標準の方法で開く（号のフォルダの中だけ）",
     "article/proofread": "記事を校正する",
     "article/autofix": "自動で直せる指摘をまとめて直す",
     "article/fit": "枠に合わせて要約する",

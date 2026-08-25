@@ -20,7 +20,13 @@
   <button class="ghost" id="btnQuit" title="ツールを終了します">終了</button>
 </header>
 
-<nav class="steps" id="steps">
+<div class="modebar">
+  <button class="mode on" data-mode="easy">かんたん作成</button>
+  <button class="mode" data-mode="pro">くわしく編集</button>
+  <span class="modehint" id="modeHint">フォルダに入れて、ボタンひとつで作ります。</span>
+</div>
+
+<nav class="steps" id="steps" hidden>
   <button data-step="project" class="on">① 号を作る</button>
   <button data-step="import">② 原稿を集める</button>
   <button data-step="edit">③ 校正・要約</button>
@@ -31,8 +37,86 @@
 
 <main>
 
+<!-- かんたん作成 ------------------------------------------------------- -->
+<section id="pane-easy" class="pane on">
+
+  <div class="card ez" id="ezStep1">
+    <div class="ezhead"><span class="num">1</span>
+      <h2>号とページ数を決める</h2></div>
+    <div class="row">
+      <label>号の名前<input id="ezTitle" placeholder="例: 第204号"></label>
+      <label>発行日<input id="ezDate" placeholder="例: 令和8年10月31日"></label>
+      <button class="primary" id="ezCreate">この号をはじめる</button>
+      <span class="ezproj" id="ezProj"></span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>最大ページ数
+        <input id="ezPages" type="number" min="0" max="64" step="2" value="8"></label>
+      <button id="ezSavePages">この枚数にする</button>
+      <span class="hint" id="ezPagesNote">この枚数に収まるように、長い原稿を自動で要約します。
+        0 なら成り行き（原稿の分量どおり）。</span>
+    </div>
+    <div class="row" id="ezOpenRow" hidden>
+      <span class="hint">前に作った号を続きから：</span>
+      <select id="ezOpen"></select>
+      <button id="ezOpenBtn">開く</button>
+    </div>
+  </div>
+
+  <div class="card ez" id="ezStep2">
+    <div class="ezhead"><span class="num">2</span>
+      <h2>フォルダに原稿と写真を入れる</h2></div>
+    <p class="hint">紙面の区分ごとにフォルダを作ります。
+      載せたい区分のフォルダへ、原稿と写真をそのまま入れてください。
+      <b>どのフォルダに入れたかが、そのまま紙面の場所になります。</b></p>
+    <div class="row">
+      <button class="primary" id="ezOpenInbox">原稿フォルダを開く</button>
+      <button id="ezRescan">入れ終わったので数え直す</button>
+      <span class="hint" id="ezInboxPath"></span>
+    </div>
+    <div id="ezFolders" class="folders"></div>
+    <details class="tips">
+      <summary>載せる順番と、写真の付け方</summary>
+      <ul class="hint">
+        <li><b>順番</b> … ファイル名の先頭に番号を付けると、その順に載ります
+          （<code>01_あいさつ.docx</code> → <code>02_森下けい子.docx</code>）</li>
+        <li><b>写真</b> … 原稿と同じ名前にすると、その記事のそばに入ります
+          （<code>森下けい子.docx</code> ↔ <code>森下けい子.jpg</code>）。
+          複数なら <code>森下けい子1.jpg</code> <code>森下けい子2.jpg</code></li>
+        <li>名前が合わない写真は、その区分の先頭の記事に付きます</li>
+        <li>フォルダから消したものは、作り直すと紙面からも消えます</li>
+      </ul>
+    </details>
+  </div>
+
+  <div class="card ez" id="ezStep3">
+    <div class="ezhead"><span class="num">3</span>
+      <h2>ボタンひとつで作る</h2></div>
+    <div class="row">
+      <button class="bigbtn" id="ezBuild">議会だよりを作る</button>
+      <span class="hint" id="ezBuildNote">1ページ5段の縦書きで、区分の順に組み上げます。
+        何度でも押せます。</span>
+    </div>
+    <div id="ezResult"></div>
+  </div>
+
+  <div class="card ez" id="ezStep4">
+    <div class="ezhead"><span class="num">4</span>
+      <h2>できあがりを見て、書き出す</h2></div>
+    <div class="row">
+      <button class="primary" id="ezPreview">できあがりを見る</button>
+      <button id="ezOpenWord">Word で開く</button>
+      <button id="ezOpenOut">保存フォルダを開く</button>
+      <span class="hint" id="ezOutNote">まだ作っていません。</span>
+    </div>
+    <div id="ezPreviewBox"></div>
+  </div>
+
+</section>
+
+
 <!-- ①  ------------------------------------------------------------- -->
-<section id="pane-project" class="pane on">
+<section id="pane-project" class="pane">
   <h1>号を作る</h1>
   <p class="hint">1つの号ぶんの作業を、パソコンの中のフォルダにまとめて保存します。外部には送信しません。</p>
 

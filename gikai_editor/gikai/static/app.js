@@ -1274,6 +1274,263 @@ $("#btnQuit").addEventListener("click", () => guard(async () => {
     </div>`;
 }));
 
+// ============================================================ かんたん作成
+
+/* 考え方はひとつだけ。「フォルダの中身が、そのまま紙面になる」。
+   区分の振り分けも写真の割り付けも、どのフォルダに入れたかで決まるので、
+   画面で覚えることが無い。 */
+
+let easyState = null;
+
+$$(".modebar .mode").forEach((b) =>
+  b.addEventListener("click", () => showMode(b.dataset.mode)));
+
+function showMode(mode) {
+  $$(".modebar .mode").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+  $("#steps").hidden = mode === "easy";
+  $("#modeHint").textContent = mode === "easy"
+    ? "フォルダに入れて、ボタンひとつで作ります。"
+    : "手順を1つずつ確かめながら進めます。";
+  if (mode === "easy") {
+    $$(".pane").forEach((x) => x.classList.toggle("on", x.id === "pane-easy"));
+    guard(loadEasy);
+  } else {
+    showStep(state.project ? "import" : "project");
+  }
+}
+
+async function loadEasy() {
+  // 保存済みの号を選べるようにする
+  const ws = await api("workspace");
+  const sel = $("#ezOpen");
+  $("#ezOpenRow").hidden = !ws.projects.length;
+  sel.innerHTML = ws.projects.map((x) =>
+    `<option value="${esc(x.name)}">${esc(x.title)}（記事 ${x.articles} 件）</option>`).join("");
+
+  $("#ezProj").textContent = state.project ? "いまの号: " + state.project.title : "";
+  const on = !!state.project;
+  ["ezStep2", "ezStep3", "ezStep4"].forEach((id) => $("#" + id).classList.toggle("off", !on));
+  if (!on) {
+    $("#ezFolders").innerHTML = "";
+    $("#ezInboxPath").textContent = "";
+    return;
+  }
+  await refreshEasy();
+}
+
+async function refreshEasy() {
+  easyState = await api("easy/state");
+  $("#ezPages").value = easyState.max_pages || 0;
+  $("#ezInboxPath").textContent = easyState.inbox;
+  renderFolders();
+  renderBuilt();
+}
+
+function renderFolders() {
+  const el = $("#ezFolders");
+  if (!easyState) { el.innerHTML = ""; return; }
+  el.innerHTML = easyState.sections.map((f) => {
+    const n = f.docs.length, m = f.photos.length;
+    const names = f.docs.concat(f.photos).slice(0, 6).map(esc).join("、");
+    const more = (n + m) > 6 ? ` ほか${n + m - 6}件` : "";
+    return `<div class="fold ${n + m ? "" : "zero"}">
+      <div class="fname">${esc(f.folder)}</div>
+      <div class="fnote">${esc(f.note)}${f.optional ? "（無い号もあります）" : ""}</div>
+      <div class="fcount">${n ? `原稿 ${n} 件` : "原稿なし"}${m ? ` ／ 写真 ${m} 枚` : ""}</div>
+      ${names ? `<div class="flist">${names}${more}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+function renderBuilt() {
+  const b = easyState?.built || {};
+  const has = !!b.docx;
+  ["ezPreview", "ezOpenWord", "ezOpenOut"].forEach((id) => ($("#" + id).disabled = !has));
+  $("#ezOutNote").textContent = has
+    ? `${b.docx}　（保存先: ${b.output_dir}）`
+    : "まだ作っていません。";
+}
+
+$("#ezCreate").addEventListener("click", () => guard(async () => {
+  const title = $("#ezTitle").value.trim();
+  if (!title) throw new Error("号の名前を入れてください（例: 第204号）");
+  const r = await api("project/create", {
+    title, issue_no: title.replace(/[^0-9]/g, ""), issue_date: $("#ezDate").value.trim(),
+  });
+  await setProject(r.project);
+  await api("easy/max_pages", { max_pages: Number($("#ezPages").value) || 0 });
+  const f = await api("easy/folders", {});
+  await loadEasy();
+  toast(`「${r.project.title}」を作りました。原稿フォルダを開いて、原稿と写真を入れてください。`);
+  modal("原稿フォルダを作りました", `<div class="pad">
+    <p>この場所に、区分ごとのフォルダを作りました。</p>
+    <p class="hint" style="word-break:break-all"><code>${esc(f.inbox)}</code></p>
+    <div class="list">${f.folders.map((x) =>
+      `<div class="item"><div class="main"><div class="name">${esc(x.folder)}</div>
+        <div class="meta">${esc(x.note)}</div></div></div>`).join("")}</div>
+    <p class="hint" style="margin-top:12px">載せたい区分のフォルダへ、原稿と写真を入れてください。
+      入れ終わったら「入れ終わったので数え直す」を押します。</p>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="mdOpenInbox">原稿フォルダを開く</button>
+    </div></div>`);
+  $("#mdOpenInbox")?.addEventListener("click", () => {
+    closeModal();
+    guard(() => openThing("inbox"));
+  });
+}));
+
+$("#ezOpenBtn").addEventListener("click", () => guard(async () => {
+  const name = $("#ezOpen").value;
+  if (!name) return;
+  const r = await api("project/open", { name });
+  await setProject(r.project);
+  await api("easy/folders", {});
+  await loadEasy();
+  toast(`「${r.project.title}」を開きました`);
+}));
+
+$("#ezSavePages").addEventListener("click", () => guard(async () => {
+  const n = Number($("#ezPages").value) || 0;
+  const r = await api("easy/max_pages", { max_pages: n });
+  toast(r.max_pages
+    ? `最大 ${r.max_pages} ページに収めます`
+    : "ページ数は成り行きにしました（原稿の分量どおり）");
+  if (easyState) easyState.max_pages = r.max_pages;
+}));
+
+$("#ezOpenInbox").addEventListener("click", () => guard(() => openThing("inbox")));
+$("#ezOpenOut").addEventListener("click", () => guard(() => openThing("output")));
+$("#ezOpenWord").addEventListener("click", () =>
+  guard(() => openThing(easyState?.built?.docx || "")));
+
+async function openThing(what) {
+  if (!state.project) throw new Error("先に号をはじめてください");
+  const r = await api("open", { what });
+  toast(r.message);
+}
+
+$("#ezRescan").addEventListener("click", () => guard(async () => {
+  await refreshEasy();
+  toast(`原稿 ${easyState.docs} 件 ／ 写真 ${easyState.photos} 枚 が入っています`);
+}));
+
+$("#ezBuild").addEventListener("click", () => guard(buildEasy));
+
+async function buildEasy() {
+  if (!state.project) throw new Error("先に号をはじめてください");
+  await refreshEasy();
+  if (!easyState.docs) {
+    throw new Error("原稿フォルダに原稿が入っていません。" +
+      "「原稿フォルダを開く」から、区分のフォルダへ原稿を入れてください。");
+  }
+  // 画面で本文を直していた場合だけ、消えることを先に伝える
+  if (easyState.hand_edited.length) {
+    const ok = await confirmModal("画面で直した本文が元に戻ります",
+      `<p>「くわしく編集」で本文を直した記事が <b>${easyState.hand_edited.length} 件</b>あります。</p>
+       <ul class="hint" style="margin:8px 0 12px 18px">${
+         easyState.hand_edited.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+       <p class="hint"><b>作り直すと:</b> フォルダに入っている原稿から組み直すので、
+         画面で直した本文は元に戻ります。同じフォルダからは必ず同じ紙面ができる、
+         という作りにしているためです。</p>
+       <p class="hint"><b>直した内容を残したいときは:</b> このまま「やめる」を押し、
+         「くわしく編集」の⑤から組んでください。
+         または、直した内容をフォルダの原稿ファイル自体に反映してから作り直してください。</p>`,
+      "元に戻して作り直す");
+    if (!ok) return;
+  }
+
+  const btn = $("#ezBuild");
+  btn.disabled = true;
+  btn.textContent = "作っています…";
+  $("#ezResult").innerHTML = "";
+  try {
+    const r = await api("easy/build", { max_pages: Number($("#ezPages").value) || 0 });
+    await refresh();
+    easyState = { ...easyState, built: r.built };
+    renderBuilt();
+    renderFolders();
+    showBuildResult(r);
+    toast(`できあがりました（${r.compose.pages} ページ）`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "議会だよりを作る";
+  }
+}
+
+function showBuildResult(r) {
+  const pages = r.compose.pages;
+  const max = r.max_pages;
+  const over = max > 0 && pages > max;
+  const bars = Array.from({ length: Math.min(pages, 40) },
+    (_, i) => `<i class="${max && i >= max ? "over" : ""}"></i>`).join("");
+
+  const secs = r.outline.sections.filter((g) => g.count).map((g) =>
+    `<div><b>${esc(g.name)}</b> … ${g.count} 本 ／ ${g.chars} 字</div>`).join("");
+
+  const rep = r.report;
+  const line = (label, arr) => arr.length
+    ? `<div><b>${label}</b> ${arr.length} 件<span class="flist"> ${
+        arr.slice(0, 8).map(esc).join("、")}${arr.length > 8 ? " ほか" : ""}</span></div>`
+    : "";
+
+  const fit = r.fit && r.fit.applied && r.fit.applied.length
+    ? `<div class="ezbox"><h3>ページ数に合わせて詰めたところ</h3>
+        <div class="ezrows">${r.fit.applied.map((a) =>
+          `<div><b>${esc(a.label)}</b> ${a.before} 字 → ${a.after} 字</div>`).join("")}</div>
+        <p class="hint" style="margin-top:8px">原稿にあった文を選んで残しています
+          （文章を作り変えてはいません）。気になるところは「くわしく編集」の③で直せます。</p></div>`
+    : "";
+
+  const warn = (r.compose.warnings || []).length
+    ? `<div class="ezbox"><h3>気を付けるところ</h3><div class="ezrows">${
+        r.compose.warnings.map((w) => `<div>${esc(w)}</div>`).join("")}</div></div>`
+    : "";
+
+  const skipped = rep.skipped.length
+    ? `<div class="ezbox"><h3>読めなかったファイル</h3><div class="ezrows">${
+        rep.skipped.map((x) => `<div><b>${esc(x.file)}</b> … ${esc(x.why)}</div>`).join("")}
+      </div></div>`
+    : "";
+
+  $("#ezResult").innerHTML = `
+    <div class="ezbox">
+      <div class="ezbig ${over ? "over" : ""}">できあがり ${pages} ページ${
+        max ? `（最大 ${max} ページ${over ? " … はみ出しています" : "に収まりました"}）` : ""}</div>
+      <div class="pagebar">${bars}</div>
+      <div class="ezrows">記事 ${r.counts.articles} 本 ／ 写真 ${r.counts.photos} 枚 ／
+        本文 ${r.counts.chars} 字</div>
+      ${over ? `<p class="hint">最大ページ数を増やすか、原稿を減らしてもう一度お試しください。</p>` : ""}
+    </div>
+    <div class="ezbox"><h3>紙面の並び</h3><div class="ezrows">${secs}</div></div>
+    <div class="ezbox"><h3>フォルダから取り込んだもの</h3><div class="ezrows">
+      ${line("新しく入った", rep.added)}
+      ${line("差し替えられていたので読み直した", rep.updated)}
+      ${line("そのまま", rep.kept)}
+      ${line("フォルダから消えたので外した", rep.removed)}
+      ${line("写真を入れた", rep.photos_added)}
+    </div></div>
+    ${fit}${warn}${skipped}`;
+}
+
+$("#ezPreview").addEventListener("click", () => guard(async () => {
+  const box = $("#ezPreviewBox");
+  box.innerHTML = `<div class="ezbox">できあがりを開いています…</div>`;
+  const r = await api("easy/pdf", {});
+  if (!r.pdf) {
+    box.innerHTML = `<div class="ezbox"><h3>できあがりを見る</h3>
+      <div class="ezrows">${esc(r.message).replace(/\n/g, "<br>")}</div></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="pv">
+      <iframe src="/api/download?inline=1&file=${encodeURIComponent(r.pdf)}"></iframe>
+      <div class="pvnote">刷り上がりと同じ形です。直したいところがあれば、
+        フォルダの原稿を直して「議会だよりを作る」をもう一度押してください。</div>
+    </div>`;
+}));
+
 // ------------------------------------------------------------------ 起動
 
-guard(loadWorkspace);
+guard(async () => {
+  await loadWorkspace();
+  await loadEasy();
+});

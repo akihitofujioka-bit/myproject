@@ -534,10 +534,14 @@ def _replace_marker(paras: list[ET.Element], name: str, value: str) -> None:
 
 
 def docx_to_pdf(docx_path: Path | str, outdir: Path | str) -> Path | None:
-    """LibreOffice があれば PDF にする（校正刷りの確認用）。"""
-    from .importers import convert_with_soffice
+    """PDF にする（校正刷りの確認用）。Word → LibreOffice の順に試す。
 
-    out = convert_with_soffice(docx_path, "pdf")
+    どちらも無ければ None。呼び出し側は「PDF は作れなかったが Word は
+    できている」と伝えること。行き止まりにしない。
+    """
+    from .importers import convert_to_pdf_with_word, convert_with_soffice
+
+    out = convert_to_pdf_with_word(docx_path) or convert_with_soffice(docx_path, "pdf")
     if out is None:
         return None
     dest = Path(outdir) / out.name

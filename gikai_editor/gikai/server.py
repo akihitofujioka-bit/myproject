@@ -70,6 +70,64 @@ def _decode_upload(payload: dict) -> tuple[str, bytes]:
         raise ApiError(f"ファイルを読み取れませんでした: {e}")
 
 
+def _built_files(p: Project) -> dict:
+    """組み上がった Word と PDF の場所。画面の「開く」ボタンに使う。"""
+    docx = sorted(p.output_dir.glob("*自動組版*.docx"),
+                  key=lambda f: f.stat().st_mtime, reverse=True)
+    pdf = sorted(p.output_dir.glob("*自動組版*.pdf"),
+                 key=lambda f: f.stat().st_mtime, reverse=True)
+    return {
+        "docx": docx[0].name if docx else "",
+        "pdf": pdf[0].name if pdf else "",
+        "output_dir": str(p.output_dir),
+    }
+
+
+def _make_pdf(p: Project, name: str = "") -> dict:
+    """組み上がった Word を PDF にする（プレビュー用）。
+
+    Word も LibreOffice も無いパソコンがあるので、作れなかったときは
+    そのことと、代わりに何をすればよいかを返す。行き止まりにしない。
+    """
+    from .docxio import docx_to_pdf
+
+    built = _built_files(p)
+    target = p.output_dir / (name or built["docx"])
+    if not built["docx"] or not target.exists():
+        raise ApiError("先に「議会だよりを作る」を押してください。")
+    pdf = docx_to_pdf(target, p.output_dir)
+    if pdf is None:
+        return {
+            "pdf": "",
+            "message": ("このパソコンでは PDF を作れませんでした"
+                        "（Word も LibreOffice も見つかりません）。\n"
+                        "「Word で開く」を押すと、そのまま Word で確認できます。"),
+        }
+    return {"pdf": pdf.name, "message": ""}
+
+
+def _resolve_open(p: Project, what: str) -> Path:
+    """「開く」で開いてよい場所を、号のフォルダの中だけに限る。"""
+    from . import easy
+
+    named = {
+        "inbox": easy.inbox_dir(p),
+        "project": p.root,
+        "output": p.output_dir,
+    }
+    if what in named:
+        target = named[what]
+    else:
+        # 出力フォルダの中のファイル名（組み上がった Word / PDF）
+        target = p.output_dir / Path(what).name
+    target = target.resolve()
+    if not str(target).startswith(str(p.root.resolve())):
+        raise ApiError("この場所は開けません。")
+    if not target.exists():
+        raise ApiError(f"{target.name} がまだありません。")
+    return target
+
+
 def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
     """API の入口。path は "/api/" を除いたもの。"""
 
@@ -211,9 +269,14 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         art = p.get_article(data.get("id", ""))
         if not art:
             raise ApiError("記事が見つかりません", 404)
+        before = art.body
         for k, v in data.items():
             if hasattr(art, k) and k != "id":
                 setattr(art, k, v)
+        # 本文に手が入ったら印を付ける。かんたんモードで作り直すと
+        # フォルダの原稿から組み直すので、その前に確認を出すため
+        if art.body != before:
+            art.hand_edited = True
         p.put_article(art)
         return {"article": art.to_dict()}
 
@@ -392,6 +455,53 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         p = state.require()
         return p.fit_to_pages(int(body.get("target_pages") or 0))
 
+    # ---------------- かんたんモード ----------------
+    if path == "easy/state":
+        p = state.require()
+        from . import easy
+
+        return {
+            **easy.scan(p),
+            "max_pages": int(p.data["settings"].get("target_pages") or 0),
+            "hand_edited": easy.hand_edited(p),
+            "built": _built_files(p),
+        }
+
+    if path == "easy/folders":
+        p = state.require()
+        from . import easy
+
+        return easy.ensure_folders(p)
+
+    if path == "easy/max_pages":
+        p = state.require()
+        n = max(0, min(64, int(body.get("max_pages") or 0)))
+        p.data["settings"]["target_pages"] = n
+        p.save()
+        return {"max_pages": n}
+
+    if path == "easy/build":
+        p = state.require()
+        from . import easy
+
+        res = easy.build(p, max_pages=int(body.get("max_pages") or 0))
+        return {**res, "built": _built_files(p)}
+
+    if path == "easy/pdf":
+        p = state.require()
+        return _make_pdf(p, body.get("name", ""))
+
+    if path == "open":
+        p = state.require()
+        from .shellopen import open_path
+
+        what = body.get("what", "")
+        target = _resolve_open(p, what)
+        ok, msg = open_path(target)
+        if not ok:
+            raise ApiError(msg)
+        return {"ok": True, "message": msg, "path": str(target)}
+
     # ---------------- 書き出し ----------------
     if path == "export":
         p = state.require()
@@ -409,11 +519,14 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         target = (p.output_dir / Path(rel).name).resolve()
         if not str(target).startswith(str(p.output_dir.resolve())) or not target.exists():
             raise ApiError("ファイルが見つかりません", 404)
-        return {
+        out = {
             "_binary": target.read_bytes(),
             "_mime": mimetypes.guess_type(target.name)[0] or "application/octet-stream",
-            "_filename": target.name,
         }
+        # プレビューは画面の中に出したいので、そのときだけ保存を促さない
+        if not query.get("inline"):
+            out["_filename"] = target.name
+        return out
 
     # ---------------- 辞書 ----------------
     if path == "dict/get":

@@ -181,6 +181,60 @@ def _image_para(rid: str, width_mm: float, height_mm: float, name: str, idx: int
     )
 
 
+def _weave_photos(paras: list[str], weights: list[int],
+                  blocks: list[list[str]]) -> list[str]:
+    """記事の写真を、その記事の本文の中に散らして置く。
+
+    まとめて末尾に置くと、長い記事では写真が本文から何段も離れ、
+    ひどいときは次のページに出てしまう。**写真は、それが写っている
+    話のそばに無いと意味がない**ので、本文の段落のあいだに挟む。
+
+    置き場所は段落の数ではなく **字数** で決める。短い段落が続いても
+    写真が前に寄らないようにするため。1枚なら本文の真ん中あたり、
+    複数枚なら等間隔に。
+
+    段落より写真が多いときは、挟む場所が足りないので、あふれるぶんを
+    見出しの直後（本文の前）に回す。末尾にまとめて積むより、
+    見出しのそばに1枚あるほうが紙面として読める。
+    """
+    if not blocks:
+        return list(paras)
+    if not paras:
+        return [x for b in blocks for x in b]
+
+    k, n = len(blocks), len(paras)
+    # 段落のあいだは n か所（末尾を含む）。足りないぶんは本文の前に置く
+    lead_count = max(0, k - n)
+    lead_blocks, rest = blocks[:lead_count], blocks[lead_count:]
+
+    total = sum(weights) or 1
+    points: list[int] = []
+    for i in range(len(rest)):
+        want = total * (i + 1) / (len(rest) + 1)
+        run = 0
+        for j, w in enumerate(weights, 1):
+            run += w
+            if run >= want:
+                points.append(j)
+                break
+        else:
+            points.append(n)
+    # 同じ切れ目に重ならないよう、後ろへずらす
+    for i in range(1, len(points)):
+        if points[i] <= points[i - 1]:
+            points[i] = min(n, points[i - 1] + 1)
+
+    out: list[str] = [x for b in lead_blocks for x in b]
+    bi = 0
+    for i, para in enumerate(paras, 1):
+        out.append(para)
+        while bi < len(rest) and points[bi] == i:
+            out.extend(rest[bi])
+            bi += 1
+    out.extend(x for b in rest[bi:] for x in b)   # 置き切れなかったぶん
+    return out
+
+
 def _section_head(name: str, rpr: str, spec: LayoutSpec) -> str:
     """区分の見出し（行政報告・一般質問…）。地色を敷いて目立たせる。"""
     return (
@@ -316,6 +370,9 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
                 body.append(_para(art.lead, lead_rpr))
                 lines_used += max(1, -(-count_chars(art.lead) // cpl))
 
+            # 本文の段落を先に作っておく。写真をこの中に挟み込むため。
+            paras: list[str] = []
+            weights: list[int] = []
             for line in art.body.split("\n"):
                 line = line.strip()
                 if not line:
@@ -323,9 +380,11 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
                 n = count_chars(line)
                 chars_total += n
                 lines_used += max(1, -(-n // cpl))
-                body.append(_para(line, body_rpr, indent=spec.indent_first))
+                paras.append(_para(line, body_rpr, indent=spec.indent_first))
+                weights.append(n)
 
-            # この記事の写真
+            # この記事の写真。1枚ぶんを「写真＋説明文＋撮影者」でひとまとめにする
+            blocks: list[list[str]] = []
             for pid in art.photos:
                 photo = project.get_photo(pid)
                 if not photo:
@@ -345,20 +404,22 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
                 rels.append(
                     f'<Relationship Id="{rid}" Type="{R}/image" Target="media/{media_name}"/>'
                 )
-                body.append(_image_para(rid, w_mm, h_mm, media_name, 1000 + idx))
+                block = [_image_para(rid, w_mm, h_mm, media_name, 1000 + idx)]
                 # 写真は、行が並ぶ方向にその幅のぶんだけ場所を取る。
                 # さらに、写真は段をまたげないので、段の変わり目で
                 # 手前に空きができる。平均すると写真1枚の半分ぶん。
                 photo_lines = max(1, int(-(-w_mm // line_mm)))
                 lines_used += photo_lines + photo_lines // 2 + 1
                 if photo.caption:
-                    body.append(_para(photo.caption, cap_rpr, align="center"))
+                    block.append(_para(photo.caption, cap_rpr, align="center"))
                     chars_total += count_chars(photo.caption)
                     lines_used += max(1, -(-count_chars(photo.caption) // cpl))
                 if photo.credit:
-                    body.append(_para(f"（撮影: {photo.credit}）", cap_rpr, align="center"))
+                    block.append(_para(f"（撮影: {photo.credit}）", cap_rpr, align="center"))
                     lines_used += 1
+                blocks.append(block)
 
+            body.extend(_weave_photos(paras, weights, blocks))
             body.append(_para("", body_rpr))
             # 記事の切れ目では、段の変わり目に半端な空きができる。
             # 実際の刷り上がりと突き合わせて求めた補正。

@@ -871,6 +871,45 @@ def test_modal_is_hidden_by_default():
     assert ".toast[hidden]" in css
 
 
+def test_hidden_elements_are_really_hidden():
+    """`hidden` を付けた要素が、CSS の display で見えてしまわないこと。
+
+    ブラウザ標準の `[hidden]{display:none}` は詳細度が最低なので、
+    `.steps{display:flex}` のような無条件の指定が勝ってしまう。
+    実際にこれで、隠したはずの手順タブが出たままになった。
+    """
+    import re as _re
+
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    css = _css()
+
+    # まとめて押さえる指定が1つあれば、この種の不具合は起きない
+    assert _re.search(r"\[hidden\]\s*\{[^}]*display:\s*none\s*!important",
+                      css.replace("\n", "")), \
+        "[hidden]{display:none !important} が消えている（隠した要素が出てしまう）"
+
+    # hidden 付きで書かれている要素の id を集める
+    ids = set(_re.findall(r'id="([\w-]+)"[^>]*\shidden', html))
+    ids |= set(_re.findall(r'\shidden[^>]*\sid="([\w-]+)"', html))
+    # その id が持つ class も見る（CSS は class で書かれていることが多い）
+    names = set("#" + i for i in ids)
+    for i in ids:
+        m = _re.search(r'<[^>]*id="%s"[^>]*>' % _re.escape(i), html)
+        for cls in _re.findall(r'class="([^"]+)"', m.group(0) if m else ""):
+            names |= {"." + c for c in cls.split()}
+
+    assert names, "hidden 付きの要素が1つも見つからない（この検査が働いていない）"
+    for sel in sorted(names):
+        body = _rule_body(css, sel).replace(" ", "")
+        if not body:
+            continue
+        disp = _re.search(r"display:([\w-]+)", body)
+        if disp and disp.group(1) != "none":
+            # 上の一括指定で消えるので不具合にはならないが、
+            # 書き方としては :not([hidden]) のほうが意図が伝わる
+            assert f"{sel}:not([hidden])" in css or "[hidden]" in css, sel
+
+
 def test_modal_html_starts_hidden():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     assert 'id="modal" hidden' in html, "ダイアログは hidden 付きで始めること"
@@ -1414,6 +1453,200 @@ def test_compose_lays_out_sections_in_order():
         assert all(i >= 0 for i in pos), "区分の見出しが紙面に入っていない"
         # 取り込んだ順ではなく、紙面の並びの順に組まれていること
         assert pos == sorted(pos), "構成の順に組まれていない"
+
+
+# ====================================================== かんたん作成
+
+def _easy_project(d: Path):
+    """フォルダに原稿を入れた状態の号を用意する。"""
+    from gikai import easy
+
+    p = Project.create(d / "第204号", "第204号")
+    inbox = Path(easy.ensure_folders(p)["inbox"])
+    body = ("本文です。日高村議会の活動についてお伝えします。\n"
+            "二つ目の段落です。じゅうぶんな長さを持たせています。\n"
+            "三つ目の段落です。写真がこのあたりに入ります。\n")
+    put = lambda f, n, t: (inbox / f / n).write_text(t, encoding="utf-8")
+    put("02_行政報告", "01_村長報告.txt", "村長からの行政報告\n" + body * 3)
+    put("05_一般質問", "01_森下けい子.txt", "消防の広域化について問う\n" + body * 4)
+    put("05_一般質問", "02_山中太郎.txt", "子育て支援について問う\n" + body * 3)
+    put("07_最終ページ", "編集後記.txt", "編集後記\n" + body)
+    return p, inbox
+
+
+def test_easy_folders_are_named_in_paper_order():
+    """フォルダ名の番号が、そのまま紙面の並びであること。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第204号", "第204号")
+        r = easy.ensure_folders(p)
+        names = [f["folder"] for f in r["folders"]]
+        assert names == ["01_表紙", "02_行政報告", "03_審議したこと・決まったこと",
+                         "04_閉会中の委員会活動報告", "05_一般質問", "06_特集",
+                         "07_最終ページ"], names
+        for n in names:
+            assert (Path(r["inbox"]) / n).is_dir(), n
+        # 何を入れればよいか、フォルダを開いた人がその場で分かるように
+        readme = Path(r["inbox"]) / easy.README_NAME
+        assert readme.exists()
+        text = readme.read_text(encoding="utf-8")
+        assert "写真" in text and "順番" in text
+
+        # 2回目は作り直さない（中身を消さない）
+        (Path(r["inbox"]) / "05_一般質問" / "原稿.txt").write_text("あ", encoding="utf-8")
+        again = easy.ensure_folders(p)
+        assert again["made"] == []
+        assert (Path(r["inbox"]) / "05_一般質問" / "原稿.txt").exists()
+
+
+def test_easy_build_uses_the_folder_as_the_answer():
+    """どのフォルダに入れたかが、そのまま区分になること。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, _ = _easy_project(Path(d))
+        res = easy.build(p, max_pages=0)
+        assert len(res["report"]["added"]) == 4
+        got = {g["name"]: [a["title"] for a in g["articles"]]
+               for g in res["outline"]["sections"] if g["count"]}
+        assert got == {
+            "行政報告": ["村長からの行政報告"],
+            "一般質問": ["消防の広域化について問う", "子育て支援について問う"],
+            "最終ページ": ["編集後記"],
+        }, got
+        # 判定の当てずっぽうではなく、フォルダが根拠であること
+        art = [a for a in p.articles() if a.title == "編集後記"][0]
+        assert "フォルダ" in art.section_why
+        assert res["outline"]["unassigned"] == 0
+
+
+def test_easy_build_is_repeatable():
+    """同じフォルダからは同じ紙面ができること（何度押しても増えない）。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        first = easy.build(p)
+        again = easy.build(p)
+        assert again["report"]["added"] == []
+        assert len(again["report"]["kept"]) == 4
+        assert again["counts"]["articles"] == first["counts"]["articles"]
+        assert again["compose"]["pages"] == first["compose"]["pages"]
+
+        # フォルダから消したものは紙面からも消える
+        (inbox / "05_一般質問" / "02_山中太郎.txt").unlink()
+        third = easy.build(p)
+        assert third["report"]["removed"] == ["05_一般質問/02_山中太郎.txt"]
+        assert third["counts"]["articles"] == 3
+
+        # 差し替えたものは読み直す
+        f = inbox / "07_最終ページ" / "編集後記.txt"
+        f.write_text("編集後記\n入れ替えた本文です。", encoding="utf-8")
+        fourth = easy.build(p)
+        assert fourth["report"]["updated"] == ["07_最終ページ/編集後記.txt"]
+        body = [a.body for a in p.articles() if a.title == "編集後記"][0]
+        assert "入れ替えた本文" in body
+
+
+def test_easy_build_fits_the_page_limit():
+    """最大ページ数を決めたら、そこに収まるまで詰めること。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第204号", "第204号")
+        inbox = Path(easy.ensure_folders(p)["inbox"])
+        body = "本文です。日高村議会の活動についてお伝えします。\n" * 40
+        for i in range(6):
+            (inbox / "05_一般質問" / f"{i:02d}_議員{i}.txt").write_text(
+                f"見出し{i}について問う\n" + body, encoding="utf-8")
+
+        loose = easy.build(p, max_pages=0)
+        tight = easy.build(p, max_pages=2)
+        assert loose["compose"]["pages"] > 2, loose["compose"]["pages"]
+        assert tight["compose"]["pages"] <= 2, tight["compose"]["pages"]
+        # 詰めた結果を隠さず返していること
+        assert tight["fit"]["applied"], "何をどれだけ詰めたかが返っていない"
+
+
+def test_easy_photos_go_with_their_manuscript():
+    """写真が、名前の合う原稿に付くこと（番号付きのファイル名でも）。"""
+    from gikai import easy
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        for folder, name in [("05_一般質問", "森下けい子1.jpg"),
+                             ("05_一般質問", "森下けい子2.jpg"),
+                             ("05_一般質問", "山中太郎.jpg"),
+                             ("02_行政報告", "はぐれ写真.jpg")]:
+            (inbox / folder / name).write_bytes(_png(size=(1800, 1300)))
+
+        easy.build(p)
+        by_title = {a.title: a for a in p.articles()}
+        # 原稿名に `01_` が付いていても、写真は名前で結びつく
+        assert len(by_title["消防の広域化について問う"].photos) == 2
+        assert len(by_title["子育て支援について問う"].photos) == 1
+        # 名前の合わない写真は、その区分の先頭の記事へ（迷子にしない）
+        assert len(by_title["村長からの行政報告"].photos) == 1
+
+
+def test_easy_photos_are_placed_inside_their_article():
+    """写真が記事のそばに入ること（末尾にまとめて積まない）。"""
+    from gikai import easy
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        (inbox / "05_一般質問" / "森下けい子.jpg").write_bytes(_png(size=(1800, 1300)))
+        res = easy.build(p)
+        with zipfile.ZipFile(Path(res["compose"]["docx"])) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+
+        img = xml.find("<w:drawing>")
+        head_next = xml.find("子育て支援について問う")
+        assert img > 0 and head_next > 0
+        # 写真は、次の記事の見出しより前＝自分の記事の中にある
+        assert img < head_next, "写真が別の記事まで流れている"
+        # しかも本文の途中（見出しの直後でも末尾でもない）
+        body_start = xml.find("消防の広域化について問う")
+        assert body_start < img
+
+
+def test_easy_keeps_the_manuscripts_folder_untouched():
+    """フォルダから外しても、議員から預かった原稿は消さないこと。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        easy.build(p)
+        kept = sorted(x.name for x in (p.root / "manuscripts").iterdir())
+        assert kept
+
+        (inbox / "05_一般質問" / "02_山中太郎.txt").unlink()
+        easy.build(p)
+        # 記事は消えるが、取り込んだ原本は残る
+        assert "子育て支援について問う" not in [a.title for a in p.articles()]
+        assert sorted(x.name for x in (p.root / "manuscripts").iterdir()) == kept
+
+
+def test_open_is_limited_to_the_issue_folder():
+    """「開く」で、号のフォルダの外を開けないこと。"""
+    from gikai.server import ApiError, _resolve_open
+
+    with tempfile.TemporaryDirectory() as d:
+        p, _ = _easy_project(Path(d))
+        assert _resolve_open(p, "inbox").is_dir()
+        assert _resolve_open(p, "output").is_dir()
+        for bad in ("../../etc/passwd", "/etc/passwd", "..\\..\\windows"):
+            try:
+                _resolve_open(p, bad)
+            except ApiError:
+                pass
+            else:
+                raise AssertionError(f"{bad} を開けてしまう")
 
 
 # ====================================================== 実行

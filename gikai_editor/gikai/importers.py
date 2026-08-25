@@ -217,6 +217,36 @@ def convert_with_word(path: Path | str) -> Path | None:
     return out if out.exists() else None
 
 
+def convert_to_pdf_with_word(path: Path | str) -> Path | None:
+    """Word で PDF にする（Windows のみ）。
+
+    役場のパソコンには Word が入っている（議会だよりを Word で作っている）。
+    LibreOffice は入っていないことが多いので、こちらを先に試す。
+    刷り上がりに近いのも Word のほうなので、プレビューにはこちらが向く。
+    """
+    if sys.platform != "win32":
+        return None
+    path = Path(path).resolve()
+    outdir = Path(tempfile.mkdtemp(prefix="gikai_pdf_"))
+    out = outdir / (path.stem + ".pdf")
+    script = (
+        "$ErrorActionPreference='Stop';"
+        "$w=New-Object -ComObject Word.Application;"
+        "$w.Visible=$false;$w.DisplayAlerts=0;"
+        f"$d=$w.Documents.Open('{path}',$false,$true);"
+        f"$d.SaveAs2('{out}',17);"   # 17 = wdFormatPDF
+        "$d.Close($false);$w.Quit()"
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            check=True, capture_output=True, timeout=300,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return None
+    return out if out.exists() else None
+
+
 def convert_doc_to_docx(path: Path | str) -> Path | None:
     """.doc を .docx にする。Word → LibreOffice の順に試す。
 

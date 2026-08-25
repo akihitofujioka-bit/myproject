@@ -51,6 +51,8 @@ class Photo:
     credit: str = ""
     slot: str = ""  # 差し込み先（様式の画像名）
     caption_slot: str = ""  # 説明文を入れる枠（スロット ID）
+    origin: str = ""        # かんたんモードで入れたフォルダ内の場所
+    origin_stamp: str = ""  # 元ファイルの更新日時と大きさ（差し替えの判定用）
     focus: list[float] = field(default_factory=lambda: [0.5, 0.4])
     info: dict = field(default_factory=dict)
 
@@ -82,6 +84,9 @@ class Article:
     lines: int = 0
     photos: list[str] = field(default_factory=list)  # Photo の id
     status: str = "下書き"  # 下書き / 校正済み / 割付済み / 確定
+    origin: str = ""        # かんたんモードで入れたフォルダ内の場所
+    origin_stamp: str = ""  # 元ファイルの更新日時と大きさ（差し替えの判定用）
+    hand_edited: bool = False  # 画面で本文を直したか（作り直す前の確認に使う）
     notes: str = ""
     ignored_issues: list[str] = field(default_factory=list)
 
