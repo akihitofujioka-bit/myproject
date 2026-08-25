@@ -1331,15 +1331,85 @@ function renderFolders() {
   if (!easyState) { el.innerHTML = ""; return; }
   el.innerHTML = easyState.sections.map((f) => {
     const n = f.docs.length, m = f.photos.length;
-    const names = f.docs.concat(f.photos).slice(0, 6).map(esc).join("、");
-    const more = (n + m) > 6 ? ` ほか${n + m - 6}件` : "";
+    const chip = (name, kind) =>
+      `<button class="chip ${kind}" data-ren="${esc(f.folder + "/" + name)}"
+         title="名前を変える／別の区分へ移す">${esc(name)}</button>`;
+    const files = f.docs.map((x) => chip(x, "doc"))
+      .concat(f.photos.map((x) => chip(x, "img"))).join("");
     return `<div class="fold ${n + m ? "" : "zero"}">
       <div class="fname">${esc(f.folder)}</div>
       <div class="fnote">${esc(f.note)}${f.optional ? "（無い号もあります）" : ""}</div>
       <div class="fcount">${n ? `原稿 ${n} 件` : "原稿なし"}${m ? ` ／ 写真 ${m} 枚` : ""}</div>
-      ${names ? `<div class="flist">${names}${more}</div>` : ""}
+      ${files ? `<div class="flist">${files}</div>` : ""}
+      ${n > 1 ? `<button class="renum" data-renum="${esc(f.id)}"
+          title="いまの並びで 01_ 02_ … を付け直します">番号を振り直す</button>` : ""}
     </div>`;
   }).join("");
+
+  $$("[data-ren]", el).forEach((b) =>
+    b.addEventListener("click", () => renameDialog(b.dataset.ren)));
+  $$("[data-renum]", el).forEach((b) =>
+    b.addEventListener("click", () => guard(async () => {
+      const r = await api("easy/renumber", { section: b.dataset.renum });
+      easyState = { ...easyState, ...r };
+      renderFolders();
+      toast(r.message);
+    })));
+}
+
+/* 届く原稿は名前がばらばら。載せる順番は先頭の番号で決まり、写真は
+   原稿と同じ名前で結びつくので、名前をそろえる作業がどうしても要る。
+   エクスプローラーへ行かずに、ここで済ませられるようにする。 */
+function renameDialog(rel) {
+  const [folder, file] = [rel.slice(0, rel.indexOf("/")), rel.slice(rel.indexOf("/") + 1)];
+  const dot = file.lastIndexOf(".");
+  const stem = dot > 0 ? file.slice(0, dot) : file;
+  const ext = dot > 0 ? file.slice(dot) : "";
+  const cur = easyState.sections.find((s) => s.folder === folder);
+  const isDoc = !!cur && cur.docs.includes(file);
+
+  modal("名前を変える", `<div class="pad">
+    <p class="hint">いまの場所　<code>${esc(rel)}</code></p>
+    <div class="row">
+      <label>新しい名前<input id="rnName" value="${esc(stem)}"></label>
+      <span class="hint" style="align-self:flex-end;padding-bottom:8px">${esc(ext)}</span>
+    </div>
+    <div class="row">
+      <label>入れる区分<select id="rnSec">${easyState.sections.map((s) =>
+        `<option value="${esc(s.id)}" ${s.folder === folder ? "selected" : ""}>${
+          esc(s.folder)}</option>`).join("")}</select></label>
+    </div>
+    ${isDoc ? `<label class="check" style="margin-top:8px">
+      <input type="checkbox" id="rnPhotos" checked>
+      この原稿に付いている写真の名前も、あわせてそろえる</label>
+      <p class="hint">写真は原稿と同じ名前で結びついているので、
+        原稿だけ名前を変えると外れてしまいます。</p>` : ""}
+    <p class="hint" style="margin-top:10px">種類（${esc(ext)}）は変わりません。
+      番号を付けたいときは <code>01_</code> のように先頭に足してください。</p>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="rnOk">名前を変える</button>
+      <button class="ghost" id="rnNo">やめる</button>
+    </div></div>`);
+
+  $("#rnNo").addEventListener("click", closeModal);
+  $("#rnName").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("#rnOk").click();
+  });
+  setTimeout(() => $("#rnName").select(), 0);
+  $("#rnOk").addEventListener("click", () => guard(async () => {
+    const r = await api("easy/rename", {
+      file: rel,
+      name: $("#rnName").value.trim(),
+      section: $("#rnSec").value,
+      with_photos: $("#rnPhotos") ? $("#rnPhotos").checked : false,
+    });
+    closeModal();
+    easyState = { ...easyState, ...r };
+    renderFolders();
+    toast(r.renamed.length
+      ? r.renamed.map((x) => x.to.split("/").pop()).join("、") + " にしました"
+      : r.message);
+  }));
 }
 
 function renderBuilt() {

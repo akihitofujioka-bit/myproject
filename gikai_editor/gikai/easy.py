@@ -173,6 +173,174 @@ def hand_edited(project) -> list[str]:
             for a in project.articles() if a.hand_edited]
 
 
+# ---------------------------------------------------------------- 名前を変える
+
+# 議員から届く原稿は名前がばらばら（「原稿.docx」「森下.docx」など）。
+# 載せる順番は先頭の番号で決まり、写真は原稿と同じ名前で結びつくので、
+# 名前をそろえる作業がどうしても要る。エクスプローラーへ行かずに
+# 画面から済ませられるようにする。
+
+
+def _safe_file(name: str) -> str:
+    """ファイル名に使えない文字を落とす。"""
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", str(name or "")).strip(" .")
+    return name[:120]
+
+
+def _find(project, rel: str) -> Path:
+    """`05_一般質問/森下けい子.docx` を実際の場所に直す。
+
+    原稿フォルダの外に出ないことを必ず確かめる。
+    """
+    base = inbox_dir(project).resolve()
+    target = (base / rel).resolve()
+    if not str(target).startswith(str(base)) or not target.is_file():
+        raise ValueError(f"{rel} が見つかりません。")
+    if target.name == README_NAME:
+        raise ValueError("説明のファイルは変えられません。")
+    return target
+
+
+def _folder_of(project, section_id: str) -> str:
+    for f in folders(project):
+        if f["id"] == section_id:
+            return f["folder"]
+    raise ValueError("その区分はありません。")
+
+
+def _retag(project, old_rel: str, new_rel: str) -> None:
+    """名前を変えたことを、取り込み済みの記事・写真にも反映する。
+
+    ここを直しておかないと、次に作り直したときに「消えた」「新しく入った」
+    と見なされ、写真との結びつきが切れる。
+    """
+    for art in project.articles():
+        if art.origin == old_rel:
+            art.origin = new_rel
+            art.source_file = Path(new_rel).name
+            project.put_article(art)
+    for ph in project.photos():
+        if ph.origin == old_rel:
+            ph.origin = new_rel
+            project.put_photo(ph)
+
+
+def rename(project, rel: str, new_name: str, *,
+           section_id: str = "", with_photos: bool = False) -> dict:
+    """原稿や写真の名前を変える（区分の移動もここで行う）。
+
+    区分を変えるのは「別のフォルダへ移す」ことなので、名前を変えるのと
+    同じ操作になる。画面の窓口を1つで済ませられる。
+    """
+    src = _find(project, rel)
+    folder = src.parent.name
+    new_folder = _folder_of(project, section_id) if section_id else folder
+
+    name = _safe_file(new_name)
+    if not name:
+        raise ValueError("新しい名前を入れてください。")
+    if not Path(name).suffix:
+        name += src.suffix           # 拡張子は付け忘れても困らないように
+    if Path(name).suffix.lower() != src.suffix.lower():
+        raise ValueError(
+            f"種類（{src.suffix}）は変えられません。名前だけを変えてください。")
+
+    dest = inbox_dir(project) / new_folder / name
+    if dest.resolve() == src.resolve():
+        return {"renamed": [], "message": "同じ名前です。"}
+    if dest.exists():
+        raise ValueError(f"「{new_folder}」に {name} がすでにあります。"
+                         "別の名前にしてください。")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    done = []
+    # 原稿に付いている写真も、同じ名前にそろえる（そろえないと外れる）
+    if with_photos and src.suffix.lower() in DOC_EXT:
+        for img, num in _photos_for(project, src):
+            tail = str(num) if num else ""
+            iname = _safe_file(Path(name).stem + tail) + img.suffix
+            idest = inbox_dir(project) / new_folder / iname
+            if idest.exists() or idest.resolve() == img.resolve():
+                continue
+            img.rename(idest)
+            _retag(project, f"{folder}/{img.name}", f"{new_folder}/{iname}")
+            done.append({"from": f"{folder}/{img.name}",
+                         "to": f"{new_folder}/{iname}"})
+
+    src.rename(dest)
+    _retag(project, f"{folder}/{src.name}", f"{new_folder}/{name}")
+    done.insert(0, {"from": rel, "to": f"{new_folder}/{name}"})
+    project.save()
+    return {"renamed": done,
+            "message": f"{len(done)} 件の名前を変えました。"}
+
+
+def _photos_for(project, doc: Path) -> list[tuple[Path, int]]:
+    """その原稿に結びついている写真（と末尾の連番）。"""
+    from .autolayout import split_number
+
+    d = doc.parent
+    imgs = sorted([x for x in d.iterdir()
+                   if x.is_file() and x.suffix.lower() in IMG_EXT], key=_sort_key)
+    docs = sorted([x for x in d.iterdir()
+                   if x.is_file() and x.suffix.lower() in DOC_EXT], key=_sort_key)
+    mine = _match_photos(docs, imgs).get(doc.name, [])
+    return [(img, split_number(img.stem)[1]) for img in mine]
+
+
+def renumber(project, section_id: str) -> dict:
+    """1つの区分の原稿に、いまの並び順で 01_ 02_ … を振り直す。
+
+    載せる順番を決めるのに、いちばんよく使う操作。写真の名前も
+    そろえて付け替えるので、結びつきは切れない。
+    """
+    folder = _folder_of(project, section_id)
+    d = inbox_dir(project) / folder
+    if not d.is_dir():
+        raise ValueError(f"{folder} フォルダがありません。")
+    docs = sorted([x for x in d.iterdir()
+                   if x.is_file() and x.suffix.lower() in DOC_EXT], key=_sort_key)
+    if not docs:
+        return {"renamed": [], "message": f"{folder} に原稿がありません。"}
+
+    # 写真の結びつきは、名前を変える前に調べておく
+    # （変えたあとでは、どの原稿の写真だったか分からなくなる）
+    plan = []
+    for i, doc in enumerate(docs, 1):
+        want = f"{i:02d}_{_strip_index(doc.stem)}{doc.suffix}"
+        plan.append((doc, want, _photos_for(project, doc)))
+
+    # いったん仮の名前へ逃がしてから付け直す。
+    # 直接付けると「02→01」のときに、すでにある 01 とぶつかる
+    done = []
+    tmp: list[tuple[Path, str]] = []
+
+    def stage_move(path: Path, want: str) -> None:
+        if path.name == want:
+            return
+        stage = d / f"__なまえ変更中__{path.name}"
+        path.rename(stage)
+        tmp.append((stage, want))
+        done.append({"from": f"{folder}/{path.name}", "to": f"{folder}/{want}"})
+
+    for doc, want, imgs in plan:
+        stage_move(doc, want)
+        # 写真も同じ番号に合わせる
+        for img, num in imgs:
+            tail = str(num) if num else ""
+            stage_move(img, f"{Path(want).stem}{tail}{img.suffix}")
+
+    for stage, want in tmp:
+        stage.rename(d / want)
+
+    for row in done:
+        _retag(project, row["from"], row["to"])
+    project.save()
+    return {"renamed": done,
+            "message": (f"{len(done)} 件の名前を変えました。"
+                        if done else "すでに番号順になっています。")}
+
+
 # ---------------------------------------------------------------- 組み立てる
 
 

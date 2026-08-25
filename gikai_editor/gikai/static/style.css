@@ -250,8 +250,14 @@ td select{min-width:150px}
 .fold .fcount{font-size:12px;margin-top:6px;color:var(--accent);font-weight:600}
 .fold.zero{background:#fafbfc}
 .fold.zero .fcount{color:var(--sub);font-weight:400}
-.fold .flist{font-size:11px;color:var(--sub);margin-top:4px;line-height:1.5;
-  word-break:break-all}
+.fold .flist{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.fold .chip{font-size:11px;padding:2px 8px;border-radius:999px;line-height:1.5;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:#f4f6f9;color:var(--ink)}
+.fold .chip:hover{background:#e7ecf3;border-color:var(--accent)}
+.fold .chip.img{background:#fdf7ee;color:var(--warn)}
+.fold .chip.img:hover{background:#f8eeda}
+.fold .renum{font-size:11px;padding:3px 10px;margin-top:8px}
 
 .tips{margin-top:10px;font-size:13px}
 .tips summary{cursor:pointer;color:var(--accent);font-weight:600}

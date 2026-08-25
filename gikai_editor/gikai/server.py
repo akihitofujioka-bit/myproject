@@ -480,6 +480,29 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         p.save()
         return {"max_pages": n}
 
+    if path == "easy/rename":
+        p = state.require()
+        from . import easy
+
+        try:
+            r = easy.rename(
+                p, body.get("file", ""), body.get("name", ""),
+                section_id=body.get("section", ""),
+                with_photos=bool(body.get("with_photos")))
+        except ValueError as e:
+            raise ApiError(str(e))
+        return {**r, **easy.scan(p)}
+
+    if path == "easy/renumber":
+        p = state.require()
+        from . import easy
+
+        try:
+            r = easy.renumber(p, body.get("section", ""))
+        except ValueError as e:
+            raise ApiError(str(e))
+        return {**r, **easy.scan(p)}
+
     if path == "easy/build":
         p = state.require()
         from . import easy

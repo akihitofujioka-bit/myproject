@@ -1632,6 +1632,118 @@ def test_easy_keeps_the_manuscripts_folder_untouched():
         assert sorted(x.name for x in (p.root / "manuscripts").iterdir()) == kept
 
 
+def test_rename_keeps_the_photo_link():
+    """原稿の名前を変えても、写真との結びつきが切れないこと。
+
+    写真は原稿と同じ名前で結びつくので、原稿だけ名前を変えると外れる。
+    あわせてそろえる。
+    """
+    from gikai import easy
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        for n in ("01_森下けい子.jpg", "01_森下けい子2.jpg"):
+            (inbox / "05_一般質問" / n).write_bytes(_png(size=(1800, 1300)))
+        easy.build(p)
+        art = [a for a in p.articles() if a.title == "消防の広域化について問う"][0]
+        assert len(art.photos) == 2
+
+        r = easy.rename(p, "05_一般質問/01_森下けい子.txt", "01_森下けい子議員",
+                        with_photos=True)
+        moved = {x["to"] for x in r["renamed"]}
+        assert moved == {"05_一般質問/01_森下けい子議員.txt",
+                         "05_一般質問/01_森下けい子議員.jpg",
+                         "05_一般質問/01_森下けい子議員2.jpg"}, moved
+
+        # 作り直しても「そのまま」＝取り込み直しになっていない
+        again = easy.build(p)
+        assert again["report"]["added"] == [] and again["report"]["removed"] == []
+        art = [a for a in p.articles() if a.title == "消防の広域化について問う"][0]
+        assert len(art.photos) == 2, "名前を変えたら写真が外れた"
+
+
+def test_rename_can_move_to_another_section():
+    """名前を変える窓口で、別の区分へ移せること。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        easy.build(p)
+        easy.rename(p, "07_最終ページ/編集後記.txt", "巻頭のことば", section_id="cover")
+        assert (inbox / "01_表紙" / "巻頭のことば.txt").exists()
+        assert not (inbox / "07_最終ページ" / "編集後記.txt").exists()
+
+        res = easy.build(p)
+        assert res["report"]["added"] == [] and res["report"]["removed"] == []
+        got = {g["name"]: g["count"] for g in res["outline"]["sections"] if g["count"]}
+        assert got.get("表紙") == 1 and "最終ページ" not in got, got
+
+
+def test_rename_refuses_what_it_should():
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        bad = [
+            ("05_一般質問/01_森下けい子.txt", "02_山中太郎"),   # すでにある名前
+            ("05_一般質問/01_森下けい子.txt", "森下.docx"),      # 種類を変える
+            ("05_一般質問/01_森下けい子.txt", "   "),            # 空
+            ("../../../外.txt", "なにか"),                       # フォルダの外
+            ("05_一般質問/../../project.json", "なにか"),        # 同上
+        ]
+        for rel, name in bad:
+            try:
+                easy.rename(p, rel, name)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"{rel} → {name} が通ってしまった")
+        # 元のファイルは無事
+        assert (inbox / "05_一般質問" / "01_森下けい子.txt").exists()
+
+
+def test_renumber_puts_files_in_order():
+    """番号を振り直すと、いまの並びのまま 01_ 02_ … が付くこと。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        folder = inbox / "05_一般質問"
+        # 番号なしを足して、並びを崩す
+        (folder / "あいさつ.txt").write_text("ごあいさつ\n本文です。", encoding="utf-8")
+
+        r = easy.renumber(p, "ippan")
+        names = sorted(x.name for x in folder.iterdir())
+        assert names == ["01_森下けい子.txt", "02_山中太郎.txt", "03_あいさつ.txt"], names
+        assert r["renamed"], "何を変えたかが返っていない"
+
+        # 2回目は何も起きない（すでに番号順）
+        assert easy.renumber(p, "ippan")["renamed"] == []
+
+
+def test_renumber_does_not_collide_when_shifting():
+    """番号がぶつかる並べ替えでも、ファイルを失わないこと。
+
+    02→01 のように詰めると、すでにある 01 と衝突する。
+    いったん仮の名前へ逃がしているのはそのため。
+    """
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第204号", "第204号")
+        folder = Path(easy.ensure_folders(p)["inbox"]) / "05_一般質問"
+        for n in ("02_い.txt", "03_う.txt", "05_お.txt"):
+            (folder / n).write_text(n + "\n本文です。", encoding="utf-8")
+
+        easy.renumber(p, "ippan")
+        names = sorted(x.name for x in folder.iterdir())
+        assert names == ["01_い.txt", "02_う.txt", "03_お.txt"], names
+        # 中身が入れ替わっていないこと
+        assert "02_い" in (folder / "01_い.txt").read_text(encoding="utf-8")
+
+
 def test_open_is_limited_to_the_issue_folder():
     """「開く」で、号のフォルダの外を開けないこと。"""
     from gikai.server import ApiError, _resolve_open
