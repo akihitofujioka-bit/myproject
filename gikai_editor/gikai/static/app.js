@@ -1345,13 +1345,19 @@ function renderFolders() {
       <div class="fcount">${n ? `原稿 ${n} 件` : (need ? "原稿がまだです" : "原稿なし")}${
         m ? ` ／ 写真 ${m} 枚` : ""}</div>
       ${files ? `<div class="flist">${files}</div>` : ""}
-      ${n > 1 ? `<button class="renum" data-renum="${esc(f.id)}"
+      <div class="foldbtns">
+        <button class="renum" data-write="${esc(f.id)}"
+          title="この区分の記事を、画面で直接書きます">直接書く</button>
+        ${n > 1 ? `<button class="renum" data-renum="${esc(f.id)}"
           title="いまの並びで 01_ 02_ … を付け直します">番号を振り直す</button>` : ""}
+      </div>
     </div>`;
   }).join("");
 
   $$("[data-ren]", el).forEach((b) =>
     b.addEventListener("click", () => renameDialog(b.dataset.ren)));
+  $$("[data-write]", el).forEach((b) =>
+    b.addEventListener("click", () => writeDialog({ section: b.dataset.write })));
   $$("[data-renum]", el).forEach((b) =>
     b.addEventListener("click", () => guard(async () => {
       const r = await api("easy/renumber", { section: b.dataset.renum });
@@ -1364,6 +1370,66 @@ function renderFolders() {
   $("#ezPhotoNote").textContent = easyState.photos
     ? "カメラの名前（IMG_2451.jpg など）のままでも、写真を見ながら選ぶだけで名前がそろいます。"
     : "";
+}
+
+/* 記事を画面で直接書く。
+
+   「審議したこと・決まったこと」のように、議員から届くのではなく
+   **事務局が自分で書く**記事がある。そのためだけに Word を立ち上げて
+   フォルダに置くのは手間なので、ここで書いてそのまま保存する。
+   保存の形はテキストファイルなので、「フォルダの中身がそのまま紙面」
+   という決まりは崩れない。 */
+function writeDialog({ section = "", file = "" } = {}) {
+  guard(async () => {
+    let name = "", text = "";
+    if (file) {
+      const r = await api("easy/note_read", { file });
+      name = r.name; text = r.text;
+    }
+    const secs = easyState.sections.filter((s) => s.id);
+    const where = file
+      ? `<p class="hint">いまの場所　<code>${esc(file)}</code></p>`
+      : `<div class="row"><label>入れる区分<select id="wrSec">${secs.map((s) =>
+          `<option value="${esc(s.id)}" ${s.id === section ? "selected" : ""}>${
+            esc(s.folder)}</option>`).join("")}</select></label></div>`;
+
+    modal(file ? "原稿を書きかえる" : "記事を直接書く", `<div class="pad">
+      ${where}
+      ${file ? "" : `<div class="row"><label>見出し（ファイル名になります）
+        <input id="wrName" placeholder="例: 6月定例会で決まったこと"></label></div>`}
+      <p class="hint">1行目が見出しになります。段落は改行で分けてください。</p>
+      <textarea id="wrText" rows="16" placeholder="ここに本文を書きます。">${esc(text)}</textarea>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="wrOk">保存する</button>
+        <button class="ghost" id="wrNo">やめる</button>
+        <span class="hint" id="wrCount"></span>
+      </div></div>`);
+
+    if (!file) $("#wrName").value = name;
+    const count = () => {
+      $("#wrCount").textContent = countOf($("#wrText").value) + " 字";
+    };
+    $("#wrText").addEventListener("input", count);
+    count();
+    $("#wrNo").addEventListener("click", closeModal);
+    setTimeout(() => ($("#wrName") || $("#wrText")).focus(), 0);
+
+    $("#wrOk").addEventListener("click", () => guard(async () => {
+      const body = { text: $("#wrText").value };
+      if (file) body.file = file;
+      else {
+        body.section = $("#wrSec").value;
+        body.name = $("#wrName").value.trim();
+        // 見出しが空なら、本文の1行目を使う
+        if (!body.name) body.name = ($("#wrText").value.split("\n")[0] || "").trim();
+      }
+      const r = await api("easy/note_write", body);
+      closeModal();
+      easyState = { ...easyState, ...r };
+      renderFolders();
+      toast(r.message);
+    }));
+  });
 }
 
 /* 写真を原稿に割り当てる。
@@ -1472,9 +1538,15 @@ function renameDialog(rel) {
       番号を付けたいときは <code>01_</code> のように先頭に足してください。</p>
     <div class="row" style="margin-top:14px">
       <button class="primary" id="rnOk">名前を変える</button>
+      ${/\.(txt|md)$/i.test(file)
+        ? `<button id="rnEdit">中身を書きかえる</button>` : ""}
       <button class="ghost" id="rnNo">やめる</button>
     </div></div>`);
 
+  $("#rnEdit")?.addEventListener("click", () => {
+    closeModal();
+    writeDialog({ file: rel });
+  });
   $("#rnNo").addEventListener("click", closeModal);
   $("#rnName").addEventListener("keydown", (e) => {
     if (e.key === "Enter") $("#rnOk").click();

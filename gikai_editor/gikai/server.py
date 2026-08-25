@@ -527,6 +527,26 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         return {"_binary": photos_mod.to_thumbnail(data, 360), "_mime": "image/jpeg"} \
             if photos_mod.HAS_PIL else {"_binary": data, "_mime": mime}
 
+    if path == "easy/note_read":
+        p = state.require()
+        from . import easy
+
+        try:
+            return easy.read_note(p, body.get("file", ""))
+        except ValueError as e:
+            raise ApiError(str(e))
+
+    if path == "easy/note_write":
+        p = state.require()
+        from . import easy
+
+        try:
+            r = easy.write_note(p, body.get("section", ""), body.get("name", ""),
+                                body.get("text", ""), rel=body.get("file", ""))
+        except ValueError as e:
+            raise ApiError(str(e))
+        return {**r, **easy.scan(p)}
+
     if path == "easy/renumber":
         p = state.require()
         from . import easy

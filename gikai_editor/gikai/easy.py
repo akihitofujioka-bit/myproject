@@ -38,8 +38,11 @@ from .textutil import count_chars
 
 INBOX = "原稿"
 
-# 取り込む拡張子
-DOC_EXT = {".docx", ".doc", ".txt", ".md", ".rtf", ".pdf", ".odt", ".csv"}
+# 取り込む拡張子。
+# 「審議したこと・決まったこと」の賛否一覧表は Excel で来るので、
+# 表（.xlsx / .csv）も原稿の仲間として受け取る。
+TABLE_EXT = {".xlsx", ".xlsm", ".csv"}
+DOC_EXT = {".docx", ".doc", ".txt", ".md", ".rtf", ".pdf", ".odt"} | TABLE_EXT
 IMG_EXT = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic"}
 
 README_NAME = "はじめにお読みください.txt"
@@ -304,6 +307,61 @@ def _photos_for(project, doc: Path) -> list[tuple[Path, int]]:
                    if x.is_file() and x.suffix.lower() in DOC_EXT], key=_sort_key)
     mine = _match_photos(docs, imgs).get(doc.name, [])
     return [(img, split_number(img.stem)[1]) for img in mine]
+
+
+# 画面から直接書ける形式。メモ帳でも開けるように、ふつうのテキストにする
+NOTE_EXT = {".txt", ".md"}
+
+
+def read_note(project, rel: str) -> dict:
+    """画面で書きかえるために、原稿ファイルの中身を読む。"""
+    src = _find(project, rel)
+    if src.suffix.lower() not in NOTE_EXT:
+        raise ValueError(
+            f"{src.name} は画面から書きかえられません。"
+            "画面で書けるのは、このツールで作ったテキスト（.txt）だけです。"
+            "Word や Excel のファイルは、そのソフトで開いて直してください。")
+    from .importers import decode_bytes
+
+    text, _enc = decode_bytes(src.read_bytes())
+    return {"file": rel, "name": src.stem, "text": text}
+
+
+def write_note(project, section_id: str, name: str, text: str,
+               rel: str = "") -> dict:
+    """画面で書いた記事を、区分のフォルダにテキストとして保存する。
+
+    「審議したこと・決まったこと」のように、議員から届くのではなく
+    **事務局が直接書く**記事がある。そのためだけに Word を開いて
+    フォルダに置く、という手間を無くす。
+
+    保存の形をファイルにそろえておけば、「フォルダの中身がそのまま紙面」
+    という決まりが崩れない。あとからエクスプローラーで開いても読める。
+    """
+    text = (text or "").replace("\r\n", "\n").rstrip() + "\n"
+    if rel:
+        dest = _find(project, rel)
+        if dest.suffix.lower() not in NOTE_EXT:
+            raise ValueError(f"{dest.name} は画面から書きかえられません。")
+        folder = dest.parent.name
+    else:
+        folder = _folder_of(project, section_id)
+        stem = _safe_file(name)
+        if not stem:
+            raise ValueError("見出し（ファイル名）を入れてください。")
+        if not Path(stem).suffix:
+            stem += ".txt"
+        if Path(stem).suffix.lower() not in NOTE_EXT:
+            raise ValueError("画面から書けるのはテキスト（.txt）だけです。")
+        dest = inbox_dir(project) / folder / stem
+        if dest.exists():
+            raise ValueError(f"「{folder}」に {dest.name} がすでにあります。"
+                             "別の見出しにするか、その原稿を開いて書きかえてください。")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # メモ帳でそのまま開けるよう、BOM 付きの UTF-8 で書く
+    dest.write_text(text, encoding="utf-8-sig")
+    return {"file": f"{folder}/{dest.name}", "name": dest.stem,
+            "message": f"{dest.name} を保存しました。"}
 
 
 UNUSED = "使わない写真"
@@ -596,6 +654,9 @@ def build(project, *, max_pages: int = 0) -> dict:
 
             art.origin = rel
             art.origin_stamp = stamp
+            if art.table and art.title == Path(doc.name).stem:
+                # 表はファイル名が見出しになる。並べるための番号は外す
+                art.title = _strip_index(art.title)
             art.section = grp["id"]
             art.section_why = f"「{grp['folder']}」フォルダに入っていたため"
             art.order = order

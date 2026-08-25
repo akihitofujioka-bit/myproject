@@ -2048,6 +2048,204 @@ def test_open_is_limited_to_the_issue_folder():
                 raise AssertionError(f"{bad} を開けてしまう")
 
 
+# ====================================================== 表（Excel）と直接入力
+
+def _make_xlsx(path: Path, rows: list[list[str]]) -> None:
+    """テスト用の最小 .xlsx を作る（共有文字列を使う本物の形）。"""
+    from xml.sax.saxutils import escape as _e
+
+    strings: list[str] = []
+    index: dict[str, int] = {}
+    sheet_rows = ""
+    for r, row in enumerate(rows, 1):
+        cells = ""
+        for c, val in enumerate(row):
+            ref = ""
+            n = c
+            while True:
+                ref = chr(65 + n % 26) + ref
+                n = n // 26 - 1
+                if n < 0:
+                    break
+            if val not in index:
+                index[val] = len(strings)
+                strings.append(val)
+            cells += f'<c r="{ref}{r}" t="s"><v>{index[val]}</v></c>'
+        sheet_rows += f'<row r="{r}">{cells}</row>'
+
+    ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    rns = ('xmlns:r="http://schemas.openxmlformats.org/officeDocument/'
+           '2006/relationships"')
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml",
+                   '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats'
+                   '.org/package/2006/content-types">'
+                   '<Default Extension="xml" ContentType="application/xml"/>'
+                   '<Override PartName="/xl/workbook.xml" ContentType="application/'
+                   'vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+                   '</Types>')
+        z.writestr("_rels/.rels",
+                   '<?xml version="1.0"?><Relationships xmlns="http://schemas.'
+                   'openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/'
+                   'officeDocument/2006/relationships/officeDocument" '
+                   'Target="xl/workbook.xml"/></Relationships>')
+        z.writestr("xl/workbook.xml",
+                   f'<?xml version="1.0"?><workbook {ns} {rns}><sheets>'
+                   '<sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels",
+                   '<?xml version="1.0"?><Relationships xmlns="http://schemas.'
+                   'openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/'
+                   'officeDocument/2006/relationships/worksheet" '
+                   'Target="worksheets/sheet1.xml"/></Relationships>')
+        z.writestr("xl/sharedStrings.xml",
+                   f'<?xml version="1.0"?><sst {ns} count="{len(strings)}">'
+                   + "".join(f"<si><t>{_e(s)}</t></si>" for s in strings) + "</sst>")
+        z.writestr("xl/worksheets/sheet1.xml",
+                   f'<?xml version="1.0"?><worksheet {ns}>'
+                   f"<sheetData>{sheet_rows}</sheetData></worksheet>")
+
+
+SANPI = [
+    ["議案番号", "件名", "森下けい子", "大川内慎治", "池田雄", "結果"],
+    ["議案第1号", "令和8年度日高村一般会計予算", "○", "○", "×", "可決"],
+    ["議案第2号", "日高村税条例の一部を改正する条例", "○", "○", "○", "可決"],
+    ["発議案第1号", "消防の広域化に関する意見書", "○", "×", "○", "可決"],
+]
+
+
+def test_read_xlsx_keeps_rows_and_columns():
+    """Excel の表を、文章に崩さず行と列のまま読むこと。"""
+    from gikai.xlsxio import describe, read_table
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "賛否.xlsx"
+        _make_xlsx(f, SANPI)
+        rows = read_table(f)
+        assert rows == SANPI, rows
+        assert describe(rows) == "4行 × 6列の表"
+
+
+def test_read_xlsx_trims_empty_edges():
+    """Excel が持っている空の行や列で、升目が増えないこと。"""
+    from gikai.xlsxio import read_table
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "余白あり.xlsx"
+        _make_xlsx(f, [["", "", ""], ["", "議案", "結果"], ["", "第1号", "可決"],
+                       ["", "", ""]])
+        assert read_table(f) == [["議案", "結果"], ["第1号", "可決"]]
+
+
+def test_old_xls_says_what_to_do():
+    """旧形式（.xls）は読めないが、どうすればよいかを伝えること。"""
+    from gikai.xlsxio import read_xlsx
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "古い.xlsx"
+        f.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64)
+        try:
+            read_xlsx(f)
+        except ValueError as e:
+            assert ".xlsx" in str(e) and "保存し直" in str(e), e
+        else:
+            raise AssertionError("読めないことを知らせていない")
+
+
+def test_csv_is_read_as_a_table_too():
+    from gikai.xlsxio import read_table
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "賛否.csv"
+        f.write_bytes("\n".join(",".join(r) for r in SANPI).encode("cp932"))
+        assert read_table(f) == SANPI
+
+
+def test_table_is_laid_out_as_a_table_not_as_text():
+    """表が、文章ではなく表として紙面に入ること。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        _make_xlsx(inbox / "03_審議したこと・決まったこと" / "02_議案に対する賛否.xlsx",
+                   SANPI)
+        (inbox / "03_審議したこと・決まったこと" / "01_議決.txt").write_text(
+            "6月定例会で決まったこと\n議案5件を審議しました。", encoding="utf-8")
+
+        res = easy.build(p, max_pages=0)
+        arts = {a.title: a for a in p.articles()}
+        assert "議案に対する賛否" in arts, list(arts)   # 並び順の番号は見出しにしない
+        assert arts["議案に対する賛否"].table == SANPI
+
+        with zipfile.ZipFile(Path(res["compose"]["docx"])) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+        assert "<w:tbl>" in xml, "表が表として組まれていない"
+        assert xml.count("<w:tr>") >= len(SANPI)
+        assert "議案第1号" in xml and "森下けい子" in xml
+        # 表のところだけ1段に切り替えている（5段の中には表が入らないため）
+        assert '<w:cols w:num="1"' in xml, "表のための1段の区間が無い"
+        assert '<w:type w:val="continuous"/>' in xml
+        # 見出しの罫線が表の直前にある＝見出しと表が離れていない
+        assert xml.index("議案に対する賛否") < xml.index("<w:tbl>")
+
+
+def test_write_note_saves_into_the_section_folder():
+    """画面で直接書いた記事が、区分のフォルダにファイルとして残ること。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        r = easy.write_note(p, "shingi", "6月定例会で決まったこと",
+                            "6月定例会で決まったこと\n議案5件を審議しました。")
+        f = inbox / "03_審議したこと・決まったこと" / "6月定例会で決まったこと.txt"
+        assert f.exists(), r
+        # メモ帳でそのまま開けること（BOM 付き UTF-8）
+        assert f.read_bytes().startswith(b"\xef\xbb\xbf")
+
+        back = easy.read_note(p, r["file"])
+        assert "議案5件" in back["text"]
+
+        easy.write_note(p, "", "", "6月定例会で決まったこと\n書き直した本文です。",
+                        rel=r["file"])
+        assert "書き直した" in easy.read_note(p, r["file"])["text"]
+
+        res = easy.build(p, max_pages=0)
+        assert r["file"] in res["report"]["added"]
+        titles = [a.title for a in p.articles()]
+        assert "6月定例会で決まったこと" in titles, titles
+
+
+def test_write_note_refuses_what_it_should():
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        easy.write_note(p, "shingi", "議決", "本文")
+        bad = [
+            ("shingi", "議決", "本文", ""),          # 同じ名前がすでにある
+            ("shingi", "", "本文", ""),              # 見出しが空
+            ("nosuch", "議決2", "本文", ""),         # 無い区分
+            ("", "", "本文", "../../project.json"),  # フォルダの外
+        ]
+        for section, name, text, rel in bad:
+            try:
+                easy.write_note(p, section, name, text, rel=rel)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"{(section, name, rel)} が通ってしまった")
+
+        # Word や Excel は画面から書きかえない（そのソフトで開いてもらう）
+        _make_xlsx(inbox / "03_審議したこと・決まったこと" / "表.xlsx", SANPI)
+        try:
+            easy.read_note(p, "03_審議したこと・決まったこと/表.xlsx")
+        except ValueError as e:
+            assert "Excel" in str(e), e
+        else:
+            raise AssertionError("Excel を画面で開こうとしている")
+
+
 # ====================================================== 使い方（画面の中）
 
 def test_help_covers_the_whole_flow():

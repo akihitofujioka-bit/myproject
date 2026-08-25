@@ -43,6 +43,7 @@ class ImportedDoc:
     title: str = ""
     author: str = ""
     images: list[dict] = field(default_factory=list)  # {name, data(bytes)}
+    table: list[list[str]] = field(default_factory=list)  # 行と列のまま（Excel など）
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -53,6 +54,7 @@ class ImportedDoc:
             "title": self.title,
             "author": self.author,
             "images": [{"name": i["name"], "size": len(i["data"])} for i in self.images],
+            "table": self.table,
             "warnings": self.warnings,
         }
 
@@ -386,6 +388,9 @@ def read_pdf(path: Path | str) -> ImportedDoc:
 
 # ---------------------------------------------------------------- 一括
 
+TABLE_EXT = {".xlsx", ".xlsm", ".csv"}
+
+
 def read_any(path: Path | str, *, normalize: bool = True) -> ImportedDoc:
     """拡張子を見て適切な取り込み処理を選ぶ。"""
     path = Path(path)
@@ -400,6 +405,17 @@ def read_any(path: Path | str, *, normalize: bool = True) -> ImportedDoc:
         doc = read_pdf(path)
     elif ext in TEXT_EXT:
         doc = read_text(path)
+    elif ext in TABLE_EXT:
+        # 表は文章に崩さず、行と列のまま取り出す（賛否一覧表など）
+        from .xlsxio import read_table
+
+        doc = ImportedDoc(source=path.name, kind="table")
+        try:
+            doc.table = read_table(path)
+        except ValueError as e:
+            doc.warnings.append(str(e))
+        if not doc.table and not doc.warnings:
+            doc.warnings.append(f"{path.name} は空の表でした。")
     elif ext in IMAGE_EXT:
         doc = ImportedDoc(source=path.name, kind="image")
         doc.images.append({"name": path.name, "data": path.read_bytes()})

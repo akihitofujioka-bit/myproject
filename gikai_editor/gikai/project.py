@@ -83,6 +83,7 @@ class Article:
     chars_per_line: int = 0
     lines: int = 0
     photos: list[str] = field(default_factory=list)  # Photo の id
+    table: list[list[str]] = field(default_factory=list)  # 表（賛否一覧表など）
     status: str = "下書き"  # 下書き / 校正済み / 割付済み / 確定
     origin: str = ""        # かんたんモードで入れたフォルダ内の場所
     origin_stamp: str = ""  # 元ファイルの更新日時と大きさ（差し替えの判定用）
@@ -265,7 +266,11 @@ class Project:
             source_file=dest.name,
             raw=doc.text,
             body=text,
+            table=doc.table,
         )
+        if doc.table and not art.title:
+            # 表のときは、ファイル名をそのまま見出しにする
+            art.title = Path(src.name).stem
         # どの区分の原稿かを、名前と見出しから見当を付ける
         from . import sections as sec
 

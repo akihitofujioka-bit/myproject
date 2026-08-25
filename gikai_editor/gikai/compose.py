@@ -247,19 +247,108 @@ def _section_head(name: str, rpr: str, spec: LayoutSpec) -> str:
     )
 
 
-def _sect_pr(spec: LayoutSpec) -> str:
+def _table_block(rows: list[list[str]], spec: LayoutSpec,
+                 title: str = "") -> tuple[str, int]:
+    """賛否一覧表などを、紙面の幅いっぱいの表として組む。
+
+    表は文章と違って**折り返せない**ので、5段の中には入らない。
+    そこで、表のところだけ段組みを1段に切り替える
+    （`w:sectPr` を段落に入れると、その段落までが1つの区間になる）。
+
+    紙面は縦書きなので、表も紙面の向きに合わせて組まれる。
+    見出しの行が右端に立ち、1件ぶんが1本の帯になって右から左へ並ぶ。
+    縦書きの議会だよりの賛否一覧表は、この形で読める。
+
+    戻り値は (XML, 使った行数の目安)。
+    """
+    if not rows:
+        return "", 0
+    n_cols = len(rows[0])
+    pt = 9.0 if n_cols <= 10 else 8.0
+
+    # 縦書きでは、表の「列幅」が紙面の縦方向（＝段の高さ）に伸びる。
+    # 1列目（議案番号）と2列目（件名）は広く、賛否の欄は狭くてよい
+    if n_cols >= 4:
+        weights = [1.5, 3.2] + [1.0] * (n_cols - 3) + [1.3]
+    else:
+        weights = [1.0] * n_cols
+    span_mm = spec.text_height_mm - 6          # 上下に少し余裕をもたせる
+    unit = mm2twip(span_mm) / sum(weights)
+    widths = [max(300, int(unit * w)) for w in weights]
+
+    # 行の「高さ」は紙面の横方向の厚み。表が幅いっぱいになるよう割り当てる。
+    # 見出しのぶんだけ控えておかないと、1行はみ出して次のページへ送られる。
+    # 中身が入りきらないときは伸びてよいので atLeast
+    avail = spec.text_width_mm - (spec.heading_pt * MM_PER_PT * 2.4 if title else 4)
+    thick = int(mm2twip(avail) / max(1, len(rows)))
+
+    body_rpr = _rpr(spec, font=spec.heading_font, pt=pt)
+    head_rpr = _rpr(spec, font=spec.heading_font, pt=pt, bold=True, color="FFFFFF")
+    cell_line = mm2twip(pt * MM_PER_PT * 1.3)
+
+    trs = ""
+    for i, row in enumerate(rows):
+        cells = ""
+        for j in range(n_cols):
+            text = row[j] if j < len(row) else ""
+            shd = ('<w:shd w:val="clear" w:color="auto" w:fill="1F6F4A"/>'
+                   if i == 0 else "")
+            align = "left" if j <= 1 else "center"
+            cells += (
+                f'<w:tc><w:tcPr><w:tcW w:w="{widths[j]}" w:type="dxa"/>{shd}'
+                '<w:vAlign w:val="center"/></w:tcPr>'
+                f'<w:p><w:pPr><w:jc w:val="{align}"/>'
+                f'<w:spacing w:line="{cell_line}" w:lineRule="exact" '
+                'w:before="20" w:after="20"/></w:pPr>'
+                f'<w:r>{head_rpr if i == 0 else body_rpr}'
+                f'<w:t xml:space="preserve">{_esc(text)}</w:t></w:r></w:p></w:tc>')
+        # 1行目は見出し。ページをまたぐときは毎ページ出す
+        head = "<w:tblHeader/>" if i == 0 else ""
+        trs += (f'<w:tr><w:trPr>{head}'
+                f'<w:trHeight w:val="{thick}" w:hRule="atLeast"/>'
+                f"</w:trPr>{cells}</w:tr>")
+
+    borders = "".join(
+        f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="9AA3AE"/>'
+        for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    grid = "".join(f'<w:gridCol w:w="{w}"/>' for w in widths)
+    tbl = (
+        '<w:tbl><w:tblPr>'
+        f'<w:tblW w:w="{sum(widths)}" w:type="dxa"/><w:jc w:val="center"/>'
+        f'<w:tblBorders>{borders}</w:tblBorders>'
+        '<w:tblLayout w:type="fixed"/></w:tblPr>'
+        f'<w:tblGrid>{grid}</w:tblGrid>{trs}</w:tbl>')
+
+    # 段組みを 1段に切り替えて表を置き、そのあと5段に戻す。
+    # 見出しも同じ区間に入れる（別の区間に置くと、表と離れてしまう）
+    line_mm = spec.body_pt * MM_PER_PT * spec.line_spacing
+    head = ""
+    if title:
+        head = _para(title, _rpr(spec, font=spec.heading_font, pt=spec.heading_pt,
+                                 bold=True, color="1F6F4A"),
+                     border=True, keep=True)
+    xml = (f'<w:p><w:pPr>{_sect_pr(spec, continuous=True)}</w:pPr></w:p>'
+           + head + tbl
+           + f'<w:p><w:pPr>{_sect_pr(spec, columns=1, continuous=True)}</w:pPr></w:p>')
+    lines = int(-(-spec.text_width_mm // line_mm)) * spec.columns
+    return xml, lines
+
+
+def _sect_pr(spec: LayoutSpec, *, columns: int = 0, continuous: bool = False) -> str:
     """紙面の決まりごと。ここが 1ページ5段縦書きを決めている。"""
     char_twip = mm2twip(spec.body_pt * MM_PER_PT)
     line_twip = mm2twip(spec.body_pt * MM_PER_PT * spec.line_spacing)
+    cols = columns or spec.columns
     return (
         "<w:sectPr>"
-        f'<w:pgSz w:w="{mm2twip(spec.page_width_mm)}" w:h="{mm2twip(spec.page_height_mm)}"/>'
+        + ('<w:type w:val="continuous"/>' if continuous else "")
+        + f'<w:pgSz w:w="{mm2twip(spec.page_width_mm)}" w:h="{mm2twip(spec.page_height_mm)}"/>'
         f'<w:pgMar w:top="{mm2twip(spec.margin_top_mm)}" '
         f'w:right="{mm2twip(spec.margin_right_mm)}" '
         f'w:bottom="{mm2twip(spec.margin_bottom_mm)}" '
         f'w:left="{mm2twip(spec.margin_left_mm)}" '
         'w:header="425" w:footer="425" w:gutter="0"/>'
-        f'<w:cols w:num="{spec.columns}" w:space="{mm2twip(spec.column_gap_mm)}"/>'
+        f'<w:cols w:num="{cols}" w:space="{mm2twip(spec.column_gap_mm)}"/>'
         '<w:textDirection w:val="tbRl"/>'
         f'<w:docGrid w:type="linesAndChars" w:linePitch="{line_twip}" '
         f'w:charSpace="{char_twip}"/>'
@@ -353,7 +442,10 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
             lines_used += 3
 
         for art in arts:
-            if art.title:
+            # 表だけの記事（賛否一覧表など）は、見出しも表と同じ区間に置く。
+            # 別々にすると、見出しが5段の中に残って表と離れてしまう
+            table_only = bool(getattr(art, "table", None)) and not art.body.strip()
+            if art.title and not table_only:
                 body.append(_para(art.title, head_rpr, spacing_before=240, border=True,
                                   keep=True))
                 # 見出しは本文より大きいので、その分だけ行を余分に使う。
@@ -420,6 +512,15 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
                 blocks.append(block)
 
             body.extend(_weave_photos(paras, weights, blocks))
+
+            # 表（賛否一覧表など）。段組みを1段に切り替えて紙面いっぱいに組む
+            if getattr(art, "table", None):
+                xml, used = _table_block(art.table, spec,
+                                         art.title if table_only else "")
+                if xml:
+                    body.append(xml)
+                    lines_used += used
+
             body.append(_para("", body_rpr))
             # 記事の切れ目では、段の変わり目に半端な空きができる。
             # 実際の刷り上がりと突き合わせて求めた補正。

@@ -346,3 +346,4 @@ td select{min-width:150px}
 .ezbox .warnhint{color:var(--warn);font-weight:600}
 .fold.need{border-color:#e8cfa0;background:#fffdf8}
 .fold.need .fcount{color:var(--warn)}
+.foldbtns{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}

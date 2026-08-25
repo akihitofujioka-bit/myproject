@@ -32,6 +32,8 @@ SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ]),
     ("原稿の取り込み", [
         ("gikai/importers.py", "docx / doc / txt / pdf / rtf の取り込み。文字コードの自動判別。"),
+        ("gikai/xlsxio.py",
+         "Excel(.xlsx)と CSV を、行と列のまま読む。賛否一覧表のため。"),
         ("gikai/doc97.py", "Word 旧形式(.doc)を追加ソフト無しで読む。OLE2 と FIB を自分で解く。"),
         ("gikai/textutil.py", "日本語の正規化・字数計算・文分割。縦書きの数字表記もここ。"),
     ]),
@@ -125,6 +127,8 @@ API_DESC = {
     "easy/photo_plan": "写真を原稿に割り当てる画面の材料（どれが未割り当てか）",
     "easy/assign_photos": "選んだ割り当てのとおりに、写真の名前をそろえる",
     "easy/photo": "原稿フォルダの中の写真（割り当て画面に出す縮小画像）",
+    "easy/note_read": "画面で書きかえるために、原稿テキストの中身を読む",
+    "easy/note_write": "画面で書いた記事を、区分のフォルダに保存する",
     "easy/rename": "原稿や写真の名前を変える（別の区分へ移すのもここ）",
     "easy/renumber": "1つの区分の原稿に、いまの並び順で 01_ 02_ … を振り直す",
     "easy/build": "フォルダの中身から1号ぶんを組み立てる（かんたん作成の本体）",
