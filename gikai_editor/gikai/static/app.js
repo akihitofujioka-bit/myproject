@@ -1322,7 +1322,7 @@ async function loadEasy() {
 
 async function refreshEasy() {
   easyState = await api("easy/state");
-  $("#ezPages").value = easyState.max_pages || 0;
+  $("#ezPages").value = easyState.max_pages || easyState.default_max_pages || 0;
   $("#ezInboxPath").textContent = easyState.inbox;
   renderFolders();
   renderBuilt();
@@ -1338,10 +1338,12 @@ function renderFolders() {
          title="名前を変える／別の区分へ移す">${esc(name)}</button>`;
     const files = f.docs.map((x) => chip(x, "doc"))
       .concat(f.photos.map((x) => chip(x, "img"))).join("");
-    return `<div class="fold ${n + m ? "" : "zero"}">
+    const need = !n && !f.optional;      // 毎号ある区分なのに空
+    return `<div class="fold ${n + m ? "" : "zero"} ${need ? "need" : ""}">
       <div class="fname">${esc(f.folder)}</div>
       <div class="fnote">${esc(f.note)}${f.optional ? "（無い号もあります）" : ""}</div>
-      <div class="fcount">${n ? `原稿 ${n} 件` : "原稿なし"}${m ? ` ／ 写真 ${m} 枚` : ""}</div>
+      <div class="fcount">${n ? `原稿 ${n} 件` : (need ? "原稿がまだです" : "原稿なし")}${
+        m ? ` ／ 写真 ${m} 枚` : ""}</div>
       ${files ? `<div class="flist">${files}</div>` : ""}
       ${n > 1 ? `<button class="renum" data-renum="${esc(f.id)}"
           title="いまの並びで 01_ 02_ … を付け直します">番号を振り直す</button>` : ""}
@@ -1644,6 +1646,15 @@ function showBuildResult(r) {
       </div>`
     : "";
 
+  const missing = (r.missing || []).length
+    ? `<div class="ezbox"><h3>原稿が入っていない区分があります</h3>
+        <div class="ezrows">${r.missing.map((m) =>
+          `<div><b>${esc(m.name)}</b>　<span class="flist">${esc(m.folder)} フォルダ</span></div>`
+          ).join("")}</div>
+        <p class="hint" style="margin-top:8px">入れ忘れでなければ、このまま進めて構いません。
+          入れたあと「議会だよりを作る」をもう一度押せば入ります。</p></div>`
+    : "";
+
   const warn = (r.compose.warnings || []).length
     ? `<div class="ezbox"><h3>気を付けるところ</h3><div class="ezrows">${
         r.compose.warnings.map((w) => `<div>${esc(w)}</div>`).join("")}</div></div>`
@@ -1676,7 +1687,7 @@ function showBuildResult(r) {
       ${line("フォルダから消えたので外した", rep.removed)}
       ${line("写真を入れた", rep.photos_added)}
     </div></div>
-    ${fit}${warn}${skipped}`;
+    ${missing}${fit}${warn}${skipped}`;
 }
 
 $("#ezPreview").addEventListener("click", () => guard(async () => {

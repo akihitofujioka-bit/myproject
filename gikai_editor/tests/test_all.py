@@ -1310,9 +1310,9 @@ def test_sections_have_the_house_order():
     names = [s.name for s in sec.default_sections()]
     assert names == ["表紙", "行政報告", "審議したこと・決まったこと",
                      "閉会中の委員会活動報告", "一般質問", "特集", "最終ページ"]
-    # 「特集」は無い号があるので、空でも催促しない
-    opt = [s.id for s in sec.default_sections() if s.optional]
-    assert opt == ["tokushu"]
+    # 日高村議会だよりは、この7つがどれも毎号ある（特集も毎号ある）。
+    # 空のままなら入れ忘れなので、催促する側に倒す
+    assert [s.id for s in sec.default_sections() if s.optional] == []
 
 
 def test_guess_section_from_filename_and_title():
@@ -1687,20 +1687,56 @@ def test_building_again_does_not_keep_shrinking():
             "ページ数を増やしても本文が戻らない"
 
 
-def test_print_hint_never_says_zero_pages():
-    """印刷の目安が「0ページ」と言わないこと。"""
-    from gikai.easy import print_hint
+def test_print_hint_watches_for_odd_pages_and_the_ceiling():
+    """奇数ページ（最後が白紙になる）と、上限超えを知らせること。
 
-    assert print_hint(4)["ok"] and print_hint(8)["ok"]
-    for n in (1, 2, 3):
-        h = print_hint(n)
-        assert not h["ok"]
-        assert h["down"] == 0, h            # 0ページは選べない
-        assert "0 " not in h["message"], h["message"]
+    第203号は18ページ、上限は22ページ。どちらも偶数なので、
+    区切りは偶数で見る。
+    """
+    from gikai.easy import MAX_PAGES, print_hint
+
+    assert MAX_PAGES == 22
+
+    for n in (2, 18, 22):
+        h = print_hint(n, MAX_PAGES)
+        assert h["even"] and h["ok"] and not h["over"], h
+
+    for n in (1, 3, 21):
+        h = print_hint(n, MAX_PAGES)
+        assert not h["even"] and not h["ok"], h
+        assert "白紙" in h["message"]
         assert str(h["up"]) in h["message"]
-    h = print_hint(5)
-    assert h["down"] == 4 and h["up"] == 8
+    # 0ページとは言わない
+    assert print_hint(1, MAX_PAGES)["down"] == 0
+    assert "0 " not in print_hint(1, MAX_PAGES)["message"]
+    assert print_hint(3, MAX_PAGES)["down"] == 2
+
+    # 上限を超えたら、偶数でも知らせる
+    over = print_hint(24, MAX_PAGES)
+    assert over["even"] and over["over"] and not over["ok"]
+    assert "22" in over["message"]
+
     assert print_hint(0) == {}
+
+
+def test_missing_sections_are_reported():
+    """原稿が入っていない区分を、刷る前に知らせること。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))     # 行政報告・一般質問・最終ページだけ
+        missing = {m["name"] for m in easy.missing_sections(p)}
+        assert "特集" in missing, "特集は毎号あるので、空なら知らせること"
+        assert "表紙" in missing and "審議したこと・決まったこと" in missing
+        assert "一般質問" not in missing
+
+        res = easy.build(p, max_pages=0)
+        assert {m["name"] for m in res["missing"]} == missing
+
+        # 入れたら消える
+        (inbox / "06_特集" / "特集.txt").write_text(
+            "特集　移住のいま\n本文です。", encoding="utf-8")
+        assert "特集" not in {m["name"] for m in easy.missing_sections(p)}
 
 
 def test_easy_photos_go_with_their_manuscript():
@@ -2026,9 +2062,9 @@ def test_help_covers_the_whole_flow():
 
     text = json.dumps(doc, ensure_ascii=False)
     # 事務局がつまずくところが書かれていること
-    for word in ("最大ページ数", "原稿フォルダ", "使わない写真", "4の倍数",
+    for word in ("最大ページ数", "原稿フォルダ", "使わない写真", "22ページ",
                  "何度でも押せます", "外部と通信しません",
-                 "一般質問の人数", "特集がある号", "実際に数えて"):
+                 "一般質問の", "毎号ある", "奇数ページ", "実際に数えて"):
         assert word in text, f"「{word}」の説明が無い"
 
 

@@ -344,3 +344,5 @@ td select{min-width:150px}
   .help{max-height:none;overflow:visible}
 }
 .ezbox .warnhint{color:var(--warn);font-weight:600}
+.fold.need{border-color:#e8cfa0;background:#fffdf8}
+.fold.need .fcount{color:var(--warn)}

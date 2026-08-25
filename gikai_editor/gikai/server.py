@@ -469,6 +469,8 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
             **easy.scan(p),
             "max_pages": int(p.data["settings"].get("target_pages") or 0),
             "hand_edited": easy.hand_edited(p),
+            "missing": easy.missing_sections(p),
+            "default_max_pages": easy.MAX_PAGES,
             "built": _built_files(p),
         }
 

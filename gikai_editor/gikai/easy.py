@@ -121,7 +121,11 @@ def _write_readme(project, base: Path) -> None:
         "  何度でも押せます。フォルダの中身がそのまま紙面になります。",
         "  フォルダから消したものは、紙面からも消えます。",
         "",
-        "区分の一覧",
+        "ページ数",
+        f"  上限は {MAX_PAGES} ページです（ちょうどにはそろえません）。",
+        "  一般質問の人数が増えれば、そのぶんページも増えます。",
+        "",
+        "区分の一覧（どれも毎号あります）",
     ]
     for f in folders(project):
         opt = "（無い号もあります）" if f["optional"] else ""
@@ -165,6 +169,20 @@ def scan(project) -> dict:
         })
     return {"inbox": str(inbox_dir(project)), "sections": out,
             "docs": total_docs, "photos": total_imgs}
+
+
+def missing_sections(project) -> list[dict]:
+    """原稿が入っていない区分。
+
+    日高村議会だよりは7つの区分がどれも毎号ある（特集も毎号ある）ので、
+    空のままだと入れ忘れの可能性が高い。**刷ってから気付くのがいちばん困る**
+    ので、組み上がった時点で知らせる。止めはしない。
+    """
+    return [
+        {"id": f["id"], "name": f["name"], "folder": f["folder"]}
+        for f in scan(project)["sections"]
+        if not f["optional"] and not f["docs"]
+    ]
 
 
 def hand_edited(project) -> list[str]:
@@ -636,7 +654,8 @@ def build(project, *, max_pages: int = 0) -> dict:
         "natural_pages": natural,
         "max_pages": max_pages,
         "outline": project.outline(),
-        "print_hint": print_hint(pages),
+        "print_hint": print_hint(pages, max_pages),
+        "missing": missing_sections(project),
         "counts": {"articles": len(project.articles()),
                    "photos": len(project.photos()),
                    "chars": sum(count_chars(a.body) for a in project.articles())},
@@ -744,35 +763,40 @@ def _restore_bodies(project) -> None:
                 project.put_article(art)
 
 
-# 中綴じの印刷は4ページ単位で刷るため、4の倍数でないと台紙が余る。
-# 何ページにすればよいかを言えるようにしておく。
-PRINT_UNIT = 4
+# 紙は表と裏があるので、ページ数は偶数でないと最後が白紙になる。
+# 日高村議会だよりは第203号が18ページ、上限は22ページ — どちらも偶数。
+PRINT_UNIT = 2
+
+# 事務局から示された、1号あたりのページ数の上限。
+# ここを超えると印刷の予算に収まらないため、既定値として画面に入れておく。
+MAX_PAGES = 22
 
 
-def print_hint(pages: int) -> dict:
+def print_hint(pages: int, max_pages: int = 0) -> dict:
     """印刷に合うページ数かどうかの目安。
 
-    「◯ページにしたい」は事務局ではなく印刷所の都合で決まることが多い。
-    ここでは決めつけず、**あと何ページで区切りがよくなるか**だけを伝える。
+    紙は表と裏があるので、**奇数ページだと最後が白紙になる**。
+    刷ってから気付くと手戻りが大きいので、組み上がった時点で知らせる。
     """
     if pages <= 0:
         return {}
-    rem = pages % PRINT_UNIT
-    if rem == 0:
-        return {"ok": True, "pages": pages,
-                "message": f"{pages} ページ（{PRINT_UNIT} の倍数）です。"
-                           "中綴じの印刷にそのまま出せます。"}
-    down = pages - rem
-    up = pages + (PRINT_UNIT - rem)
-    # 0 ページにはできないので、そのときは増やす側だけを言う
-    choices = (f"{down} か {up}" if down >= PRINT_UNIT else f"{up}")
+    over = max_pages > 0 and pages > max_pages
+    if pages % PRINT_UNIT == 0:
+        msg = f"{pages} ページ（偶数）です。このまま印刷所に出せます。"
+        return {"ok": not over, "pages": pages, "even": True, "over": over,
+                "message": msg + (f"　ただし上限の {max_pages} ページを"
+                                  "超えています。" if over else "")}
     return {
         "ok": False,
         "pages": pages,
-        "down": down if down >= PRINT_UNIT else 0,
-        "up": up,
+        "even": False,
+        "over": over,
+        "down": pages - 1 if pages > 1 else 0,
+        "up": pages + 1,
         "message": (
-            f"いま {pages} ページです。中綴じで刷る場合は "
-            f"{PRINT_UNIT} の倍数（{choices} ページ）にすることが多いので、"
-            "印刷所にご確認ください。"),
+            f"いま {pages} ページ（奇数）です。紙は表と裏があるので、"
+            "最後の1ページが白紙になります。"
+            + (f"{pages - 1} か {pages + 1} ページ" if pages > 1
+               else f"{pages + 1} ページ")
+            + "に合わせることをおすすめします。"),
     }
