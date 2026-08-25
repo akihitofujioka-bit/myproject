@@ -1307,7 +1307,9 @@ async function loadEasy() {
   sel.innerHTML = ws.projects.map((x) =>
     `<option value="${esc(x.name)}">${esc(x.title)}（記事 ${x.articles} 件）</option>`).join("");
 
-  $("#ezProj").textContent = state.project ? "いまの号: " + state.project.title : "";
+  $("#ezProj").textContent = state.project
+    ? "いまの号: " + state.project.title
+    : (ws.projects.length ? "" : "はじめての方は、右上の「使い方」をご覧ください");
   const on = !!state.project;
   ["ezStep2", "ezStep3", "ezStep4"].forEach((id) => $("#" + id).classList.toggle("off", !on));
   if (!on) {
@@ -1677,6 +1679,68 @@ $("#ezPreview").addEventListener("click", () => guard(async () => {
         フォルダの原稿を直して「議会だよりを作る」をもう一度押してください。</div>
     </div>`;
 }));
+
+// ------------------------------------------------------------------ 使い方
+
+/* 使い方は道具の中で完結させる。役場の端末で README を探して開く、
+   という運用は現実的でないため。文章は gikai/help.py の1か所にあり、
+   ここはそれを並べるだけ。 */
+
+let helpDoc = null;
+
+$("#btnHelp").addEventListener("click", () => guard(() => openHelp()));
+$$("[data-help]").forEach((b) =>
+  b.addEventListener("click", () => guard(() => openHelp(b.dataset.help))));
+
+async function openHelp(focusId = "") {
+  if (!helpDoc) helpDoc = await api("help");
+  const secs = helpDoc.sections;
+  modal("使い方", `<div class="pad">
+    <div class="helpnav">${secs.map((x) =>
+      `<button data-goto="${esc(x.id)}">${esc(x.title)}</button>`).join("")}</div>
+    <div class="help" id="helpBody">${secs.map((x) =>
+      `<h3 id="h-${esc(x.id)}">${esc(x.title)}</h3>${x.blocks.map(helpBlock).join("")}`
+      ).join("")}</div>
+    <div class="helpfoot">
+      <button id="helpPrint">印刷する</button>
+      <span class="hint">紙に出して、パソコンの横に置いておけます。</span>
+    </div></div>`);
+
+  $("#helpPrint").addEventListener("click", () => window.print());
+  $$("[data-goto]").forEach((b) =>
+    b.addEventListener("click", () => {
+      $$("[data-goto]").forEach((x) => x.classList.toggle("on", x === b));
+      $("#h-" + b.dataset.goto)?.scrollIntoView({ block: "start" });
+    }));
+  if (focusId) {
+    const btn = $(`[data-goto="${focusId}"]`);
+    if (btn) { btn.classList.add("on"); btn.click(); }
+  }
+}
+
+/* 太字とコードだけ、書いたとおりに見せる。
+   使い方の文章は自分たちで書いたものなので、ここで組み立ててよい。 */
+function helpText(s) {
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/`(.+?)`/g, "<code>$1</code>");
+}
+
+function helpBlock(b) {
+  if (b.p) return `<p>${helpText(b.p)}</p>`;
+  if (b.list) return `<ul>${b.list.map((x) => `<li>${helpText(x)}</li>`).join("")}</ul>`;
+  if (b.steps) return `<ol>${b.steps.map((x) => `<li>${helpText(x)}</li>`).join("")}</ol>`;
+  if (b.note) return `<div class="hnote">${helpText(b.note)}</div>`;
+  if (b.warn) return `<div class="hwarn">${helpText(b.warn)}</div>`;
+  if (b.code) return `<pre>${esc(b.code)}</pre>`;
+  if (b.table) {
+    return `<table><thead><tr>${b.table.head.map((h) =>
+      `<th>${helpText(h)}</th>`).join("")}</tr></thead><tbody>${
+      b.table.rows.map((r) => `<tr>${r.map((c) =>
+        `<td>${helpText(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+  return "";
+}
 
 // ------------------------------------------------------------------ 起動
 

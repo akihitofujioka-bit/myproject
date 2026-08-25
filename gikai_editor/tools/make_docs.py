@@ -49,6 +49,8 @@ SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("gikai/preview.py", "画面で見る下見用の紙面（HTML）。"),
     ]),
     ("全体のとりまとめ", [
+        ("gikai/help.py",
+         "画面の中の「使い方」。文章はここ1か所にまとめてある。"),
         ("gikai/easy.py",
          "かんたん作成。区分ごとのフォルダの中身から、1号ぶんを組み立てる。"),
         ("gikai/shellopen.py",
@@ -116,6 +118,7 @@ API_DESC = {
     "outline/sections": "構成そのものを変える（区分の追加・削除・並べ替え）",
     "outline/assign": "原稿の名前や見出しから、どの区分かを自動で振り分ける",
     "outline/move": "区分の中で記事を1つ上／下へ動かす",
+    "help": "画面の中の「使い方」（文章一式）",
     "easy/state": "かんたん作成の画面の状態（フォルダの中身・最大ページ数）",
     "easy/folders": "区分ごとの原稿フォルダを作る",
     "easy/max_pages": "最大ページ数を決める",

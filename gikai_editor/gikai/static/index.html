@@ -16,6 +16,7 @@
   <div class="proj" id="projLabel">プロジェクト未選択</div>
   <div class="spacer"></div>
   <span class="offline" title="外部への通信は行いません">オフライン動作</span>
+  <button class="ghost" id="btnHelp">使い方</button>
   <button class="ghost" id="btnSettings">設定</button>
   <button class="ghost" id="btnQuit" title="ツールを終了します">終了</button>
 </header>
@@ -42,7 +43,8 @@
 
   <div class="card ez" id="ezStep1">
     <div class="ezhead"><span class="num">1</span>
-      <h2>号とページ数を決める</h2></div>
+      <h2>号とページ数を決める</h2>
+      <button class="whatis" data-help="step1" title="この手順の使い方">?</button></div>
     <div class="row">
       <label>号の名前<input id="ezTitle" placeholder="例: 第204号"></label>
       <label>発行日<input id="ezDate" placeholder="例: 令和8年10月31日"></label>
@@ -65,7 +67,8 @@
 
   <div class="card ez" id="ezStep2">
     <div class="ezhead"><span class="num">2</span>
-      <h2>フォルダに原稿と写真を入れる</h2></div>
+      <h2>フォルダに原稿と写真を入れる</h2>
+      <button class="whatis" data-help="step2" title="この手順の使い方">?</button></div>
     <p class="hint">紙面の区分ごとにフォルダを作ります。
       載せたい区分のフォルダへ、原稿と写真をそのまま入れてください。
       <b>どのフォルダに入れたかが、そのまま紙面の場所になります。</b></p>
@@ -95,7 +98,8 @@
 
   <div class="card ez" id="ezStep3">
     <div class="ezhead"><span class="num">3</span>
-      <h2>ボタンひとつで作る</h2></div>
+      <h2>ボタンひとつで作る</h2>
+      <button class="whatis" data-help="step3" title="この手順の使い方">?</button></div>
     <div class="row">
       <button class="bigbtn" id="ezBuild">議会だよりを作る</button>
       <span class="hint" id="ezBuildNote">1ページ5段の縦書きで、区分の順に組み上げます。
@@ -106,7 +110,8 @@
 
   <div class="card ez" id="ezStep4">
     <div class="ezhead"><span class="num">4</span>
-      <h2>できあがりを見て、書き出す</h2></div>
+      <h2>できあがりを見て、書き出す</h2>
+      <button class="whatis" data-help="step4" title="この手順の使い方">?</button></div>
     <div class="row">
       <button class="primary" id="ezPreview">できあがりを見る</button>
       <button id="ezOpenWord">Word で開く</button>

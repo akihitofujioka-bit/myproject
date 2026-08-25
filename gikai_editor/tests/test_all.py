@@ -1878,6 +1878,79 @@ def test_open_is_limited_to_the_issue_folder():
                 raise AssertionError(f"{bad} を開けてしまう")
 
 
+# ====================================================== 使い方（画面の中）
+
+def test_help_covers_the_whole_flow():
+    """使い方が、かんたん作成の流れを最後まで説明していること。"""
+    from gikai.help import help_doc
+
+    doc = help_doc()
+    ids = [s["id"] for s in doc["sections"]]
+    for must in ("flow", "step1", "step2", "photos", "step3", "step4",
+                 "pro", "trouble"):
+        assert must in ids, f"{must} の説明が無い"
+
+    text = json.dumps(doc, ensure_ascii=False)
+    # 事務局がつまずくところが書かれていること
+    for word in ("最大ページ数", "原稿フォルダ", "使わない写真", "偶数ページ",
+                 "何度でも押せます", "外部と通信しません"):
+        assert word in text, f"「{word}」の説明が無い"
+
+
+def test_help_only_names_buttons_that_exist():
+    """使い方が、画面に無いボタンの名前を出していないこと。
+
+    画面を直したのに説明だけ残る、が起きると利用者が迷う。
+    """
+    from gikai.help import UI_LABELS, help_doc
+
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    js = _js()
+    for label in UI_LABELS:
+        assert label in html or label in js, \
+            f"使い方が「{label}」と書いているが、画面にその名前が無い"
+
+    # 使い方が「」で名前を出しているボタンも、実在すること
+    import re as _re
+
+    text = json.dumps(help_doc(), ensure_ascii=False)
+    quoted = set(_re.findall(r"「([^」]{2,20})」", text))
+    known = set(UI_LABELS)
+    for name in quoted:
+        if name in known or name in html or name in js:
+            continue
+        # ボタン名らしきものだけを見る（説明文の引用は除く）
+        assert not name.endswith(("する", "を作る", "を開く")), \
+            f"使い方が「{name}」と書いているが、画面にその名前が無い"
+
+
+def test_help_blocks_are_shapes_the_screen_can_render():
+    """画面側が知らない書き方が混ざっていないこと。"""
+    from gikai.help import help_doc
+
+    known = {"p", "list", "steps", "table", "note", "warn", "code"}
+    js = _js()
+    for sec in help_doc()["sections"]:
+        assert sec["title"] and sec["blocks"], sec["id"]
+        for b in sec["blocks"]:
+            for key in b:
+                assert key in known, f"{sec['id']}: 知らない書き方 {key}"
+                assert f"b.{key}" in js, f"画面が {key} を描けない"
+            if "table" in b:
+                head = b["table"]["head"]
+                for row in b["table"]["rows"]:
+                    assert len(row) == len(head), f"{sec['id']}: 表の列数が合わない"
+
+
+def test_help_is_reachable_from_the_screen():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    js = _js()
+    assert 'id="btnHelp"' in html, "「使い方」ボタンが画面に無い"
+    assert 'data-help="step1"' in html, "手順ごとの「?」が無い"
+    assert "openHelp" in js
+    assert "window.print()" in js, "紙に出せるようにしておくこと"
+
+
 # ====================================================== 実行
 
 def _run():

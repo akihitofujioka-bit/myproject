@@ -455,6 +455,11 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         p = state.require()
         return p.fit_to_pages(int(body.get("target_pages") or 0))
 
+    if path == "help":
+        from .help import help_doc
+
+        return help_doc()
+
     # ---------------- かんたんモード ----------------
     if path == "easy/state":
         p = state.require()
