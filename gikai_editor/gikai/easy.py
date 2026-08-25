@@ -713,6 +713,7 @@ def build(project, *, max_pages: int = 0) -> dict:
         "pages": pages,
         "counted": counted,
         "natural_pages": natural,
+        "page_floor": sum(1 for g in project.outline()["sections"] if g["count"]),
         "max_pages": max_pages,
         "outline": project.outline(),
         "print_hint": print_hint(pages, max_pages),
@@ -754,6 +755,11 @@ def _fit_and_compose(project, max_pages: int) -> tuple[dict, dict, int, bool, in
         project.data["settings"]["target_pages"] = max_pages
         project.save()
 
+    # 区分の頭では必ずページが変わるので、原稿がある区分の数より
+    # 少ないページ数にはできない。무理に詰めても減らないので、
+    # そこは詰めずにそのまま出す（画面には理由を出す）
+    floor = sum(1 for g in project.outline()["sections"] if g["count"])
+
     # まず、1字も詰めずにそのまま組んでみる。
     # 収まるなら削る理由がない。議員から預かった原稿は短くしないに越したことはない
     result = project.compose()
@@ -762,7 +768,7 @@ def _fit_and_compose(project, max_pages: int) -> tuple[dict, dict, int, bool, in
         return {}, result, result["pages"], False, result["pages"]
     result = {**result, "pages": real}
     natural = real                     # 1字も詰めなかった場合のページ数
-    if max_pages <= 0 or real <= max_pages:
+    if max_pages <= 0 or real <= max_pages or real <= floor:
         return {}, result, real, True, natural
 
     # 収まらないので詰める。見積もりで詰めて、組んで、実際に数える。
@@ -785,6 +791,10 @@ def _fit_and_compose(project, max_pages: int) -> tuple[dict, dict, int, bool, in
             return fit, result, result["pages"], False, natural
 
         if real > max_pages:
+            if real <= floor:
+                # これ以上は区分の数のぶん減らせない
+                best = (fit, result, real, target)
+                break
             if target - (real - max_pages) < 1:
                 break
             target -= real - max_pages    # 足りないので、もっと詰める

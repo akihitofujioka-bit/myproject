@@ -1655,15 +1655,22 @@ def test_max_pages_is_actually_enforced():
         loose = easy.build(p, max_pages=0)
         if not loose["counted"]:
             return
-        assert loose["pages"] > 3, loose["pages"]
+        # 区分の頭では必ずページが変わるので、区分の数より減らせない
+        floor = loose["page_floor"]
+        assert loose["pages"] > floor, (loose["pages"], floor)
 
-        tight = easy.build(p, max_pages=3)
-        assert tight["pages"] <= 3, tight["pages"]
+        target = floor + 1
+        tight = easy.build(p, max_pages=target)
+        assert tight["pages"] <= target, (tight["pages"], target)
         pdf = sorted(p.output_dir.glob("*自動組版*.pdf"),
                      key=lambda f: f.stat().st_mtime)[-1]
-        assert count_pdf_pages(pdf) <= 3, "収まったと言って、実際はあふれている"
+        assert count_pdf_pages(pdf) <= target, "収まったと言って、実際はあふれている"
         # 詰めたくない人のために、詰めない場合のページ数も返す
         assert tight["natural_pages"] >= tight["pages"]
+
+        # 区分の数より少ないページ数は指定しても無理。詰めすぎない
+        impossible = easy.build(p, max_pages=1)
+        assert impossible["pages"] >= floor, impossible["pages"]
 
 
 def test_building_again_does_not_keep_shrinking():
@@ -2125,6 +2132,97 @@ def test_read_xlsx_keeps_rows_and_columns():
         rows = read_table(f)
         assert rows == SANPI, rows
         assert describe(rows) == "4行 × 6列の表"
+
+
+def test_word_author_is_never_printed():
+    """Word の「作成者」を執筆者として紙面に出さないこと。
+
+    作成者はそのファイルを作ったパソコンのユーザー名（Toshihiko Fujihara /
+    lguser018 など）で、記事の執筆者ではない。実際に刷り上がりへ
+    印刷されてしまった。
+    """
+    from gikai.importers import looks_like_a_person, read_docx
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "原稿.docx"
+        _make_docx(f, ["行政報告", "村長から報告がありました。"])
+        # 作成者を後から足す（Word が必ず書き込む項目）
+        with zipfile.ZipFile(f, "a") as z:
+            z.writestr("docProps/core.xml",
+                       '<?xml version="1.0"?><cp:coreProperties '
+                       'xmlns:cp="http://schemas.openxmlformats.org/package/2006/'
+                       'metadata/core-properties" '
+                       'xmlns:dc="http://purl.org/dc/elements/1.1/">'
+                       "<dc:creator>Toshihiko Fujihara</dc:creator>"
+                       "</cp:coreProperties>")
+        doc = read_docx(f)
+        assert "Fujihara" not in (doc.author or ""), doc.author
+        assert "Toshihiko" not in doc.text
+
+    # 紙面に出してよいのは日本語の名前だけ
+    assert looks_like_a_person("森下けい子")
+    assert looks_like_a_person("山﨑")
+    for bad in ("Toshihiko Fujihara", "lguser018", "Administrator", "", "   "):
+        assert not looks_like_a_person(bad), bad
+
+
+def test_composed_page_has_no_roman_user_names():
+    """組み上がった紙面に、パソコンのユーザー名が出ないこと。"""
+    from gikai.compose import compose
+
+    with tempfile.TemporaryDirectory() as d:
+        p = _sample_project(Path(d), n_articles=2, n_photos=0)
+        for art in p.articles():
+            art.author = "lguser018"       # 取り込みをすり抜けた場合の保険
+            p.put_article(art)
+        res = compose(p)
+        with zipfile.ZipFile(res.path) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+        assert "lguser018" not in xml, "ユーザー名が紙面に出ている"
+
+
+def test_furigana_is_not_mixed_into_the_cell_text():
+    """Excel のふりがなが、セルの文字にくっついて出ないこと。
+
+    「森下けい子モリシタケイコ」のように読みが本文に混ざって印刷された。
+    """
+    from gikai.xlsxio import read_table
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "賛否.xlsx"
+        _make_xlsx(f, [["議員名", "結果"], ["森下けい子", "可決"]])
+        # 共有文字列に、ふりがな（rPh）を後から足す
+        import re as _re
+
+        with zipfile.ZipFile(f) as z:
+            parts = {n: z.read(n) for n in z.namelist()}
+        sst = parts["xl/sharedStrings.xml"].decode("utf-8")
+        sst = sst.replace("<si><t>森下けい子</t></si>",
+                          "<si><t>森下けい子</t>"
+                          '<rPh sb="0" eb="5"><t>モリシタケイコ</t></rPh></si>')
+        parts["xl/sharedStrings.xml"] = sst.encode("utf-8")
+        with zipfile.ZipFile(f, "w") as z:
+            for n, b in parts.items():
+                z.writestr(n, b)
+
+        rows = read_table(f)
+        assert rows == [["議員名", "結果"], ["森下けい子", "可決"]], rows
+
+
+def test_table_drops_empty_layout_columns():
+    """見た目のために挟まれた空の列で、表が横に伸びないこと。
+
+    そのまま組むと紙面からあふれ、白紙のページが出た。
+    """
+    from gikai.xlsxio import read_table
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "空列あり.xlsx"
+        _make_xlsx(f, [["", "議案", "", "", "結果", ""],
+                       ["", "第1号", "", "", "可決", ""],
+                       ["", "第2号", "", "", "可決", ""]])
+        assert read_table(f) == [["議案", "結果"], ["第1号", "可決"],
+                                 ["第2号", "可決"]]
 
 
 def test_read_xlsx_trims_empty_edges():

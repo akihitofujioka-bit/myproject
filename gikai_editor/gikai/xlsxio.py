@@ -50,9 +50,31 @@ def _shared_strings(z: zipfile.ZipFile) -> list[str]:
         return []
     out = []
     for si in root.findall(_q("si")):
-        # 書式が混ざった文字列は <r><t> に分かれて入っている
-        parts = [t.text or "" for t in si.iter(_q("t"))]
+        # 書式が混ざった文字列は <r><t> に分かれて入っている。
+        # ただし <rPh> はふりがな。これを混ぜると
+        # 「森下けい子モケ」のように読みが本文にくっついて出てしまう
+        parts = [si.findtext(_q("t"), default="")]
+        for r in si.findall(_q("r")):
+            parts.append(r.findtext(_q("t"), default=""))
         out.append("".join(parts))
+    return out
+
+
+def _merged(root: ET.Element) -> list[tuple[int, int, int, int]]:
+    """結合セルの範囲。「A1:C1」→ (行1, 列1, 行2, 列2) の0始まり。"""
+    out = []
+    box = root.find(_q("mergeCells"))
+    for mc in (box if box is not None else []):
+        ref = mc.get("ref", "")
+        if ":" not in ref:
+            continue
+        a, b = ref.split(":", 1)
+        try:
+            r1 = int(re.sub(r"[^0-9]", "", a)) - 1
+            r2 = int(re.sub(r"[^0-9]", "", b)) - 1
+        except ValueError:
+            continue
+        out.append((r1, _col_index(a), r2, _col_index(b)))
     return out
 
 
@@ -127,6 +149,25 @@ def read_xlsx(path: Path | str) -> list[list[str]]:
                 cells.append("")          # 空セルは番地から補う
             cells.append(_cell_text(c, shared))
         rows.append(cells)
+
+    # 結合セルは左上にしか値が入っていない。
+    # **縦の結合だけ**、下の行へ値を広げる（議案番号や件名が、細かく分けた
+    # 行にまたがって結合されていると、下の行が空になってしまうため）。
+    # 横の結合は「○：賛成　●：反対」のような見出しのことが多く、
+    # 広げると同じ言葉が横に並んでしまうので触らない
+    for r1, c1, r2, c2 in _merged(root):
+        if c1 != c2 or r2 <= r1:
+            continue
+        if r1 >= len(rows) or c1 >= len(rows[r1]):
+            continue
+        value = rows[r1][c1]
+        if not value:
+            continue
+        for r in range(r1 + 1, min(r2, len(rows) - 1) + 1):
+            while len(rows[r]) <= c1:
+                rows[r].append("")
+            if not rows[r][c1]:
+                rows[r][c1] = value
     return _trim(rows)
 
 
@@ -160,14 +201,15 @@ def _trim(rows: list[list[str]]) -> list[list[str]]:
         return []
     width = max(len(r) for r in rows)
     rows = [r + [""] * (width - len(r)) for r in rows]
-    # 右端から、まるごと空の列を落とす
-    while width > 1 and all(not r[width - 1] for r in rows):
-        rows = [r[:-1] for r in rows]
-        width -= 1
-    # 左端も同じ
-    while width > 1 and all(not r[0] for r in rows):
-        rows = [r[1:] for r in rows]
-        width -= 1
+
+    # まるごと空の列は、端でも途中でも落とす。
+    # Excel は見た目を整えるために細い空列を挟んでいることがあり、
+    # そのまま組むと表が横に伸びてページからあふれる（白紙のページが出た）
+    keep = [c for c in range(width) if any(r[c] for r in rows)]
+    if keep:
+        rows = [[r[c] for c in keep] for r in rows]
+    # 途中の空行も同じ理由で落とす
+    rows = [r for r in rows if any(r)]
     return rows
 
 

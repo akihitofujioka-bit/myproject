@@ -30,6 +30,12 @@ WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
 A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 
+# 色は第203号の実物から採った。日高村議会だよりは青系で、緑ではない。
+# 変えるときは実物の紙面から採り直すこと（勘で決めない）
+INK_ACCENT = "0076A3"      # 見出しの文字・罫線（濃い青）
+INK_BAND = "9DDCF9"        # 区分の帯（中間の水色）
+INK_BAND_TEXT = "00415C"   # 帯の上に載せる文字
+
 MM_PER_PT = 25.4 / 72
 EMU_PER_MM = 36000
 TWIP_PER_MM = 1440 / 25.4
@@ -150,7 +156,7 @@ def _para(text: str, rpr: str, *, indent: bool = False, spacing_before: int = 0,
     if border:
         # 縦書きでは「下の罫線」が見出しの左側に出る
         ppr += ('<w:pBdr><w:bottom w:val="single" w:sz="12" w:space="2" '
-                'w:color="1F6F4A"/></w:pBdr>')
+                f'w:color="{INK_ACCENT}"/></w:pBdr>')
     if spacing_before:
         ppr += f'<w:spacing w:before="{spacing_before}"/>'
     if indent:
@@ -235,12 +241,18 @@ def _weave_photos(paras: list[str], weights: list[int],
     return out
 
 
+def _page_break() -> str:
+    """改ページ。区分の頭は必ずページの頭から始める。"""
+    return ('<w:p><w:pPr><w:spacing w:line="20" w:lineRule="exact"/></w:pPr>'
+            '<w:r><w:br w:type="page"/></w:r></w:p>')
+
+
 def _section_head(name: str, rpr: str, spec: LayoutSpec) -> str:
     """区分の見出し（行政報告・一般質問…）。地色を敷いて目立たせる。"""
     return (
         '<w:p><w:pPr>'
         '<w:keepNext/><w:keepLines/>'
-        '<w:shd w:val="clear" w:color="auto" w:fill="1F6F4A"/>'
+        f'<w:shd w:val="clear" w:color="auto" w:fill="{INK_BAND}"/>'
         f'<w:spacing w:before="{mm2twip(3)}"/>'
         '<w:jc w:val="center"/>'
         f'</w:pPr><w:r>{rpr}<w:t xml:space="preserve">　{_esc(name)}　</w:t></w:r></w:p>'
@@ -273,8 +285,14 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
     else:
         weights = [1.0] * n_cols
     span_mm = spec.text_height_mm - 6          # 上下に少し余裕をもたせる
-    unit = mm2twip(span_mm) / sum(weights)
-    widths = [max(300, int(unit * w)) for w in weights]
+    span = mm2twip(span_mm)
+    unit = span / sum(weights)
+    widths = [max(240, int(unit * w)) for w in weights]
+    # 列がとても多いと、最低の幅を足し合わせただけで紙面をはみ出す。
+    # はみ出すと表が次のページへ流れ、白紙のページが出る。必ず収める
+    if sum(widths) > span:
+        scale = span / sum(widths)
+        widths = [max(120, int(w * scale)) for w in widths]
 
     # 行の「高さ」は紙面の横方向の厚み。表が幅いっぱいになるよう割り当てる。
     # 見出しのぶんだけ控えておかないと、1行はみ出して次のページへ送られる。
@@ -283,7 +301,8 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
     thick = int(mm2twip(avail) / max(1, len(rows)))
 
     body_rpr = _rpr(spec, font=spec.heading_font, pt=pt)
-    head_rpr = _rpr(spec, font=spec.heading_font, pt=pt, bold=True, color="FFFFFF")
+    head_rpr = _rpr(spec, font=spec.heading_font, pt=pt, bold=True,
+                    color=INK_BAND_TEXT)
     cell_line = mm2twip(pt * MM_PER_PT * 1.3)
 
     trs = ""
@@ -291,7 +310,7 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
         cells = ""
         for j in range(n_cols):
             text = row[j] if j < len(row) else ""
-            shd = ('<w:shd w:val="clear" w:color="auto" w:fill="1F6F4A"/>'
+            shd = (f'<w:shd w:val="clear" w:color="auto" w:fill="{INK_BAND}"/>'
                    if i == 0 else "")
             align = "left" if j <= 1 else "center"
             cells += (
@@ -325,11 +344,15 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
     head = ""
     if title:
         head = _para(title, _rpr(spec, font=spec.heading_font, pt=spec.heading_pt,
-                                 bold=True, color="1F6F4A"),
+                                 bold=True, color=INK_ACCENT),
                      border=True, keep=True)
-    xml = (f'<w:p><w:pPr>{_sect_pr(spec, continuous=True)}</w:pPr></w:p>'
+    # 段組みを切り替える段落そのものは、場所を取らせない。
+    # 表がページいっぱいのとき、この段落だけで次のページができてしまう
+    tiny = '<w:spacing w:line="20" w:lineRule="exact" w:before="0" w:after="0"/>'
+    xml = (f'<w:p><w:pPr>{tiny}{_sect_pr(spec, continuous=True)}</w:pPr></w:p>'
            + head + tbl
-           + f'<w:p><w:pPr>{_sect_pr(spec, columns=1, continuous=True)}</w:pPr></w:p>')
+           + f'<w:p><w:pPr>{tiny}'
+           f'{_sect_pr(spec, columns=1, continuous=True)}</w:pPr></w:p>')
     lines = int(-(-spec.text_width_mm // line_mm)) * spec.columns
     return xml, lines
 
@@ -403,7 +426,7 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
 
     body_rpr = _rpr(spec, font=spec.body_font, pt=spec.body_pt)
     head_rpr = _rpr(spec, font=spec.heading_font, pt=spec.heading_pt, bold=True,
-                    color="1F6F4A")
+                    color=INK_ACCENT)
     lead_rpr = _rpr(spec, font=spec.heading_font, pt=spec.body_pt + 0.5, bold=True)
     name_rpr = _rpr(spec, font=spec.heading_font, pt=spec.body_pt)
     cap_rpr = _rpr(spec, font=spec.heading_font, pt=spec.caption_pt, color="444444")
@@ -418,7 +441,7 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
     head_line = "　".join(parts)
     body.append(_para(head_line, _rpr(spec, font=spec.heading_font,
                                       pt=spec.heading_pt + 2, bold=True,
-                                      color="1F6F4A"), border=True))
+                                      color=INK_ACCENT), border=True))
     body.append(_para("", body_rpr))
 
     # 構成（表紙 → 行政報告 → … → 最終ページ）の順に組む
@@ -429,7 +452,15 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
         warnings.append("記事がありません。原稿を取り込んでから組んでください。")
 
     sec_rpr = _rpr(spec, font=spec.heading_font, pt=spec.heading_pt + 1,
-                   bold=True, color="FFFFFF")
+                   bold=True, color=INK_BAND_TEXT)
+
+    # 区分の頭でページを送るため、1ページの行数を先に求めておく
+    lines_per_page = max(1, m["lines_per_column"] * spec.columns)
+
+    first_group = True
+    # 表のあとは段組みが1段から5段に戻るところでページが変わる。
+    # そこへさらに改ページを足すと、白紙のページができてしまう
+    after_table = False
 
     for group in groups:
         arts = group["articles"]
@@ -438,8 +469,14 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
 
         # 区分の見出し（表紙は題字があるので付けない）
         if group["id"] != "cover":
+            # 実物の議会だよりは、区分の頭で必ずページが変わる。
+            # 途中から始まると、どこからどの区分か分からなくなる
+            if not first_group and not after_table:
+                body.append(_page_break())
+                lines_used = -(-lines_used // lines_per_page) * lines_per_page
             body.append(_section_head(group["name"], sec_rpr, spec))
             lines_used += 3
+        first_group = False
 
         for art in arts:
             # 表だけの記事（賛否一覧表など）は、見出しも表と同じ区間に置く。
@@ -455,7 +492,11 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
                 head_lines = max(1, int(
                     -(-count_chars(art.title) * spec.heading_pt // (cpl * spec.body_pt))))
                 lines_used += head_lines * 2 + 1 + head_lines // 2
-            if art.author:
+            # 執筆者名は、日本語の名前のときだけ出す。
+            # パソコンのユーザー名が紙面に印刷されたことがあるため
+            from .importers import looks_like_a_person
+
+            if art.author and looks_like_a_person(art.author):
                 body.append(_para(art.author, name_rpr, align="right", keep=True))
                 lines_used += 1
             if art.lead:
@@ -514,14 +555,19 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
             body.extend(_weave_photos(paras, weights, blocks))
 
             # 表（賛否一覧表など）。段組みを1段に切り替えて紙面いっぱいに組む
-            if getattr(art, "table", None):
+            has_table = bool(getattr(art, "table", None))
+            after_table = has_table
+            if has_table:
                 xml, used = _table_block(art.table, spec,
                                          art.title if table_only else "")
                 if xml:
                     body.append(xml)
                     lines_used += used
 
-            body.append(_para("", body_rpr))
+            # 表の直後は空段落を置かない。表がページいっぱいのとき、
+            # この1行だけで白紙のページができてしまう
+            if not has_table:
+                body.append(_para("", body_rpr))
             # 記事の切れ目では、段の変わり目に半端な空きができる。
             # 実際の刷り上がりと突き合わせて求めた補正。
             lines_used += 7
@@ -542,7 +588,6 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
 
     _write_docx(out, doc, _styles_xml(spec), media, rels)
 
-    lines_per_page = max(1, m["lines_per_column"] * spec.columns)
     pages = max(1, -(-lines_used // lines_per_page))
 
     return ComposeResult(out, pages, chars_total, photo_count, warnings,

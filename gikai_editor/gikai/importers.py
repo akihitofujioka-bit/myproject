@@ -126,13 +126,14 @@ def read_docx(path: Path | str, *, include_textboxes: bool = True) -> ImportedDo
 
         # 文書プロパティから題名・作成者
         if "docProps/core.xml" in names:
+            # Word の「作成者」は、そのファイルを作ったパソコンのユーザー名
+            # （Toshihiko Fujihara / lguser018 など）であって、記事の執筆者では
+            # ない。**紙面に印刷されてしまった**ので、ここでは読まない。
+            # 執筆者は本文とファイル名から拾う（guess_author）。
             core = ET.fromstring(z.read("docProps/core.xml"))
-            for tag, attr in (("title", "title"), ("creator", "author")):
-                el = next(
-                    (e for e in core.iter() if e.tag.endswith("}" + tag)), None
-                )
-                if el is not None and (el.text or "").strip():
-                    setattr(doc, attr, el.text.strip())
+            el = next((e for e in core.iter() if e.tag.endswith("}title")), None)
+            if el is not None and (el.text or "").strip():
+                doc.title = el.text.strip()
 
     if not include_textboxes:
         pass
@@ -461,6 +462,18 @@ def guess_title(text: str) -> str:
             return line
         return ""
     return ""
+
+
+def looks_like_a_person(name: str) -> bool:
+    """紙面に出してよい執筆者名かどうか。
+
+    パソコンのユーザー名（`lguser018`）やローマ字の氏名が紙面に
+    印刷されてしまったことがあるので、日本語の名前だけを通す。
+    """
+    name = (name or "").strip()
+    if not name or len(name) > 12:
+        return False
+    return bool(re.search(r"[一-龥ぁ-んァ-ヶ﨑髙]", name))
 
 
 def guess_author(text: str, fallback: str = "") -> str:
