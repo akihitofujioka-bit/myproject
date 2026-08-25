@@ -623,21 +623,156 @@ def build(project, *, max_pages: int = 0) -> dict:
             art.hand_edited = False
             project.put_article(art)
 
-    # ページ数を合わせてから組む
-    fit = {}
-    if max_pages > 0:
-        project.data["settings"]["target_pages"] = max_pages
-        project.save()
-        fit = project.fit_to_pages(max_pages)
+    # 毎回、取り込んだままの原稿から組み直す（同じフォルダからは同じ紙面）
+    _restore_bodies(project)
 
-    result = project.compose()
+    fit, result, pages, counted, natural = _fit_and_compose(project, max_pages)
     return {
         "report": report,
         "fit": fit,
         "compose": result,
+        "pages": pages,
+        "counted": counted,
+        "natural_pages": natural,
         "max_pages": max_pages,
         "outline": project.outline(),
+        "print_hint": print_hint(pages),
         "counts": {"articles": len(project.articles()),
                    "photos": len(project.photos()),
                    "chars": sum(count_chars(a.body) for a in project.articles())},
+    }
+
+
+def _real_pages(docx: Path, outdir: Path) -> int:
+    """組み上がった Word を PDF にして、本当のページ数を数える。
+
+    数えられなければ 0（Word も LibreOffice も無いパソコン）。
+    """
+    from .docxio import count_pdf_pages, docx_to_pdf
+
+    try:
+        pdf = docx_to_pdf(docx, outdir)
+    except Exception:
+        return 0
+    return count_pdf_pages(pdf) if pdf else 0
+
+
+def _fit_and_compose(project, max_pages: int) -> tuple[dict, dict, int, bool, int]:
+    """最大ページ数に収まるまで、詰めて組んで**数える**をくり返す。
+
+    行数からの見積もりは実測の1%ほどの誤差があり、ページの変わり目に
+    かかると1ページずれる。少なく見積もると「収まりました」と言って
+    実際にはあふれるので、**PDF にして実際に数える**。
+    数えられないパソコン（Word も LibreOffice も無い）では見積もりを使い、
+    そのことを画面に出す。
+
+    戻り値は (詰めた記録, 組んだ結果, ページ数, 実際に数えたか,
+    1字も詰めなかった場合のページ数)。最後のひとつは「詰めたくないなら
+    何ページにすればよいか」を画面で言うために使う。
+    """
+    if max_pages > 0:
+        project.data["settings"]["target_pages"] = max_pages
+        project.save()
+
+    # まず、1字も詰めずにそのまま組んでみる。
+    # 収まるなら削る理由がない。議員から預かった原稿は短くしないに越したことはない
+    result = project.compose()
+    real = _real_pages(Path(result["docx"]), project.output_dir)
+    if not real:
+        return {}, result, result["pages"], False, result["pages"]
+    result = {**result, "pages": real}
+    natural = real                     # 1字も詰めなかった場合のページ数
+    if max_pages <= 0 or real <= max_pages:
+        return {}, result, real, True, natural
+
+    # 収まらないので詰める。見積もりで詰めて、組んで、実際に数える。
+    # 数えた結果でずれていたら、そのぶん目標を動かしてやり直す。
+    # 詰めすぎたときは緩める — 議員から預かった原稿を、必要もないのに
+    # 短くしないため。
+    def attempt(t: int):
+        _restore_bodies(project)          # 毎回、取り込んだままの原稿から詰め直す
+        f = project.fit_to_pages(t)
+        r = project.compose()
+        n = _real_pages(Path(r["docx"]), project.output_dir)
+        return f, ({**r, "pages": n} if n else r), n
+
+    best: tuple[dict, dict, int, int] | None = None   # (詰め方, 結果, 頁, 目標)
+    target = last = max_pages
+    for _ in range(3):
+        fit, result, real = attempt(target)
+        last = target
+        if not real:
+            return fit, result, result["pages"], False, natural
+
+        if real > max_pages:
+            if target - (real - max_pages) < 1:
+                break
+            target -= real - max_pages    # 足りないので、もっと詰める
+            continue
+
+        if best is None or real > best[2]:
+            best = (fit, result, real, target)
+        if real == max_pages:
+            break
+        target += max_pages - real        # 入る余地があるので緩めて試す
+
+    if best is None:
+        return fit, result, real, True, natural   # どうしても収まらなかった
+    if best[3] != last:
+        # 最後に組んだのは、いちばん良かったものとは別。
+        # 画面に出す数と、書き出したファイルを食い違わせない
+        fit, result, real = attempt(best[3])
+        if real:
+            return fit, result, real, True, natural
+    return best[0], best[1], best[2], True, natural
+
+
+def _restore_bodies(project) -> None:
+    """本文を、取り込んだままの状態に戻す。
+
+    ページ数に合わせて詰めた本文をそのまま持ち越すと、押すたびに縮み、
+    最大ページ数を増やしても戻らなくなる。毎回ここから詰め直す。
+    """
+    from .textutil import normalize_manuscript
+
+    numbers = project.data["settings"].get("normalize_numbers", True)
+    for art in project.articles():
+        if art.origin and art.raw:
+            fresh = normalize_manuscript(art.raw, numbers=numbers)
+            if art.body != fresh:
+                art.body = fresh
+                project.put_article(art)
+
+
+# 中綴じの印刷は4ページ単位で刷るため、4の倍数でないと台紙が余る。
+# 何ページにすればよいかを言えるようにしておく。
+PRINT_UNIT = 4
+
+
+def print_hint(pages: int) -> dict:
+    """印刷に合うページ数かどうかの目安。
+
+    「◯ページにしたい」は事務局ではなく印刷所の都合で決まることが多い。
+    ここでは決めつけず、**あと何ページで区切りがよくなるか**だけを伝える。
+    """
+    if pages <= 0:
+        return {}
+    rem = pages % PRINT_UNIT
+    if rem == 0:
+        return {"ok": True, "pages": pages,
+                "message": f"{pages} ページ（{PRINT_UNIT} の倍数）です。"
+                           "中綴じの印刷にそのまま出せます。"}
+    down = pages - rem
+    up = pages + (PRINT_UNIT - rem)
+    # 0 ページにはできないので、そのときは増やす側だけを言う
+    choices = (f"{down} か {up}" if down >= PRINT_UNIT else f"{up}")
+    return {
+        "ok": False,
+        "pages": pages,
+        "down": down if down >= PRINT_UNIT else 0,
+        "up": up,
+        "message": (
+            f"いま {pages} ページです。中綴じで刷る場合は "
+            f"{PRINT_UNIT} の倍数（{choices} ページ）にすることが多いので、"
+            "印刷所にご確認ください。"),
     }

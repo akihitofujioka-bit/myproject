@@ -343,3 +343,4 @@ td select{min-width:150px}
   .modalhead button,.helpnav,.helpfoot{display:none !important}
   .help{max-height:none;overflow:visible}
 }
+.ezbox .warnhint{color:var(--warn);font-weight:600}

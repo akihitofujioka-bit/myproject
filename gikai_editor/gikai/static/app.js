@@ -1593,7 +1593,7 @@ async function buildEasy() {
 
   const btn = $("#ezBuild");
   btn.disabled = true;
-  btn.textContent = "作っています…";
+  btn.textContent = "作って、ページ数を数えています…";
   $("#ezResult").innerHTML = "";
   try {
     const r = await api("easy/build", { max_pages: Number($("#ezPages").value) || 0 });
@@ -1610,11 +1610,17 @@ async function buildEasy() {
 }
 
 function showBuildResult(r) {
-  const pages = r.compose.pages;
+  const pages = r.pages ?? r.compose.pages;
   const max = r.max_pages;
   const over = max > 0 && pages > max;
   const bars = Array.from({ length: Math.min(pages, 40) },
     (_, i) => `<i class="${max && i >= max ? "over" : ""}"></i>`).join("");
+  // 数えたのか、目安なのかをはっきり書く。ここを曖昧にすると、
+  // 「収まりました」と言われて実際にあふれたときに信用を失う
+  const how = r.counted
+    ? "実際に数えたページ数です。"
+    : "このパソコンでは PDF を作れないため、<b>目安</b>です"
+      + "（1ページほど前後することがあります）。Word で開いてご確認ください。";
 
   const secs = r.outline.sections.filter((g) => g.count).map((g) =>
     `<div><b>${esc(g.name)}</b> … ${g.count} 本 ／ ${g.chars} 字</div>`).join("");
@@ -1630,7 +1636,12 @@ function showBuildResult(r) {
         <div class="ezrows">${r.fit.applied.map((a) =>
           `<div><b>${esc(a.label)}</b> ${a.before} 字 → ${a.after} 字</div>`).join("")}</div>
         <p class="hint" style="margin-top:8px">原稿にあった文を選んで残しています
-          （文章を作り変えてはいません）。気になるところは「くわしく編集」の③で直せます。</p></div>`
+          （文章を作り変えてはいません）。気になるところは「くわしく編集」の③で直せます。</p>
+        ${r.natural_pages && r.natural_pages > pages
+          ? `<p class="hint"><b>詰めたくないときは、最大ページ数を
+              ${r.natural_pages} ページにしてください。</b>
+              1字も詰めずに組むと ${r.natural_pages} ページになります。</p>` : ""}
+      </div>`
     : "";
 
   const warn = (r.compose.warnings || []).length
@@ -1651,7 +1662,11 @@ function showBuildResult(r) {
       <div class="pagebar">${bars}</div>
       <div class="ezrows">記事 ${r.counts.articles} 本 ／ 写真 ${r.counts.photos} 枚 ／
         本文 ${r.counts.chars} 字</div>
+      <p class="hint">${how}</p>
       ${over ? `<p class="hint">最大ページ数を増やすか、原稿を減らしてもう一度お試しください。</p>` : ""}
+      ${r.print_hint && r.print_hint.message
+        ? `<p class="hint ${r.print_hint.ok ? "" : "warnhint"}">
+            ${esc(r.print_hint.message)}</p>` : ""}
     </div>
     <div class="ezbox"><h3>紙面の並び</h3><div class="ezrows">${secs}</div></div>
     <div class="ezbox"><h3>フォルダから取り込んだもの</h3><div class="ezrows">

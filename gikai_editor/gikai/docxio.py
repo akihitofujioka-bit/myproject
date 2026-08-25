@@ -533,6 +533,37 @@ def _replace_marker(paras: list[ET.Element], name: str, value: str) -> None:
 # ====================================================================== 変換
 
 
+def count_pdf_pages(pdf_path: Path | str) -> int:
+    """PDF が何ページあるかを数える。
+
+    追加部品が入っていないパソコンでも数えられるよう、
+    PyMuPDF → pypdf → 中身を直接読む、の順に試す。
+    """
+    pdf_path = Path(pdf_path)
+    try:
+        import pymupdf
+
+        with pymupdf.open(pdf_path) as doc:
+            return doc.page_count
+    except Exception:
+        pass
+    try:
+        from pypdf import PdfReader
+
+        return len(PdfReader(str(pdf_path)).pages)
+    except Exception:
+        pass
+    # 最後の手段。PDF の中の「ページ」の宣言を数える
+    try:
+        raw = pdf_path.read_bytes()
+        import re as _re
+
+        n = len(_re.findall(rb"/Type\s*/Page[^s]", raw))
+        return n if n > 0 else 0
+    except Exception:
+        return 0
+
+
 def docx_to_pdf(docx_path: Path | str, outdir: Path | str) -> Path | None:
     """PDF にする（校正刷りの確認用）。Word → LibreOffice の順に試す。
 

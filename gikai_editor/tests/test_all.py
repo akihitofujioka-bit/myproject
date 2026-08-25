@@ -1569,6 +1569,140 @@ def test_easy_build_fits_the_page_limit():
         assert tight["fit"]["applied"], "何をどれだけ詰めたかが返っていない"
 
 
+def _ippan_project(d: Path, n_ippan: int, tokushu: bool):
+    """一般質問◯人・特集あり/なし の号を作る。"""
+    from gikai import easy
+
+    p = Project.create(d / "第204号", "第204号")
+    inbox = Path(easy.ensure_folders(p)["inbox"])
+    q = ("質問　{n}議員　{t}について問う。\n"
+         "答弁　村長　現在も関係機関と協議を続けている。"
+         "さまざまな可能性を検討し、村民の暮らしを守るために努めていく。\n"
+         "再質問　具体的な時期はいつごろになるのか。\n"
+         "答弁　担当課長　今年度中に方向性をお示しできるよう作業を進めている。\n")
+    put = lambda f, nm, t: (inbox / f / nm).write_text(t, encoding="utf-8")
+    put("02_行政報告", "村長報告.txt", "行政報告\n" + q.format(n="", t="行政") * 4)
+    put("07_最終ページ", "編集後記.txt", "編集後記\n" + q.format(n="", t="編集") * 2)
+    for i in range(n_ippan):
+        put("05_一般質問", f"{i + 1:02d}_議員{i}.txt",
+            f"見出し{i}について問う\n" + q.format(n=f"議員{i}", t=f"話題{i}") * 4)
+    if tokushu:
+        # 特集は「あれば1ページ以上使う」ものなので、それが分かる分量にする
+        put("06_特集", "特集.txt", "特集　移住のいま\n" + q.format(n="", t="移住") * 24)
+    return p
+
+
+def test_pages_follow_the_number_of_questioners():
+    """一般質問の人数が増えれば、ページも増えること。
+
+    人数は号によって変わる（0人の号もある）。決め打ちにしない。
+    """
+    from gikai import easy
+
+    pages = []
+    for n in (0, 4, 8, 12):
+        with tempfile.TemporaryDirectory() as d:
+            p = _ippan_project(Path(d), n, tokushu=False)
+            pages.append(easy.build(p, max_pages=0)["pages"])
+    assert pages == sorted(pages), pages
+    assert pages[-1] > pages[0], f"人数を増やしてもページが増えない: {pages}"
+    assert pages[0] >= 1
+
+
+def test_pages_follow_whether_there_is_a_feature():
+    """特集がある号だけ、そのぶんページが増えること。"""
+    from gikai import easy
+
+    got = {}
+    for tokushu in (False, True):
+        with tempfile.TemporaryDirectory() as d:
+            p = _ippan_project(Path(d), 4, tokushu=tokushu)
+            res = easy.build(p, max_pages=0)
+            got[tokushu] = res["pages"]
+            names = [g["name"] for g in res["outline"]["sections"] if g["count"]]
+            assert ("特集" in names) is tokushu, names
+    assert got[True] > got[False], got
+
+
+def test_page_count_is_counted_not_guessed():
+    """ページ数を、見積もりではなく実際に数えていること。
+
+    行数からの見積もりは1%ほどの誤差があり、ページの変わり目にかかると
+    1ページずれる。少なく見積もると「収まりました」と言って実際には
+    あふれるので、PDF にして数える。
+    """
+    from gikai import easy
+    from gikai.docxio import count_pdf_pages
+
+    with tempfile.TemporaryDirectory() as d:
+        p = _ippan_project(Path(d), 8, tokushu=False)
+        res = easy.build(p, max_pages=0)
+        pdf = sorted(p.output_dir.glob("*自動組版*.pdf"))
+        if not pdf:
+            return          # PDF を作れない環境（Word も LibreOffice も無い）
+        assert res["counted"] is True
+        assert res["pages"] == count_pdf_pages(pdf[0]), \
+            "画面に出す数と、書き出したファイルが食い違っている"
+
+
+def test_max_pages_is_actually_enforced():
+    """最大ページ数を決めたら、本当にその中に収まること。"""
+    from gikai import easy
+    from gikai.docxio import count_pdf_pages
+
+    with tempfile.TemporaryDirectory() as d:
+        p = _ippan_project(Path(d), 12, tokushu=True)
+        loose = easy.build(p, max_pages=0)
+        if not loose["counted"]:
+            return
+        assert loose["pages"] > 3, loose["pages"]
+
+        tight = easy.build(p, max_pages=3)
+        assert tight["pages"] <= 3, tight["pages"]
+        pdf = sorted(p.output_dir.glob("*自動組版*.pdf"),
+                     key=lambda f: f.stat().st_mtime)[-1]
+        assert count_pdf_pages(pdf) <= 3, "収まったと言って、実際はあふれている"
+        # 詰めたくない人のために、詰めない場合のページ数も返す
+        assert tight["natural_pages"] >= tight["pages"]
+
+
+def test_building_again_does_not_keep_shrinking():
+    """何度押しても、本文がどんどん縮まないこと。
+
+    詰めた本文を持ち越すと、押すたびに短くなり、最大ページ数を
+    増やしても戻らなくなる。毎回、取り込んだままの原稿から詰め直す。
+    """
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p = _ippan_project(Path(d), 10, tokushu=True)
+        first = easy.build(p, max_pages=3)
+        again = easy.build(p, max_pages=3)
+        assert again["counts"]["chars"] == first["counts"]["chars"], \
+            f"押すたびに縮んでいる: {first['counts']['chars']} → {again['counts']['chars']}"
+
+        # 最大ページ数を増やしたら、削った本文が戻ること
+        loose = easy.build(p, max_pages=0)
+        assert loose["counts"]["chars"] > first["counts"]["chars"], \
+            "ページ数を増やしても本文が戻らない"
+
+
+def test_print_hint_never_says_zero_pages():
+    """印刷の目安が「0ページ」と言わないこと。"""
+    from gikai.easy import print_hint
+
+    assert print_hint(4)["ok"] and print_hint(8)["ok"]
+    for n in (1, 2, 3):
+        h = print_hint(n)
+        assert not h["ok"]
+        assert h["down"] == 0, h            # 0ページは選べない
+        assert "0 " not in h["message"], h["message"]
+        assert str(h["up"]) in h["message"]
+    h = print_hint(5)
+    assert h["down"] == 4 and h["up"] == 8
+    assert print_hint(0) == {}
+
+
 def test_easy_photos_go_with_their_manuscript():
     """写真が、名前の合う原稿に付くこと（番号付きのファイル名でも）。"""
     from gikai import easy
@@ -1892,8 +2026,9 @@ def test_help_covers_the_whole_flow():
 
     text = json.dumps(doc, ensure_ascii=False)
     # 事務局がつまずくところが書かれていること
-    for word in ("最大ページ数", "原稿フォルダ", "使わない写真", "偶数ページ",
-                 "何度でも押せます", "外部と通信しません"):
+    for word in ("最大ページ数", "原稿フォルダ", "使わない写真", "4の倍数",
+                 "何度でも押せます", "外部と通信しません",
+                 "一般質問の人数", "特集がある号", "実際に数えて"):
         assert word in text, f"「{word}」の説明が無い"
 
 
