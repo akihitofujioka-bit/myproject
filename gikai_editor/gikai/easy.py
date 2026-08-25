@@ -288,6 +288,148 @@ def _photos_for(project, doc: Path) -> list[tuple[Path, int]]:
     return [(img, split_number(img.stem)[1]) for img in mine]
 
 
+UNUSED = "使わない写真"
+
+
+def photo_plan(project) -> dict:
+    """写真を原稿に割り当てるための材料を返す。
+
+    議員から届く写真は `IMG_2451.jpg` `DSC00123.jpg` のように、原稿とは
+    まったく違う名前で来る。名前で結びつける決まりにしている以上、
+    どこかで人が「これは誰の写真か」を教えるしかない。
+
+    そこで、**写真を見ながら原稿を選ぶだけ**で済むようにする。
+    いま名前で結びついているものは初めから選んでおくので、
+    ばらばらな名前のものだけを選べばよい。
+    """
+    out = []
+    total = unmatched = 0
+    for f in folders(project):
+        d = Path(f["path"])
+        if not d.is_dir():
+            continue
+        files = [x for x in d.iterdir() if x.is_file() and x.name != README_NAME]
+        docs = sorted([x for x in files if x.suffix.lower() in DOC_EXT], key=_sort_key)
+        imgs = sorted([x for x in files if x.suffix.lower() in IMG_EXT], key=_sort_key)
+        if not imgs:
+            continue
+
+        # いま名前で結びついているもの（当てずっぽうではなく、実際の規則）
+        matched = _match_photos(docs, imgs)
+        owner: dict[str, str] = {}
+        for doc_name, items in matched.items():
+            for img in items:
+                owner[img.name] = doc_name
+        # 名前が本当に一致したものだけを「決まっている」とみなす。
+        # 「区分の先頭に付ける」の救済で入ったものは、人に選び直してほしい
+        from .autolayout import normalize_key, split_number
+
+        keys = set()
+        for doc in docs:
+            for cand in (doc.stem, _strip_index(doc.stem),
+                         split_number(_strip_index(doc.stem))[0]):
+                keys.add(normalize_key(cand))
+        leftovers = {
+            img.name for img in imgs
+            if not ({normalize_key(split_number(img.stem)[0]),
+                     normalize_key(img.stem),
+                     normalize_key(_strip_index(split_number(img.stem)[0]))} & keys)
+        }
+
+        rows = []
+        for img in imgs:
+            decided = img.name not in leftovers
+            rows.append({
+                "rel": f"{f['folder']}/{img.name}",
+                "name": img.name,
+                "doc": owner.get(img.name, "") if decided else "",
+                "decided": decided,
+            })
+            total += 1
+            if not decided:
+                unmatched += 1
+        out.append({"id": f["id"], "name": f["name"], "folder": f["folder"],
+                    "docs": [x.name for x in docs], "photos": rows})
+    return {"sections": out, "photos": total, "unmatched": unmatched}
+
+
+def assign_photos(project, mapping: dict) -> dict:
+    """「この写真はこの原稿」の対応どおりに、写真の名前をそろえる。
+
+    原稿が `01_森下けい子.docx` なら、写真は `01_森下けい子.jpg`
+    （複数なら `01_森下けい子1.jpg` `01_森下けい子2.jpg`）になる。
+    「使わない」を選んだ写真は、区分フォルダの下の「使わない写真」へ
+    よけておく。消さずによけるだけなので、あとから戻せる。
+    """
+    # 区分フォルダごとに、原稿→写真 の順番付きの一覧を作る
+    per_folder: dict[str, dict[str, list[Path]]] = {}
+    unused: list[Path] = []
+    for rel, doc_name in (mapping or {}).items():
+        img = _find(project, rel)
+        if img.suffix.lower() not in IMG_EXT:
+            raise ValueError(f"{img.name} は写真ではありません。")
+        folder = img.parent.name
+        if doc_name == UNUSED:
+            unused.append(img)
+            continue
+        if not doc_name:
+            continue                      # 触らない
+        if not (img.parent / doc_name).is_file():
+            raise ValueError(f"「{folder}」に {doc_name} がありません。")
+        per_folder.setdefault(folder, {}).setdefault(doc_name, []).append(img)
+
+    done: list[dict] = []
+    tmp: list[tuple[Path, Path]] = []
+
+    def stage(src: Path, dest: Path) -> None:
+        if src.resolve() == dest.resolve():
+            return
+        holding = src.parent / f"__なまえ変更中__{src.name}"
+        src.rename(holding)
+        tmp.append((holding, dest))
+        done.append({"from": f"{src.parent.name}/{src.name}",
+                     "to": f"{dest.parent.name}/{dest.name}"})
+
+    for folder, by_doc in per_folder.items():
+        for doc_name, imgs in by_doc.items():
+            imgs.sort(key=_sort_key)
+            stem = Path(doc_name).stem
+            for i, img in enumerate(imgs, 1):
+                tail = "" if len(imgs) == 1 else str(i)
+                stage(img, img.parent / f"{_safe_file(stem + tail)}{img.suffix}")
+
+    for img in unused:
+        box = img.parent / UNUSED
+        box.mkdir(exist_ok=True)
+        stage(img, box / img.name)
+
+    for holding, dest in tmp:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        holding.rename(dest)
+    for row in done:
+        _retag(project, row["from"], row["to"])
+    project.save()
+
+    moved = len([x for x in done if UNUSED in x["to"]])
+    return {
+        "renamed": done,
+        "message": (
+            f"{len(done) - moved} 枚の名前をそろえました。"
+            + (f"{moved} 枚を「{UNUSED}」へよけました。" if moved else "")
+            if done else "変えるものはありませんでした。"),
+    }
+
+
+def photo_bytes(project, rel: str) -> tuple[bytes, str]:
+    """割り当て画面に出す写真（原稿フォルダの中のもの）。"""
+    import mimetypes
+
+    img = _find(project, rel)
+    if img.suffix.lower() not in IMG_EXT:
+        raise ValueError(f"{img.name} は写真ではありません。")
+    return img.read_bytes(), mimetypes.guess_type(img.name)[0] or "image/jpeg"
+
+
 def renumber(project, section_id: str) -> dict:
     """1つの区分の原稿に、いまの並び順で 01_ 02_ … を振り直す。
 

@@ -1664,6 +1664,123 @@ def test_rename_keeps_the_photo_link():
         assert len(art.photos) == 2, "名前を変えたら写真が外れた"
 
 
+def _camera_photos(folder: Path, names):
+    for n in names:
+        (folder / n).write_bytes(_png(size=(1800, 1300)))
+
+
+def test_photo_plan_flags_only_the_ones_that_need_a_person():
+    """カメラの名前のままの写真だけを「選んでください」と出すこと。
+
+    名前がすでに合っているものまで選ばせると、結局全部を人がさわることに
+    なって手間が減らない。
+    """
+    from gikai import easy
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        _camera_photos(inbox / "05_一般質問",
+                       ["IMG_2451.jpg", "IMG_2452.jpg", "DSC00123.jpg"])
+        _camera_photos(inbox / "02_行政報告", ["01_村長報告.jpg"])
+
+        plan = easy.photo_plan(p)
+        assert plan["photos"] == 4
+        assert plan["unmatched"] == 3, plan
+
+        rows = {r["name"]: r for s in plan["sections"] for r in s["photos"]}
+        # 原稿と名前が合っているものは、初めから相手が入っている
+        assert rows["01_村長報告.jpg"]["decided"]
+        assert rows["01_村長報告.jpg"]["doc"] == "01_村長報告.txt"
+        # カメラの名前のままのものは、人に選んでもらう
+        assert not rows["IMG_2451.jpg"]["decided"]
+        assert rows["IMG_2451.jpg"]["doc"] == ""
+
+
+def test_assign_photos_renames_to_match_the_manuscript():
+    """選んだとおりに名前がそろい、そのまま記事に付くこと。"""
+    from gikai import easy
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        ippan = inbox / "05_一般質問"
+        _camera_photos(ippan, ["IMG_2451.jpg", "IMG_2452.jpg",
+                               "DSC00123.jpg", "P1010099.jpg"])
+
+        r = easy.assign_photos(p, {
+            "05_一般質問/IMG_2451.jpg": "01_森下けい子.txt",
+            "05_一般質問/IMG_2452.jpg": "01_森下けい子.txt",
+            "05_一般質問/DSC00123.jpg": "02_山中太郎.txt",
+            "05_一般質問/P1010099.jpg": easy.UNUSED,
+        })
+        assert len(r["renamed"]) == 4
+
+        names = sorted(x.name for x in ippan.iterdir() if x.is_file())
+        assert names == ["01_森下けい子.txt", "01_森下けい子1.jpg", "01_森下けい子2.jpg",
+                         "02_山中太郎.jpg", "02_山中太郎.txt"], names
+        # 1枚だけの記事には番号を付けない（README の書き方に合わせる）
+        assert (ippan / "02_山中太郎.jpg").exists()
+        # 使わない写真は消さずによけるだけ
+        assert (ippan / easy.UNUSED / "P1010099.jpg").exists()
+
+        res = easy.build(p)
+        by = {a.title: a for a in p.articles()}
+        assert len(by["消防の広域化について問う"].photos) == 2
+        assert len(by["子育て支援について問う"].photos) == 1
+        assert res["counts"]["photos"] == 3, "よけた写真まで取り込んでいる"
+
+        # 一度そろえたら、もう選ぶものは残らない
+        assert easy.photo_plan(p)["unmatched"] == 0
+
+
+def test_assign_photos_survives_a_swap():
+    """写真を入れ替えても、名前がぶつかって消えないこと。"""
+    from gikai import easy
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        ippan = inbox / "05_一般質問"
+        _camera_photos(ippan, ["IMG_1.jpg", "IMG_2.jpg"])
+        easy.assign_photos(p, {"05_一般質問/IMG_1.jpg": "01_森下けい子.txt",
+                               "05_一般質問/IMG_2.jpg": "02_山中太郎.txt"})
+        assert (ippan / "01_森下けい子.jpg").exists()
+        assert (ippan / "02_山中太郎.jpg").exists()
+
+        # 取り違えていたので入れ替える
+        easy.assign_photos(p, {"05_一般質問/01_森下けい子.jpg": "02_山中太郎.txt",
+                               "05_一般質問/02_山中太郎.jpg": "01_森下けい子.txt"})
+        names = sorted(x.name for x in ippan.iterdir() if x.suffix == ".jpg")
+        assert names == ["01_森下けい子.jpg", "02_山中太郎.jpg"], names
+
+
+def test_assign_photos_refuses_bad_input():
+    from gikai import easy
+
+    if not HAS_PIL:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        _camera_photos(inbox / "05_一般質問", ["IMG_1.jpg"])
+        bad = [
+            {"05_一般質問/IMG_1.jpg": "ありません.txt"},      # 無い原稿
+            {"05_一般質問/01_森下けい子.txt": "02_山中太郎.txt"},  # 写真ではない
+            {"../../project.json": "01_森下けい子.txt"},       # フォルダの外
+        ]
+        for m in bad:
+            try:
+                easy.assign_photos(p, m)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"{m} が通ってしまった")
+        assert (inbox / "05_一般質問" / "IMG_1.jpg").exists()
+
+
 def test_rename_can_move_to_another_section():
     """名前を変える窓口で、別の区分へ移せること。"""
     from gikai import easy

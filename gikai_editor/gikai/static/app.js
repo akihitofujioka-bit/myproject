@@ -1355,6 +1355,86 @@ function renderFolders() {
       renderFolders();
       toast(r.message);
     })));
+
+  $("#ezPhotoRow").hidden = !easyState.photos;
+  $("#ezPhotoNote").textContent = easyState.photos
+    ? "カメラの名前（IMG_2451.jpg など）のままでも、写真を見ながら選ぶだけで名前がそろいます。"
+    : "";
+}
+
+/* 写真を原稿に割り当てる。
+
+   議員から届く写真は IMG_2451.jpg のように、原稿とはまったく違う名前で
+   来る。名前で結びつける決まりにしている以上、どこかで人が「これは誰の
+   写真か」を教えるしかない。ここでは**写真を見ながら選ぶだけ**にして、
+   名前を打ち直す手間をなくす。 */
+$("#ezAssign").addEventListener("click", () => guard(openAssign));
+
+async function openAssign() {
+  const plan = await api("easy/photo_plan", {});
+  if (!plan.photos) {
+    modal("写真を原稿に割り当てる",
+      `<div class="pad"><p class="empty">原稿フォルダに写真が入っていません。</p></div>`);
+    return;
+  }
+  const body = plan.sections.map((sec) => {
+    if (!sec.docs.length) {
+      return `<div class="asec"><h3>${esc(sec.folder)}</h3>
+        <p class="none">この区分に原稿がありません。
+          写真だけでは載せられないので、先に原稿を入れてください。</p></div>`;
+    }
+    const cards = sec.photos.map((ph) => {
+      const opts = sec.docs.map((d) =>
+        `<option value="${esc(d)}" ${d === ph.doc ? "selected" : ""}>${esc(d)}</option>`).join("");
+      return `<div class="pcard ${ph.decided ? "" : "todo"}">
+        <img class="shot" loading="lazy" alt="${esc(ph.name)}"
+             src="/api/easy/photo?file=${encodeURIComponent(ph.rel)}">
+        <div class="pn">${esc(ph.name)}</div>
+        <select data-ph="${esc(ph.rel)}" class="${ph.decided ? "" : "todo"}">
+          <option value="" ${ph.doc ? "" : "selected"}>（どの原稿か選ぶ）</option>
+          ${opts}
+          <option value="__unused__">この号では使わない</option>
+        </select></div>`;
+    }).join("");
+    return `<div class="asec"><h3>${esc(sec.folder)}</h3>
+      <div class="agrid">${cards}</div></div>`;
+  }).join("");
+
+  modal("写真を原稿に割り当てる", `<div class="pad">
+    <p class="hint">写真を見て、<b>どの原稿のものか</b>を選んでください。
+      選んだとおりに名前をそろえます（1枚なら
+      <code>01_森下けい子.jpg</code>、複数なら
+      <code>01_森下けい子1.jpg</code> <code>01_森下けい子2.jpg</code>）。</p>
+    <p class="hint">名前がすでに合っているものは、初めから選んであります。
+      <b>色が付いているものだけ</b>選べば済みます（${plan.unmatched} 枚）。
+      「この号では使わない」を選ぶと、消さずに
+      「使わない写真」フォルダへよけます。</p>
+    <div class="assign">${body}</div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="asOk">この割り当てで名前をそろえる</button>
+      <button class="ghost" id="asNo">やめる</button>
+    </div></div>`);
+
+  $("#asNo").addEventListener("click", closeModal);
+  $$("[data-ph]").forEach((sel) =>
+    sel.addEventListener("change", () => {
+      const on = !!sel.value;
+      sel.classList.toggle("todo", !on);
+      sel.closest(".pcard").classList.toggle("todo", !on);
+    }));
+
+  $("#asOk").addEventListener("click", () => guard(async () => {
+    const mapping = {};
+    $$("[data-ph]").forEach((sel) => {
+      if (sel.value === "__unused__") mapping[sel.dataset.ph] = "使わない写真";
+      else if (sel.value) mapping[sel.dataset.ph] = sel.value;
+    });
+    const r = await api("easy/assign_photos", { mapping });
+    closeModal();
+    easyState = { ...easyState, ...r };
+    renderFolders();
+    toast(r.message);
+  }));
 }
 
 /* 届く原稿は名前がばらばら。載せる順番は先頭の番号で決まり、写真は

@@ -493,6 +493,33 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
             raise ApiError(str(e))
         return {**r, **easy.scan(p)}
 
+    if path == "easy/photo_plan":
+        p = state.require()
+        from . import easy
+
+        return easy.photo_plan(p)
+
+    if path == "easy/assign_photos":
+        p = state.require()
+        from . import easy
+
+        try:
+            r = easy.assign_photos(p, body.get("mapping") or {})
+        except ValueError as e:
+            raise ApiError(str(e))
+        return {**r, **easy.scan(p)}
+
+    if path == "easy/photo":
+        p = state.require()
+        from . import easy
+
+        try:
+            data, mime = easy.photo_bytes(p, query.get("file", [""])[0])
+        except ValueError as e:
+            raise ApiError(str(e), 404)
+        return {"_binary": photos_mod.to_thumbnail(data, 360), "_mime": "image/jpeg"} \
+            if photos_mod.HAS_PIL else {"_binary": data, "_mime": mime}
+
     if path == "easy/renumber":
         p = state.require()
         from . import easy
