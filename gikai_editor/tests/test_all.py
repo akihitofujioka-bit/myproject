@@ -1433,6 +1433,89 @@ def test_compose_headings_are_not_split_across_columns():
             "見出しが段の切れ目で割れる（隣の行に重なって出る）"
 
 
+def test_photo_mark_reserves_a_frame_without_inserting_a_photo():
+    """原稿の「【写真】…」で、写真の場所だけを空けること。
+
+    写真そのものは入れない運用（印刷所や担当者が Word で差し込む）なので、
+    **どこに何の写真が入るかが分かる空枠**を置く。
+    """
+    from gikai.compose import compose, photo_mark
+
+    for line, want in [("【写真】議場のようす", "議場のようす"),
+                       ("写真：松岡村長", "松岡村長"),
+                       ("[写真] よさこい", "よさこい"),
+                       ("（写真）", ""),
+                       ("写真展のお知らせです。", None)]:
+        assert photo_mark(line) == want, (line, photo_mark(line))
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第204号", "第204号")
+        f = Path(d) / "報告.txt"
+        f.write_text("行政報告\n本文です。日高村議会の活動をお伝えします。\n"
+                     "【写真】松岡村長\n続きの本文です。", encoding="utf-8")
+        p.import_manuscript(f)
+
+        res = compose(p)
+        with zipfile.ZipFile(res.path) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+            media = [n for n in z.namelist() if n.startswith("word/media/")]
+        assert "写真　松岡村長" in xml, "枠に何の写真かが書かれていない"
+        assert "<w:tbl>" in xml, "枠が置かれていない"
+        assert 'w:val="dashed"' in xml, "枠が破線になっていない（入れる場所の目印）"
+        assert not media, "写真を入れないはずなのに画像が入っている"
+        assert res.photos == 0
+        # 目印の行が、そのまま本文として出てしまっていないこと
+        assert "【写真】" not in xml
+
+
+def test_page_header_tells_the_printer_which_issue_and_page():
+    """柱（ページ上部）に、号数・紙名・発行日・ページ番号が出ること。
+
+    印刷所に渡すものなので、紙面だけでどの号の何ページ目か分かる必要がある。
+    """
+    from gikai.compose import compose
+
+    with tempfile.TemporaryDirectory() as d:
+        p = _sample_project(Path(d), n_articles=3, n_photos=0)
+        p.data["issue_no"] = "204"
+        p.data["issue_date"] = "令和8年10月31日"
+        p.save()
+        res = compose(p)
+        with zipfile.ZipFile(res.path) as z:
+            names = z.namelist()
+            hdr = z.read("word/header1.xml").decode("utf-8")
+            doc = z.read("word/document.xml").decode("utf-8")
+            rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
+            ct = z.read("[Content_Types].xml").decode("utf-8")
+        assert "word/header1.xml" in names
+        assert "第204号" in hdr and "日高村議会だより" in hdr
+        assert "令和8年10月31日" in hdr
+        assert "PAGE" in hdr, "ページ番号が入っていない"
+        # 柱だけは横書き（本文は縦書き）
+        assert '<w:textDirection w:val="lrTb"/>' in hdr
+        # 参照と型の登録がそろっていること（どれか欠けると Word が開けない）
+        assert "headerReference" in doc
+        assert "/header" in rels
+        assert "header+xml" in ct
+
+
+def test_question_paragraphs_are_tinted():
+    """「質問」の段落に下地が敷かれること（実物がそうなっている）。"""
+    from gikai.compose import INK_TINT, compose
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Project.create(Path(d) / "第204号", "第204号")
+        f = Path(d) / "一般質問_森下けい子.txt"
+        f.write_text("消防の広域化について問う\n"
+                     "質問　森下けい子議員　広域化の進み具合を問う。\n"
+                     "答弁　松岡村長　協議を続けている。", encoding="utf-8")
+        p.import_manuscript(f)
+        res = compose(p)
+        with zipfile.ZipFile(res.path) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+        assert f'w:fill="{INK_TINT}"' in xml, "質問の段落に下地が無い"
+
+
 def test_compose_lays_out_sections_in_order():
     """自動組版が、構成の順に区分見出しを立てて組むこと。"""
     with tempfile.TemporaryDirectory() as d:

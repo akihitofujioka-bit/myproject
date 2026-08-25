@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import re
 import zipfile
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
@@ -35,6 +36,7 @@ PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 INK_ACCENT = "0076A3"      # 見出しの文字・罫線（濃い青）
 INK_BAND = "9DDCF9"        # 区分の帯（中間の水色）
 INK_BAND_TEXT = "00415C"   # 帯の上に載せる文字
+INK_TINT = "D4EFFC"        # 質問の段落の下地（薄い水色）
 
 MM_PER_PT = 25.4 / 72
 EMU_PER_MM = 36000
@@ -145,7 +147,8 @@ def _rpr(spec: LayoutSpec, *, font: str, pt: float, bold: bool = False,
 
 
 def _para(text: str, rpr: str, *, indent: bool = False, spacing_before: int = 0,
-          align: str = "", border: bool = False, keep: bool = False) -> str:
+          align: str = "", border: bool = False, keep: bool = False,
+          shade: str = "") -> str:
     ppr = "<w:pPr>"
     if keep:
         # 見出しは段や頁の切れ目で割らない。
@@ -157,6 +160,8 @@ def _para(text: str, rpr: str, *, indent: bool = False, spacing_before: int = 0,
         # 縦書きでは「下の罫線」が見出しの左側に出る
         ppr += ('<w:pBdr><w:bottom w:val="single" w:sz="12" w:space="2" '
                 f'w:color="{INK_ACCENT}"/></w:pBdr>')
+    if shade:
+        ppr += f'<w:shd w:val="clear" w:color="auto" w:fill="{shade}"/>'
     if spacing_before:
         ppr += f'<w:spacing w:before="{spacing_before}"/>'
     if indent:
@@ -185,6 +190,58 @@ def _image_para(rid: str, width_mm: float, height_mm: float, name: str, idx: int
         '</pic:pic></a:graphicData></a:graphic></wp:inline>'
         "</w:drawing></w:r></w:p>"
     )
+
+
+# 原稿の中で「ここに写真を入れる」と書く目印。
+# 写真そのものは入れず、**枠だけ空けておく**という運用のため
+# （写真は印刷所や担当者が Word で差し込む）。
+# 「写真展のお知らせ」のような、ふつうの文を目印と取り違えないよう、
+# 括弧で囲むか、「写真：」「写真 」のように区切りが要る
+PHOTO_MARK = re.compile(
+    r"^\s*(?:[【\[（(]\s*写真\s*[】\]）)]|写真(?=\s*[:：]|[\s　]|$))"
+    r"\s*[:：]?\s*(.*)$")
+
+
+def photo_mark(line: str) -> str | None:
+    """写真の目印の行なら、説明文（キャプション）を返す。違えば None。"""
+    m = PHOTO_MARK.match(line or "")
+    return (m.group(1) or "").strip() if m else None
+
+
+def _photo_frame(spec: LayoutSpec, caption: str = "") -> tuple[str, float]:
+    """写真の場所を空けておく枠。
+
+    写真を実際に入れないので、**どこに何の写真が入るかが分かる空枠**を
+    置く。印刷所や担当者は、この枠を選んで写真を差し込めばよい。
+    枠の大きさは、写真を入れたときと同じにしてある。
+
+    戻り値は (XML, 紙面の横方向に使う幅mm)。
+    """
+    h = spec.column_height_mm * spec.photo_height_ratio
+    w = min(h * 4 / 3, spec.text_width_mm * 0.42)
+
+    label = "写真" + (f"　{caption}" if caption else "")
+    rpr = _rpr(spec, font=spec.heading_font, pt=spec.caption_pt,
+               color=INK_ACCENT)
+    borders = "".join(
+        f'<w:{side} w:val="dashed" w:sz="8" w:space="0" w:color="{INK_ACCENT}"/>'
+        for side in ("top", "left", "bottom", "right"))
+    # 1つの升目だけの表を、写真の入る場所として置く
+    return (
+        '<w:tbl><w:tblPr>'
+        f'<w:tblW w:w="{mm2twip(h)}" w:type="dxa"/><w:jc w:val="center"/>'
+        f'<w:tblBorders>{borders}</w:tblBorders>'
+        f'<w:shd w:val="clear" w:color="auto" w:fill="F2FAFE"/>'
+        '<w:tblLayout w:type="fixed"/></w:tblPr>'
+        f'<w:tblGrid><w:gridCol w:w="{mm2twip(h)}"/></w:tblGrid>'
+        f'<w:tr><w:trPr><w:trHeight w:val="{mm2twip(w)}" w:hRule="exact"/></w:trPr>'
+        f'<w:tc><w:tcPr><w:tcW w:w="{mm2twip(h)}" w:type="dxa"/>'
+        '<w:vAlign w:val="center"/></w:tcPr>'
+        '<w:p><w:pPr><w:jc w:val="center"/>'
+        f'<w:spacing w:line="{mm2twip(spec.caption_pt * MM_PER_PT * 1.4)}" '
+        'w:lineRule="exact"/></w:pPr>'
+        f'<w:r>{rpr}<w:t xml:space="preserve">{_esc(label)}</w:t></w:r>'
+        "</w:p></w:tc></w:tr></w:tbl>", w)
 
 
 def _weave_photos(paras: list[str], weights: list[int],
@@ -239,6 +296,44 @@ def _weave_photos(paras: list[str], weights: list[int],
             bi += 1
     out.extend(x for b in rest[bi:] for x in b)   # 置き切れなかったぶん
     return out
+
+
+HEADER_PART = "word/header1.xml"
+HEADER_RID = "rIdHeader"
+
+
+def _header_xml(spec: LayoutSpec, issue: str, paper: str, date: str) -> str:
+    """柱（ページの上に出る、号数・紙名・発行日・ページ番号）。
+
+    印刷所に渡すものなので、どの号の何ページ目かが紙面から分かる必要が
+    ある。実物の議会だよりもこの形。
+
+    本文は縦書きだが、柱は横書き。ヘッダーは本文とは別の入れ物なので、
+    ここだけ `lrTb`（横書き）にできる。
+    """
+    rpr = _rpr(spec, font=spec.heading_font, pt=9.0, color="404040")
+    tab = int(mm2twip(spec.text_width_mm))
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<w:hdr xmlns:w="{W}" xmlns:r="{R}">'
+        '<w:p><w:pPr>'
+        '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="2" '
+        f'w:color="{INK_ACCENT}"/></w:pBdr>'
+        f'<w:tabs><w:tab w:val="center" w:pos="{tab // 2}"/>'
+        f'<w:tab w:val="right" w:pos="{tab}"/></w:tabs>'
+        '<w:textDirection w:val="lrTb"/>'
+        '<w:spacing w:after="60"/></w:pPr>'
+        f'<w:r>{rpr}<w:t xml:space="preserve">{_esc(issue)}</w:t></w:r>'
+        f'<w:r>{rpr}<w:tab/><w:t xml:space="preserve">{_esc(paper)}</w:t></w:r>'
+        f'<w:r>{rpr}<w:tab/><w:t xml:space="preserve">{_esc(date)}　（</w:t></w:r>'
+        f'<w:r>{rpr}<w:fldChar w:fldCharType="begin"/></w:r>'
+        f'<w:r>{rpr}<w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
+        f'<w:r>{rpr}<w:fldChar w:fldCharType="separate"/></w:r>'
+        f'<w:r>{rpr}<w:t>1</w:t></w:r>'
+        f'<w:r>{rpr}<w:fldChar w:fldCharType="end"/></w:r>'
+        f'<w:r>{rpr}<w:t>）</w:t></w:r>'
+        "</w:p></w:hdr>"
+    )
 
 
 def _page_break() -> str:
@@ -364,6 +459,7 @@ def _sect_pr(spec: LayoutSpec, *, columns: int = 0, continuous: bool = False) ->
     cols = columns or spec.columns
     return (
         "<w:sectPr>"
+        + f'<w:headerReference w:type="default" r:id="{HEADER_RID}"/>'
         + ('<w:type w:val="continuous"/>' if continuous else "")
         + f'<w:pgSz w:w="{mm2twip(spec.page_width_mm)}" w:h="{mm2twip(spec.page_height_mm)}"/>'
         f'<w:pgMar w:top="{mm2twip(spec.margin_top_mm)}" '
@@ -510,10 +606,24 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
                 line = line.strip()
                 if not line:
                     continue
+                # 「【写真】議場のようす」のような行は、写真の場所を空ける
+                cap = photo_mark(line)
+                if cap is not None:
+                    frame, fw = _photo_frame(spec, cap)
+                    paras.append(frame)
+                    weights.append(0)
+                    # 枠は行が並ぶ方向に幅のぶん場所を取る。
+                    # 段をまたげないので、段の変わり目に半端な空きもできる
+                    fl = max(1, int(-(-fw // line_mm)))
+                    lines_used += fl + fl // 2 + 1
+                    continue
                 n = count_chars(line)
                 chars_total += n
                 lines_used += max(1, -(-n // cpl))
-                paras.append(_para(line, body_rpr, indent=spec.indent_first))
+                # 実物は「質問」の段落に薄い水色の下地が敷いてある
+                tint = INK_TINT if line.startswith(("質問", "問", "再質問")) else ""
+                paras.append(_para(line, body_rpr, indent=spec.indent_first,
+                                   shade=tint))
                 weights.append(n)
 
             # この記事の写真。1枚ぶんを「写真＋説明文＋撮影者」でひとまとめにする
@@ -586,7 +696,13 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
     project.output_dir.mkdir(parents=True, exist_ok=True)
     out = project.output_dir / out_name
 
-    _write_docx(out, doc, _styles_xml(spec), media, rels)
+    # 柱（ページの上の帯）。印刷所に渡すので、どの号の何ページ目かを出す
+    issue = project.data.get("issue_no") or title
+    if issue and not issue.startswith("第") and issue.isdigit():
+        issue = f"第{issue}号"
+    header = _header_xml(spec, issue, "日高村議会だより",
+                         project.data.get("issue_date") or "")
+    _write_docx(out, doc, _styles_xml(spec), media, rels, header)
 
     pages = max(1, -(-lines_used // lines_per_page))
 
@@ -633,7 +749,8 @@ def _styles_xml(spec: LayoutSpec) -> str:
 
 
 def _write_docx(out: Path, doc_xml: str, styles_xml: str,
-                media: dict[str, bytes], rels: list[str]) -> None:
+                media: dict[str, bytes], rels: list[str],
+                header_xml: str = "") -> None:
     exts = {Path(n).suffix.lstrip(".").lower() for n in media}
     defaults = "".join(
         f'<Default Extension="{e}" ContentType="image/{"jpeg" if e in ("jpg", "jpeg") else e}"/>'
@@ -648,7 +765,11 @@ def _write_docx(out: Path, doc_xml: str, styles_xml: str,
         '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-'
         'officedocument.wordprocessingml.document.main+xml"/>'
         '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-'
-        'officedocument.wordprocessingml.styles+xml"/></Types>'
+        'officedocument.wordprocessingml.styles+xml"/>'
+        + (f'<Override PartName="/{HEADER_PART}" ContentType="application/vnd.'
+           'openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+           if header_xml else "")
+        + "</Types>"
     )
     root_rels = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -660,7 +781,9 @@ def _write_docx(out: Path, doc_xml: str, styles_xml: str,
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
         f'<Relationship Id="rIdStyles" Type="{R}/styles" Target="styles.xml"/>'
-        f'{"".join(rels)}</Relationships>'
+        + (f'<Relationship Id="{HEADER_RID}" Type="{R}/header" '
+           f'Target="{Path(HEADER_PART).name}"/>' if header_xml else "")
+        + f'{"".join(rels)}</Relationships>'
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
@@ -669,5 +792,7 @@ def _write_docx(out: Path, doc_xml: str, styles_xml: str,
         z.writestr("word/document.xml", doc_xml)
         z.writestr("word/styles.xml", styles_xml)
         z.writestr("word/_rels/document.xml.rels", doc_rels)
+        if header_xml:
+            z.writestr(HEADER_PART, header_xml)
         for name, blob in media.items():
             z.writestr(name, blob)
