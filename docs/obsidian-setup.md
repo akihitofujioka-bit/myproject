@@ -1,24 +1,43 @@
-# Obsidian Vault のセットアップ手順（Mac + iPhone）
+# Obsidian Vault のセットアップ手順（Mac + iPhone / Obsidian Git 方式）
 
 最終更新: 2026-08-26
 
-このリポジトリの `vault/` を Obsidian の Vault として使い、GitHub 経由で同期する構成の手順。
+このリポジトリを Obsidian の Vault として使い、GitHub 経由で Mac と iPhone を同期する構成の手順。
 
 ## 構成
 
 ```
-GitHub (akihitofujioka-bit/myproject)
-   ↑ push / pull
-Mac の作業フォルダ  ──→ Obsidian が vault/ を開く
-   ↑
-   └─ Claude Code のクラウドセッションも同じリポジトリを読む
+        GitHub (akihitofujioka-bit/myproject)
+          ↑ push / pull          ↑ push / pull
+   Mac の Obsidian          iPhone の Obsidian
+   （Obsidian Git）          （Obsidian Git）
+          ↑
+   Claude Code のクラウドセッションも同じリポジトリを読む
 ```
+
+**Vault = リポジトリのルート**、**ノートの置き場 = `vault/`** とする。
+iPhone 版の Obsidian Git はリポジトリを Vault のルートに clone する仕様のため、Mac 側もルートに揃えている
+（Mac だけ `vault/` を Vault にすると `.obsidian` が二重にできて競合する）。
 
 Vault をリポジトリに入れることで、**新しい Claude Code セッションでも過去の記録を読める**ようになる。
 
-## 1. Mac 側のセットアップ
+## 1. GitHub の Personal Access Token を作る
 
-### 1-1. リポジトリをクローンする
+iPhone・Mac の Obsidian Git が GitHub に push するために必要。
+
+1. GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token
+2. 設定内容:
+   - Token name: `obsidian-git`
+   - Expiration: 90 日〜1年（**期限が切れたら再発行が必要**）
+   - Repository access: **Only select repositories** → `myproject` を選ぶ
+   - Repository permissions → **Contents: Read and write**（Metadata は自動で Read-only が付く）
+3. 生成されたトークン（`github_pat_...`）を控える。**この画面を離れると二度と表示されない。**
+
+> トークンはパスワードと同じ。ノートやリポジトリには絶対に書かないこと。
+
+## 2. Mac 側のセットアップ
+
+### 2-1. クローン
 
 iCloud Drive の**外**に置くこと（`.git` が iCloud の同期で壊れる事故が知られているため）。
 
@@ -27,57 +46,62 @@ mkdir -p ~/dev && cd ~/dev
 git clone https://github.com/akihitofujioka-bit/myproject.git
 ```
 
-### 1-2. Obsidian で Vault を開く
+### 2-2. Vault として開く
 
-1. Obsidian を起動 → 「フォルダを Vault として開く」
-2. `~/dev/myproject/vault` を選択（**リポジトリのルートではなく `vault/`**）
-3. 「信頼して制限モードを解除」を選ぶ（プラグインを使うため）
+1. Obsidian →「フォルダを Vault として開く」→ **`~/dev/myproject`**（リポジトリのルート）
+2. 「信頼して制限モードを解除」を選ぶ
 
-### 1-3. コアプラグインの設定
+### 2-3. コアプラグイン
 
-- 設定 → コアプラグイン → **テンプレート** をオン → 設定でフォルダを `Templates` に
-- 設定 → コアプラグイン → **デイリーノート** をオン → 新規ファイルの場所を `Daily`、テンプレートを `Templates/daily` に
+- 設定 → コアプラグイン → **テンプレート** をオン → フォルダを `vault/Templates` に
+- 設定 → コアプラグイン → **デイリーノート** をオン → 新規ファイルの場所を `vault/Daily`、テンプレートを `vault/Templates/daily` に
+- 設定 → ファイルとリンク → **除外するファイル** に `docs` を追加（検索候補からコード用のドキュメントを外す。任意）
 
-### 1-4. Obsidian Git（自動で push / pull）
+### 2-4. Obsidian Git
 
-1. 設定 → コミュニティプラグイン → 制限モードを解除 → 参照 → 「Obsidian Git」をインストールして有効化
-2. 設定で以下を指定:
-   - Vault backup interval: `10`（分。0 で自動バックアップ無効）
-   - Auto pull interval: `10`
+1. 設定 → コミュニティプラグイン → 制限モードを解除 → 参照 → **「Git」（作者: Vinzent）** をインストールして有効化
+2. 設定:
+   - Vault backup interval: `10`（分）
+   - Auto pull interval: `10`（分）
    - Commit message: `vault: {{date}}`
-3. コマンドパレット（⌘P）から `Obsidian Git: Commit-and-sync` で手動同期もできる
 
-> Obsidian Git は Vault フォルダの1つ上にある `.git` を自動で見つけるため、`vault/` を開いていてもリポジトリ全体を対象に動作する。
+Mac は `git clone` 済みなので認証は macOS のキーチェーン任せでよい。push で認証を求められたら、パスワード欄に手順1のトークンを入れる。
 
-## 2. iPhone 側のセットアップ
+## 3. iPhone 側のセットアップ
 
-方式は2つ。**A を先に試し、重い・失敗するようなら B に切り替える**のがおすすめ。
+1. Obsidian を開く →「新しい Vault を作成」→ 名前は `myproject`、保存先は **「iPhone 内」**（iCloud は選ばない）
+2. 設定 → コミュニティプラグイン → 制限モードを解除 → 参照 → **「Git」** をインストールして有効化
+3. Git プラグインの設定 → 認証情報:
+   - Username: GitHub のユーザー名（`akihitofujioka-bit`）
+   - Password/Token: 手順1で作ったトークン
+   - Author name / email も入れておく
+4. コマンドパレット（画面下のツールバー、または右上のメニュー）→ **`Git: Clone an existing remote repo`**
+   - URL: `https://github.com/akihitofujioka-bit/myproject.git`
+   - 保存先を聞かれたら **Vault のルート** を選ぶ
+5. clone が終わったら Obsidian を再起動する（ファイル一覧が反映されないことがあるため）
 
-### A. Obsidian Git（モバイル版）を使う — 一元管理
+### iPhone での使い方
 
-1. iPhone の Obsidian で新規 Vault を作成（iCloud ではなく「iPhone 内」でよい）
-2. コミュニティプラグイン → Obsidian Git をインストール
-3. GitHub の Personal Access Token（`repo` 権限、Fine-grained なら当該リポジトリの Contents: Read and write）を作成し、プラグイン設定の認証情報に入力
-4. リポジトリ URL を指定して clone
+- 書いたあと、コマンドパレット → `Git: Commit-and-sync` で push
+- 自動同期を使う場合は Mac と同じく backup interval を設定する。ただし**モバイルはアプリを開いている間しか動かない**ので、書き終わったら手動で1回同期するのが確実
 
-- **メリット**: Mac と完全に同じものを見る。履歴も1本。ミラー不要。
-- **デメリット**: モバイル版の git は重く、Vault が大きくなると失敗しやすい。コンフリクトの解決が iPhone 上では苦しい。トークンを端末に保存する必要がある。
-
-### B. iCloud ミラー — iPhone を楽にする
-
-`vault/` を iCloud Drive にも置き、Mac 側でリポジトリへ同期する。
-
-- **メリット**: iPhone は同期を意識しなくてよい（Obsidian の標準動作のまま）。
-- **デメリット**: 実体が2つになり、Mac で同期操作を挟む手間が増える。両方を同時に編集すると競合する。
-
-## 3. 運用ルール
+## 4. 運用ルール
 
 - 何かアプリ／プロジェクトを作ったら `vault/00-Index.md` の表に1行足す
 - セッションの終わりに Claude Code で `/log` を実行すると、作業記録が `vault/Logs/` に残り索引も更新される
-- `vault/.obsidian/workspace.json` は端末ごとに変わるため `.gitignore` 済み（コミットすると毎回競合する）
+- **Mac と iPhone の両方で編集する前に、必ず先に pull する**（`Git: Pull`）。同じファイルを両方で編集するとコンフリクトになる
 
-## 4. 注意点
+## 5. 注意点
 
 - **iCloud の中で `git init` しない** — `.git` が部分同期されリポジトリが破損する事例がある
-- **画像を貼りすぎない** — リポジトリが肥大化し、モバイル同期が重くなる
-- **秘密情報をノートに書かない** — GitHub にそのまま入る。API キーやパスワードは書かないこと
+- **画像を貼りすぎない** — リポジトリが肥大化し、iPhone の同期が目に見えて重くなる
+- **秘密情報をノートに書かない** — GitHub にそのまま入る。API キー・パスワード・トークンは書かないこと
+- **トークンの期限切れ** — 突然 push が失敗したらまずこれを疑う。GitHub で再発行してプラグイン設定を更新する
+
+## 6. うまくいかないとき
+
+| 症状 | 対処 |
+|---|---|
+| iPhone で clone が途中で止まる | Vault のサイズが大きいのが原因。画像を減らす。それでも駄目なら iCloud ミラー方式（Vault を iCloud に置き、Mac でリポジトリへ同期）に切り替える |
+| push が 403 で失敗する | トークンの権限（Contents: Read and write）と有効期限を確認 |
+| コンフリクトが出た | Mac 側で解決するのが楽。iPhone では該当ファイルの内容を控えてから `Git: Discard` して pull し直す |

@@ -19,15 +19,17 @@ Claude Code のプロジェクト設定（セキュリティ・作業方針）�
 
 ## 場所
 - リポジトリ: https://github.com/akihitofujioka-bit/myproject
-- Vault: `vault/`（Obsidian ではこのフォルダを開く）
+- Vault: リポジトリのルートを Obsidian で開く（ノートは `vault/` 配下）
 
 ## やること
-- [ ] Mac で `vault/` を Obsidian の Vault として開く
-- [ ] Obsidian Git プラグインを入れて自動同期を設定する
-- [ ] iPhone 側の同期方法を決める（Obsidian Git / iCloud ミラー）
+- [ ] GitHub の Fine-grained トークンを作る（Contents: Read and write）
+- [ ] Mac でリポジトリを clone し、ルートを Obsidian の Vault として開く
+- [ ] Mac に Obsidian Git を入れて自動同期を設定する
+- [ ] iPhone に Obsidian Git を入れて clone する
 
 ## 決めたこと・ハマったこと
-- **Vault はリポジトリ直下ではなく `vault/` に置く** — `.obsidian/` や `.git` が混ざるのを避けるため。
+- **同期方式は Obsidian Git に一本化**（2026-08-26 決定）。iCloud ミラー方式は実体が2つになるため不採用。iPhone の clone が重くて破綻したときの退避先としてのみ残す。
+- **Obsidian で開くのはリポジトリのルート、ノートは `vault/` 配下** — iPhone の Obsidian Git はリポジトリを Vault のルートに clone する仕様なので、Mac だけ `vault/` を Vault にすると `.obsidian` が二重にできて競合する。
 - **iCloud の中で `git init` はしない** — `.git` の部分同期でリポジトリが壊れる事故が知られているため。
 - `vault/.obsidian/workspace.json` は端末ごとに変わるので `.gitignore` 済み。コミットすると Mac と iPhone で毎回競合する。
 

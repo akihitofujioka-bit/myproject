@@ -1,7 +1,8 @@
 # この Vault について
 
-Obsidian の Vault（ノート置き場）です。**このフォルダ（`vault/`）を Obsidian で開いてください。**
-リポジトリのルートではなく `vault/` を指定するのがポイントです。
+Obsidian の Vault（ノート置き場）です。
+**Obsidian では「リポジトリのルート」を Vault として開き、ノートはこの `vault/` 配下に置きます。**
+（iPhone の Obsidian Git がリポジトリを Vault ルートに clone する仕様に合わせた構成です。）
 
 ## フォルダの役割（PARA 法）
 
@@ -17,10 +18,11 @@ Obsidian の Vault（ノート置き場）です。**このフォルダ（`vault
 
 ## 最初にやること
 
-1. Obsidian で `vault/` を Vault として開く
-2. 設定 → コアプラグイン → **デイリーノート** をオン
-3. 設定 → デイリーノート → 新規ファイルの場所を `Daily`、テンプレートを `Templates/daily` に設定
-4. 設定 → コアプラグイン → **テンプレート** をオン → フォルダを `Templates` に設定
+1. Obsidian でリポジトリのルートを Vault として開く
+2. 設定 → コアプラグイン → **デイリーノート** をオン → 新規ファイルの場所を `vault/Daily`、テンプレートを `vault/Templates/daily` に設定
+3. 設定 → コアプラグイン → **テンプレート** をオン → フォルダを `vault/Templates` に設定
+
+詳しい手順（GitHub トークンの作成、iPhone の設定）は `docs/obsidian-setup.md` にあります。
 
 ## 覚えることは3つだけ
 
