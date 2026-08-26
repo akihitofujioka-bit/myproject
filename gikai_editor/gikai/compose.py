@@ -38,6 +38,18 @@ INK_BAND = "9DDCF9"        # 区分の帯（中間の水色）
 INK_BAND_TEXT = "00415C"   # 帯の上に載せる文字
 INK_TINT = "D4EFFC"        # 質問の段落の下地（薄い水色）
 
+# 表紙の色も第203号の実物から採った
+COVER_CREAM = "FFF1D0"     # 題字の下に敷いてあるクリーム色の地
+COVER_BLUE = "005BAB"      # 題字の「ひだか」の青
+COVER_INK = "231F20"       # 題字の黒
+COVER_RED = "ED1C24"       # 目次の「特集」の赤
+
+# 発行元は号によらず決まっている（第203号の表紙のとおり）。
+# 変わったときはここだけ直せばよい
+PUBLISHER = ("発行：高知県日高村議会　編集：議会広報発行調査特別委員会　"
+             "日高村本郷61-1 〒781-2194 ☎0889-24-7777")
+PAPER_NAME = "ひだか議会だより"
+
 MM_PER_PT = 25.4 / 72
 EMU_PER_MM = 36000
 TWIP_PER_MM = 1440 / 25.4
@@ -146,14 +158,64 @@ def _rpr(spec: LayoutSpec, *, font: str, pt: float, bold: bool = False,
     return out
 
 
+# 縦書きの中で横に並べる（縦中横）かたまり。半角の数字・英字が続くところ。
+TATECHUYOKO = re.compile(r"[0-9A-Za-z]+")
+TATECHUYOKO_MAX = 3        # 実物の議会だよりは3文字まで。4文字以上は寝かせる
+
+
+def _runs(text: str, rpr: str) -> str:
+    """字を並べる。半角の数字・英字は縦中横にする。
+
+    縦書きでは、半角の数字や英字は既定で**横に寝てしまう**。実物の
+    議会だよりは、3文字までの数字を「縦中横」にして、1文字ぶんの升目に
+    横並びのまま収めている（「第204号」「1件」など）。4文字以上を
+    縦中横にすると升目からはみ出して読めなくなるので、そこは寝かせる。
+
+    `w:eastAsianLayout w:vert` が縦中横の指定。`w:vertCompress` は
+    升目に収まらないときに詰める指定。**LibreOffice はこれを読まない**
+    ので、こちらのプレビューでは寝たままに見える。Word では立つ。
+    """
+    if not text:
+        return ""
+    out, pos = [], 0
+    for m in TATECHUYOKO.finditer(text):
+        if len(m.group(0)) > TATECHUYOKO_MAX:
+            continue
+        if m.start() > pos:
+            out.append(f'<w:r>{rpr}<w:t xml:space="preserve">'
+                       f"{_esc(text[pos:m.start()])}</w:t></w:r>")
+        # 同じ文書の中で id が重ならないようにする
+        _runs.seq = getattr(_runs, "seq", 0) + 1
+        tcy_tag = (f'<w:eastAsianLayout w:id="{_runs.seq}" w:vert="1" '
+                   'w:vertCompress="1"/>')
+        # 空の rPr（`<w:rPr/>`）で来ることもあるので、両方に対応する。
+        # 取りこぼすと、その字だけ縦中横にならず横に寝てしまう
+        if rpr.endswith("</w:rPr>"):
+            tcy = rpr[:-len("</w:rPr>")] + tcy_tag + "</w:rPr>"
+        elif rpr.endswith("/>"):
+            tcy = rpr[:-2] + ">" + tcy_tag + "</w:rPr>"
+        else:
+            tcy = f"<w:rPr>{tcy_tag}</w:rPr>"
+        out.append(f'<w:r>{tcy}<w:t xml:space="preserve">'
+                   f"{_esc(m.group(0))}</w:t></w:r>")
+        pos = m.end()
+    if pos < len(text):
+        out.append(f'<w:r>{rpr}<w:t xml:space="preserve">'
+                   f"{_esc(text[pos:])}</w:t></w:r>")
+    return "".join(out)
+
+
 def _para(text: str, rpr: str, *, indent: bool = False, spacing_before: int = 0,
           align: str = "", border: bool = False, keep: bool = False,
-          shade: str = "", big: bool = False) -> str:
+          shade: str = "", big: bool = False, runs: str = "") -> str:
     """段落1つ。
 
     `big` は「本文より大きい字」の印。紙面は行のグリッドに合わせて組んで
     いるが、**大きい字をグリッドに吸着させると隣の行に重なる**ので、
     見出しなどはグリッドから外す（Word の日本語の書式でも同じ扱い）。
+
+    `runs` を渡すと `text` の代わりにそれを字として使う。
+    「質問」の頭だけ色を変えるなど、1つの段落を何色かで組むときに使う。
     """
     ppr = "<w:pPr>"
     if keep:
@@ -178,9 +240,10 @@ def _para(text: str, rpr: str, *, indent: bool = False, spacing_before: int = 0,
     if align:
         ppr += f'<w:jc w:val="{align}"/>'
     ppr += "</w:pPr>"
-    if not text:
+    inner = runs or _runs(text, rpr)
+    if not inner:
         return f"<w:p>{ppr}</w:p>"
-    return f"<w:p>{ppr}<w:r>{rpr}<w:t xml:space=\"preserve\">{_esc(text)}</w:t></w:r></w:p>"
+    return f"<w:p>{ppr}{inner}</w:p>"
 
 
 def _image_para(rid: str, width_mm: float, height_mm: float, name: str, idx: int) -> str:
@@ -249,8 +312,208 @@ def _photo_frame(spec: LayoutSpec, caption: str = "") -> tuple[str, float]:
         '<w:p><w:pPr><w:jc w:val="center"/>'
         f'<w:spacing w:line="{mm2twip(spec.caption_pt * MM_PER_PT * 1.4)}" '
         'w:lineRule="atLeast"/></w:pPr>'
-        f'<w:r>{rpr}<w:t xml:space="preserve">{_esc(label)}</w:t></w:r>'
+        f"{_runs(label, rpr)}"
         "</w:p></w:tc></w:tr></w:tbl>", w)
+
+
+WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+
+
+def _hz_para(text: str, rpr: str, *, align: str = "left", runs: str = "",
+             before: int = 0, shade: str = "") -> str:
+    """テキストボックスの中に入れる、横書きの1行。
+
+    テキストボックスの中は横書きなので、縦中横（`_runs`）は要らない。
+    """
+    inner = runs or (f'<w:r>{rpr}<w:t xml:space="preserve">{_esc(text)}</w:t></w:r>'
+                     if text else "")
+    shd = f'<w:shd w:val="clear" w:color="auto" w:fill="{shade}"/>' if shade else ""
+    # 行送りは決め打ちしない。字の大きさに合わせて Word/LibreOffice に
+    # 決めさせる（`w:line` を入れると行が重なることがあった）
+    return (f'<w:p><w:pPr>{shd}<w:snapToGrid w:val="0"/>'
+            f'<w:spacing w:before="{before}" w:after="0" w:line="240" '
+            'w:lineRule="auto"/>'
+            f'<w:jc w:val="{align}"/></w:pPr>{inner}</w:p>')
+
+
+def _textbox(inner: str, w_mm: float, h_mm: float, idx: int, *,
+             fill: str = "", name: str = "hako", vertical: bool = False,
+             anchor: str = "t", pad_mm: float = 0.0) -> str:
+    """横組みのテキストボックスを、本文の流れの中に置く。
+
+    **これが縦組みの紙面に横組みを混ぜる、ただ一つの確かな方法。**
+
+    ほかに2つやり方があるが、どちらも使えない:
+
+      * 区間ごとに `w:textDirection` を切り替える → LibreOffice は文書の
+        最初の向きを全ページに当ててしまい、Word とこちらのプレビューで
+        見え方が食い違う。
+      * 紙のふちからの寸法で図形を置く（`wp:anchor`）→ 縦組みの紙面では
+        座標の軸が90度回るので、どちらのソフトでも同じになる保証がない。
+
+    テキストボックスの中身は素直な横組みなので、座標も向きの指定も
+    要らない。本文の流れに乗せる（`wp:inline`）ので、記事が動けば
+    見出しも一緒に動く。
+    """
+    cx, cy = mm2emu(w_mm), mm2emu(h_mm)
+    fill_xml = (f'<a:solidFill><a:srgbClr val="{fill}"/></a:solidFill>'
+                if fill else "<a:noFill/>")
+    return (
+        '<w:r><w:drawing>'
+        '<wp:inline distT="0" distB="0" distL="0" distR="0">'
+        f'<wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<wp:docPr id="{idx}" name="{name}{idx}"/><wp:cNvGraphicFramePr/>'
+        f'<a:graphic><a:graphicData uri="{WPS}">'
+        f'<wps:wsp xmlns:wps="{WPS}"><wps:cNvSpPr txBox="1"/>'
+        f'<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        f'{fill_xml}<a:ln><a:noFill/></a:ln></wps:spPr>'
+        f'<wps:txbx><w:txbxContent>{inner}</w:txbxContent></wps:txbx>'
+        # `wrap` は square のまま、`a:normAutofit` も付けない。
+        # どちらを使っても**最後の1字が前の字に重ねて置かれた**
+        # （実機で確認済み）。箱を字数より広めに取って収める
+        f'<wps:bodyPr vert="{"eaVert" if vertical else "horz"}" '
+        f'wrap="square" lIns="{mm2emu(pad_mm)}" tIns="0" '
+        f'rIns="{mm2emu(pad_mm)}" bIns="0" anchor="{anchor}"/>'
+        '</wps:wsp></a:graphicData></a:graphic></wp:inline>'
+        "</w:drawing></w:r>"
+    )
+
+
+def _frame_row(cells: list[tuple[str, float]], h_mm: float, rpr: str) -> str:
+    """写真の入る場所を空けておく、点線の枠を横に並べた1行。
+
+    写真は入れない運用なので、**どこに何の写真が入るかが分かる空枠**を
+    置く。印刷所や担当者は、この枠を選んで写真を差し込めばよい。
+    """
+    borders = "".join(
+        f'<w:{s} w:val="dashed" w:sz="8" w:space="0" w:color="{INK_ACCENT}"/>'
+        for s in ("top", "left", "bottom", "right"))
+    tcs = ""
+    for label, w in cells:
+        tcs += (f'<w:tc><w:tcPr><w:tcW w:w="{mm2twip(w)}" w:type="dxa"/>'
+                f'<w:tcBorders>{borders}</w:tcBorders>'
+                '<w:shd w:val="clear" w:color="auto" w:fill="F2FAFE"/>'
+                '<w:vAlign w:val="center"/></w:tcPr>'
+                + _hz_para(label, rpr, align="center") + "</w:tc>")
+    grid = "".join(f'<w:gridCol w:w="{mm2twip(w)}"/>' for _, w in cells)
+    total = sum(mm2twip(w) for _, w in cells)
+    return (f'<w:tbl><w:tblPr><w:tblW w:w="{total}" w:type="dxa"/>'
+            '<w:tblLayout w:type="fixed"/></w:tblPr>'
+            f'<w:tblGrid>{grid}</w:tblGrid>'
+            f'<w:tr><w:trPr><w:trHeight w:val="{mm2twip(h_mm)}" '
+            f'w:hRule="exact"/></w:trPr>{tcs}</w:tr></w:tbl>')
+
+
+def _cover_page(spec: LayoutSpec, project, arts: list) -> str:
+    """表紙。ほかのページと違い、まるごと横組みの1ページ。
+
+    紙面いっぱいのテキストボックスを1つ置いて、その中を上から順に
+    組む。座標を使わないので、本文の量や余白の設定が変わっても崩れない。
+
+    写真は入れず**枠だけ**空ける。表紙フォルダの原稿はこう読む:
+
+      * 「【写真】議場のようす」の行 → 写真枠の説明。1つ目が上の大きな枠、
+        2つ目から下の小さな枠3つ
+      * それ以外の行 → 目次（「特集　◯◯……15P」のように書く）
+
+    題字と発行元は号によらず決まっているので、原稿には書かなくてよい。
+    割りつけは第203号の表紙を測って決めた。
+    """
+    caps: list[str] = []
+    toc: list[str] = []
+    for art in arts:
+        for line in (art.title + "\n" + art.body).split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            cap = photo_mark(line)
+            if cap is not None:
+                caps.append(cap)
+            else:
+                toc.append(line)
+
+    def rpr(pt, color, bold=True, font=None):
+        return _rpr(spec, font=font or spec.heading_font, pt=pt, bold=bold,
+                    color=color)
+
+    def label(i: int) -> str:
+        return "写真" + (f"　{caps[i]}" if i < len(caps) and caps[i] else "")
+
+    # 箱の中に置く表は、箱より**少しだけ狭く**する。同じ幅にすると
+    # 表が入り切らず、中の字が早く折り返して行どうしが重なった
+    # （実機で確認済み）
+    box_w = spec.text_width_mm
+    w = box_w - 3
+    frame_rpr = rpr(9.0, INK_ACCENT)
+    gap = 2.0
+    small_w = (w - gap * 2) / 3
+
+    out = [
+        # 上の大きな写真枠
+        _frame_row([(label(0), w)], 108, frame_rpr),
+        _hz_para("", frame_rpr, before=mm2twip(gap)),
+        # 下の小さな写真枠3つ
+        _frame_row([(label(1), small_w), (label(2), small_w),
+                    (label(3), small_w)], 48, frame_rpr),
+    ]
+    # 写真の説明（実物では小さい写真の下に1行入っている）
+    if caps:
+        out.append(_hz_para(caps[0], rpr(9.0, "333333", bold=False,
+                                         font=spec.body_font), align="center"))
+
+    # ここから下はクリーム色の地。題字・目次・発行元をまとめて載せる
+    cream: list[str] = []
+    cream.append(_hz_para(
+        "", frame_rpr, align="left", before=mm2twip(4),
+        runs=(f'<w:r>{rpr(36, COVER_BLUE)}<w:t>ひだか</w:t></w:r>'
+              f'<w:r>{rpr(36, COVER_INK)}<w:t>議会だより</w:t></w:r>')))
+    # 号数が別に入っていなければ、号の名前をそのまま使う
+    issue = project.data.get("issue_no") or project.data.get("title") or ""
+    date = project.data.get("issue_date") or ""
+    cream.append(_hz_para(f"{issue}　{date}".strip("　"), rpr(13, COVER_INK),
+                          align="right"))
+    for line in toc[:6]:
+        if line.startswith("特集"):
+            # 行頭の「特集」だけ赤くする（実物がこの形）
+            runs = (f'<w:r>{rpr(11, COVER_RED)}<w:t>特集</w:t></w:r>'
+                    f'<w:r>{rpr(11, COVER_INK)}'
+                    f'<w:t xml:space="preserve">{_esc(line[2:])}</w:t></w:r>')
+            cream.append(_hz_para("", frame_rpr, align="center", runs=runs,
+                                  before=mm2twip(1.5)))
+        else:
+            cream.append(_hz_para(line, rpr(11, COVER_INK), align="center",
+                                  before=mm2twip(1.5)))
+    cream.append(_hz_para(PUBLISHER,
+                          rpr(8.5, COVER_INK, bold=False, font=spec.body_font),
+                          align="center", before=mm2twip(5)))
+    # クリーム色の地は「表のセル」にする。テキストボックスの中に
+    # テキストボックスは入れられない（Word も LibreOffice も描かない）
+    out.append(
+        f'<w:tbl><w:tblPr><w:tblW w:w="{mm2twip(w)}" w:type="dxa"/>'
+        '<w:tblLayout w:type="fixed"/></w:tblPr>'
+        f'<w:tblGrid><w:gridCol w:w="{mm2twip(w)}"/></w:tblGrid>'
+        f'<w:tr><w:trPr><w:trHeight w:val="{mm2twip(100)}" w:hRule="exact"/>'
+        f'</w:trPr><w:tc><w:tcPr><w:tcW w:w="{mm2twip(w)}" w:type="dxa"/>'
+        f'<w:shd w:val="clear" w:color="auto" w:fill="{COVER_CREAM}"/>'
+        f'</w:tcPr>{"".join(cream)}</w:tc></w:tr></w:tbl>')
+
+    # 紙面いっぱいの箱を1つ。中は上から順に流れるので、座標は要らない。
+    #
+    # ただし**表紙だけは1段の区間に入れる**。ふだんの5段のままだと、
+    # 箱の高さ（紙面いっぱい＝約270mm）が1段の高さ（約49mm）を超えて
+    # しまい、箱の中の行が重なって刷られる（実機で確認済み）。
+    # 1段にすれば段の高さが紙面の高さになり、箱がまるごと収まる。
+    box = _textbox("".join(out), box_w, spec.text_height_mm - 2, 98,
+                   name="hyoushi")
+    tiny = '<w:spacing w:line="20" w:lineRule="exact" w:before="0" w:after="0"/>'
+    return (f'<w:p><w:pPr>{tiny}'
+            f'{_sect_pr(spec, continuous=True, no_header=True)}</w:pPr></w:p>'
+            f'<w:p><w:pPr>{tiny}<w:snapToGrid w:val="0"/></w:pPr>{box}</w:p>'
+            f'<w:p><w:pPr>{tiny}'
+            f'{_sect_pr(spec, columns=1, continuous=True, no_header=True)}'
+            '</w:pPr></w:p>')
+
 
 
 def _weave_photos(paras: list[str], weights: list[int],
@@ -309,6 +572,10 @@ def _weave_photos(paras: list[str], weights: list[int],
 
 HEADER_PART = "word/header1.xml"
 HEADER_RID = "rIdHeader"
+# 表紙には柱を出さない（実物の表紙にも無い）。1ページ目だけ差し替えるため
+# 「空の柱」を用意して、`w:titlePg` で1ページ目に当てる
+COVER_HEADER_PART = "word/header2.xml"
+COVER_HEADER_RID = "rIdHeaderCover"
 
 
 def _header_xml(spec: LayoutSpec, issue: str, paper: str, date: str) -> str:
@@ -345,14 +612,142 @@ def _header_xml(spec: LayoutSpec, issue: str, paper: str, date: str) -> str:
     )
 
 
+# 「質問」「答弁」の頭。区切り（全角空き・空白・コロン）が続くときだけ
+# 目印と見なす。これが無いと「問題は…」「答申を…」まで拾ってしまう
+QUESTION_MARK = re.compile(r"^(再?質問|質疑|再?問)(?=[　\s:：])[　\s:：]*(.*)$")
+ANSWER_MARK = re.compile(r"^(再?答弁|答)(?=[　\s:：])[　\s:：]*(.*)$")
+
+
+def qa_kind(line: str) -> str:
+    """本文の1行が「質問」か「答弁」か。どちらでもなければ空。"""
+    if QUESTION_MARK.match(line or ""):
+        return "q"
+    if ANSWER_MARK.match(line or ""):
+        return "a"
+    return ""
+
+
+def _qa_para(line: str, spec: LayoutSpec, body_rpr: str, *,
+             indent: bool) -> str:
+    """本文の1行。「質問」なら薄い水色の下地、「答弁」なら白地。
+
+    実物の議会だよりは、質問の段落だけに下地を敷き、答弁は白いまま
+    にして、目で追えるようにしてある。頭の「質問」「答弁」も濃い青の
+    太字で、本文とはっきり分けてある。
+    """
+    kind = qa_kind(line)
+    if not kind:
+        return _para(line, body_rpr, indent=indent)
+    m = (QUESTION_MARK if kind == "q" else ANSWER_MARK).match(line)
+    label, rest = m.group(1), m.group(2)
+    label_rpr = _rpr(spec, font=spec.heading_font, pt=spec.body_pt, bold=True,
+                     color=INK_ACCENT if kind == "q" else INK_BAND_TEXT)
+    runs = _runs(f"{label}　", label_rpr) + _runs(rest, body_rpr)
+    # 下地は質問だけ。答弁に敷くと紙面がぜんぶ水色になって効かなくなる
+    return _para("", body_rpr, shade=INK_TINT if kind == "q" else "",
+                 runs=runs)
+
+
+# 見出しの向きの指定。原稿の見出しの行の頭に書く。
+# 実物の議会だよりは、一般質問のように横書きの見出しと、特集のように
+# 縦書きの見出しが混ざっている。どちらにするかは事務局が原稿で決める
+HEADING_DIR = re.compile(r"^\s*[【\[（(]\s*(横|縦)\s*[】\]）)]\s*(.*)$")
+
+
+def heading_dir(title: str) -> tuple[str, str]:
+    """見出しの行から向きの指定を外す。戻り値は (向き, 見出し)。
+
+    向きは "yoko"（横書き）／"tate"（縦書き）／""（指定なし）。
+    """
+    m = HEADING_DIR.match(title or "")
+    if not m:
+        return "", (title or "").strip()
+    return ("yoko" if m.group(1) == "横" else "tate"), m.group(2).strip()
+
+
+def _heading_box(title: str, spec: LayoutSpec, idx: int) -> tuple[str, float]:
+    """横書きの見出し（青い帯）。縦組みの紙面に横組みで載せる。
+
+    テキストボックスの向きは中身ごとに決まるので、紙面が縦組みでも
+    ここだけ横書きになる。本文の流れの中に置く（`wp:inline`）ので、
+    記事が動けば見出しも一緒に動く。
+
+    箱の大きさの取り方に注意。縦組みの紙面では
+
+      * 箱の**幅**は紙面の横方向（行が並ぶ方向）に伸びる。紙面の幅まで
+        取れる。段の高さで頭打ちにはならない
+      * 箱の**高さ**は段の高さ（＝縦組みの1行の長さ）までに収める
+
+    戻り値は (XML, 紙面の横方向に使う厚みmm)。
+    """
+    pt = spec.heading_pt
+    n = max(1, count_chars(title))
+    pad = 3.0
+    # 字が入る長さに合わせる。紙面の幅は超えない。
+    # 1割5分ほど余分に見ておく。書体が入っていないパソコンでは代わりの
+    # 書体が使われ、字幅が広くなって折り返してしまうため
+    w = min(spec.text_width_mm, n * pt * MM_PER_PT * 1.25 + pad * 2)
+    # それでも折り返したときに行が重ならないよう、2行ぶんの高さを取る
+    h = min(spec.column_height_mm, pt * MM_PER_PT * 2.8)
+    rpr = _rpr(spec, font=spec.heading_font, pt=pt, bold=True, color="FFFFFF")
+    # 見出しの最後に空き1字を足す。テキストボックスの中では、
+    # **いちばん最後の1字が1つ前の字に重ねて置かれる**ことがあった
+    # （実機で確認済み）。最後を空きにしておけば、重なっても見えない
+    box = _textbox(_hz_para(f"{title}　", rpr, align="left"), w, h, idx,
+                   fill=INK_ACCENT, name="midashi", anchor="ctr", pad_mm=pad)
+    xml = ('<w:p><w:pPr><w:keepNext/><w:keepLines/><w:snapToGrid w:val="0"/>'
+           f'<w:spacing w:before="{mm2twip(2)}"/></w:pPr>{box}</w:p>')
+    # 帯は横方向に w だけ場所を取るが、高さは段の一部しか使わない。
+    # 段の高さに対する割合で、使う行数を見積もる
+    return xml, w * min(1.0, h / spec.column_height_mm)
+
+
+def _section_tab(name: str, spec: LayoutSpec, idx: int) -> str:
+    """紙面の右端に立てる、区分の名前の帯（見出しタブ）。
+
+    実物の議会だよりは、ページの右の端に区分名の帯があり、めくった
+    ときにどこを開いたかが分かるようになっている。
+
+    区分の中身より先に置くと、縦組みの流れの頭＝**紙面の右端**に
+    出る。紙のふちからの寸法で置く手（`w:framePr`）もあるが、縦組みの
+    紙面では座標の軸が90度回るので、どちらのソフトでも同じになる保証が
+    ない。流れに乗せるほうが確かで、区分が何ページ続いても、ページの
+    頭ごとに置けばそのページの右端に出る。
+    """
+    rpr = _rpr(spec, font=spec.heading_font, pt=spec.body_pt + 1.5, bold=True,
+               color=INK_BAND_TEXT)
+    w = 9.5
+    h = min(115.0, spec.text_height_mm * 0.45)
+    inner = _hz_para(name, rpr, align="center")
+    box = _textbox(inner, w, h, idx, fill=INK_BAND, name="tab",
+                   vertical=True, anchor="ctr")
+    return ('<w:p><w:pPr><w:keepNext/><w:snapToGrid w:val="0"/>'
+            f'<w:spacing w:before="0" w:after="0"/></w:pPr>{box}</w:p>')
+
+
 def _page_break() -> str:
-    """改ページ。区分の頭は必ずページの頭から始める。"""
-    return ('<w:p><w:pPr><w:spacing w:line="20" w:lineRule="exact"/></w:pPr>'
-            '<w:r><w:br w:type="page"/></w:r></w:p>')
+    """改ページ。区分の頭と、一般質問の議員ごとの頭で使う。
+
+    `<w:br w:type="page"/>` ではなく `<w:pageBreakBefore/>` を使う。
+    前者は、ページが変わった直後にもう一度使うと読み飛ばされることが
+    あった（一般質問で議員が3人続くと、2人目と3人目が同じページに
+    出た）。`pageBreakBefore` は「この段落からページを変える」という
+    指定なので、続けて使っても確実に効く。
+    """
+    return ('<w:p><w:pPr><w:pageBreakBefore/>'
+            '<w:spacing w:line="20" w:lineRule="exact"/></w:pPr></w:p>')
 
 
-def _section_head(name: str, rpr: str, spec: LayoutSpec) -> str:
-    """区分の見出し（行政報告・一般質問…）。地色を敷いて目立たせる。"""
+def _section_head(name: str, spec: LayoutSpec) -> str:
+    """区分の見出し（行政報告・一般質問…）。地色を敷いて目立たせる。
+
+    実物は紙面の幅いっぱいの横組みの帯だが、それをそのままやると
+    帯が紙面の横方向をぜんぶ使ってしまい、本文が帯の下に回り込めず
+    ページがすかすかになる（実機で確認済み）。縦組みの流れに素直に
+    乗せた縦の帯にしてある。区分が分かればよいので、これで足りる。
+    """
+    rpr = _rpr(spec, font=spec.heading_font, pt=spec.heading_pt + 1,
+               bold=True, color=INK_BAND_TEXT)
     return (
         '<w:p><w:pPr>'
         '<w:keepNext/><w:keepLines/>'
@@ -360,50 +755,94 @@ def _section_head(name: str, rpr: str, spec: LayoutSpec) -> str:
         f'<w:shd w:val="clear" w:color="auto" w:fill="{INK_BAND}"/>'
         f'<w:spacing w:before="{mm2twip(3)}"/>'
         '<w:jc w:val="center"/>'
-        f'</w:pPr><w:r>{rpr}<w:t xml:space="preserve">　{_esc(name)}　</w:t></w:r></w:p>'
+        f"</w:pPr>{_runs(f'　{name}　', rpr)}</w:p>"
     )
 
 
 def _table_block(rows: list[list[str]], spec: LayoutSpec,
                  title: str = "") -> tuple[str, int]:
-    """賛否一覧表などを、紙面の幅いっぱいの表として組む。
+    """賛否一覧表などを、実物と同じ向きの表として組む。
 
     表は文章と違って**折り返せない**ので、5段の中には入らない。
     そこで、表のところだけ段組みを1段に切り替える
     （`w:sectPr` を段落に入れると、その段落までが1つの区間になる）。
 
-    紙面は縦書きなので、表も紙面の向きに合わせて組まれる。
-    見出しの行が右端に立ち、1件ぶんが1本の帯になって右から左へ並ぶ。
-    縦書きの議会だよりの賛否一覧表は、この形で読める。
+    向きについて（ここが分かりにくいので詳しく書く）:
+
+    紙面が縦書きなので、表も紙面の流れに乗って **90度倒れて**組まれる。
+    エクセルの「行」は紙面では右から左へ並ぶ帯になり、「列」は上から下へ
+    並ぶ。そのまま出すと、実物（議案が上から下、議員名が左から右）とは
+    向きが逆になる。事務局から「実物と向きが逆」と指摘されたのがこれ。
+
+    そこで **転置して、行の順を反転してから**組む。こうすると倒れた分が
+    打ち消されて、実物と同じ
+
+        議案番号 | 件名 | 議員名… | 議決結果
+        議案第1号 |  …  |   ○ …   |   可決
+
+    の向きになる。`w:textDirection` を表のところだけ横書きに戻す手も
+    あるが、**LibreOffice はこの指定を読まない**ので、こちらの
+    プレビューと Word とで見え方が食い違ってしまう。転置なら、どちらの
+    ソフトでも同じ向きに出る。
 
     戻り値は (XML, 使った行数の目安)。
     """
     if not rows:
         return "", 0
-    n_cols = len(rows[0])
-    pt = 9.0 if n_cols <= 10 else 8.0
-
-    # 縦書きでは、表の「列幅」が紙面の縦方向（＝段の高さ）に伸びる。
-    # 1列目（議案番号）と2列目（件名）は広く、賛否の欄は狭くてよい
-    if n_cols >= 4:
-        weights = [1.5, 3.2] + [1.0] * (n_cols - 3) + [1.3]
-    else:
-        weights = [1.0] * n_cols
+    n_src_cols = max(len(r) for r in rows)
+    src = [list(r) + [""] * (n_src_cols - len(r)) for r in rows]
+    # 転置して反転（＝紙面で倒れる分を先に打ち消しておく）
+    laid = [list(col) for col in zip(*src)][::-1]
+    n_cols = len(laid[0])          # ＝エクセルの行数（議案の件数＋見出し）
+    n_rows = len(laid)             # ＝エクセルの列数（議案番号・件名・議員名…）
+    # 組んだ表の「列幅」は紙面の縦方向に伸びる＝エクセルの1行ぶんの高さ。
+    # 見出しの行は中身が短いので少し薄くてよい
     span_mm = spec.text_height_mm - 6          # 上下に少し余裕をもたせる
-    span = mm2twip(span_mm)
-    unit = span / sum(weights)
-    widths = [max(240, int(unit * w)) for w in weights]
-    # 列がとても多いと、最低の幅を足し合わせただけで紙面をはみ出す。
+    col_w = [0.7 if i == 0 else 1.0 for i in range(n_cols)]
+    unit_mm = span_mm / sum(col_w)
+    widths_mm = [max(6.0, unit_mm * w) for w in col_w]
+    # 件数がとても多いと、最低の幅を足し合わせただけで紙面をはみ出す。
     # はみ出すと表が次のページへ流れ、白紙のページが出る。必ず収める
-    if sum(widths) > span:
-        scale = span / sum(widths)
-        widths = [max(120, int(w * scale)) for w in widths]
+    if sum(widths_mm) > span_mm:
+        scale = span_mm / sum(widths_mm)
+        widths_mm = [max(4.0, w * scale) for w in widths_mm]
+    widths = [mm2twip(w) for w in widths_mm]
 
-    # 行の「高さ」は紙面の横方向の厚み。表が幅いっぱいになるよう割り当てる。
-    # 見出しのぶんだけ控えておかないと、1行はみ出して次のページへ送られる。
-    # 中身が入りきらないときは伸びてよいので atLeast
-    avail = spec.text_width_mm - (spec.heading_pt * MM_PER_PT * 2.4 if title else 4)
-    thick = int(mm2twip(avail) / max(1, len(rows)))
+    # 見出しと罫線のぶんを控えておく。控えが足りないと、いちばん端の
+    # 1列がはみ出して次のページへ流れ、そこだけの半端なページができる
+    avail = spec.text_width_mm - (26.0 if title else 10.0)
+
+    def plan(pt: float) -> list[float]:
+        """字の大きさを決めたときの、1列ぶんの厚み（mm）を数える。
+
+        組んだ表の「行の高さ」は紙面の横方向の厚み＝エクセルの1列ぶんの
+        幅にあたる。決め打ちの割合で配ると、件名のように長い字の列が
+        入り切らずに切れて消えたり、逆に広がって紙からはみ出したりする
+        （どちらも実機で起きた）。**中身の字数から必要な厚みを数える**。
+        """
+        char_mm = pt * MM_PER_PT
+        line_mm = char_mm * 1.35
+        out: list[float] = []
+        for row in laid:
+            need = 1
+            for j, text in enumerate(row):
+                # 1行に入る字数は、その升目の「列幅」（紙面の縦）で決まる
+                per_line = max(1, int((widths_mm[j] - 1.6) / char_mm))
+                need = max(need, -(-count_chars(text) // per_line))
+            out.append(need * line_mm + 1.6)
+        return out
+
+    # 入り切らなければ字を小さくする。それでも駄目なら比で詰める
+    pt = 9.0 if n_src_cols <= 12 else 8.0
+    thicks_mm = plan(pt)
+    while sum(thicks_mm) > avail and pt > 6.0:
+        pt -= 0.5
+        thicks_mm = plan(pt)
+    # 紙面の幅いっぱいに広げる（実物の賛否表も幅いっぱい）。
+    # はみ出すときは詰め、余るときは伸ばす
+    scale = avail / sum(thicks_mm)
+    thicks_mm = [w * scale for w in thicks_mm]
+    thicks = [mm2twip(w) for w in thicks_mm]
 
     body_rpr = _rpr(spec, font=spec.heading_font, pt=pt)
     head_rpr = _rpr(spec, font=spec.heading_font, pt=pt, bold=True,
@@ -411,25 +850,35 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
     cell_line = mm2twip(pt * MM_PER_PT * 1.3)
 
     trs = ""
-    for i, row in enumerate(rows):
+    for i, row in enumerate(laid):
+        # 反転してあるので、この帯がエクセルの何列目だったか
+        src_col = n_rows - 1 - i
         cells = ""
         for j in range(n_cols):
             text = row[j] if j < len(row) else ""
+            # 見出しはエクセルの1行目＝組んだ表の1列目（紙面では一番上の段）
             shd = (f'<w:shd w:val="clear" w:color="auto" w:fill="{INK_BAND}"/>'
-                   if i == 0 else "")
-            align = "left" if j <= 1 else "center"
+                   if j == 0 else "")
+            # 議案番号と件名は行頭ぞろえ、賛否の欄は中央ぞろえ
+            align = "left" if src_col <= 1 and j > 0 else "center"
             cells += (
                 f'<w:tc><w:tcPr><w:tcW w:w="{widths[j]}" w:type="dxa"/>{shd}'
                 '<w:vAlign w:val="center"/></w:tcPr>'
-                f'<w:p><w:pPr><w:jc w:val="{align}"/>'
+                # 升目の中はグリッドから外す。外さないと、本文（10.5pt）
+                # 向きのグリッドに9ptの字が1マスずつ吸着して、計算より
+                # ずっと太り、1行に入る字数が半分になって字が切れる
+                # スキーマの順番は snapToGrid → spacing → jc。
+                # 逆にすると Word がファイルを開けない
+                f'<w:p><w:pPr><w:snapToGrid w:val="0"/>'
                 f'<w:spacing w:line="{cell_line}" w:lineRule="atLeast" '
-                'w:before="20" w:after="20"/></w:pPr>'
-                f'<w:r>{head_rpr if i == 0 else body_rpr}'
-                f'<w:t xml:space="preserve">{_esc(text)}</w:t></w:r></w:p></w:tc>')
-        # 1行目は見出し。ページをまたぐときは毎ページ出す
-        head = "<w:tblHeader/>" if i == 0 else ""
-        trs += (f'<w:tr><w:trPr>{head}'
-                f'<w:trHeight w:val="{thick}" w:hRule="atLeast"/>'
+                'w:before="20" w:after="20"/>'
+                f'<w:jc w:val="{align}"/></w:pPr>'
+                f'{_runs(text, head_rpr if j == 0 else body_rpr)}</w:p></w:tc>')
+        # 厚みは「これ以上」（atLeast）。決め打ちにすると、件名のような
+        # 長い字が入り切らずに**切れて消える**。紙からはみ出すほうが、
+        # 気づけるぶんまだよい。そのぶん下の `avail` を控えめに取る
+        trs += (f'<w:tr><w:trPr>'
+                f'<w:trHeight w:val="{thicks[i]}" w:hRule="atLeast"/>'
                 f"</w:trPr>{cells}</w:tr>")
 
     borders = "".join(
@@ -454,7 +903,10 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
     # 段組みを切り替える段落そのものは、場所を取らせない。
     # 表がページいっぱいのとき、この段落だけで次のページができてしまう
     tiny = '<w:spacing w:line="20" w:lineRule="exact" w:before="0" w:after="0"/>'
-    xml = (f'<w:p><w:pPr>{tiny}{_sect_pr(spec, continuous=True)}</w:pPr></w:p>'
+    # 表の区間は**次のページから**始める。同じページの途中から始めると、
+    # そのページの残りの幅しか使えず、表が2ページに割れる（実機で確認済み）。
+    # 表のあとは、同じページの続きから5段に戻す
+    xml = (f'<w:p><w:pPr>{tiny}{_sect_pr(spec)}</w:pPr></w:p>'
            + head + tbl
            + f'<w:p><w:pPr>{tiny}'
            f'{_sect_pr(spec, columns=1, continuous=True)}</w:pPr></w:p>')
@@ -462,14 +914,18 @@ def _table_block(rows: list[list[str]], spec: LayoutSpec,
     return xml, lines
 
 
-def _sect_pr(spec: LayoutSpec, *, columns: int = 0, continuous: bool = False) -> str:
+def _sect_pr(spec: LayoutSpec, *, columns: int = 0, continuous: bool = False,
+             no_header: bool = False) -> str:
     """紙面の決まりごと。ここが 1ページ5段縦書きを決めている。"""
     char_twip = mm2twip(spec.body_pt * MM_PER_PT)
     line_twip = mm2twip(spec.body_pt * MM_PER_PT * spec.line_spacing)
     cols = columns or spec.columns
     return (
         "<w:sectPr>"
-        + f'<w:headerReference w:type="default" r:id="{HEADER_RID}"/>'
+        # 表紙の区間だけ空の柱を当てる。`w:titlePg` は区間ごとに
+        # 効いてしまい、区分が変わるたびにそのページの柱が消えた
+        + f'<w:headerReference w:type="default" r:id="'
+        + (COVER_HEADER_RID if no_header else HEADER_RID) + '"/>'
         + ('<w:type w:val="continuous"/>' if continuous else "")
         + f'<w:pgSz w:w="{mm2twip(spec.page_width_mm)}" w:h="{mm2twip(spec.page_height_mm)}"/>'
         f'<w:pgMar w:top="{mm2twip(spec.margin_top_mm)}" '
@@ -537,18 +993,7 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
     name_rpr = _rpr(spec, font=spec.heading_font, pt=spec.body_pt)
     cap_rpr = _rpr(spec, font=spec.heading_font, pt=spec.caption_pt, color="444444")
 
-    # 題字（号数・発行日）
     title = project.data.get("title") or "議会だより"
-    parts: list[str] = []
-    for x in (title, project.data.get("issue_no"), project.data.get("issue_date")):
-        # 「第204号」が題名と号数の両方に入っていることがあるので重ねない
-        if x and not any(x in q or q in x for q in parts):
-            parts.append(x)
-    head_line = "　".join(parts)
-    body.append(_para(head_line, _rpr(spec, font=spec.heading_font,
-                                      pt=spec.heading_pt + 2, bold=True,
-                                      color=INK_ACCENT), border=True, big=True))
-    body.append(_para("", body_rpr))
 
     # 構成（表紙 → 行政報告 → … → 最終ページ）の順に組む
     from . import sections as sec
@@ -557,47 +1002,76 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
     if not any(g["articles"] for g in groups):
         warnings.append("記事がありません。原稿を取り込んでから組んでください。")
 
-    sec_rpr = _rpr(spec, font=spec.heading_font, pt=spec.heading_pt + 1,
-                   bold=True, color=INK_BAND_TEXT)
-
     # 区分の頭でページを送るため、1ページの行数を先に求めておく
     lines_per_page = max(1, m["lines_per_column"] * spec.columns)
 
     first_group = True
-    # 表のあとは段組みが1段から5段に戻るところでページが変わる。
-    # そこへさらに改ページを足すと、白紙のページができてしまう
-    after_table = False
+    tab_no = 0            # 右端の帯の通し番号（図形の番号は重ねられない）
+    # すでにページが変わったところでは、改ページを足してはいけない。
+    # 足すと白紙のページができる。表のあと（段組みが1段から5段に戻る
+    # ところ）と、紙面いっぱいの表紙のあとが、これに当たる
+    page_changed = False
 
     for group in groups:
         arts = group["articles"]
         if not arts:
             continue          # 「特集」など、その号に無い区分は飛ばす
 
-        # 区分の見出し（表紙は題字があるので付けない）
-        if group["id"] != "cover":
-            # 実物の議会だよりは、区分の頭で必ずページが変わる。
-            # 途中から始まると、どこからどの区分か分からなくなる
-            if not first_group and not after_table:
-                body.append(_page_break())
-                lines_used = -(-lines_used // lines_per_page) * lines_per_page
-            body.append(_section_head(group["name"], sec_rpr, spec))
-            lines_used += 3
+        # 表紙は、ほかのページとまったく別の組み方（全部横組み）。
+        # 原稿から目次と写真枠の説明だけを取って、あとは決まった形に組む
+        if group["id"] == "cover":
+            body.append(_cover_page(spec, project, arts))
+            lines_used += lines_per_page
+            first_group = False
+            # 表紙の箱が紙面いっぱいなので、次の中身はひとりでに次の
+            # ページへ行く。ここで改ページを足すと白紙のページができる
+            page_changed = True
+            continue
+
+        # 実物の議会だよりは、区分の頭で必ずページが変わる。
+        # 途中から始まると、どこからどの区分か分からなくなる
+        if not first_group and not page_changed:
+            body.append(_page_break())
+            lines_used = -(-lines_used // lines_per_page) * lines_per_page
+        # 区分の頭のページには帯を出す。右端のタブは、区分が次の
+        # ページへ続くときだけ出す（帯のとなりに同じ物を2つ並べない）
+        body.append(_section_head(group["name"], spec))
+        lines_used += 3
         first_group = False
 
-        for art in arts:
+        # 一般質問は議員ごとに1ページ。実物がこの形で、誰の質問が
+        # どこまでかが紙面から分かる
+        one_per_page = group["id"] == "ippan" and len(arts) > 1
+
+        for i, art in enumerate(arts):
+            if one_per_page and i:
+                body.append(_page_break())
+                lines_used = -(-lines_used // lines_per_page) * lines_per_page
+                tab_no += 1
+                body.append(_section_tab(group["name"], spec, 1900 + tab_no))
             # 表だけの記事（賛否一覧表など）は、見出しも表と同じ区間に置く。
             # 別々にすると、見出しが5段の中に残って表と離れてしまう
             table_only = bool(getattr(art, "table", None)) and not art.body.strip()
-            if art.title and not table_only:
-                body.append(_para(art.title, head_rpr, spacing_before=240,
-                                  border=True, keep=True, big=True))
-                # 見出しは本文より大きいので、その分だけ行を余分に使う。
-                # さらに、段の途中に掛かる見出しは丸ごと次の段へ送られる
-                # （keepLines）ので、その空きを見出しの高さの半分として見込む
-                # ＝写真の段またぎと同じ考え方。実測10通りで確かめてある。
-                head_lines = max(1, int(
-                    -(-count_chars(art.title) * spec.heading_pt // (cpl * spec.body_pt))))
-                lines_used += head_lines * 2 + 1 + head_lines // 2
+            # 見出しの向きは原稿で決める（「【横】憲法9条を守る」のように書く）
+            direction, art_title = heading_dir(art.title)
+            if art_title and not table_only:
+                if direction == "yoko":
+                    photo_count += 1        # 図形の番号は写真と通し番号にする
+                    xml, hw = _heading_box(art_title, spec, 2000 + photo_count)
+                    body.append(xml)
+                    # 横書きの見出しは、行が並ぶ方向にその高さのぶん場所を取る
+                    lines_used += max(1, int(-(-hw // line_mm))) + 1
+                else:
+                    body.append(_para(art_title, head_rpr, spacing_before=240,
+                                      border=True, keep=True, big=True))
+                    # 見出しは本文より大きいので、その分だけ行を余分に使う。
+                    # さらに、段の途中に掛かる見出しは丸ごと次の段へ送られる
+                    # （keepLines）ので、その空きを見出しの高さの半分として
+                    # 見込む＝写真の段またぎと同じ考え方。実測で確かめてある。
+                    head_lines = max(1, int(
+                        -(-count_chars(art_title) * spec.heading_pt
+                          // (cpl * spec.body_pt))))
+                    lines_used += head_lines * 2 + 1 + head_lines // 2
             # 執筆者名は、日本語の名前のときだけ出す。
             # パソコンのユーザー名が紙面に印刷されたことがあるため
             from .importers import looks_like_a_person
@@ -630,10 +1104,10 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
                 n = count_chars(line)
                 chars_total += n
                 lines_used += max(1, -(-n // cpl))
-                # 実物は「質問」の段落に薄い水色の下地が敷いてある
-                tint = INK_TINT if line.startswith(("質問", "問", "再質問")) else ""
-                paras.append(_para(line, body_rpr, indent=spec.indent_first,
-                                   shade=tint))
+                # 実物は「質問」の段落に薄い水色の下地が敷いてあり、
+                # 「答弁」は白地。頭の語も濃い青の太字で分けてある
+                paras.append(_qa_para(line, spec, body_rpr,
+                                      indent=spec.indent_first))
                 weights.append(n)
 
             # この記事の写真。1枚ぶんを「写真＋説明文＋撮影者」でひとまとめにする
@@ -676,7 +1150,7 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
 
             # 表（賛否一覧表など）。段組みを1段に切り替えて紙面いっぱいに組む
             has_table = bool(getattr(art, "table", None))
-            after_table = has_table
+            page_changed = has_table
             if has_table:
                 xml, used = _table_block(art.table, spec,
                                          art.title if table_only else "")
@@ -696,6 +1170,7 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
     doc = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:document xmlns:w="{W}" xmlns:r="{R}" xmlns:wp="{WP}" '
+        f'xmlns:wps="{WPS}" '
         f'xmlns:a="{A}" xmlns:pic="{PIC}">'
         f'<w:body>{"".join(body)}{_sect_pr(spec)}</w:body></w:document>'
     )
@@ -712,7 +1187,12 @@ def compose(project, spec: LayoutSpec | None = None, filename: str = "") -> Comp
         issue = f"第{issue}号"
     header = _header_xml(spec, issue, "日高村議会だより",
                          project.data.get("issue_date") or "")
-    _write_docx(out, doc, _styles_xml(spec), media, rels, header)
+    # 表紙には柱を出さない。空の柱を1ページ目に当てる
+    blank_header = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    f'<w:hdr xmlns:w="{W}" xmlns:r="{R}">'
+                    '<w:p><w:pPr><w:spacing w:line="20" w:lineRule="exact" '
+                    'w:after="0"/></w:pPr></w:p></w:hdr>')
+    _write_docx(out, doc, _styles_xml(spec), media, rels, header, blank_header)
 
     pages = max(1, -(-lines_used // lines_per_page))
 
@@ -764,7 +1244,13 @@ def _styles_xml(spec: LayoutSpec) -> str:
 
 def _write_docx(out: Path, doc_xml: str, styles_xml: str,
                 media: dict[str, bytes], rels: list[str],
-                header_xml: str = "") -> None:
+                header_xml: str = "", cover_header_xml: str = "") -> None:
+    """.docx を書き出す。
+
+    柱（ヘッダー）は、入れ物・関係・種類の3か所すべてに書かないと
+    Word がファイルを開けない。1つでも抜けると「内容に問題があります」
+    になる。表紙用の空の柱も同じ。
+    """
     exts = {Path(n).suffix.lstrip(".").lower() for n in media}
     defaults = "".join(
         f'<Default Extension="{e}" ContentType="image/{"jpeg" if e in ("jpg", "jpeg") else e}"/>'
@@ -780,9 +1266,11 @@ def _write_docx(out: Path, doc_xml: str, styles_xml: str,
         'officedocument.wordprocessingml.document.main+xml"/>'
         '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-'
         'officedocument.wordprocessingml.styles+xml"/>'
-        + (f'<Override PartName="/{HEADER_PART}" ContentType="application/vnd.'
-           'openxmlformats-officedocument.wordprocessingml.header+xml"/>'
-           if header_xml else "")
+        + "".join(
+            f'<Override PartName="/{part}" ContentType="application/vnd.'
+            'openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+            for part, xml in ((HEADER_PART, header_xml),
+                              (COVER_HEADER_PART, cover_header_xml)) if xml)
         + "</Types>"
     )
     root_rels = (
@@ -795,8 +1283,12 @@ def _write_docx(out: Path, doc_xml: str, styles_xml: str,
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
         f'<Relationship Id="rIdStyles" Type="{R}/styles" Target="styles.xml"/>'
-        + (f'<Relationship Id="{HEADER_RID}" Type="{R}/header" '
-           f'Target="{Path(HEADER_PART).name}"/>' if header_xml else "")
+        + "".join(
+            f'<Relationship Id="{rid}" Type="{R}/header" '
+            f'Target="{Path(part).name}"/>'
+            for rid, part, xml in ((HEADER_RID, HEADER_PART, header_xml),
+                                   (COVER_HEADER_RID, COVER_HEADER_PART,
+                                    cover_header_xml)) if xml)
         + f'{"".join(rels)}</Relationships>'
     )
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -808,5 +1300,7 @@ def _write_docx(out: Path, doc_xml: str, styles_xml: str,
         z.writestr("word/_rels/document.xml.rels", doc_rels)
         if header_xml:
             z.writestr(HEADER_PART, header_xml)
+        if cover_header_xml:
+            z.writestr(COVER_HEADER_PART, cover_header_xml)
         for name, blob in media.items():
             z.writestr(name, blob)

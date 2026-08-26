@@ -579,3 +579,26 @@ def docx_to_pdf(docx_path: Path | str, outdir: Path | str) -> Path | None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(out, dest)
     return dest
+
+
+def pdf_page_png(pdf_path: Path | str, page: int, width_px: int = 900) -> bytes:
+    """PDF の1ページを PNG にする（画面のプレビュー用）。
+
+    PyMuPDF が要る。無いパソコンでは空を返すので、呼び出し側は
+    「PDF は作れたが画面には出せない」と伝えて、PDF を開く道を残すこと。
+    """
+    try:
+        import pymupdf
+    except Exception:
+        return b""
+    try:
+        with pymupdf.open(str(pdf_path)) as doc:
+            if not 0 <= page < doc.page_count:
+                return b""
+            pg = doc[page]
+            # 紙の幅から、欲しい画の幅になる倍率を出す
+            zoom = max(0.2, width_px / max(1.0, pg.rect.width))
+            pix = pg.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
+            return pix.tobytes("png")
+    except Exception:
+        return b""

@@ -347,3 +347,14 @@ td select{min-width:150px}
 .fold.need{border-color:#e8cfa0;background:#fffdf8}
 .fold.need .fcount{color:var(--warn)}
 .foldbtns{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+
+/* ---------------------------------------------- できあがりのプレビュー */
+/* PDF を埋め込むのではなく、1ページずつ画にして並べる。
+   パソコンの設定に左右されず、必ず見えるようにするため */
+.pvpages{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:16px;margin-top:12px}
+.pvpage{margin:0;background:#e9ecf1;border:1px solid var(--line);border-radius:8px;
+  overflow:hidden}
+.pvpage img{width:100%;display:block;background:#fff}
+.pvpage figcaption{padding:6px 10px;font-size:12px;color:var(--sub);background:#fff;
+  border-top:1px solid var(--line);text-align:center}

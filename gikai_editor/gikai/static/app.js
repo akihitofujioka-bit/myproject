@@ -1762,21 +1762,58 @@ function showBuildResult(r) {
     ${missing}${fit}${warn}${skipped}`;
 }
 
+/* できあがりを見る。
+
+   PDF をそのまま埋め込むやり方（iframe）だと、パソコンの設定によっては
+   何も出ないことがある。**1ページずつ画にして並べる**ほうが確かなので、
+   そちらを本筋にして、PDF を開く道も残しておく。 */
+
 $("#ezPreview").addEventListener("click", () => guard(async () => {
   const box = $("#ezPreviewBox");
-  box.innerHTML = `<div class="ezbox">できあがりを開いています…</div>`;
-  const r = await api("easy/pdf", {});
+  box.innerHTML = `<div class="ezbox">できあがりを作っています… 少しお待ちください</div>`;
+  const r = await api("easy/preview", {});
   if (!r.pdf) {
     box.innerHTML = `<div class="ezbox"><h3>できあがりを見る</h3>
       <div class="ezrows">${esc(r.message).replace(/\n/g, "<br>")}</div></div>`;
     return;
   }
-  box.innerHTML = `<div class="pv">
-      <iframe src="/api/download?inline=1&file=${encodeURIComponent(r.pdf)}"></iframe>
-      <div class="pvnote">刷り上がりと同じ形です。直したいところがあれば、
-        フォルダの原稿を直して「議会だよりを作る」をもう一度押してください。</div>
-    </div>`;
+  const openPdf = `<button class="ghost" data-open="pdf">PDF を開く</button>`;
+  if (!r.can_show || !r.pages) {
+    box.innerHTML = `<div class="ezbox"><h3>できあがりを見る</h3>
+      <div class="ezrows">${esc(r.message || "画面に出せませんでした。")}</div>
+      <div class="row" style="margin-top:10px">${openPdf}</div></div>`;
+    wirePreviewButtons(box);
+    return;
+  }
+  const stamp = Date.now();          // 前に見た画が残らないようにする
+  const sheets = Array.from({ length: r.pages }, (_, i) => `
+    <figure class="pvpage">
+      <img loading="lazy" alt="${i + 1} ページ目"
+           src="/api/easy/preview_page?page=${i + 1}&w=900&t=${stamp}">
+      <figcaption>${i + 1} ページ</figcaption>
+    </figure>`).join("");
+  box.innerHTML = `
+    <div class="ezbox">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div class="ezbig">できあがり ${r.pages} ページ</div>
+        <div class="row">${openPdf}
+          <button class="ghost" data-open="output">フォルダを開く</button></div>
+      </div>
+      <p class="hint">刷り上がりと同じ形です。写真は枠だけ空けてあります。
+        直したいところがあれば、フォルダの原稿を直して
+        「議会だよりを作る」をもう一度押してください。</p>
+    </div>
+    <div class="pvpages">${sheets}</div>`;
+  wirePreviewButtons(box);
 }));
+
+function wirePreviewButtons(box) {
+  box.querySelectorAll("[data-open]").forEach((b) =>
+    b.addEventListener("click", () => guard(async () => {
+      const r = await api("open", { what: b.dataset.open });
+      toast(r.message || "開きました");
+    })));
+}
 
 // ------------------------------------------------------------------ 使い方
 

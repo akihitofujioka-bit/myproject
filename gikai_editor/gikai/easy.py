@@ -713,7 +713,7 @@ def build(project, *, max_pages: int = 0) -> dict:
         "pages": pages,
         "counted": counted,
         "natural_pages": natural,
-        "page_floor": sum(1 for g in project.outline()["sections"] if g["count"]),
+        "page_floor": page_floor(project),
         "max_pages": max_pages,
         "outline": project.outline(),
         "print_hint": print_hint(pages, max_pages),
@@ -738,6 +738,22 @@ def _real_pages(docx: Path, outdir: Path) -> int:
     return count_pdf_pages(pdf) if pdf else 0
 
 
+def page_floor(project) -> int:
+    """これ以上は減らせないページ数。
+
+    区分の頭では必ずページが変わるので、中身のある区分の数だけは要る。
+    そのうえ**一般質問は議員1人につき1ページ**なので、人数ぶん要る
+    （実物の議会だよりがこの形）。ここを数え違えると、収まらない
+    ページ数を目標にして、字を削り続けたあげく収まらないことになる。
+    """
+    n = 0
+    for g in project.outline()["sections"]:
+        if not g["count"]:
+            continue
+        n += g["count"] if g["id"] == "ippan" else 1
+    return n
+
+
 def _fit_and_compose(project, max_pages: int) -> tuple[dict, dict, int, bool, int]:
     """最大ページ数に収まるまで、詰めて組んで**数える**をくり返す。
 
@@ -758,7 +774,7 @@ def _fit_and_compose(project, max_pages: int) -> tuple[dict, dict, int, bool, in
     # 区分の頭では必ずページが変わるので、原稿がある区分の数より
     # 少ないページ数にはできない。무理に詰めても減らないので、
     # そこは詰めずにそのまま出す（画面には理由を出す）
-    floor = sum(1 for g in project.outline()["sections"] if g["count"])
+    floor = page_floor(project)
 
     # まず、1字も詰めずにそのまま組んでみる。
     # 収まるなら削る理由がない。議員から預かった原稿は短くしないに越したことはない

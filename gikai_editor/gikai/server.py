@@ -527,6 +527,49 @@ def handle_api(state: AppState, path: str, body: dict, query: dict) -> dict:
         return {"_binary": photos_mod.to_thumbnail(data, 360), "_mime": "image/jpeg"} \
             if photos_mod.HAS_PIL else {"_binary": data, "_mime": mime}
 
+    if path == "easy/preview":
+        # 「出来上がりを見る」。PDF を作って、何ページあるかを返す
+        p = state.require()
+        from .docxio import count_pdf_pages
+
+        r = _make_pdf(p, body.get("name", ""))
+        if not r["pdf"]:
+            return {**r, "pages": 0, "can_show": False}
+        pages = count_pdf_pages(p.output_dir / r["pdf"])
+        try:
+            import pymupdf                                   # noqa: F401
+
+            can_show = True
+        except Exception:
+            can_show = False
+        return {
+            **r,
+            "pages": pages,
+            "can_show": can_show,
+            # 画にできないパソコンでは、PDF を開く道を残す
+            "message": r["message"] or ("" if can_show else
+                                        "このパソコンでは画面に出せないので、"
+                                        "「PDF を開く」でご覧ください。"),
+        }
+
+    if path == "easy/preview_page":
+        # プレビューの1ページぶんの画
+        p = state.require()
+        from .docxio import pdf_page_png
+
+        built = _built_files(p)
+        if not built["pdf"]:
+            raise ApiError("先に「出来上がりを見る」を押してください。", 404)
+        try:
+            n = int(query.get("page", ["1"])[0]) - 1
+            width = min(1600, max(200, int(query.get("w", ["900"])[0])))
+        except ValueError:
+            raise ApiError("ページの指定が正しくありません。", 400)
+        png = pdf_page_png(p.output_dir / built["pdf"], n, width)
+        if not png:
+            raise ApiError("そのページは出せませんでした。", 404)
+        return {"_binary": png, "_mime": "image/png"}
+
     if path == "easy/note_read":
         p = state.require()
         from . import easy

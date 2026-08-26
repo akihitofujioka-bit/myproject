@@ -577,7 +577,14 @@ def test_auto_layout_fills_caption_on_export():
 
 # ====================================================== 自動組版
 
-def _sample_project(d: Path, n_articles=4, n_photos=2, repeat=3):
+def _sample_project(d: Path, n_articles=4, n_photos=2, repeat=3,
+                    section=""):
+    """見本の号を作る。
+
+    `section` を渡すと、記事をその区分に入れる。一般質問は議員1人に
+    つき1ページになるので、「字を詰めればページが減る」ことを見たい
+    テストでは、一般質問以外の区分を指定すること。
+    """
     from gikai.project import Project
 
     p = Project.create(d / "第204号", "議会だより")
@@ -593,6 +600,8 @@ def _sample_project(d: Path, n_articles=4, n_photos=2, repeat=3):
         f.write_text(f"見出し{i}について問う\n" + body * repeat, encoding="utf-8")
         art = p.import_manuscript(f)
         art.author = a
+        if section:
+            art.section = section
         p.put_article(art)
     if HAS_PIL:
         for i in range(n_photos):
@@ -627,6 +636,17 @@ def test_layout_spec_metrics():
     assert big["chars_per_line"] < m["chars_per_line"]
 
 
+
+def _printed(xml: str) -> str:
+    """組み上がった XML から、紙面に出る字だけをつなげて返す。
+
+    半角の数字は縦中横のため別の `<w:r>` に分かれる（「議案第1号」が
+    「議案第」「1」「号」の3つになる）ので、素の文字列検索では
+    見つからない。字だけを取り出してから探す。
+    """
+    return "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml))
+
+
 def test_compose_produces_vertical_five_columns():
     """組み上がった Word が、5段・縦書きの指定を持っていること。"""
     from gikai.compose import LayoutSpec, compose
@@ -639,7 +659,7 @@ def test_compose_produces_vertical_five_columns():
             xml = z.read("word/document.xml").decode("utf-8")
         assert '<w:cols w:num="5"' in xml, "5段の指定が無い"
         assert '<w:textDirection w:val="tbRl"/>' in xml, "縦書きの指定が無い"
-        assert "見出し0について問う" in xml
+        assert "見出し0について問う" in _printed(xml)
         # A4 縦（twip）
         assert 'w:w="11906"' in xml and 'w:h="16838"' in xml
 
@@ -688,7 +708,11 @@ def test_compose_layout_is_fixed_regardless_of_content():
 def test_plan_and_fit_pages():
     """目標ページ数に合わせて詰められること。"""
     with tempfile.TemporaryDirectory() as d:
-        p = _sample_project(Path(d), n_articles=8, n_photos=4, repeat=5)
+        # 一般質問は議員1人につき1ページなので、人数を増やすと
+        # 字を詰めてもページが減らない。ここは「本文の量で
+        # ページが決まる」ことを見たいので、記事は少なく長く
+        p = _sample_project(Path(d), n_articles=3, n_photos=2, repeat=30,
+                            section="tokushu")
         now = p.plan_pages(0)["pages_now"]
         assert now >= 2, f"見本が小さすぎる: {now}"
 
@@ -1634,16 +1658,20 @@ def test_easy_build_is_repeatable():
 
 
 def test_easy_build_fits_the_page_limit():
-    """最大ページ数を決めたら、そこに収まるまで詰めること。"""
+    """最大ページ数を決めたら、そこに収まるまで詰めること。
+
+    一般質問は議員1人につき1ページなので、そこで試すと人数ぶんの
+    ページが必ず要る。ここは「字を詰めればページが減る」ことを
+    見たいので、1つの区分に長い原稿を1本入れて試す。
+    """
     from gikai import easy
 
     with tempfile.TemporaryDirectory() as d:
         p = Project.create(Path(d) / "第204号", "第204号")
         inbox = Path(easy.ensure_folders(p)["inbox"])
-        body = "本文です。日高村議会の活動についてお伝えします。\n" * 40
-        for i in range(6):
-            (inbox / "05_一般質問" / f"{i:02d}_議員{i}.txt").write_text(
-                f"見出し{i}について問う\n" + body, encoding="utf-8")
+        body = "本文です。日高村議会の活動についてお伝えします。\n" * 240
+        (inbox / "06_特集" / "特集.txt").write_text(
+            "特集　移住のいま\n" + body, encoding="utf-8")
 
         loose = easy.build(p, max_pages=0)
         tight = easy.build(p, max_pages=2)
@@ -1651,6 +1679,31 @@ def test_easy_build_fits_the_page_limit():
         assert tight["compose"]["pages"] <= 2, tight["compose"]["pages"]
         # 詰めた結果を隠さず返していること
         assert tight["fit"]["applied"], "何をどれだけ詰めたかが返っていない"
+
+
+def test_ippan_gets_one_page_per_member():
+    """一般質問は、議員1人につき1ページになること。
+
+    実物の議会だよりがこの形で、誰の質問がどこまでかが紙面から分かる。
+    ページ数の下限（page_floor）も人数を数えていること。
+    """
+    from gikai import easy
+    from gikai.docxio import count_pdf_pages
+
+    with tempfile.TemporaryDirectory() as d:
+        p = _ippan_project(Path(d), 4, tokushu=False)
+        res = easy.build(p, max_pages=0)
+        # 区分は 行政報告・一般質問・最終ページ の3つ。
+        # 一般質問は4人なので 1 + 4 + 1 = 6 ページより減らせない
+        assert res["page_floor"] == 6, res["page_floor"]
+        pdf = sorted(p.output_dir.glob("*自動組版*.pdf"))
+        if not pdf:
+            return          # PDF を作れない環境
+        assert count_pdf_pages(pdf[0]) >= 6
+
+        # 人数が増えれば、そのぶんページも増える
+        q = _ippan_project(Path(d) / "b", 7, tokushu=False)
+        assert easy.build(q, max_pages=0)["page_floor"] == 9
 
 
 def _ippan_project(d: Path, n_ippan: int, tokushu: bool):
@@ -2364,7 +2417,8 @@ def test_table_is_laid_out_as_a_table_not_as_text():
             xml = z.read("word/document.xml").decode("utf-8")
         assert "<w:tbl>" in xml, "表が表として組まれていない"
         assert xml.count("<w:tr>") >= len(SANPI)
-        assert "議案第1号" in xml and "森下けい子" in xml
+        printed = _printed(xml)
+        assert "議案第1号" in printed and "森下けい子" in printed
         # 表のところだけ1段に切り替えている（5段の中には表が入らないため）
         assert '<w:cols w:num="1"' in xml, "表のための1段の区間が無い"
         assert '<w:type w:val="continuous"/>' in xml
@@ -2419,6 +2473,137 @@ def test_lines_do_not_sit_on_top_of_each_other():
         # <w:type> などと間違えないよう、字そのものが入る <w:t> だけを見る
         letters = re.search(r"<w:t[ >]", body)
         assert not letters, f"字のある行が exact になっている: {body[:120]}"
+
+
+def test_heading_direction_marker():
+    """原稿の【横】【縦】で、見出しの向きを選べること。"""
+    from gikai.compose import heading_dir
+
+    assert heading_dir("【横】憲法9条を守る") == ("yoko", "憲法9条を守る")
+    assert heading_dir("（横）平和は世界共通の願い") == ("yoko", "平和は世界共通の願い")
+    assert heading_dir("【縦】特集　移住のいま") == ("tate", "特集　移住のいま")
+    # 印が無ければ、これまでどおり縦書き
+    assert heading_dir("道路の維持管理について") == ("", "道路の維持管理について")
+    # 似ているだけの文を印と取り違えない
+    assert heading_dir("横断歩道の白線について") == ("", "横断歩道の白線について")
+
+
+def test_horizontal_heading_is_a_textbox_and_marker_is_not_printed():
+    """【横】と書いた見出しが、横組みの帯になること。印は紙面に出ないこと。"""
+    from gikai import easy
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        (inbox / "05_一般質問" / "01_濱田隆広.txt").write_text(
+            "【横】憲法9条を守る\n質問　濱田隆広議員　平和について問う。",
+            encoding="utf-8")
+        res = easy.build(p, max_pages=0)
+        with zipfile.ZipFile(Path(res["compose"]["docx"])) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+
+    # 横組みの帯はテキストボックス。中身は横書き（vert="horz"）
+    assert 'vert="horz"' in xml, "横組みの箱が無い"
+    assert "憲法9条を守る" in _printed(xml).replace("　", "")
+    # 印そのものは紙面に出さない
+    assert "【横】" not in _printed(xml), "【横】が紙面に出ている"
+
+
+def test_numbers_stand_upright_in_vertical_text():
+    """縦書きの中の数字が、寝ずに縦中横になること（3文字まで）。"""
+    from gikai.compose import _runs
+
+    rpr = "<w:rPr/>"
+    xml = _runs("第204号は令和8年12月20日", rpr)
+    # 3文字までの数字は縦中横（eastAsianLayout w:vert）にする
+    assert xml.count('w:vert="1"') == 4, xml       # 204 / 8 / 12 / 20
+    # 4文字以上は寝かせる（升目からはみ出して読めなくなるため）
+    assert 'w:vert="1"' not in _runs("電話は0889247777です", rpr)
+    # 字そのものは1字も欠けない
+    assert _printed(xml) == "第204号は令和8年12月20日"
+
+
+def test_question_and_answer_are_told_apart():
+    """質問には下地を敷き、答弁は白地にすること。"""
+    from gikai.compose import qa_kind
+
+    assert qa_kind("質問　森下けい子議員　道路について問う。") == "q"
+    assert qa_kind("問　雨どいは更新するか。") == "q"
+    assert qa_kind("答弁　村長　協議を続けている。") == "a"
+    assert qa_kind("答　雨どいは更新する。") == "a"
+    # 区切りが無いものは目印にしない（「問題」「答申」を拾わないため）
+    assert qa_kind("問題は財源である。") == ""
+    assert qa_kind("答申を受けて検討する。") == ""
+
+
+def test_vote_table_reads_the_same_way_as_the_real_paper():
+    """賛否表が、実物と同じ向き（議案が縦、議員名が横）に組まれること。
+
+    縦組みの紙面では表が90度倒れるので、**転置して行を反転**してから
+    組む。ここが逆だと、実物と向きが逆の表になる。
+    """
+    from gikai.compose import LayoutSpec, _table_block
+
+    rows = [["議案番号", "件名", "森下", "濱田", "議決結果"],
+            ["議案第1号", "◯◯条例", "○", "○", "可決"],
+            ["議案第2号", "△△条例", "○", "●", "否決"]]
+    xml, _ = _table_block(rows, LayoutSpec())
+    # 組んだ表の1行目には、エクセルの**最後の列**が来る（反転しているため）
+    first = xml[xml.index("<w:tr>"):xml.index("</w:tr>")]
+    assert "議決結果" in _printed(first) and "可決" in _printed(first)
+    # 最後の行はエクセルの1列目
+    last = xml[xml.rindex("<w:tr>"):]
+    assert "議案番号" in _printed(last) and "議案第1号" in _printed(last)
+    # 1字も落とさない
+    printed = _printed(xml)
+    for cell in (c for r in rows for c in r):
+        assert cell in printed, cell
+
+
+def test_cover_is_its_own_page_without_a_running_head():
+    """表紙が、柱の無い横組みの1ページになること。"""
+    from gikai import easy
+    from gikai.compose import PUBLISHER
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        (inbox / "01_表紙" / "巻頭.txt").write_text(
+            "【写真】ビール醸造所がオープン\n特集　にんにん日高……15P\n",
+            encoding="utf-8")
+        res = easy.build(p, max_pages=0)
+        with zipfile.ZipFile(Path(res["compose"]["docx"])) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+            names = z.namelist()
+
+    printed = _printed(xml)
+    # 発行元は号によらず決まっているので、原稿に無くても入る
+    assert PUBLISHER in printed
+    assert "ひだか" in printed and "議会だより" in printed
+    # 目次と写真枠の説明は原稿から
+    assert "にんにん日高" in printed
+    assert "ビール醸造所がオープン" in printed
+    # 表紙には柱を出さない＝空の柱の入れ物がある
+    assert "word/header2.xml" in names, "表紙用の空の柱が入っていない"
+
+
+def test_preview_shows_the_pages_as_pictures():
+    """「できあがりを見る」で、ページが1枚ずつ画になること。"""
+    from gikai import easy
+    from gikai.docxio import pdf_page_png
+
+    with tempfile.TemporaryDirectory() as d:
+        p, inbox = _easy_project(Path(d))
+        easy.build(p, max_pages=0)
+        pdf = sorted(p.output_dir.glob("*自動組版*.pdf"))
+        if not pdf:
+            return          # PDF を作れない環境（Word も LibreOffice も無い）
+
+        png = pdf_page_png(pdf[0], 0, 400)
+        if not png:
+            return          # PyMuPDF が入っていない環境
+        assert png[:8] == b"\x89PNG\r\n\x1a\n", "PNG になっていない"
+        # 無いページを頼まれても落ちない
+        assert pdf_page_png(pdf[0], 999, 400) == b""
+        assert pdf_page_png(pdf[0], -1, 400) == b""
 
 
 def test_write_note_saves_into_the_section_folder():
