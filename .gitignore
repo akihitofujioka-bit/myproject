@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# Obsidian: 端末ごとに変わる状態はコミットしない（競合の原因になるため）
+vault/.obsidian/workspace.json
+vault/.obsidian/workspace-mobile.json
+vault/.obsidian/cache
+vault/.trash/
