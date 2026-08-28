@@ -102,6 +102,59 @@ Claude Code のセッション内から Routine を作ることもできるが�
 
 ---
 
+## 作成ボタンが押せないとき
+
+claude.ai の Routines 画面で作成ボタンが有効にならない場合、次の順に確認する。
+
+1. **実行環境（リポジトリ）が未選択** — 最も多い原因。`myproject` が入っている環境を選ぶ
+2. **スケジュールが未確定** — 頻度だけでなく時刻まで指定する
+3. **Routine の名前が空**
+4. **プロンプトが長すぎる** — 下の短縮版を使う
+
+### 短縮版プロンプト
+
+指示の中身は `SKILL.md` 側にあるため、プロンプトは短くても動く。
+
+**日報（18時・速報）**
+
+```
+本日（Asia/Tokyo基準）の日報ドラフトを作成してください。
+
+/home/user/myproject の .claude/skills/report/SKILL.md を読み、その手順どおりに実行してください。設定は report.config.json です。
+
+対象は本日。reports/daily/ に保存し、あわせて Google Drive のフォルダ（folderId: 1hMd8_qucMKNL_RzNmuFjYVxgAoAhzYKV）に「日報 YYYY-MM-DD（曜）」で保存してください。
+
+送信・投稿は一切しないでください。
+```
+
+**日報（翌朝8時・確定）**
+
+```
+前日（Asia/Tokyo基準）の日報ドラフトを作り直してください。前夜18時の速報版を、その後届いた録音を含めて差し替えるのが目的です。
+
+/home/user/myproject の .claude/skills/report/SKILL.md を読み、その手順どおりに実行してください。設定は report.config.json です。
+
+対象は前日。reports/daily/ を更新し、Google Drive のフォルダ（folderId: 1hMd8_qucMKNL_RzNmuFjYVxgAoAhzYKV）に同名のファイルがあれば、内容が変わったときだけ差し替えてください。
+
+送信・投稿は一切しないでください。
+```
+
+**週報（月曜8時・前週分）**
+
+```
+前週（月曜〜金曜、Asia/Tokyo基準）の週報ドラフトを作成してください。
+
+/home/user/myproject の .claude/skills/report/SKILL.md を読み、その手順どおりに実行してください。設定は report.config.json です。
+
+reports/weekly/ に保存し、あわせて Google Drive のフォルダ（folderId: 1hMd8_qucMKNL_RzNmuFjYVxgAoAhzYKV）に「週報 YYYY-MM-DD 〜 YYYY-MM-DD」で保存してください。日報の連結ではなくテーマ単位でまとめること。
+
+送信・投稿は一切しないでください。
+```
+
+上記をすべて確認しても押せない場合、組織の設定で Routine の作成自体が制限されている可能性がある。その場合は手動運用（セッションで「日報作って」と依頼する）に切り替える。
+
+---
+
 ## 停止済みの Routine について
 
 セッション内から作成した同名の Routine 3本が、無効化された状態で残っている。
