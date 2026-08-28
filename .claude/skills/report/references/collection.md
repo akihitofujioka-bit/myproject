@@ -1,59 +1,80 @@
 # データ収集手順
 
-各ソースは独立。1つ失敗しても他を続行し、失敗は成果物末尾に明記する。
+**PLAUD → カレンダー → GitHub の順**に集める。各ソースは独立で、1つ失敗しても他を続行し、失敗は成果物末尾に明記する。
 
 ## 共通：MCPツールの探し方
 
-コネクタのMCPサーバー名はセッションごとに変わることがある（`mcp__Google_Calendar__*` のこともあれば `mcp__<uuid>__*` のこともある）。
+コネクタのMCPサーバー名はセッションごとに変わる（`mcp__PLAUD__*` のこともあれば `mcp__<uuid>__*` のこともある）。
 **ツール名を決め打ちしない。** `ToolSearch` でキーワード検索して、その回で有効なツール名を確認してから呼ぶ。
 
 ```
-ToolSearch("calendar list events")
 ToolSearch("plaud list files transcript")
+ToolSearch("calendar list events")
 ```
 
 見つからなければ、そのソースはスキップして「コネクタ未接続」と記録する。ユーザーに接続を促すのは成果物を出した後でよい。
 
 ---
 
-## GitHub（コミット・PR・Issue）
+## 1. PLAUD（会議の文字起こし）— 主軸
 
-自分の作業の一次情報。**必ず author を自分に絞る。**
+「何が決まったか」を取れる唯一のソース。ここが日報の中身になる。
 
-1. 自分のアカウントを確認：`mcp__github__get_me`
-2. 設定の `github.repos` の各リポジトリについて、期間内の以下を取得する
-   - コミット：`mcp__github__list_commits`（`author` に自分、`since` / `until` に期間）
-   - PR：`mcp__github__search_pull_requests`（`author:<自分> updated:<開始>..<終了>`）。作成・マージ・レビューを区別して記録する
-   - Issue：`mcp__github__search_issues`（`involves:<自分> updated:<開始>..<終了>`）
-3. ローカルリポジトリが対象に含まれるなら、未push分も拾うため `git log --author=<自分> --since=<開始> --until=<終了> --oneline` も見る
-4. `minimal_output: true` を使い、ページングは5〜10件単位
+### 日付の扱い（重要）
 
-**拾い方のコツ**：マージされたPRが最も情報量が高い。PRのタイトルと本文があれば、それをタスク単位のまとまりとして使い、個々のコミットはその下にぶら下げるか捨てる。
+`list_files` の `date_from` / `date_to` は**アップロード日**で効く。前日の会議が翌日アップロードされることが多いため、この絞り込みだけを信じると日付がずれる。
 
-## Google カレンダー（会議・作業ブロック）
+1. `list_files` は**対象期間の前後1日を含めて**広めに取る（例：8/28 の日報なら `date_from: 2026-08-27`, `date_to: 2026-08-29`）
+2. 返ってきた各件の `start_at` で**クライアント側で絞り直す**。`start_at` は **UTC**（`name` フィールドの日本時間表記と9時間ずれる）。JSTに直してから期間判定する
+3. `duration` はミリ秒。10秒未満の録音は誤操作なので捨てる
 
-1. `list_calendars` で対象カレンダーを確認（設定の `calendar.calendarIds`。既定は primary のみ）
-2. `list_events` で期間内の予定を取得
-3. 除外する：
-   - 終日予定（休暇・記念日など）
-   - 自分が辞退（declined）した予定
-   - 設定の `calendar.excludePatterns` にマッチするタイトル（既定：朝会・移動・ランチ・ブロック・集中時間）
-   - 参加者が自分だけの予定（自分用のリマインダーであることが多い）
-4. 残ったものを「会議」として記録。時刻・タイトル・参加者数を持つ
+### 中身の取り方
 
-**注意**：予定タイトルだけでは成果にならない。PLAUDやGitHubに同時刻の記録があれば必ず突き合わせて、会議の中身で肉付けする。
-
-## PLAUD（会議の文字起こし）
-
-会議の「決まったこと」を取れる唯一のソース。ただし最も重い。
-
-1. `list_files` で期間内の録音を一覧
-2. 各ファイルについて **まず要約（note）を取る**：`get_note`
-3. 要約で足りないとき **だけ** `get_transcript` を呼ぶ。全文を無条件に読み込まない
-4. カレンダーの予定と時刻でひも付け、同じ会議として1件にまとめる
+4. 残った各録音について **まず要約を取る**：`get_note`
+5. 要約で足りないとき **だけ** `get_transcript` を呼ぶ。全文を無条件に読み込まない（`plaud.useTranscriptFallback: false` なら全文取得を一切しない）
 
 **取り出すもの**：決定事項、自分が引き受けたアクション、期限、次回に持ち越した論点。
-**取り出さないもの**：雑談、個人の評価に関わる発言、給与・人事・未公開の取引条件。これらは報告書に転記せず、必要なら「非公開の議題あり」とだけ書く。
+**取り出さないもの**：雑談、個人の評価に関わる発言、`privacy.excludeTopics` に該当する話題。これらは報告書に転記せず、必要なら「非公開の議題あり」とだけ書く。
+
+## 2. Google カレンダー（会議・作業ブロック）
+
+PLAUDに録音が無い会議を拾い、録音がある会議には正式名称と時刻を与える。
+
+1. `list_calendars` で対象カレンダーを確認（`calendar.calendarIds`。既定は primary のみ）
+2. `list_events` で期間内の予定を取得。`startTime` / `endTime` は `+09:00` 付きで渡す
+3. **重複を名寄せする**：同一開始時刻・同一タイトルの予定が複数返ることがある（登録操作の重複）。1件にまとめる
+4. 除外する：
+   - 終日予定（`start.date` を持つもの）— ただし**締切系のタイトルは「予定」セクションで拾う**ので捨て切らない
+   - 自分が辞退（`responseStatus: declined`）した予定
+   - `calendar.excludePatterns` にマッチするタイトル（既定：朝会・移動・ランチ・集中時間など）
+5. **参加者リストが空の予定を捨ててはいけない。** 自分で登録した予定は `attendees` が付かないが、実在の会議であることが多い（`excludeSoloEvents` の既定は `false`）
+
+### PLAUDとの突き合わせ
+
+録音の開始時刻（JST変換後）が予定の時間帯に重なる、または前後15分以内なら**同じ会議**として1件にまとめる。予定からタイトル、録音から中身を取る。
+
+## 3. GitHub（コミット・PR・Issue）— 補助
+
+開発作業がある期間だけ使う。無ければ空でよく、無理に埋めない。
+
+1. 自分のアカウントを確認：`mcp__github__get_me`
+2. `github.repos` の各リポジトリについて、期間内の以下を取得
+   - コミット：`list_commits`（`since` / `until`）
+   - PR：`search_pull_requests`（`author:<自分> updated:<開始>..<終了>`）
+   - Issue：`search_issues`（`involves:<自分> updated:<開始>..<終了>`）
+3. `minimal_output: true` を使い、ページングは5〜10件単位
+
+### author の絞り込み（重要）
+
+**Claude Code 経由のコミットは author が `Claude <noreply@anthropic.com>` になる。** 本人アカウントで厳密に絞ると自分の作業が0件になる。
+
+`github.authorFilter` の既定 `self+assistant` は、以下のいずれかを自分の作業として扱う：
+- author または committer が `author.githubLogin` / 設定のメールアドレス
+- author が `noreply@anthropic.com`（自分の指示で動いたエージェントのコミット）
+
+他人が同じリポジトリにコミットしている場合は `self` に切り替える。ローカルリポジトリが対象なら未push分を拾うため `git log --since=<開始> --until=<終了>` も見る。
+
+**拾い方のコツ**：マージされたPRが最も情報量が高い。PRのタイトルと本文をタスク単位のまとまりとして使い、個々のコミットはその下にぶら下げるか捨てる。
 
 ---
 
@@ -63,12 +84,13 @@ ToolSearch("plaud list files transcript")
 
 | フィールド | 内容 |
 |---|---|
-| `at` | 日時（ISO8601） |
-| `source` | `github` / `calendar` / `plaud` |
-| `kind` | `commit` / `pr` / `issue` / `meeting` / `decision` / `action` |
+| `at` | 日時（JST、ISO8601） |
+| `source` | `plaud` / `calendar` / `github` |
+| `kind` | `meeting` / `decision` / `action` / `commit` / `pr` / `issue` / `deadline` |
 | `title` | 一行要約 |
-| `detail` | 補足（任意） |
+| `detail` | 補足（決定事項・アクションなど） |
 | `link` | URL（任意） |
-| `project` | プロジェクト名。リポジトリ名や会議名から推定、不明なら `未分類` |
+| `project` | プロジェクト名。会議名やリポジトリ名から推定、不明なら `未分類` |
+| `status` | `done` / `upcoming` — 実行時刻より後に始まるものは `upcoming` |
 
 この表を中間生成物としてターミナルに出す必要はない。長くなるだけなので、最終成果物だけ見せる。

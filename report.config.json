@@ -1,5 +1,5 @@
 {
-  "_comment": "リポジトリ直下に report.config.json としてコピーして使う。全項目が任意で、無い場合は既定値で動く。",
+  "_comment": "/report スキルの設定。項目の意味は .claude/skills/report/config.example.json のコメントを参照。",
 
   "author": {
     "name": "藤岡 明仁",
