@@ -1,0 +1,53 @@
+{
+  "_comment": "リポジトリ直下に report.config.json としてコピーして使う。全項目が任意で、無い場合は既定値で動く。",
+
+  "author": {
+    "name": "藤岡 明仁",
+    "githubLogin": null,
+    "_note": "githubLogin が null のときは get_me で自動判定する"
+  },
+
+  "sources": {
+    "github": true,
+    "calendar": true,
+    "plaud": true
+  },
+
+  "github": {
+    "repos": ["akihitofujioka-bit/myproject"],
+    "includeLocalGitLog": true,
+    "_note": "repos が空のときはローカルの git log のみ使う"
+  },
+
+  "calendar": {
+    "calendarIds": ["primary"],
+    "excludePatterns": ["朝会", "デイリー", "移動", "ランチ", "昼休み", "ブロック", "集中時間", "Focus"],
+    "excludeAllDay": true,
+    "excludeDeclined": true,
+    "excludeSoloEvents": true
+  },
+
+  "plaud": {
+    "useTranscriptFallback": true,
+    "_note": "false にすると要約(note)のみ使い、全文取得を一切しない"
+  },
+
+  "output": {
+    "dailyDir": "reports/daily",
+    "weeklyDir": "reports/weekly",
+    "overwrite": "ask",
+    "_note": "overwrite: ask | append | replace"
+  },
+
+  "template": {
+    "tone": "formal",
+    "dailySections": ["本日の実績", "会議", "明日の予定", "課題・相談事項"],
+    "weeklySections": ["サマリ", "進捗", "来週の予定", "リスク・課題"]
+  },
+
+  "privacy": {
+    "redactExternalNames": true,
+    "excludeTopics": ["人事", "評価", "給与", "報酬", "契約条件"],
+    "_note": "excludeTopics に触れる内容は報告書に転記せず「非公開の議題あり」とだけ書く"
+  }
+}
