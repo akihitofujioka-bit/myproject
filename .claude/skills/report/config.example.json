@@ -54,6 +54,11 @@
     "dailyDir": "reports/daily",
     "weeklyDir": "reports/weekly",
     "overwrite": "ask",
+    "drive": {
+      "enabled": true,
+      "folderId": "1hMd8_qucMKNL_RzNmuFjYVxgAoAhzYKV",
+      "folderName": "日報・週報"
+    },
     "_note": "overwrite: ask | append | replace。当日分に午後の会議を追記する使い方が多いので ask 推奨"
   },
 
