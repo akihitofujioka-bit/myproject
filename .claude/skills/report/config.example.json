@@ -20,9 +20,13 @@
     "lookaroundDays": 1,
     "minDurationSeconds": 10,
     "useTranscriptFallback": true,
+    "inventoryPrecheck": true,
+    "dedupeOverlappingDevices": true,
     "_note_matchBy": "APIの日付フィルタはアップロード日で効くため、録音日(start_at, UTC)でクライアント側から絞り直す",
     "_note_lookaround": "前日の会議が翌日アップされるので前後この日数だけ広めに取得する",
-    "_note_transcript": "false にすると要約(note)のみ使い、全文取得を一切しない"
+    "_note_transcript": "false にすると要約(note)のみ使い、全文取得を一切しない",
+    "_note_precheck": "get_file で source_list / note_list の有無を先に確認し、空の録音に get_note や get_transcript を投げない",
+    "_note_dedupe": "2台のデバイスで同じ会議を録音した場合(serial_numberが別で時間帯が重なる)、1件に名寄せする"
   },
 
   "calendar": {
