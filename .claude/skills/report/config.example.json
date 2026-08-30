@@ -20,13 +20,31 @@
     "lookaroundDays": 1,
     "minDurationSeconds": 10,
     "useTranscriptFallback": true,
-    "inventoryPrecheck": true,
+    "inventoryPrecheck": false,
     "dedupeOverlappingDevices": true,
+    "dedupeStartGapMinutes": 30,
     "_note_matchBy": "APIの日付フィルタはアップロード日で効くため、録音日(start_at, UTC)でクライアント側から絞り直す",
     "_note_lookaround": "前日の会議が翌日アップされるので前後この日数だけ広めに取得する",
     "_note_transcript": "false にすると要約(note)のみ使い、全文取得を一切しない",
-    "_note_precheck": "get_file で source_list / note_list の有無を先に確認し、空の録音に get_note や get_transcript を投げない",
-    "_note_dedupe": "2台のデバイスで同じ会議を録音した場合(serial_numberが別で時間帯が重なる)、1件に名寄せする"
+    "_note_precheck": "true にすると get_file で在庫を先に確認する。既定は false。get_file は文字起こしと要約の本文を丸ごと返し、実測で1件83,000文字を超えてツール出力の上限に当たったため、確認には使わない。get_note を先に呼べば在庫確認を兼ねられる。get_file は presigned_url が要るときだけ",
+    "_note_dedupe": "2台のデバイスで同じ会議を録音した場合(serial_numberが別)、1件に名寄せする。判定は時間帯が重なるかどうかだけで、開始時刻の差は条件にしない",
+    "_note_startgap": "名寄せの条件ではなく、別会議を疑うための目安の分数。録音の開始・停止は手押しで、同じ会議でも十数分ずれる(2026-08-27の常任委員会で16分23秒)。時間帯が重なっていて開始差がこの分数を超えるときだけ、別会議でないか name と duration で確かめる"
+  },
+
+  "verbatim": {
+    "block": "transaction_polish",
+    "pageLimit": 200,
+    "outputDir": "reports/verbatim",
+    "workDir": "reports/verbatim/.work",
+    "suspectTermsFile": ".claude/skills/report/references/suspect-terms.json",
+    "silenceGapSeconds": 20,
+    "contextPaddingSeconds": 20,
+    "_note": "議会の委員会など、全文の議事録が要る会議で使う。手順は .claude/skills/report/references/verbatim.md",
+    "_note_block": "整文済みでフィラーが落ち、話者ラベルとタイムスタンプが残る。transaction(生)は読めず、outlineは要約なので全文にならない",
+    "_note_pageLimit": "get_transcript の1回あたり取得数。最大500まで通るが、大きくするとツール出力の上限に近づくため既定は200。next_cursor が null になるまで回し、total と件数が一致することを確認する",
+    "_note_output": "業務情報を含むため .gitignore 対象。日報・週報と違い Drive には自動で上げない",
+    "_note_silenceGap": "主録音の無音がこの秒数以上続き、かつ他録音が発話を持っていれば欠落候補として報告する",
+    "_note_suspect": "音声認識が崩しやすい語の辞書。1台しか録れていない区間では、これが誤字を見つける唯一の手掛かりになる"
   },
 
   "calendar": {

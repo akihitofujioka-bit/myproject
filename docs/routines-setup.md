@@ -1,5 +1,10 @@
 # 日報・週報の自動生成をセットアップする
 
+> **【2026-08-30】この運用は取りやめました。** ルーティンによる自動実行はやめ、
+> 必要なときに都度セッションで「日報作って」と依頼する運用に変更しています。
+> このファイルは、同じことをやり直すときのために**記録として**残しています。
+> 下のプロンプト例は、セッションで依頼するときの文面としてはそのまま使えます。
+
 `/report` スキルを定期実行するための手順。**claude.ai の Routines 画面から設定する必要がある。**
 
 ## なぜ画面から作る必要があるのか
@@ -21,10 +26,31 @@ Claude Code のセッション内から Routine を作ることもできるが�
 1. claude.ai を開き、Routines（定期実行）の画面へ行く
 2. 新規 Routine を作成する
 3. 下の3本をそれぞれ登録する。**各 Routine で PLAUD / Google カレンダー / Google Drive の3つを有効にすること**
-4. 実行環境（environment）は、このリポジトリが入っているものを選ぶ
+4. **リポジトリは Routine 自体の「Repositories」欄で指定する。** `akihitofujioka-bit/myproject` を選ぶ
+5. 実行環境（environment）を選ぶ
 
 登録後、1本を手動実行して Google Drive の「日報・週報」フォルダにファイルができるか確認する。
 できなければコネクタの選択漏れなので、Routine の設定を見直す。
+
+### environment とリポジトリは別物
+
+**environment を選べばリポジトリが入る、というのは誤り。** environment が持つのは次の3つだけ。
+
+- ネットワークアクセス（外部への通信をどこまで許すか）
+- 環境変数
+- セットアップスクリプト
+
+**リポジトリは environment ではなく、Routine 自体の項目（Repositories）。**
+ここを空のまま作成できてしまうため、実際に空で作られていた。
+
+#### Repositories が空のときの症状
+
+- `/home/user/myproject` が存在せず、`SKILL.md` も `report.config.json` も読めない
+- GitHub API が `sessions are bound to their configured repositories` を返す
+- **一方でコネクタ（PLAUD・カレンダー・Drive）は正常に動く**
+
+この組み合わせが紛らわしい。「コネクタは動くのにリポジトリだけ無い」ときは、
+environment ではなく **Routine の Repositories の設定漏れ**を疑う。
 
 ---
 
@@ -106,10 +132,12 @@ Claude Code のセッション内から Routine を作ることもできるが�
 
 claude.ai の Routines 画面で作成ボタンが有効にならない場合、次の順に確認する。
 
-1. **実行環境（リポジトリ）が未選択** — 最も多い原因。`myproject` が入っている環境を選ぶ
-2. **スケジュールが未確定** — 頻度だけでなく時刻まで指定する
-3. **Routine の名前が空**
-4. **プロンプトが長すぎる** — 下の短縮版を使う
+1. **Repositories が未選択** — 最も多い原因。`akihitofujioka-bit/myproject` を選ぶ
+   （environment の選択とは別。上の「environment とリポジトリは別物」を参照）
+2. **実行環境（environment）が未選択**
+3. **スケジュールが未確定** — 頻度だけでなく時刻まで指定する
+4. **Routine の名前が空**
+5. **プロンプトが長すぎる** — 下の短縮版を使う
 
 ### 短縮版プロンプト
 
