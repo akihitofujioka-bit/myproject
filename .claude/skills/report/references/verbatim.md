@@ -154,7 +154,25 @@ python3 .claude/skills/report/scripts/merge_transcripts.py build \
 保存先は `reports/verbatim/YYYY-MM-DD-<会議名>.md`。
 既存ファイルがあれば上書きせず、差分を見せてどうするか聞く（日報・週報と同じ扱い）。
 
-### 7. 渡すときに伝えること
+### 7. Word / テキストに変換する
+
+議事録は Word で回覧・校正することが多い。**Word を求められたら必ず変換して渡す。**
+
+```
+python3 .claude/skills/report/scripts/verbatim_to_docx.py \
+    "reports/verbatim/2026-08-27-経済建設厚生常任委員会.md"
+```
+
+同じ場所に `.docx` と `.txt` ができる（`--docx-only` / `--txt-only` で片方だけ）。
+話者行・注記・表がそれぞれ段落として分かれるので、Word 上でそのまま直せる。
+
+このスクリプトも標準ライブラリだけで動く（docx は XML を集めた ZIP なので、
+この程度の構造なら pandoc も python-docx も要らない）。**`w:pPr` と `w:rPr` の
+子要素は順序がスキーマで決まっている**ので、要素を足すときは順序に注意する
+（`pStyle → pBdr → spacing → ind → jc`、`rFonts → b → color → sz`）。
+順序を間違えると Word が「開けません」と言うだけで、原因が分からない。
+
+### 8. 渡すときに伝えること
 
 - これは校正前の土台であること
 - 主録音はどれで、どこを別録音で補ったか

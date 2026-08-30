@@ -29,3 +29,4 @@ GitHub（コミット・PR・Issue）、Google カレンダー、PLAUD の文字
 - 整列・欠落検出・話者対応の候補出し: `.claude/skills/report/scripts/merge_transcripts.py`
 - 出力: `reports/verbatim/YYYY-MM-DD-<会議名>.md`
 - 音声認識の誤字は**直さず印を付ける**。巻末に要確認箇所と、録音間で食い違った語の一覧が付く
+- Word / テキストへの変換: `.claude/skills/report/scripts/verbatim_to_docx.py 逐語録.md`
