@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>議会だより原稿編集ツール</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --ink:#1c2024; --muted:#6b7280;
+    --line:#dfe3e8; --accent:#1f6feb; --accent-weak:#e8f0fe;
+    --danger:#c0392b; --danger-weak:#fdecea; --ok:#1e8e5a; --ok-weak:#e6f4ec;
+    --warn:#b26a00; --warn-weak:#fff4e0;
+    --radius:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",system-ui,-apple-system,sans-serif;
+    font-size:14px; line-height:1.7;
+  }
+  button{font-family:inherit; font-size:13px; cursor:pointer}
+  input,textarea,select{font-family:inherit; font-size:14px; color:inherit}
+
+  /* ---------- header ---------- */
+  header{
+    background:var(--panel); border-bottom:1px solid var(--line);
+    padding:10px 16px; position:sticky; top:0; z-index:50;
+  }
+  .hd-row{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+  .hd-title{font-size:17px; font-weight:700; margin:0; white-space:nowrap}
+  .hd-meta{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .hd-meta label{color:var(--muted); font-size:12px}
+  .hd-meta input{
+    border:1px solid var(--line); border-radius:6px; padding:4px 7px; background:#fff;
+  }
+  .hd-spacer{flex:1}
+  .save-state{font-size:12px; color:var(--muted); white-space:nowrap}
+
+  .btn{
+    border:1px solid var(--line); background:#fff; color:var(--ink);
+    border-radius:6px; padding:6px 11px; white-space:nowrap;
+  }
+  .btn:hover{background:#f2f4f7}
+  .btn:disabled{opacity:.45; cursor:not-allowed}
+  .btn-primary{background:var(--accent); border-color:var(--accent); color:#fff}
+  .btn-primary:hover{background:#1a5fcc}
+  .btn-danger{background:var(--danger); border-color:var(--danger); color:#fff}
+  .btn-danger:hover{background:#a5301f}
+  .btn-sm{padding:3px 8px; font-size:12px}
+  .btn-ghost{border-color:transparent; background:transparent; color:var(--accent)}
+  .btn-ghost:hover{background:var(--accent-weak)}
+
+  /* ---------- tabs ---------- */
+  nav.tabs{display:flex; gap:4px; margin-top:10px; border-bottom:1px solid var(--line)}
+  nav.tabs button{
+    border:1px solid transparent; border-bottom:none; background:transparent;
+    padding:8px 16px; border-radius:8px 8px 0 0; font-size:14px; color:var(--muted);
+    position:relative; top:1px;
+  }
+  nav.tabs button.active{
+    background:var(--bg); border-color:var(--line); color:var(--ink); font-weight:700;
+  }
+  nav.tabs .badge{
+    display:inline-block; min-width:18px; padding:0 5px; margin-left:6px;
+    background:var(--line); color:#333; border-radius:9px; font-size:11px; line-height:18px;
+    text-align:center;
+  }
+
+  main{padding:16px; max-width:1180px; margin:0 auto}
+  .view{display:none}
+  .view.active{display:block}
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px 16px; margin-bottom:14px;
+  }
+  .card > h2{margin:0 0 10px; font-size:15px; display:flex; align-items:center; gap:8px}
+  .hint{color:var(--muted); font-size:12px; margin:0 0 10px}
+
+  /* ---------- import ---------- */
+  .dropzone{
+    border:2px dashed var(--line); border-radius:var(--radius); background:#fafbfc;
+    padding:18px; text-align:center; color:var(--muted);
+  }
+  .dropzone.over{border-color:var(--accent); background:var(--accent-weak); color:var(--accent)}
+  textarea.paste{
+    width:100%; min-height:120px; border:1px solid var(--line); border-radius:6px;
+    padding:9px; resize:vertical; line-height:1.7;
+  }
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+  .row.end{justify-content:flex-end}
+  .split-opts{display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:13px; color:var(--muted)}
+  .split-opts label{display:flex; gap:5px; align-items:center; cursor:pointer}
+
+  /* ---------- draft list ---------- */
+  .toolbar{
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    padding:8px 10px; background:#fafbfc; border:1px solid var(--line);
+    border-radius:6px; margin-bottom:10px;
+  }
+  .toolbar .sel-count{font-size:13px; color:var(--muted); margin-right:auto}
+  .toolbar .sel-count strong{color:var(--accent); font-size:15px}
+  .search{border:1px solid var(--line); border-radius:6px; padding:5px 8px; min-width:170px}
+  select.filter{border:1px solid var(--line); border-radius:6px; padding:5px 8px; background:#fff}
+
+  table.drafts{width:100%; border-collapse:collapse; font-size:13px}
+  table.drafts th{
+    text-align:left; font-weight:600; color:var(--muted); font-size:12px;
+    border-bottom:1px solid var(--line); padding:7px 8px; white-space:nowrap;
+  }
+  table.drafts td{border-bottom:1px solid #eef1f4; padding:8px; vertical-align:top}
+  table.drafts tr.selected td{background:var(--accent-weak)}
+  table.drafts tr:hover td{background:#f7f9fc}
+  table.drafts tr.selected:hover td{background:#dde9fd}
+  .d-name{font-weight:600}
+  .d-excerpt{color:var(--muted); font-size:12px; margin-top:2px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+  .chip{
+    display:inline-block; padding:1px 8px; border-radius:11px; font-size:11px;
+    background:var(--ok-weak); color:var(--ok); white-space:nowrap;
+  }
+  .chip.none{background:#eef1f4; color:var(--muted)}
+  .col-chk{width:34px}
+  .col-num{width:70px; text-align:right; white-space:nowrap}
+  .col-act{width:150px; white-space:nowrap; text-align:right}
+  .empty{padding:28px; text-align:center; color:var(--muted)}
+
+  /* ---------- stepper ---------- */
+  .stepper{display:flex; gap:6px; overflow-x:auto; padding-bottom:4px}
+  .step{
+    flex:1 0 auto; min-width:118px; border:1px solid var(--line); background:#fff;
+    border-radius:6px; padding:7px 9px; text-align:left; color:var(--muted);
+  }
+  .step .n{font-size:11px; color:var(--muted)}
+  .step .t{display:block; font-size:13px; color:var(--ink); font-weight:600; margin-top:1px}
+  .step .s{font-size:11px; margin-top:2px}
+  .step.current{border-color:var(--accent); background:var(--accent-weak)}
+  .step.current .t{color:var(--accent)}
+  .step.done{border-color:var(--ok)}
+  .step.done .s{color:var(--ok)}
+  .step.off{opacity:.5}
+  .progress{height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:10px}
+  .progress > div{height:100%; background:var(--ok); width:0; transition:width .2s}
+
+  .sec-head{display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap}
+  .sec-head h2{margin:0; font-size:18px}
+  .sec-head .no{color:var(--muted); font-weight:400; font-size:14px; margin-right:6px}
+  .toggle{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); cursor:pointer}
+
+  .entry{border:1px solid var(--line); border-radius:var(--radius); margin-bottom:12px; background:#fff}
+  .entry.selected{border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-weak)}
+  .entry-head{
+    display:flex; gap:8px; align-items:center; padding:8px 10px;
+    background:#fafbfc; border-bottom:1px solid var(--line); border-radius:8px 8px 0 0;
+    flex-wrap:wrap;
+  }
+  .entry-head .idx{color:var(--muted); font-size:12px; white-space:nowrap}
+  .entry-head input.title{
+    flex:1; min-width:180px; border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-weight:600;
+  }
+  .entry-head input.author{
+    width:150px; border:1px solid var(--line); border-radius:6px; padding:5px 8px;
+  }
+  .entry-body{padding:10px}
+  .entry-body textarea{
+    width:100%; min-height:150px; border:1px solid var(--line); border-radius:6px;
+    padding:9px; resize:vertical; line-height:1.9;
+  }
+  .entry-foot{
+    display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+    padding:0 10px 10px; font-size:12px; color:var(--muted);
+  }
+  .entry-foot input.target{width:78px; border:1px solid var(--line); border-radius:6px; padding:3px 6px}
+  .count-ok{color:var(--ok)}
+  .count-over{color:var(--danger); font-weight:700}
+  .count-near{color:var(--warn)}
+
+  .nav-bottom{display:flex; gap:10px; align-items:center; margin-top:6px}
+  .nav-bottom .grow{flex:1; text-align:center; color:var(--muted); font-size:12px}
+
+  /* ---------- modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(20,24,28,.45); display:none;
+    align-items:center; justify-content:center; z-index:100; padding:16px;
+  }
+  .overlay.open{display:flex}
+  .modal{
+    background:#fff; border-radius:10px; width:100%; max-width:640px;
+    max-height:86vh; display:flex; flex-direction:column; box-shadow:0 12px 40px rgba(0,0,0,.25);
+  }
+  .modal h3{margin:0; padding:14px 16px; border-bottom:1px solid var(--line); font-size:15px}
+  .modal .body{padding:14px 16px; overflow:auto; flex:1}
+  .modal .foot{padding:12px 16px; border-top:1px solid var(--line); display:flex; gap:8px; justify-content:flex-end}
+  .pick-item{display:flex; gap:9px; align-items:flex-start; padding:8px; border-bottom:1px solid #eef1f4; cursor:pointer}
+  .pick-item:hover{background:#f7f9fc}
+  .warn-box{background:var(--danger-weak); border:1px solid #f5c6c0; color:#8c2b1e;
+    border-radius:6px; padding:10px 12px; margin-bottom:10px; font-size:13px}
+  .del-list{max-height:210px; overflow:auto; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:13px}
+  .del-list li{margin:2px 0}
+
+  /* ---------- export ---------- */
+  pre.preview{
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px; overflow:auto; max-height:520px; white-space:pre-wrap;
+    word-break:break-word; font-size:13px; line-height:1.8;
+    font-family:"SFMono-Regular",Consolas,"Hiragino Kaku Gothic ProN",monospace;
+  }
+  .stat-grid{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px}
+  .stat{
+    border:1px solid var(--line); border-radius:6px; background:#fff;
+    padding:8px 12px; min-width:120px;
+  }
+  .stat .k{font-size:11px; color:var(--muted)}
+  .stat .v{font-size:18px; font-weight:700}
+
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    background:#1c2024; color:#fff; padding:9px 18px; border-radius:20px;
+    font-size:13px; opacity:0; pointer-events:none; transition:opacity .2s; z-index:200;
+  }
+  .toast.show{opacity:1}
+
+  @media (max-width:640px){
+    .col-num,.col-src{display:none}
+    main{padding:10px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hd-row">
+    <h1 class="hd-title">議会だより原稿編集ツール</h1>
+    <div class="hd-meta">
+      <label for="issueNo">第</label>
+      <input id="issueNo" type="text" size="4" placeholder="123">
+      <label for="issueNo">号</label>
+      <label for="issueDate">発行日</label>
+      <input id="issueDate" type="date">
+    </div>
+    <div class="hd-spacer"></div>
+    <span class="save-state" id="saveState">—</span>
+    <button class="btn btn-sm" id="btnExportJson">バックアップ保存</button>
+    <button class="btn btn-sm" id="btnImportJson">バックアップ復元</button>
+    <button class="btn btn-sm btn-danger" id="btnResetAll">全消去</button>
+  </div>
+  <nav class="tabs">
+    <button data-view="box" class="active">① 原稿ボックス<span class="badge" id="badgeDrafts">0</span></button>
+    <button data-view="edit">② 誌面編集<span class="badge" id="badgeSections">0/6</span></button>
+    <button data-view="out">③ プレビュー・書き出し</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ==================== 原稿ボックス ==================== -->
+<section class="view active" id="view-box">
+
+  <div class="card">
+    <h2>原稿の取り込み</h2>
+    <p class="hint">テキストファイル（.txt / .md / .csv）をドラッグ＆ドロップするか、下の欄に本文を貼り付けて取り込みます。取り込んだ原稿は「原稿ボックス」に貯まり、あとから各ページへ割り当てます。</p>
+
+    <div class="dropzone" id="dropzone">
+      ここにファイルをドラッグ＆ドロップ<br>
+      <button class="btn btn-sm" id="btnPickFile" style="margin-top:8px">ファイルを選択</button>
+      <input type="file" id="fileInput" accept=".txt,.md,.markdown,.csv,.text" multiple hidden>
+    </div>
+
+    <div style="margin-top:12px">
+      <textarea class="paste" id="pasteArea" placeholder="ここに原稿を貼り付けてください。&#10;複数の原稿をまとめて貼るときは、下の分割設定を使うと1件ずつに分けて取り込めます。"></textarea>
+      <div class="row" style="margin-top:8px">
+        <div class="split-opts">
+          <span>分割方法：</span>
+          <label><input type="radio" name="split" value="none" checked>分割しない</label>
+          <label><input type="radio" name="split" value="hr">区切り線（---）で分割</label>
+          <label><input type="radio" name="split" value="head">見出し（#）で分割</label>
+          <label><input type="radio" name="split" value="blank">空行2行で分割</label>
+        </div>
+        <div class="hd-spacer"></div>
+        <select class="filter" id="pasteTarget" title="取り込みと同時に割り当てるページ">
+          <option value="">割り当てなし</option>
+        </select>
+        <button class="btn btn-primary" id="btnAddPaste">原稿ボックスに追加</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>取り込んだ原稿</h2>
+    <div class="toolbar">
+      <label style="display:flex;gap:6px;align-items:center;font-size:13px">
+        <input type="checkbox" id="chkAll">表示中をすべて選択
+      </label>
+      <span class="sel-count"><strong id="selCount">0</strong> 件を選択中</span>
+      <input class="search" id="searchBox" type="search" placeholder="原稿名・本文で検索">
+      <select class="filter" id="filterAssign">
+        <option value="all">すべて表示</option>
+        <option value="unassigned">未割り当てのみ</option>
+      </select>
+      <select class="filter" id="bulkAssign">
+        <option value="">選択した原稿を割り当て…</option>
+      </select>
+      <button class="btn btn-sm" id="btnBulkUnassign" disabled>割り当てを解除</button>
+      <button class="btn btn-sm btn-danger" id="btnBulkDelete" disabled>選択した原稿を一括削除</button>
+    </div>
+    <div id="draftTableWrap"></div>
+  </div>
+
+</section>
+
+<!-- ==================== 誌面編集 ==================== -->
+<section class="view" id="view-edit">
+  <div class="card">
+    <h2>ページ構成（この順番で編集します）</h2>
+    <div class="stepper" id="stepper"></div>
+    <div class="progress"><div id="progressBar"></div></div>
+  </div>
+
+  <div class="card" id="sectionCard"></div>
+
+  <div class="nav-bottom">
+    <button class="btn" id="btnPrev">← 前のページ</button>
+    <span class="grow" id="navLabel"></span>
+    <button class="btn btn-primary" id="btnNext">次のページ →</button>
+  </div>
+</section>
+
+<!-- ==================== 書き出し ==================== -->
+<section class="view" id="view-out">
+  <div class="card">
+    <h2>全体プレビュー</h2>
+    <div class="stat-grid" id="statGrid"></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn" id="btnCopyMd">Markdownをコピー</button>
+      <button class="btn" id="btnDownloadMd">Markdownをダウンロード</button>
+      <button class="btn" id="btnDownloadTxt">テキストをダウンロード</button>
+      <button class="btn" id="btnPrint">印刷 / PDF</button>
+    </div>
+    <pre class="preview" id="preview"></pre>
+  </div>
+</section>
+
+</main>
+
+<!-- ==================== モーダル ==================== -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="modalTitle"></h3>
+    <div class="body" id="modalBody"></div>
+    <div class="foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   セクション定義：議会だよりの構成（この順番で編集する）
+   ============================================================ */
+const SECTION_DEFS = [
+  { id:"cover",     name:"表紙",
+    hint:"号数・発行日・表紙写真のキャプション・今号の主な内容（目次）など。",
+    itemLabel:"表紙の要素", titlePh:"例）表紙写真キャプション", authorLabel:"担当" },
+  { id:"gyosei",    name:"行政報告",
+    hint:"町長（市長）の行政報告の要旨。項目ごとに分けて書きます。",
+    itemLabel:"報告項目", titlePh:"例）令和○年度予算の執行状況について", authorLabel:"担当" },
+  { id:"shingi",    name:"審議したこと・決まったこと",
+    hint:"提出議案の審議結果（可決・否決・同意など）、賛否が分かれた議案の状況。",
+    itemLabel:"議案", titlePh:"例）議案第1号 一般会計補正予算", authorLabel:"担当" },
+  { id:"heikaichu", name:"閉会中の委員会活動報告",
+    hint:"各常任委員会・特別委員会・議会運営委員会の閉会中の活動報告。",
+    itemLabel:"委員会", titlePh:"例）総務常任委員会", authorLabel:"委員長" },
+  { id:"ippan",     name:"一般質問",
+    hint:"議員ごとの質問と答弁。「議員名」欄に質問者を入れてください。",
+    itemLabel:"質問", titlePh:"例）子育て支援の拡充について", authorLabel:"議員名" },
+  { id:"tokushu",   name:"特集",
+    hint:"今号に特集がある場合のみ使用します。無い号は右上のスイッチをオフにしてください。",
+    itemLabel:"特集記事", titlePh:"例）議会報告会を開催しました", authorLabel:"担当", optional:true },
+  { id:"saishu",    name:"最終ページ（編集後記＋α）",
+    hint:"編集後記、お知らせ、今後の日程、傍聴案内、編集委員名簿など。",
+    itemLabel:"記事", titlePh:"例）編集後記", authorLabel:"担当" }
+];
+
+const STORAGE_KEY = "gikai-dayori-editor-v1";
+
+/* ============================================================
+   状態
+   ============================================================ */
+let state = null;
+const ui = {
+  view:"box",
+  current:0,          // 編集中のセクション index
+  selected:new Set(), // 選択中の原稿 id
+  search:"",
+  filter:"all"
+};
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+function newEntry(patch){
+  return Object.assign({ id:uid(), title:"", author:"", body:"", target:0, memo:"" }, patch||{});
+}
+
+function blankState(){
+  return {
+    issue:{ no:"", date:"" },
+    drafts:[],
+    sections:SECTION_DEFS.map(function(d){
+      return { id:d.id, enabled:true, done:false, note:"", entries:[] };
+    })
+  };
+}
+
+function sectionDef(id){
+  for (let i=0;i<SECTION_DEFS.length;i++) if (SECTION_DEFS[i].id===id) return SECTION_DEFS[i];
+  return null;
+}
+function sectionState(id){
+  for (let i=0;i<state.sections.length;i++) if (state.sections[i].id===id) return state.sections[i];
+  return null;
+}
+function sectionName(id){
+  const d = sectionDef(id); return d ? d.name : "";
+}
+
+/* ============================================================
+   保存・読み込み
+   ============================================================ */
+let saveTimer = null;
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(function(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      setSaveState("保存しました " + new Date().toLocaleTimeString("ja-JP"));
+    }catch(e){
+      setSaveState("⚠ 自動保存に失敗（容量超過の可能性）");
+    }
+  }, 250);
+}
+function setSaveState(t){ document.getElementById("saveState").textContent = t; }
+
+function load(){
+  let raw = null;
+  try{ raw = localStorage.getItem(STORAGE_KEY); }catch(e){ raw = null; }
+  if (!raw){ state = blankState(); return; }
+  try{
+    state = migrate(JSON.parse(raw));
+  }catch(e){
+    state = blankState();
+  }
+}
+
+/** 保存データを現在のスキーマに合わせる（セクション定義の増減にも耐える） */
+function migrate(data){
+  const s = blankState();
+  if (!data || typeof data !== "object") return s;
+  if (data.issue){
+    s.issue.no = String(data.issue.no || "");
+    s.issue.date = String(data.issue.date || "");
+  }
+  if (Array.isArray(data.drafts)){
+    s.drafts = data.drafts.map(function(d){
+      return {
+        id: d && d.id ? String(d.id) : uid(),
+        name: d && d.name ? String(d.name) : "無題の原稿",
+        text: d && typeof d.text === "string" ? d.text : "",
+        source: d && d.source ? String(d.source) : "手入力",
+        createdAt: d && d.createdAt ? String(d.createdAt) : new Date().toISOString(),
+        assignedTo: d && d.assignedTo && sectionDef(d.assignedTo) ? d.assignedTo : null
+      };
+    });
+  }
+  if (Array.isArray(data.sections)){
+    s.sections.forEach(function(sec){
+      let old = null;
+      for (let i=0;i<data.sections.length;i++){
+        if (data.sections[i] && data.sections[i].id === sec.id){ old = data.sections[i]; break; }
+      }
+      if (!old) return;
+      sec.enabled = old.enabled !== false;
+      sec.done = old.done === true;
+      sec.note = typeof old.note === "string" ? old.note : "";
+      if (Array.isArray(old.entries)){
+        sec.entries = old.entries.map(function(e){
+          return newEntry({
+            id: e && e.id ? String(e.id) : uid(),
+            title: e && e.title ? String(e.title) : "",
+            author: e && e.author ? String(e.author) : "",
+            body: e && typeof e.body === "string" ? e.body : "",
+            target: e && Number(e.target) > 0 ? Number(e.target) : 0,
+            memo: e && e.memo ? String(e.memo) : ""
+          });
+        });
+      }
+    });
+  }
+  return s;
+}
+
+/* ============================================================
+   小物
+   ============================================================ */
+function esc(s){
+  return String(s == null ? "" : s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+/** 文字数：改行と半角スペースを除いた実質の字数 */
+function countChars(s){ return String(s||"").replace(/[\r\n]/g,"").replace(/[ \t]/g,"").length; }
+
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._tm);
+  t._tm = setTimeout(function(){ t.classList.remove("show"); }, 2200);
+}
+
+function download(filename, text, mime){
+  const blob = new Blob([text], { type:(mime||"text/plain") + ";charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+
+/* ---- モーダル ---- */
+function closeModal(){ document.getElementById("overlay").classList.remove("open"); }
+function openModal(title, bodyHtml, buttons){
+  document.getElementById("modalTitle").textContent = title;
+  document.getElementById("modalBody").innerHTML = bodyHtml;
+  const foot = document.getElementById("modalFoot");
+  foot.innerHTML = "";
+  (buttons||[]).forEach(function(b){
+    const el = document.createElement("button");
+    el.className = "btn " + (b.cls || "");
+    el.textContent = b.label;
+    el.onclick = b.onClick;
+    foot.appendChild(el);
+  });
+  document.getElementById("overlay").classList.add("open");
+}
+document.getElementById("overlay").addEventListener("click", function(e){
+  if (e.target === this) closeModal();
+});
+document.addEventListener("keydown", function(e){
+  if (e.key === "Escape") closeModal();
+});
+
+/* ============================================================
+   原稿の取り込み
+   ============================================================ */
+function splitText(text, mode){
+  const t = String(text||"").replace(/\r\n/g,"\n");
+  let parts;
+  if (mode === "hr")        parts = t.split(/\n[ \t]*-{3,}[ \t]*\n/);
+  else if (mode === "blank")parts = t.split(/\n[ \t]*\n[ \t]*\n+/);
+  else if (mode === "head"){
+    parts = [];
+    let buf = [];
+    t.split("\n").forEach(function(line){
+      if (/^#{1,6}\s+\S/.test(line)){
+        if (buf.join("\n").trim()) parts.push(buf.join("\n"));
+        buf = [line];
+      } else buf.push(line);
+    });
+    if (buf.join("\n").trim()) parts.push(buf.join("\n"));
+  }
+  else parts = [t];
+  return parts.map(function(p){ return p.trim(); }).filter(function(p){ return p.length > 0; });
+}
+
+/** 本文の先頭行から原稿名を推測する */
+function guessName(text, fallback){
+  const lines = String(text||"").split("\n");
+  for (let i=0;i<lines.length;i++){
+    const line = lines[i].replace(/^#{1,6}\s*/,"").trim();
+    if (line){ return line.length > 40 ? line.slice(0,40) + "…" : line; }
+  }
+  return fallback || "無題の原稿";
+}
+
+function addDrafts(chunks, source, assignTo){
+  let n = 0;
+  chunks.forEach(function(text){
+    if (!text.trim()) return;
+    state.drafts.push({
+      id: uid(),
+      name: guessName(text, source),
+      text: text,
+      source: source,
+      createdAt: new Date().toISOString(),
+      assignedTo: assignTo && sectionDef(assignTo) ? assignTo : null
+    });
+    n++;
+  });
+  if (n > 0){ save(); renderAll(); toast(n + " 件の原稿を取り込みました"); }
+  else toast("取り込める本文がありませんでした");
+  return n;
+}
+
+function currentSplitMode(){
+  const r = document.querySelector('input[name="split"]:checked');
+  return r ? r.value : "none";
+}
+
+function readFiles(fileList){
+  const files = Array.prototype.slice.call(fileList || []);
+  if (!files.length) return;
+  const mode = currentSplitMode();
+  const assign = document.getElementById("pasteTarget").value;
+  let pending = files.length;
+  let total = 0;
+  files.forEach(function(file){
+    const reader = new FileReader();
+    reader.onload = function(){
+      const chunks = splitText(String(reader.result||""), mode);
+      chunks.forEach(function(text){
+        state.drafts.push({
+          id: uid(),
+          name: chunks.length > 1 ? guessName(text, file.name) : file.name.replace(/\.[^.]+$/,""),
+          text: text,
+          source: file.name,
+          createdAt: new Date().toISOString(),
+          assignedTo: assign && sectionDef(assign) ? assign : null
+        });
+        total++;
+      });
+      if (--pending === 0){ save(); renderAll(); toast(total + " 件の原稿を取り込みました"); }
+    };
+    reader.onerror = function(){
+      if (--pending === 0){ save(); renderAll(); }
+      toast("読み込めないファイルがありました：" + file.name);
+    };
+    reader.readAsText(file, "UTF-8");
+  });
+}
+
+/* ============================================================
+   原稿ボックスの描画
+   ============================================================ */
+function visibleDrafts(){
+  const q = ui.search.trim().toLowerCase();
+  return state.drafts.filter(function(d){
+    if (ui.filter === "unassigned" && d.assignedTo) return false;
+    if (ui.filter !== "all" && ui.filter !== "unassigned" && d.assignedTo !== ui.filter) return false;
+    if (!q) return true;
+    return (d.name + " " + d.text).toLowerCase().indexOf(q) >= 0;
+  });
+}
+
+function renderDrafts(){
+  const wrap = document.getElementById("draftTableWrap");
+  const list = visibleDrafts();
+
+  if (!state.drafts.length){
+    wrap.innerHTML = '<div class="empty">まだ原稿がありません。上の欄からファイルを取り込むか、本文を貼り付けてください。</div>';
+  } else if (!list.length){
+    wrap.innerHTML = '<div class="empty">条件に一致する原稿がありません。</div>';
+  } else {
+    let html = '<table class="drafts"><thead><tr>' +
+      '<th class="col-chk"></th><th>原稿名 / 冒頭</th>' +
+      '<th class="col-src">取り込み元</th><th class="col-num">文字数</th>' +
+      '<th>割り当て先</th><th class="col-act"></th></tr></thead><tbody>';
+    list.forEach(function(d){
+      const sel = ui.selected.has(d.id);
+      const excerpt = d.text.replace(/\s+/g," ").slice(0,90);
+      html += '<tr class="' + (sel ? "selected" : "") + '" data-id="' + esc(d.id) + '">' +
+        '<td class="col-chk"><input type="checkbox" class="chk-draft" data-id="' + esc(d.id) + '"' + (sel ? " checked" : "") + '></td>' +
+        '<td><div class="d-name">' + esc(d.name) + '</div><div class="d-excerpt">' + esc(excerpt) + '</div></td>' +
+        '<td class="col-src" style="color:var(--muted);font-size:12px">' + esc(d.source) + '</td>' +
+        '<td class="col-num">' + countChars(d.text) + '</td>' +
+        '<td>' + (d.assignedTo
+            ? '<span class="chip">' + esc(sectionName(d.assignedTo)) + '</span>'
+            : '<span class="chip none">未割り当て</span>') + '</td>' +
+        '<td class="col-act">' +
+          '<button class="btn btn-sm btn-ghost act-view" data-id="' + esc(d.id) + '">本文</button>' +
+          '<button class="btn btn-sm btn-ghost act-del" data-id="' + esc(d.id) + '">削除</button>' +
+        '</td></tr>';
+    });
+    html += "</tbody></table>";
+    wrap.innerHTML = html;
+  }
+
+  // 選択状態
+  const n = ui.selected.size;
+  document.getElementById("selCount").textContent = n;
+  document.getElementById("btnBulkDelete").disabled = n === 0;
+  document.getElementById("btnBulkUnassign").disabled = n === 0;
+  const chkAll = document.getElementById("chkAll");
+  chkAll.checked = list.length > 0 && list.every(function(d){ return ui.selected.has(d.id); });
+  chkAll.indeterminate = !chkAll.checked && list.some(function(d){ return ui.selected.has(d.id); });
+
+  document.getElementById("badgeDrafts").textContent = state.drafts.length;
+}
+
+/* ---- 一括削除（確認つき） ---- */
+function bulkDelete(){
+  const targets = state.drafts.filter(function(d){ return ui.selected.has(d.id); });
+  if (!targets.length) return;
+  const assigned = targets.filter(function(d){ return d.assignedTo; });
+
+  let html = '<div class="warn-box"><strong>' + targets.length + ' 件の原稿を削除します。</strong><br>' +
+    'この操作は取り消せません。削除しても、すでに誌面へ貼り付けた本文は消えません。' +
+    (assigned.length ? '<br>※ このうち ' + assigned.length + ' 件は各ページへ割り当て済みです。' : '') +
+    '</div><ul class="del-list">';
+  targets.forEach(function(d){
+    html += '<li>' + esc(d.name) + ' <span style="color:var(--muted)">（' + countChars(d.text) + '字' +
+      (d.assignedTo ? " / " + esc(sectionName(d.assignedTo)) : " / 未割り当て") + '）</span></li>';
+  });
+  html += "</ul>";
+
+  openModal("選択した原稿の一括削除", html, [
+    { label:"キャンセル", onClick:closeModal },
+    { label:targets.length + " 件を削除する", cls:"btn-danger", onClick:function(){
+        state.drafts = state.drafts.filter(function(d){ return !ui.selected.has(d.id); });
+        ui.selected.clear();
+        save(); renderAll(); closeModal();
+        toast(targets.length + " 件を削除しました");
+      } }
+  ]);
+}
+
+function deleteOne(id){
+  const d = state.drafts.filter(function(x){ return x.id === id; })[0];
+  if (!d) return;
+  openModal("原稿の削除", '<div class="warn-box">「' + esc(d.name) + '」を削除します。この操作は取り消せません。</div>', [
+    { label:"キャンセル", onClick:closeModal },
+    { label:"削除する", cls:"btn-danger", onClick:function(){
+        state.drafts = state.drafts.filter(function(x){ return x.id !== id; });
+        ui.selected.delete(id);
+        save(); renderAll(); closeModal(); toast("削除しました");
+      } }
+  ]);
+}
+
+function viewDraft(id){
+  const d = state.drafts.filter(function(x){ return x.id === id; })[0];
+  if (!d) return;
+  openModal(d.name,
+    '<div style="color:var(--muted);font-size:12px;margin-bottom:8px">' +
+      esc(d.source) + ' / ' + countChars(d.text) + '字 / ' +
+      new Date(d.createdAt).toLocaleString("ja-JP") + '</div>' +
+    '<pre style="white-space:pre-wrap;word-break:break-word;margin:0;line-height:1.9">' + esc(d.text) + '</pre>',
+    [{ label:"閉じる", onClick:closeModal }]);
+}
+
+/* ============================================================
+   誌面編集
+   ============================================================ */
+function activeSections(){
+  return state.sections.filter(function(s){ return s.enabled; });
+}
+
+function renderStepper(){
+  const box = document.getElementById("stepper");
+  box.innerHTML = "";
+  state.sections.forEach(function(sec, i){
+    const def = sectionDef(sec.id);
+    const b = document.createElement("button");
+    b.className = "step" +
+      (i === ui.current ? " current" : "") +
+      (sec.done ? " done" : "") +
+      (sec.enabled ? "" : " off");
+    const chars = sec.entries.reduce(function(a,e){ return a + countChars(e.body); }, 0);
+    b.innerHTML = '<span class="n">' + (i+1) + '</span>' +
+      '<span class="t">' + esc(def.name) + '</span>' +
+      '<span class="s">' + (sec.enabled
+        ? (sec.done ? "✓ 完了" : sec.entries.length + "本 / " + chars + "字")
+        : "この号では使わない") + '</span>';
+    b.onclick = function(){ goto(i); };
+    box.appendChild(b);
+  });
+
+  const act = activeSections();
+  const done = act.filter(function(s){ return s.done; }).length;
+  document.getElementById("progressBar").style.width =
+    (act.length ? Math.round(done / act.length * 100) : 0) + "%";
+  document.getElementById("badgeSections").textContent = done + "/" + act.length;
+}
+
+function goto(i){
+  ui.current = Math.max(0, Math.min(SECTION_DEFS.length - 1, i));
+  showView("edit");
+  renderEdit();
+  window.scrollTo({ top:0, behavior:"smooth" });
+}
+
+function stepRelative(dir){
+  let i = ui.current + dir;
+  // 無効化されたセクションは飛ばす
+  while (i >= 0 && i < state.sections.length && !state.sections[i].enabled) i += dir;
+  if (i < 0 || i >= state.sections.length) return;
+  goto(i);
+}
+
+function renderEdit(){
+  renderStepper();
+  const sec = state.sections[ui.current];
+  const def = SECTION_DEFS[ui.current];
+  const card = document.getElementById("sectionCard");
+
+  let html = '<div class="sec-head">' +
+    '<h2><span class="no">' + (ui.current+1) + ' / ' + SECTION_DEFS.length + '</span>' + esc(def.name) + '</h2>' +
+    '<div class="hd-spacer" style="flex:1"></div>';
+  if (def.optional){
+    html += '<label class="toggle"><input type="checkbox" id="secEnabled"' + (sec.enabled ? " checked" : "") +
+      '>この号に' + esc(def.name) + 'を入れる</label>';
+  }
+  html += '<label class="toggle"><input type="checkbox" id="secDone"' + (sec.done ? " checked" : "") +
+    '>このページの編集を完了にする</label></div>' +
+    '<p class="hint">' + esc(def.hint) + '</p>';
+
+  if (!sec.enabled){
+    html += '<div class="empty">このページは今号では使いません。使う場合は上のスイッチをオンにしてください。</div>';
+    card.innerHTML = html;
+    bindSectionHead(sec);
+    renderNav();
+    return;
+  }
+
+  html += '<div class="toolbar">' +
+    '<span class="sel-count">' + def.itemLabel + '：<strong>' + sec.entries.length + '</strong> 本 / 合計 ' +
+      sec.entries.reduce(function(a,e){ return a + countChars(e.body); }, 0) + ' 字</span>' +
+    '<button class="btn btn-sm" id="btnAddEntry">＋ ' + esc(def.itemLabel) + 'を追加</button>' +
+    '<button class="btn btn-sm btn-primary" id="btnInsertDraft">原稿ボックスから挿入</button>' +
+    '</div>';
+
+  if (!sec.entries.length){
+    html += '<div class="empty">まだ記事がありません。「原稿ボックスから挿入」で取り込み済みの原稿を差し込むか、空の' +
+      esc(def.itemLabel) + 'を追加してください。</div>';
+  }
+
+  sec.entries.forEach(function(e, i){
+    const c = countChars(e.body);
+    let cls = "", note = c + " 字";
+    if (e.target > 0){
+      note = c + " / " + e.target + " 字";
+      if (c > e.target) { cls = "count-over"; note += "（" + (c - e.target) + "字オーバー）"; }
+      else if (c >= e.target * 0.9) { cls = "count-near"; note += "（あと" + (e.target - c) + "字）"; }
+      else { cls = "count-ok"; note += "（あと" + (e.target - c) + "字）"; }
+    }
+    html += '<div class="entry" data-eid="' + esc(e.id) + '">' +
+      '<div class="entry-head">' +
+        '<span class="idx">' + (i+1) + '</span>' +
+        '<input class="title e-title" type="text" placeholder="' + esc(def.titlePh) + '" value="' + esc(e.title) + '">' +
+        '<input class="author e-author" type="text" placeholder="' + esc(def.authorLabel) + '" value="' + esc(e.author) + '">' +
+        '<button class="btn btn-sm e-up" title="上へ"' + (i===0?" disabled":"") + '>↑</button>' +
+        '<button class="btn btn-sm e-down" title="下へ"' + (i===sec.entries.length-1?" disabled":"") + '>↓</button>' +
+        '<button class="btn btn-sm btn-danger e-del">削除</button>' +
+      '</div>' +
+      '<div class="entry-body"><textarea class="e-body" placeholder="本文を入力してください">' + esc(e.body) + '</textarea></div>' +
+      '<div class="entry-foot">' +
+        '<span class="' + cls + '">' + note + '</span>' +
+        '<label>目標字数 <input class="target e-target" type="number" min="0" step="50" value="' + (e.target||"") + '" placeholder="—"></label>' +
+        '<label style="flex:1;display:flex;gap:6px;align-items:center">メモ ' +
+          '<input class="e-memo" type="text" value="' + esc(e.memo) + '" placeholder="写真の指定、確認事項など" ' +
+          'style="flex:1;border:1px solid var(--line);border-radius:6px;padding:3px 7px"></label>' +
+      '</div></div>';
+  });
+
+  html += '<div style="margin-top:10px">' +
+    '<label class="hint" style="display:block;margin-bottom:4px">このページ全体のメモ（誌面に出力されません）</label>' +
+    '<textarea id="secNote" class="paste" style="min-height:60px" placeholder="レイアウトの指示、校正メモなど">' + esc(sec.note) + '</textarea></div>';
+
+  card.innerHTML = html;
+  bindSectionHead(sec);
+  bindEntries(sec);
+  renderNav();
+}
+
+function bindSectionHead(sec){
+  const en = document.getElementById("secEnabled");
+  if (en) en.onchange = function(){ sec.enabled = this.checked; if(!sec.enabled) sec.done=false; save(); renderEdit(); renderOut(); };
+  const dn = document.getElementById("secDone");
+  if (dn) dn.onchange = function(){ sec.done = this.checked; save(); renderStepper(); };
+  const note = document.getElementById("secNote");
+  if (note) note.oninput = function(){ sec.note = this.value; save(); };
+
+  const add = document.getElementById("btnAddEntry");
+  if (add) add.onclick = function(){ sec.entries.push(newEntry()); save(); renderEdit(); };
+  const ins = document.getElementById("btnInsertDraft");
+  if (ins) ins.onclick = function(){ openInsertDialog(sec); };
+}
+
+function bindEntries(sec){
+  document.querySelectorAll("#sectionCard .entry").forEach(function(el){
+    const eid = el.getAttribute("data-eid");
+    let idx = -1, entry = null;
+    for (let i=0;i<sec.entries.length;i++){ if (sec.entries[i].id === eid){ idx=i; entry=sec.entries[i]; break; } }
+    if (!entry) return;
+
+    el.querySelector(".e-title").oninput  = function(){ entry.title = this.value; save(); };
+    el.querySelector(".e-author").oninput = function(){ entry.author = this.value; save(); };
+    el.querySelector(".e-memo").oninput   = function(){ entry.memo = this.value; save(); };
+    el.querySelector(".e-target").oninput = function(){
+      entry.target = Math.max(0, parseInt(this.value,10) || 0);
+      save(); updateCount(el, entry);
+    };
+    const ta = el.querySelector(".e-body");
+    ta.oninput = function(){ entry.body = this.value; save(); updateCount(el, entry); renderStepper(); };
+
+    el.querySelector(".e-up").onclick = function(){
+      if (idx <= 0) return;
+      const t = sec.entries[idx-1]; sec.entries[idx-1] = sec.entries[idx]; sec.entries[idx] = t;
+      save(); renderEdit();
+    };
+    el.querySelector(".e-down").onclick = function(){
+      if (idx >= sec.entries.length-1) return;
+      const t = sec.entries[idx+1]; sec.entries[idx+1] = sec.entries[idx]; sec.entries[idx] = t;
+      save(); renderEdit();
+    };
+    el.querySelector(".e-del").onclick = function(){
+      const label = entry.title || "（無題の記事）";
+      openModal("記事の削除",
+        '<div class="warn-box">「' + esc(label) + '」を削除します。本文（' + countChars(entry.body) +
+        '字）も一緒に消えます。この操作は取り消せません。</div>',
+        [{ label:"キャンセル", onClick:closeModal },
+         { label:"削除する", cls:"btn-danger", onClick:function(){
+             sec.entries.splice(idx,1); save(); renderEdit(); closeModal(); toast("記事を削除しました");
+           } }]);
+    };
+  });
+}
+
+function updateCount(el, entry){
+  const c = countChars(entry.body);
+  const span = el.querySelector(".entry-foot > span");
+  if (!span) return;
+  span.className = "";
+  if (entry.target > 0){
+    if (c > entry.target){ span.className = "count-over"; span.textContent = c + " / " + entry.target + " 字（" + (c-entry.target) + "字オーバー）"; }
+    else if (c >= entry.target*0.9){ span.className = "count-near"; span.textContent = c + " / " + entry.target + " 字（あと" + (entry.target-c) + "字）"; }
+    else { span.className = "count-ok"; span.textContent = c + " / " + entry.target + " 字（あと" + (entry.target-c) + "字）"; }
+  } else {
+    span.textContent = c + " 字";
+  }
+}
+
+function renderNav(){
+  const act = activeSections();
+  const sec = state.sections[ui.current];
+  let pos = 0;
+  for (let i=0;i<act.length;i++) if (act[i].id === sec.id){ pos = i+1; break; }
+  document.getElementById("navLabel").textContent =
+    sec.enabled ? ("使用するページのうち " + pos + " 番目") : "このページは今号では使いません";
+  document.getElementById("btnPrev").disabled = ui.current === 0;
+  document.getElementById("btnNext").disabled = ui.current === state.sections.length - 1;
+}
+
+/* ---- 原稿ボックスから挿入 ---- */
+function openInsertDialog(sec){
+  const def = sectionDef(sec.id);
+  const cands = state.drafts.filter(function(d){ return !d.assignedTo || d.assignedTo === sec.id; });
+  if (!cands.length){
+    openModal("原稿ボックスから挿入",
+      '<div class="empty">挿入できる原稿がありません。<br>「原稿ボックス」タブで原稿を取り込んでください。</div>',
+      [{ label:"閉じる", onClick:closeModal }]);
+    return;
+  }
+  let html = '<p class="hint">' + esc(def.name) + ' に差し込む原稿を選んでください（複数選択可）。挿入した原稿はこのページに割り当て済みになります。</p>';
+  cands.forEach(function(d){
+    html += '<label class="pick-item">' +
+      '<input type="checkbox" class="pick" value="' + esc(d.id) + '"' +
+        (d.assignedTo === sec.id ? " checked" : "") + '>' +
+      '<span><strong>' + esc(d.name) + '</strong> ' +
+      '<span style="color:var(--muted);font-size:12px">（' + countChars(d.text) + '字' +
+      (d.assignedTo === sec.id ? " / 割り当て済み" : "") + '）</span>' +
+      '<div class="d-excerpt">' + esc(d.text.replace(/\s+/g," ").slice(0,80)) + '</div></span></label>';
+  });
+  openModal("原稿ボックスから挿入", html, [
+    { label:"キャンセル", onClick:closeModal },
+    { label:"選択した原稿を挿入", cls:"btn-primary", onClick:function(){
+        const ids = Array.prototype.slice.call(document.querySelectorAll(".pick:checked"))
+          .map(function(c){ return c.value; });
+        if (!ids.length){ toast("原稿が選択されていません"); return; }
+        let n = 0;
+        ids.forEach(function(id){
+          const d = state.drafts.filter(function(x){ return x.id === id; })[0];
+          if (!d) return;
+          const lines = d.text.split("\n");
+          let title = "", body = d.text;
+          if (/^#{1,6}\s+\S/.test(lines[0])){
+            title = lines[0].replace(/^#{1,6}\s*/,"").trim();
+            body = lines.slice(1).join("\n").replace(/^\n+/,"");
+          } else {
+            title = d.name;
+          }
+          sec.entries.push(newEntry({ title:title, body:body }));
+          d.assignedTo = sec.id;
+          n++;
+        });
+        save(); closeModal(); renderAll(); toast(n + " 件を挿入しました");
+      } }
+  ]);
+}
+
+/* ============================================================
+   書き出し
+   ============================================================ */
+function buildMarkdown(){
+  const out = [];
+  const no = state.issue.no ? "第" + state.issue.no + "号" : "";
+  const date = state.issue.date || "";
+  out.push("# 議会だより" + (no ? " " + no : ""));
+  if (date) out.push("発行日：" + date);
+  out.push("");
+
+  state.sections.forEach(function(sec, i){
+    if (!sec.enabled) return;
+    const def = SECTION_DEFS[i];
+    out.push("## " + (i+1) + ". " + def.name);
+    out.push("");
+    if (!sec.entries.length){
+      out.push("_（原稿未入力）_");
+      out.push("");
+      return;
+    }
+    sec.entries.forEach(function(e){
+      const t = e.title || "（無題）";
+      out.push("### " + t + (e.author ? "　／　" + e.author : ""));
+      out.push("");
+      out.push(e.body || "_（本文未入力）_");
+      out.push("");
+    });
+  });
+  return out.join("\n");
+}
+
+function buildPlain(){
+  return buildMarkdown()
+    .replace(/^#{1,6}\s*/gm,"")
+    .replace(/_（(.+?)）_/g,"（$1）");
+}
+
+function renderOut(){
+  document.getElementById("preview").textContent = buildMarkdown();
+
+  const act = activeSections();
+  const entries = act.reduce(function(a,s){ return a + s.entries.length; }, 0);
+  const chars = act.reduce(function(a,s){
+    return a + s.entries.reduce(function(b,e){ return b + countChars(e.body); }, 0);
+  }, 0);
+  const doneCnt = act.filter(function(s){ return s.done; }).length;
+  const unassigned = state.drafts.filter(function(d){ return !d.assignedTo; }).length;
+
+  const stats = [
+    ["使用ページ数", act.length + " / " + SECTION_DEFS.length],
+    ["編集完了", doneCnt + " / " + act.length],
+    ["記事数", entries + " 本"],
+    ["総文字数", chars + " 字"],
+    ["未割り当ての原稿", unassigned + " 件"]
+  ];
+  document.getElementById("statGrid").innerHTML = stats.map(function(s){
+    return '<div class="stat"><div class="k">' + esc(s[0]) + '</div><div class="v">' + esc(s[1]) + '</div></div>';
+  }).join("");
+}
+
+/* ============================================================
+   画面切り替え・全体描画
+   ============================================================ */
+function showView(name){
+  ui.view = name;
+  document.querySelectorAll("nav.tabs button").forEach(function(b){
+    b.classList.toggle("active", b.getAttribute("data-view") === name);
+  });
+  document.querySelectorAll(".view").forEach(function(v){
+    v.classList.toggle("active", v.id === "view-" + name);
+  });
+  if (name === "edit") renderEdit();
+  if (name === "out") renderOut();
+}
+
+function fillSectionSelects(){
+  const opts = SECTION_DEFS.map(function(d,i){
+    return '<option value="' + d.id + '">' + (i+1) + '. ' + esc(d.name) + '</option>';
+  }).join("");
+  document.getElementById("pasteTarget").innerHTML = '<option value="">割り当てなし</option>' + opts;
+  document.getElementById("bulkAssign").innerHTML = '<option value="">選択した原稿を割り当て…</option>' + opts;
+  document.getElementById("filterAssign").innerHTML =
+    '<option value="all">すべて表示</option><option value="unassigned">未割り当てのみ</option>' + opts;
+}
+
+function renderAll(){
+  renderDrafts();
+  renderStepper();
+  if (ui.view === "edit") renderEdit();
+  if (ui.view === "out") renderOut();
+}
+
+/* ============================================================
+   イベント登録
+   ============================================================ */
+function init(){
+  load();
+  fillSectionSelects();
+
+  document.getElementById("issueNo").value = state.issue.no;
+  document.getElementById("issueDate").value = state.issue.date;
+  document.getElementById("issueNo").oninput = function(){ state.issue.no = this.value; save(); };
+  document.getElementById("issueDate").oninput = function(){ state.issue.date = this.value; save(); };
+
+  // タブ
+  document.querySelectorAll("nav.tabs button").forEach(function(b){
+    b.onclick = function(){ showView(b.getAttribute("data-view")); };
+  });
+
+  // 取り込み
+  const fi = document.getElementById("fileInput");
+  document.getElementById("btnPickFile").onclick = function(){ fi.click(); };
+  fi.onchange = function(){ readFiles(fi.files); fi.value = ""; };
+
+  const dz = document.getElementById("dropzone");
+  ["dragenter","dragover"].forEach(function(ev){
+    dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.add("over"); });
+  });
+  ["dragleave","drop"].forEach(function(ev){
+    dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.remove("over"); });
+  });
+  dz.addEventListener("drop", function(e){ readFiles(e.dataTransfer.files); });
+
+  document.getElementById("btnAddPaste").onclick = function(){
+    const ta = document.getElementById("pasteArea");
+    const chunks = splitText(ta.value, currentSplitMode());
+    if (!chunks.length){ toast("本文が入力されていません"); return; }
+    addDrafts(chunks, "貼り付け", document.getElementById("pasteTarget").value);
+    ta.value = "";
+  };
+
+  // 一覧の操作
+  document.getElementById("searchBox").oninput = function(){ ui.search = this.value; renderDrafts(); };
+  document.getElementById("filterAssign").onchange = function(){ ui.filter = this.value; renderDrafts(); };
+
+  document.getElementById("chkAll").onchange = function(){
+    const list = visibleDrafts();
+    if (this.checked) list.forEach(function(d){ ui.selected.add(d.id); });
+    else list.forEach(function(d){ ui.selected.delete(d.id); });
+    renderDrafts();
+  };
+
+  document.getElementById("draftTableWrap").addEventListener("click", function(e){
+    const t = e.target;
+    if (t.classList.contains("chk-draft")){
+      const id = t.getAttribute("data-id");
+      if (t.checked) ui.selected.add(id); else ui.selected.delete(id);
+      renderDrafts();
+    } else if (t.classList.contains("act-del")){
+      deleteOne(t.getAttribute("data-id"));
+    } else if (t.classList.contains("act-view")){
+      viewDraft(t.getAttribute("data-id"));
+    }
+  });
+
+  document.getElementById("btnBulkDelete").onclick = bulkDelete;
+
+  document.getElementById("btnBulkUnassign").onclick = function(){
+    let n = 0;
+    state.drafts.forEach(function(d){ if (ui.selected.has(d.id) && d.assignedTo){ d.assignedTo = null; n++; } });
+    save(); renderAll(); toast(n + " 件の割り当てを解除しました");
+  };
+
+  document.getElementById("bulkAssign").onchange = function(){
+    const sid = this.value;
+    this.value = "";
+    if (!sid || !ui.selected.size) return;
+    let n = 0;
+    state.drafts.forEach(function(d){ if (ui.selected.has(d.id)){ d.assignedTo = sid; n++; } });
+    save(); renderAll(); toast(n + " 件を「" + sectionName(sid) + "」に割り当てました");
+  };
+
+  // 編集ナビ
+  document.getElementById("btnPrev").onclick = function(){ stepRelative(-1); };
+  document.getElementById("btnNext").onclick = function(){ stepRelative(1); };
+
+  // 書き出し
+  document.getElementById("btnCopyMd").onclick = function(){
+    const text = buildMarkdown();
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ toast("コピーしました"); },
+        function(){ toast("コピーできませんでした"); });
+    } else toast("この環境ではコピーできません");
+  };
+  document.getElementById("btnDownloadMd").onclick = function(){
+    download(fileBase() + ".md", buildMarkdown(), "text/markdown");
+  };
+  document.getElementById("btnDownloadTxt").onclick = function(){
+    download(fileBase() + ".txt", buildPlain(), "text/plain");
+  };
+  document.getElementById("btnPrint").onclick = function(){ window.print(); };
+
+  // バックアップ
+  document.getElementById("btnExportJson").onclick = function(){
+    download(fileBase() + "-backup.json", JSON.stringify(state, null, 2), "application/json");
+  };
+  document.getElementById("btnImportJson").onclick = function(){
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = ".json";
+    inp.onchange = function(){
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = function(){
+        let data;
+        try { data = JSON.parse(String(r.result)); }
+        catch(err){ toast("JSONを読み込めませんでした"); return; }
+        openModal("バックアップの復元",
+          '<div class="warn-box">現在の編集内容をすべて破棄して、バックアップの内容に置き換えます。この操作は取り消せません。</div>',
+          [{ label:"キャンセル", onClick:closeModal },
+           { label:"復元する", cls:"btn-danger", onClick:function(){
+               state = migrate(data);
+               ui.selected.clear();
+               document.getElementById("issueNo").value = state.issue.no;
+               document.getElementById("issueDate").value = state.issue.date;
+               save(); renderAll(); closeModal(); toast("復元しました");
+             } }]);
+      };
+      r.readAsText(f, "UTF-8");
+    };
+    inp.click();
+  };
+
+  document.getElementById("btnResetAll").onclick = function(){
+    openModal("すべて消去",
+      '<div class="warn-box">取り込んだ原稿と誌面の本文をすべて削除して、まっさらな状態に戻します。' +
+      'この操作は取り消せません。必要なら先に「バックアップ保存」をしてください。</div>',
+      [{ label:"キャンセル", onClick:closeModal },
+       { label:"すべて消去する", cls:"btn-danger", onClick:function(){
+           state = blankState(); ui.selected.clear(); ui.current = 0;
+           document.getElementById("issueNo").value = "";
+           document.getElementById("issueDate").value = "";
+           save(); renderAll(); closeModal(); toast("消去しました");
+         } }]);
+  };
+
+  renderAll();
+  setSaveState("自動保存が有効です（このブラウザに保存されます）");
+}
+
+function fileBase(){
+  return "gikai-dayori" + (state.issue.no ? "-" + String(state.issue.no).replace(/[^0-9A-Za-z]/g,"") : "");
+}
+
+init();
+</script>
+</body>
+</html>
