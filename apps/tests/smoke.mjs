@@ -32,7 +32,15 @@ const d = (offset) => {
   return [x.getFullYear(), String(x.getMonth() + 1).padStart(2, "0"), String(x.getDate()).padStart(2, "0")].join("-");
 };
 
-const launchOptions = { args: ["--allow-file-access-from-files", "--no-sandbox"] };
+const launchOptions = {
+  args: [
+    "--allow-file-access-from-files",
+    "--no-sandbox",
+    // カメラの代わりに疑似映像を使う（読み取り処理が例外なく回ることの確認用）
+    "--use-fake-ui-for-media-stream",
+    "--use-fake-device-for-media-stream",
+  ],
+};
 if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMIUM_PATH;
 
 const browser = await chromium.launch(launchOptions);
@@ -171,6 +179,109 @@ ok((await page.locator("li.item[data-id]").count()) === 2, "再読込後もデ�
 const exported = await page.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1")));
 ok(exported.v === 1 && Array.isArray(exported.items) && "dueOn" in exported.items[0] && "status" in exported.items[0],
   "書き出しJSONの項目名（/brief が読む形式）");
+
+/* ---------------- バーコード読み取り ---------------- */
+console.log("== バーコード読み取り（apps/fridge）==");
+await page.goto("file://" + path.join(ROOT, "apps/fridge/index.html"));
+await page.evaluate(() => localStorage.clear());
+await page.reload();
+
+// 画像からの読み取り（ean.js の decodeImageData をブラウザ上で確認）
+const decoded = await page.evaluate(() => {
+  const L = ["0001101","0011001","0010011","0111101","0100011","0110001","0101111","0111011","0110111","0001011"];
+  const R = L.map((s) => s.split("").map((c) => (c === "0" ? "1" : "0")).join(""));
+  const G = R.map((s) => s.split("").reverse().join(""));
+  const PARITY = ["LLLLLL","LLGLGG","LLGGLG","LLGGGL","LGLLGG","LGGLLG","LGGGLL","LGLGLG","LGLGGL","LGGLGL"];
+  const code = "4901777018884";
+  const parity = PARITY[Number(code[0])];
+  let bars = "101";
+  for (let i = 1; i <= 6; i++) bars += (parity[i - 1] === "L" ? L : G)[Number(code[i])];
+  bars += "01010";
+  for (let i = 7; i <= 12; i++) bars += R[Number(code[i])];
+  bars += "101";
+
+  const scale = 3, quiet = 24;
+  const cv = document.createElement("canvas");
+  cv.width = bars.length * scale + quiet * 2;
+  cv.height = 120;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = "#000";
+  for (let i = 0; i < bars.length; i++) {
+    if (bars[i] === "1") ctx.fillRect(quiet + i * scale, 10, scale, cv.height - 20);
+  }
+  return {
+    normal: window.EAN.decodeImageData(ctx.getImageData(0, 0, cv.width, cv.height)),
+    blank: window.EAN.decodeImageData(new ImageData(200, 60)),
+  };
+});
+ok(decoded.normal === "4901777018884", "描画したバーコード画像を読み取れる");
+ok(decoded.blank === null, "何も写っていない画像は読み取らない");
+
+// カメラを開いて読み取りループが例外なく回ること（疑似カメラを使用）
+await page.click("#scanBtn");
+ok((await page.locator("#scanModal").isVisible()), "「バーコードで追加」でカメラ画面が開く");
+await page.waitForFunction(() => !/起動しています/.test(document.getElementById("scanStatus").textContent), null, { timeout: 8000 });
+const scanStatus = await page.locator("#scanStatus").textContent();
+ok(/枠の中に合わせて|カメラ|https/.test(scanStatus), "カメラの状態が表示される（" + scanStatus.slice(0, 24) + "…）");
+await page.waitForTimeout(600); // 読み取りループを数回まわす
+await page.click("#scanClose");
+ok(!(await page.locator("#scanModal").isVisible()), "閉じるでカメラ画面が閉じる");
+ok(await page.evaluate(() => !document.getElementById("scanVideo").srcObject), "閉じるとカメラを解放する");
+
+// 番号の手入力 → 初回は品名を聞く
+await page.click("#scanBtn");
+await page.fill("#manualCode", "4901777018884");
+await page.click("#manualOk");
+ok(!(await page.locator("#scanModal").isVisible()), "手入力の確定で画面が閉じる");
+ok((await page.locator("#pendingCode").textContent()).includes("4901777018884"), "読み取った番号が表示される");
+ok((await page.inputValue("#f-name")) === "", "初めての番号は品名が空のまま");
+await page.fill("#f-name", "牛乳");
+await page.fill("#f-unit", "本");
+await page.fill("#f-expires", d(5));
+await page.click("#submitBtn");
+ok((await page.locator("li.item[data-id]").count()) === 1, "バーコード付きで登録できる");
+ok((await page.locator("#pendingCodeRow").isVisible()) === false, "登録後は番号の表示が消える");
+ok((await page.locator("#codeCount").textContent()).includes("1件"), "登録済みバーコードが1件になる");
+
+// 2回目の読み取りは品名が自動で入る
+await page.click("#scanBtn");
+await page.fill("#manualCode", "4901777018884");
+await page.click("#manualOk");
+ok((await page.inputValue("#f-name")) === "牛乳", "2回目は品名が自動で入る");
+ok((await page.inputValue("#f-unit")) === "本", "単位も自動で入る");
+ok((await page.inputValue("#f-qty")) === "1", "数量は1に戻る");
+
+// 桁数が足りない入力は受け付けない
+await page.click("#scanBtn");
+await page.fill("#manualCode", "123");
+await page.click("#manualOk");
+ok((await page.locator("#scanModal").isVisible()), "桁数が足りない番号では閉じない");
+await page.click("#scanClose");
+
+// バーコード辞書が保存され、再読込後も残る
+await page.reload();
+ok((await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("fridge.v1")).codes).length)) === 1,
+  "バーコードと品名の対応が保存される");
+
+/* ---------------- スマートフォンでの表示 ---------------- */
+console.log("== スマートフォン表示 ==");
+const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const mp = await mobile.newPage();
+for (const [name, file] of [["冷蔵庫", "apps/fridge/index.html"], ["書類トラッカー", "apps/docs-tracker/index.html"]]) {
+  await mp.goto("file://" + path.join(ROOT, file));
+  const overflow = await mp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  ok(overflow <= 1, name + "：横スクロールが出ない");
+  ok(await mp.locator(".scanbar, .actionbar").isVisible(), name + "：下部の操作バーが出る");
+  const fontOk = await mp.evaluate(() => {
+    const el = document.querySelector("input");
+    return parseFloat(getComputedStyle(el).fontSize) >= 16;
+  });
+  ok(fontOk, name + "：入力欄の文字が16px以上（iOSで拡大されない）");
+  ok(await mp.evaluate(() => !!document.querySelector('link[rel="manifest"]')), name + "：マニフェストを読み込んでいる");
+}
+await mobile.close();
 
 console.log("\nJSエラー: " + (errors.length ? "\n  " + errors.join("\n  ") : "なし"));
 if (errors.length) failures++;

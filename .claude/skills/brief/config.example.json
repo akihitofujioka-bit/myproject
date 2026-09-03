@@ -49,6 +49,12 @@
     "dir": "reports/brief",
     "overwrite": "ask",
     "maxLines": 20,
-    "_note": "overwrite: ask | append | replace"
+    "drive": {
+      "enabled": true,
+      "folderId": "1hMd8_qucMKNL_RzNmuFjYVxgAoAhzYKV",
+      "folderName": "日報・週報"
+    },
+    "_note": "overwrite: ask | append | replace",
+    "_note_drive": "スマートフォンで読むための出力先。report.config.json と同じフォルダに入れている"
   }
 }

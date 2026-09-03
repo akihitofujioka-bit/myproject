@@ -2,8 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>書類・回覧の期限トラッカー</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f6fed">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="書類期限">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
 <style>
 :root {
   color-scheme: light dark;
@@ -151,6 +159,24 @@ li.item.done { opacity: .62; }
   opacity: 0; transition: opacity .2s; pointer-events: none;
 }
 .toast.show { opacity: 1; }
+
+/* ---- スマートフォン対応 ---- */
+.wrap { padding-bottom: 104px; }
+input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大されるのを防ぐ */
+.actionbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; gap: 8px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+.actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
+.actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+@media (max-width: 640px) {
+  .wrap { padding-left: 12px; padding-right: 12px; }
+  button { min-height: 44px; }
+  .item-actions button { flex: 1 1 auto; }
+  .chip { min-height: 36px; }
+}
 </style>
 </head>
 <body>
@@ -259,6 +285,14 @@ li.item.done { opacity: .62; }
     </p>
   </section>
 </div>
+
+<div class="actionbar">
+  <div>
+    <button type="button" class="primary" id="jumpAdd">書類を登録する</button>
+    <button type="button" id="jumpDue">期限が近いものへ</button>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -670,6 +704,23 @@ document.getElementById("importFile").addEventListener("change", function (e) {
   reader.readAsText(file);
   e.target.value = "";
 });
+
+document.getElementById("jumpAdd").addEventListener("click", function () {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  document.getElementById("f-title").focus();
+});
+document.getElementById("jumpDue").addEventListener("click", function () {
+  var first = document.querySelector("#list li.item");
+  if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+  else toast("未処理の書類はありません");
+});
+
+/* ---------- オフラインで使えるようにする ---------- */
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () { /* 使えなくても通常動作に影響はない */ });
+  });
+}
 
 render();
 </script>

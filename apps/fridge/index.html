@@ -2,8 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>冷蔵庫の在庫・賞味期限管理</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f6fed">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="冷蔵庫">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
 <style>
 :root {
   color-scheme: light dark;
@@ -141,6 +149,43 @@ li.item.none { border-left-color: var(--border); }
   opacity: 0; transition: opacity .2s; pointer-events: none;
 }
 .toast.show { opacity: 1; }
+
+/* ---- スマートフォン対応 ---- */
+.wrap { padding-bottom: 104px; }
+input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大されるのを防ぐ */
+.scanbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; gap: 8px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+.scanbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
+.scanbar button { flex: 1; min-height: 48px; font-weight: 700; }
+@media (max-width: 640px) {
+  .wrap { padding-left: 12px; padding-right: 12px; }
+  button { min-height: 44px; }
+  .item-actions button { flex: 1 1 auto; }
+  .chip { min-height: 36px; }
+}
+
+/* ---- バーコード読み取り ---- */
+.modal[hidden] { display: none; }
+.modal {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(0, 0, 0, .72);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.modal-inner {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: min(560px, 100%); max-height: 92vh; overflow: auto; padding: 14px;
+}
+.scan-frame { position: relative; }
+#scanVideo { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #000; border-radius: 8px; }
+.scan-frame .guide {
+  position: absolute; left: 8%; right: 8%; top: 38%; height: 24%;
+  border: 2px solid #fff; border-radius: 6px; pointer-events: none;
+}
+#pendingCode:not([hidden]) { display: inline-block; margin-left: 8px; }
 </style>
 </head>
 <body>
@@ -154,6 +199,10 @@ li.item.none { border-left-color: var(--border); }
 
   <section class="card">
     <h2 id="formTitle">食材を追加</h2>
+    <p class="footnote" id="pendingCodeRow" hidden style="margin:-6px 0 8px">
+      読み取ったバーコード：<span class="badge" id="pendingCode"></span>
+      <button type="button" class="link small" id="pendingCodeClear">解除</button>
+    </p>
     <form id="itemForm">
       <div class="row">
         <div class="field wide">
@@ -235,8 +284,9 @@ li.item.none { border-left-color: var(--border); }
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
     <p class="footnote" style="margin:10px 0 0">
-      「期限が近い食材をコピー」は献立を相談するときに貼り付けて使えます。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。
+      「期限が近い食材をコピー」は献立を相談するときに貼り付けて使えます。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
     </p>
+    <p class="footnote" id="codeCount" style="margin:6px 0 0"></p>
   </section>
 
   <section class="card">
@@ -245,8 +295,38 @@ li.item.none { border-left-color: var(--border); }
     <ul class="items" id="lossList" style="margin-top:8px"></ul>
   </section>
 </div>
+
+<div class="scanbar">
+  <div>
+    <button type="button" class="primary" id="scanBtn">バーコードで追加</button>
+    <button type="button" id="jumpAdd">手で入力</button>
+  </div>
+</div>
+
+<div class="modal" id="scanModal" hidden role="dialog" aria-modal="true" aria-labelledby="scanTitle">
+  <div class="modal-inner">
+    <h2 id="scanTitle">バーコードを読み取る</h2>
+    <div class="scan-frame">
+      <video id="scanVideo" playsinline muted></video>
+      <div class="guide"></div>
+    </div>
+    <p class="footnote" id="scanStatus" role="status" aria-live="polite">カメラを起動しています…</p>
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:4px">
+      <div class="field wide" style="flex:1">
+        <label for="manualCode">読み取れないときは番号を手入力</label>
+        <input id="manualCode" inputmode="numeric" pattern="[0-9]*" placeholder="例：4901777018884" autocomplete="off">
+      </div>
+      <button type="button" id="manualOk">確定</button>
+    </div>
+    <div class="chips" style="margin-top:12px">
+      <button type="button" id="scanClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<script src="ean.js"></script>
 <script>
 "use strict";
 
@@ -260,20 +340,25 @@ var filters = { q: "", place: "すべて", sort: "due" };
 function load() {
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { v: 1, items: [], log: [] };
-    var data = JSON.parse(raw);
-    return normalize(data);
+    if (!raw) return emptyState();
+    return normalize(JSON.parse(raw));
   } catch (e) {
-    return { v: 1, items: [], log: [] };
+    return emptyState();
   }
 }
 
+function emptyState() {
+  return { v: 1, items: [], log: [], codes: {} };
+}
+
 function normalize(data) {
-  if (!data || typeof data !== "object") return { v: 1, items: [], log: [] };
+  if (!data || typeof data !== "object") return emptyState();
   return {
     v: 1,
     items: Array.isArray(data.items) ? data.items.filter(function (it) { return it && it.name; }) : [],
-    log: Array.isArray(data.log) ? data.log : []
+    log: Array.isArray(data.log) ? data.log : [],
+    // バーコード（JANコード）と品名の対応。一度登録すると次回から自動で入る
+    codes: (data.codes && typeof data.codes === "object") ? data.codes : {}
   };
 }
 
@@ -450,12 +535,19 @@ function renderLoss() {
   }).join("");
 }
 
+function renderCodeCount() {
+  var n = Object.keys(state.codes).length;
+  document.getElementById("codeCount").textContent =
+    n ? "登録済みのバーコード：" + n + "件" : "";
+}
+
 function render() {
   renderStats();
   renderFilters();
   renderRecent();
   renderList();
   renderLoss();
+  renderCodeCount();
 }
 
 /* ---------- 操作 ---------- */
@@ -483,6 +575,12 @@ form.addEventListener("submit", function (e) {
   } else {
     values.id = uid();
     values.createdAt = new Date().toISOString();
+    if (pendingCode) {
+      values.code = pendingCode;
+      // 次回このバーコードを読んだときに、品名・単位・保管場所を自動で入れる
+      state.codes[pendingCode] = { name: values.name, unit: values.unit, place: values.place };
+      clearPendingCode();
+    }
     state.items.push(values);
     toast("追加しました");
     form.reset();
@@ -511,6 +609,7 @@ function startEditing(item) {
 
 function stopEditing() {
   editingId = null;
+  clearPendingCode();
   form.reset();
   document.getElementById("f-qty").value = "1";
   document.getElementById("f-unit").value = "個";
@@ -671,6 +770,211 @@ document.getElementById("importFile").addEventListener("change", function (e) {
   reader.readAsText(file);
   e.target.value = "";
 });
+
+/* ---------- バーコード読み取り ---------- */
+
+/*
+ * 読み取りは2段構え。
+ *  1. 端末が BarcodeDetector API に対応していれば、それを使う（Android Chrome など。精度が高い）
+ *  2. 非対応のとき（iOS の Safari など）は ean.js の自前デコーダで読む
+ * どちらも使えない・読めない場合のために、番号の手入力を常に用意している。
+ * カメラは https:// で開いたときだけ使える（ブラウザの制約）。
+ */
+
+var pendingCode = null;
+var scan = { stream: null, timer: null, detector: null, prepared: false, last: null, lastCount: 0, busy: false };
+var scanVideo = document.getElementById("scanVideo");
+var scanCanvas = document.createElement("canvas");
+
+function setScanStatus(msg) {
+  document.getElementById("scanStatus").textContent = msg;
+}
+
+function showPendingCode() {
+  document.getElementById("pendingCode").textContent = pendingCode || "";
+  document.getElementById("pendingCodeRow").hidden = !pendingCode;
+}
+
+function clearPendingCode() {
+  pendingCode = null;
+  showPendingCode();
+}
+
+function cameraErrorMessage(e) {
+  var name = e && e.name;
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "カメラの使用が許可されていません。ブラウザの設定で許可するか、番号を手入力してください。";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "使えるカメラが見つかりませんでした。番号を手入力してください。";
+  }
+  if (name === "NotReadableError") {
+    return "カメラを他のアプリが使用中です。閉じてからもう一度お試しください。";
+  }
+  return "カメラを起動できませんでした。番号を手入力してください。";
+}
+
+function prepareDetector() {
+  if (scan.prepared) return Promise.resolve();
+  scan.prepared = true;
+  if (!("BarcodeDetector" in window)) return Promise.resolve();
+  return window.BarcodeDetector.getSupportedFormats().then(function (formats) {
+    var want = ["ean_13", "ean_8", "upc_a", "upc_e"].filter(function (f) {
+      return formats.indexOf(f) >= 0;
+    });
+    if (want.length) scan.detector = new window.BarcodeDetector({ formats: want });
+  }).catch(function () { /* 対応していなければ自前デコーダに任せる */ });
+}
+
+function openScanner() {
+  document.getElementById("scanModal").hidden = false;
+  document.getElementById("manualCode").value = "";
+  scan.last = null;
+  scan.lastCount = 0;
+  setScanStatus("カメラを起動しています…");
+
+  if (!window.isSecureContext) {
+    setScanStatus("カメラは https:// で開いたときだけ使えます。番号を手入力してください。");
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setScanStatus("このブラウザはカメラに対応していません。番号を手入力してください。");
+    return;
+  }
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+  }).then(function (stream) {
+    scan.stream = stream;
+    scanVideo.srcObject = stream;
+    return scanVideo.play().catch(function () {});
+  }).then(prepareDetector).then(function () {
+    setScanStatus("バーコードを枠の中に合わせてください。");
+    scan.timer = setInterval(tickScan, 150);
+  }).catch(function (e) {
+    setScanStatus(cameraErrorMessage(e));
+  });
+}
+
+function closeScanner() {
+  document.getElementById("scanModal").hidden = true;
+  if (scan.timer) { clearInterval(scan.timer); scan.timer = null; }
+  if (scan.stream) {
+    scan.stream.getTracks().forEach(function (t) { t.stop(); });
+    scan.stream = null;
+  }
+  scanVideo.srcObject = null;
+  scan.busy = false;
+}
+
+function tickScan() {
+  if (scan.busy || !scanVideo.videoWidth) return;
+  scan.busy = true;
+  detectOnce().then(function (code) {
+    scan.busy = false;
+    if (!code) return;
+    // 同じ番号を2回続けて読めたときだけ確定する（1回だけの誤読を拾わないため）
+    if (scan.last === code) scan.lastCount++;
+    else { scan.last = code; scan.lastCount = 1; }
+    if (scan.lastCount >= 2) acceptCode(code);
+  }, function () { scan.busy = false; });
+}
+
+function detectOnce() {
+  if (scan.detector) {
+    return scan.detector.detect(scanVideo).then(function (found) {
+      if (found && found.length) return found[0].rawValue;
+      return decodeFromCanvas();
+    }).catch(function () { return decodeFromCanvas(); });
+  }
+  return Promise.resolve(decodeFromCanvas());
+}
+
+function decodeFromCanvas() {
+  if (!window.EAN || !scanVideo.videoWidth) return null;
+  var w = 640;
+  var h = Math.max(1, Math.round(w * scanVideo.videoHeight / scanVideo.videoWidth));
+  scanCanvas.width = w;
+  scanCanvas.height = h;
+  var ctx = scanCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(scanVideo, 0, 0, w, h);
+  return window.EAN.decodeImageData(ctx.getImageData(0, 0, w, h));
+}
+
+// 読み取った番号をフォームに反映する
+function acceptCode(code) {
+  closeScanner();
+  if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) { /* 対応していなければ何もしない */ } }
+  pendingCode = code;
+  showPendingCode();
+  if (editingId) stopEditingKeepCode();
+
+  var known = state.codes[code];
+  document.getElementById("f-qty").value = "1";
+  if (known) {
+    document.getElementById("f-name").value = known.name;
+    document.getElementById("f-unit").value = known.unit || "個";
+    document.getElementById("f-place").value = known.place || "冷蔵";
+    document.getElementById("f-expires").focus();
+    toast("「" + known.name + "」を読み取りました");
+  } else {
+    document.getElementById("f-name").value = "";
+    document.getElementById("f-name").focus();
+    toast("初めてのバーコードです。品名を入れると次回から自動で入ります");
+  }
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// 編集中にスキャンした場合は、編集を打ち切って新規追加に戻す（読み取った番号は残す）
+function stopEditingKeepCode() {
+  var keep = pendingCode;
+  stopEditing();
+  pendingCode = keep;
+  showPendingCode();
+}
+
+document.getElementById("scanBtn").addEventListener("click", openScanner);
+document.getElementById("pendingCodeClear").addEventListener("click", function () {
+  clearPendingCode();
+  toast("バーコードの読み取りを解除しました");
+});
+document.getElementById("scanClose").addEventListener("click", closeScanner);
+document.getElementById("scanModal").addEventListener("click", function (e) {
+  if (e.target.id === "scanModal") closeScanner();
+});
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && !document.getElementById("scanModal").hidden) closeScanner();
+});
+document.getElementById("jumpAdd").addEventListener("click", function () {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  document.getElementById("f-name").focus();
+});
+document.getElementById("manualOk").addEventListener("click", function () {
+  var code = document.getElementById("manualCode").value.replace(/[^0-9]/g, "");
+  if (code.length < 8) { setScanStatus("8桁以上の番号を入力してください。"); return; }
+  if (window.EAN && !window.EAN.checksumOk(code)) {
+    toast("チェックディジットが合いません。番号を確認してください");
+  }
+  acceptCode(code);
+});
+document.getElementById("manualCode").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") { e.preventDefault(); document.getElementById("manualOk").click(); }
+});
+// 画面を離れたらカメラを確実に止める
+window.addEventListener("pagehide", closeScanner);
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "hidden") closeScanner();
+});
+
+// テストから読み取り結果を差し込むための入口（カメラのない環境で動作を確認するため）
+window.fridgeApp = { acceptCode: acceptCode };
+
+/* ---------- オフラインで使えるようにする ---------- */
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () { /* 使えなくても通常動作に影響はない */ });
+  });
+}
 
 render();
 </script>
