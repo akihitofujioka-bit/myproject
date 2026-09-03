@@ -278,13 +278,14 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   <section class="card">
     <h2>データの持ち出し・引き継ぎ</h2>
     <div class="chips">
+      <button type="button" id="calendarSoon">期限が近い食材をカレンダーに登録</button>
       <button type="button" id="copyExpiring">期限が近い食材をコピー</button>
       <button type="button" id="exportBtn">JSONで保存</button>
       <button type="button" id="importBtn">JSONから読み込み</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
     <p class="footnote" style="margin:10px 0 0">
-      「期限が近い食材をコピー」は献立を相談するときに貼り付けて使えます。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
+      「カレンダーに登録」を押すと、期限が7日以内の食材が端末の標準カレンダーに入り、<strong>前日と当日の18時に通知</strong>が届きます。「期限が近い食材をコピー」は献立を相談するときに貼り付けて使えます。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
     </p>
     <p class="footnote" id="codeCount" style="margin:6px 0 0"></p>
   </section>
@@ -326,6 +327,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<script src="../shared/ics.js"></script>
 <script src="ean.js"></script>
 <script>
 "use strict";
@@ -702,6 +704,39 @@ document.getElementById("placeFilter").addEventListener("click", function (e) {
 });
 
 /* ---------- 持ち出し ---------- */
+
+/* ---------- カレンダーへの登録 ---------- */
+
+// 期限が近い食材を、端末の標準カレンダーの予定にする
+document.getElementById("calendarSoon").addEventListener("click", function () {
+  var target = state.items.filter(function (it) {
+    var days = daysUntil(it.expiresOn);
+    return days !== null && days <= 7;
+  }).sort(function (a, b) { return daysUntil(a.expiresOn) - daysUntil(b.expiresOn); });
+  if (!target.length) { toast("期限が近い食材はありません"); return; }
+
+  var events = target.map(function (it) {
+    return {
+      uid: it.id + "@fridge",
+      title: it.name + " の期限" + (it.qty ? "（" + it.qty + (it.unit || "") + "）" : ""),
+      date: it.expiresOn,
+      time: "18:00", // 夕食の支度前に知らせる
+      location: it.place,
+      description: (it.note ? it.note + "\n" : "") + "（冷蔵庫の在庫管理から登録）",
+      alarms: [1440, 0],
+      sequence: it.icsSeq || 0
+    };
+  });
+  var text = window.ICS.build(events, { calendarName: "食材の期限" });
+  window.ICS.deliver(text, window.ICS.filename("fridge")).then(function (how) {
+    if (how === "cancelled") return;
+    target.forEach(function (it) { it.icsSeq = (it.icsSeq || 0) + 1; });
+    save();
+    toast(how === "shared"
+      ? "カレンダーアプリを選んでください（" + target.length + "件）"
+      : "予定ファイルを保存しました（" + target.length + "件）。開くとカレンダーに登録できます");
+  });
+});
 
 document.getElementById("copyExpiring").addEventListener("click", function () {
   var soon = state.items.filter(function (it) {

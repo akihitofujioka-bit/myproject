@@ -275,12 +275,16 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   <section class="card">
     <h2>データの持ち出し・引き継ぎ</h2>
     <div class="chips">
+      <button type="button" id="calendarAll">未処理の期限をカレンダーに登録</button>
       <button type="button" id="copyDue">未処理の締切一覧をコピー</button>
       <button type="button" id="exportBtn">JSONで保存</button>
       <button type="button" id="importBtn">JSONから読み込み</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
     <p class="footnote" style="margin:10px 0 0">
+      「カレンダーに登録」を押すと、端末の標準カレンダーに期限が予定として入り、<strong>前日と当日に通知</strong>が届きます。同じ書類を登録し直すと、カレンダー側の予定も更新されます（カレンダーアプリによっては新しい予定として追加されることがあります）。
+    </p>
+    <p class="footnote" style="margin:6px 0 0">
       保存した JSON を <code>data/deadlines.json</code> に置くと、朝のブリーフ（<code>/brief</code>）が今日の締切として拾います。読み込むと今のデータは置き換わります。
     </p>
   </section>
@@ -295,6 +299,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<script src="../shared/ics.js"></script>
 <script>
 "use strict";
 
@@ -333,7 +338,8 @@ function normalize(data) {
         priority: PRIORITY_ORDER[it.priority] === undefined ? "中" : it.priority,
         note: it.note || "",
         createdAt: it.createdAt || new Date().toISOString(),
-        doneAt: it.doneAt || ""
+        doneAt: it.doneAt || "",
+        icsSeq: Number(it.icsSeq) || 0
       };
     })
   };
@@ -489,6 +495,7 @@ function renderList() {
       '<div class="item-actions">' +
         (next ? '<button type="button" class="small" data-action="advance">' + esc(next) + "にする</button>" : "") +
         (it.status !== "未着手" ? '<button type="button" class="small" data-action="back">1つ戻す</button>' : "") +
+        (it.dueOn && isOpen(it) ? '<button type="button" class="small" data-action="calendar">カレンダー</button>' : "") +
         '<button type="button" class="small link" data-action="edit">編集</button>' +
         '<button type="button" class="small link" data-action="delete">削除</button>' +
       "</div></li>";
@@ -599,6 +606,9 @@ document.getElementById("list").addEventListener("click", function (e) {
     item.status = prev;
     item.doneAt = "";
     toast(prev + "に戻しました");
+  } else if (action === "calendar") {
+    registerToCalendar([item]);
+    return;
   } else if (action === "edit") {
     startEditing(item);
     return;
@@ -633,6 +643,46 @@ document.getElementById("statusFilter").addEventListener("click", function (e) {
 });
 
 /* ---------- 持ち出し ---------- */
+
+/* ---------- カレンダーへの登録 ---------- */
+
+// 端末の標準カレンダーに読み込ませる予定を1件ぶん作る
+function toCalendarEvent(item) {
+  var parts = [];
+  if (item.note) parts.push(item.note);
+  parts.push("状態：" + item.status);
+  parts.push("（書類・回覧の期限トラッカーから登録）");
+  return {
+    uid: item.id + "@docs-tracker",
+    title: "【" + item.kind + "】" + item.title,
+    date: item.dueOn,
+    time: "09:00",
+    location: item.dest,
+    description: parts.join("\n"),
+    alarms: [1440, 0], // 前日の同時刻と、当日9時
+    sequence: item.icsSeq
+  };
+}
+
+function registerToCalendar(items) {
+  var target = items.filter(function (it) { return it.dueOn && isOpen(it); });
+  if (!target.length) { toast("期限が入った未処理の書類がありません"); return; }
+  var events = target.map(toCalendarEvent);
+  var text = window.ICS.build(events, { calendarName: "書類の期限" });
+  window.ICS.deliver(text, window.ICS.filename("deadlines")).then(function (how) {
+    if (how === "cancelled") return;
+    // 登録できたぶんだけ番号を進める（次回の登録が「更新」として扱われるように）
+    target.forEach(function (it) { it.icsSeq = (it.icsSeq || 0) + 1; });
+    save();
+    toast(how === "shared"
+      ? "カレンダーアプリを選んでください（" + target.length + "件）"
+      : "予定ファイルを保存しました（" + target.length + "件）。開くとカレンダーに登録できます");
+  });
+}
+
+document.getElementById("calendarAll").addEventListener("click", function () {
+  registerToCalendar(state.items);
+});
 
 document.getElementById("copyDue").addEventListener("click", function () {
   var open = state.items.filter(isOpen).sort(function (a, b) {

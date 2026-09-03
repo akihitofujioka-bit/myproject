@@ -33,7 +33,7 @@ jobs:
       - name: 公開するファイルだけを集める
         run: |
           mkdir -p _site
-          cp -r apps/fridge apps/docs-tracker _site/
+          cp -r apps/fridge apps/docs-tracker apps/shared _site/
           cp apps/index.html _site/index.html
           # Jekyll による加工を止める（そのままのファイルを配りたいため）
           touch _site/.nojekyll

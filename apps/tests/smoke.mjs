@@ -303,6 +303,101 @@ console.log("== apps/index.html（トップページ）==");
   await lp.close();
 }
 
+/* ---------------- カレンダーへの登録 ---------------- */
+console.log("== カレンダー登録（.ics の書き出し）==");
+{
+  const cctx = await browser.newContext({ acceptDownloads: true });
+  const cpage = await cctx.newPage();
+  const cerrs = [];
+  cpage.on("pageerror", (e) => cerrs.push(String(e)));
+
+  const readDownload = async (clickAction) => {
+    const [download] = await Promise.all([cpage.waitForEvent("download"), clickAction()]);
+    const stream = await download.createReadStream();
+    let body = "";
+    for await (const chunk of stream) body += chunk.toString("utf8");
+    return { name: download.suggestedFilename(), body };
+  };
+
+  // 書類トラッカー
+  await cpage.goto("file://" + path.join(ROOT, "apps/docs-tracker/index.html"));
+  await cpage.evaluate(() => localStorage.clear());
+  await cpage.reload();
+  const addDoc2 = async (title, due, kind, dest) => {
+    await cpage.fill("#f-title", title);
+    await cpage.selectOption("#f-kind", kind);
+    await cpage.fill("#f-dest", dest);
+    if (due) await cpage.fill("#f-due", due);
+    await cpage.click("#submitBtn");
+  };
+  await addDoc2("受講報告書", d(3), "提出", "総務課");
+  await addDoc2("備品発注伺い", d(6), "申請", "会計課");
+  await addDoc2("期限のない書類", "", "その他", "");
+
+  ok((await cpage.locator('li.item button[data-action="calendar"]').count()) === 2,
+    "期限のある書類にだけカレンダーのボタンが出る");
+
+  const one = await readDownload(() =>
+    cpage.locator("li.item", { hasText: "受講報告書" }).locator('button[data-action="calendar"]').click());
+  ok(one.name.endsWith(".ics"), "書き出されるのは .ics ファイル");
+  ok(one.body.split("BEGIN:VEVENT").length - 1 === 1, "1件ぶんの予定が入る");
+  ok(one.body.includes("SUMMARY:【提出】受講報告書"), "件名に種別と書類名が入る");
+  ok(one.body.includes("LOCATION:総務課"), "提出先が場所として入る");
+  ok(one.body.includes("DTSTART:" + d(3).replace(/-/g, "") + "T090000"), "期限日の9時に予定が入る");
+  ok(one.body.includes("TRIGGER:-P1D") && one.body.includes("TRIGGER:PT0S"), "前日と当日に通知が入る");
+
+  const seq1 = await cpage.evaluate(() =>
+    JSON.parse(localStorage.getItem("docs-tracker.v1")).items.find((i) => i.title === "受講報告書").icsSeq);
+  ok(seq1 === 1, "登録すると更新番号が進む（次回は更新として扱われる）");
+
+  const again = await readDownload(() =>
+    cpage.locator("li.item", { hasText: "受講報告書" }).locator('button[data-action="calendar"]').click());
+  ok(again.body.includes("SEQUENCE:1"), "2回目は更新番号1で書き出す");
+  ok(again.body.match(/UID:(.+)/)[1] === one.body.match(/UID:(.+)/)[1], "同じ書類なら識別子が変わらない");
+
+  const all = await readDownload(() => cpage.click("#calendarAll"));
+  ok(all.body.split("BEGIN:VEVENT").length - 1 === 2, "まとめて登録すると期限のある2件が入る");
+
+  // 完了にすると対象から外れる
+  await cpage.locator("li.item", { hasText: "備品発注伺い" }).locator('button[data-action="advance"]').click();
+  await cpage.locator("li.item", { hasText: "備品発注伺い" }).locator('button[data-action="advance"]').click();
+  await cpage.locator("li.item", { hasText: "備品発注伺い" }).locator('button[data-action="advance"]').click();
+  const afterDone = await readDownload(() => cpage.click("#calendarAll"));
+  ok(afterDone.body.split("BEGIN:VEVENT").length - 1 === 1, "完了した書類はカレンダーに登録しない");
+
+  // 冷蔵庫
+  await cpage.goto("file://" + path.join(ROOT, "apps/fridge/index.html"));
+  await cpage.evaluate(() => localStorage.clear());
+  await cpage.reload();
+  const addFood2 = async (name, expires) => {
+    await cpage.fill("#f-name", name);
+    if (expires) await cpage.fill("#f-expires", expires);
+    await cpage.click("#submitBtn");
+  };
+  await addFood2("牛乳", d(2));
+  await addFood2("たまご", d(5));
+  await addFood2("米", d(90));
+  await addFood2("塩", "");
+  const food = await readDownload(() => cpage.click("#calendarSoon"));
+  ok(food.body.split("BEGIN:VEVENT").length - 1 === 2, "期限が7日以内の2件だけを登録する");
+  ok(food.body.includes("SUMMARY:牛乳 の期限"), "件名に品名が入る");
+  ok(food.body.includes("T180000"), "食材は18時に通知する");
+  ok(!food.body.includes("米 の期限"), "期限が先の食材は入らない");
+
+  // 該当なしのときはファイルを作らない
+  await cpage.evaluate(() => localStorage.clear());
+  await cpage.reload();
+  let downloadHappened = false;
+  cpage.once("download", () => { downloadHappened = true; });
+  await cpage.click("#calendarSoon");
+  await cpage.waitForTimeout(400);
+  ok(!downloadHappened, "対象がないときはファイルを作らない");
+  ok((await cpage.locator("#toast").textContent()).includes("ありません"), "その旨を画面で知らせる");
+
+  ok(cerrs.length === 0, "JSエラーなし" + (cerrs.length ? " → " + cerrs.join(" / ") : ""));
+  await cctx.close();
+}
+
 console.log("\nJSエラー: " + (errors.length ? "\n  " + errors.join("\n  ") : "なし"));
 if (errors.length) failures++;
 await browser.close();

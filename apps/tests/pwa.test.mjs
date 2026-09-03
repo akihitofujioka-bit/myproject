@@ -81,6 +81,8 @@ for (const app of ["fridge", "docs-tracker"]) {
     ok(await page.evaluate(() => !!(window.EAN && window.EAN.decodeRow)),
       "fridge: 通信できない状態でもバーコード読み取りが使える");
   }
+  ok(await page.evaluate(() => !!(window.ICS && window.ICS.build)),
+    `${app}: 通信できない状態でもカレンダー登録が使える`);
   ok(await page.evaluate(() => {
     try { localStorage.setItem("x", "1"); localStorage.removeItem("x"); return true; } catch (e) { return false; }
   }), `${app}: 通信できない状態でもデータを保存できる`);
