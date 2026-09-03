@@ -283,6 +283,26 @@ for (const [name, file] of [["冷蔵庫", "apps/fridge/index.html"], ["書類ト
 }
 await mobile.close();
 
+/* ---------------- トップページ ---------------- */
+console.log("== apps/index.html（トップページ）==");
+{
+  const lp = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const lpage = await lp.newPage();
+  const lerrs = [];
+  lpage.on("pageerror", (e) => lerrs.push(String(e)));
+  await lpage.goto("file://" + path.join(ROOT, "apps/index.html"));
+  ok((await lpage.title()) === "日常アプリ", "タイトル");
+  ok((await lpage.locator("a.app").count()) === 2, "2つのアプリへのリンクがある");
+  const hrefs = await lpage.locator("a.app").evaluateAll((els) => els.map((e) => e.getAttribute("href")));
+  ok(hrefs.join(",") === "fridge/,docs-tracker/", "リンク先が相対パス（公開後もそのまま動く）");
+  ok((await lpage.locator("a.app img").count()) === 2, "アイコンが表示される");
+  const iconOk = await lpage.locator("a.app img").first().evaluate((el) => el.naturalWidth > 0);
+  ok(iconOk, "アイコン画像が実際に読み込める");
+  ok((await lpage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1, "横スクロールが出ない");
+  ok(lerrs.length === 0, "JSエラーなし");
+  await lp.close();
+}
+
 console.log("\nJSエラー: " + (errors.length ? "\n  " + errors.join("\n  ") : "なし"));
 if (errors.length) failures++;
 await browser.close();

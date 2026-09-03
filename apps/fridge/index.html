@@ -307,7 +307,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   <div class="modal-inner">
     <h2 id="scanTitle">バーコードを読み取る</h2>
     <div class="scan-frame">
-      <video id="scanVideo" playsinline muted></video>
+      <video id="scanVideo" playsinline muted autoplay></video>
       <div class="guide"></div>
     </div>
     <p class="footnote" id="scanStatus" role="status" aria-live="polite">カメラを起動しています…</p>
@@ -847,6 +847,11 @@ function openScanner() {
   }).then(function (stream) {
     scan.stream = stream;
     scanVideo.srcObject = stream;
+    // 近距離のバーコードにピントが合い続けるようにする（対応していない端末では無視される）
+    var track = stream.getVideoTracks()[0];
+    if (track && track.applyConstraints) {
+      track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
+    }
     return scanVideo.play().catch(function () {});
   }).then(prepareDetector).then(function () {
     setScanStatus("バーコードを枠の中に合わせてください。");
@@ -892,12 +897,17 @@ function detectOnce() {
 
 function decodeFromCanvas() {
   if (!window.EAN || !scanVideo.videoWidth) return null;
-  var w = 640;
-  var h = Math.max(1, Math.round(w * scanVideo.videoHeight / scanVideo.videoWidth));
+  var vw = scanVideo.videoWidth, vh = scanVideo.videoHeight;
+  // 画面の白い枠に相当する中央の帯だけを切り出す
+  var bandHeight = Math.max(1, Math.round(vh * 0.34));
+  var bandTop = Math.round((vh - bandHeight) / 2);
+  // 横方向は縮小しない（細いバーが潰れると読めなくなるため）。上限は処理時間の都合
+  var w = Math.min(1280, vw);
+  var h = Math.max(1, Math.round(bandHeight * (w / vw)));
   scanCanvas.width = w;
   scanCanvas.height = h;
   var ctx = scanCanvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(scanVideo, 0, 0, w, h);
+  ctx.drawImage(scanVideo, 0, bandTop, vw, bandHeight, 0, 0, w, h);
   return window.EAN.decodeImageData(ctx.getImageData(0, 0, w, h));
 }
 
