@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>書類・回覧の期限トラッカー</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f6fed">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="書類期限">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1c1f24;
+  --muted: #667080;
+  --accent: #2f6fed;
+  --accent-weak: #e8f0ff;
+  --danger: #c0362c;
+  --danger-weak: #fdeceb;
+  --warn: #96610a;
+  --warn-weak: #fbf1de;
+  --ok: #1c7048;
+  --ok-weak: #e7f4ec;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --surface: #1f2229;
+    --border: #333842;
+    --text: #e8eaed;
+    --muted: #9aa3b0;
+    --accent: #6d9bff;
+    --accent-weak: #22304d;
+    --danger: #ff8a80;
+    --danger-weak: #3a2320;
+    --warn: #e5b567;
+    --warn-weak: #3a2f1c;
+    --ok: #7fd1a4;
+    --ok-weak: #1e3229;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.wrap { max-width: 880px; margin: 0 auto; padding: 16px 16px 64px; }
+header h1 { font-size: 20px; margin: 8px 0 4px; }
+header p.lead { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.notice {
+  border: 1px solid var(--warn);
+  background: var(--warn-weak);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+h2 { font-size: 15px; margin: 0 0 10px; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  min-width: 96px;
+  flex: 1 1 96px;
+}
+.stat .num { font-size: 20px; font-weight: 700; }
+.stat .label { font-size: 12px; color: var(--muted); }
+.stat.danger { background: var(--danger-weak); border-color: var(--danger); }
+.stat.danger .num { color: var(--danger); }
+.stat.warn { background: var(--warn-weak); border-color: var(--warn); }
+.stat.warn .num { color: var(--warn); }
+form .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.field { flex: 1 1 130px; min-width: 0; }
+.field.wide { flex: 2 1 220px; }
+input, select, textarea, button { font: inherit; color: var(--text); }
+input, select, textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+textarea { resize: vertical; min-height: 56px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.small { padding: 4px 9px; font-size: 13px; }
+button.link { border: none; background: none; color: var(--accent); padding: 4px 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 4px 10px; font-size: 13px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
+ul.items { list-style: none; margin: 0; padding: 0; }
+li.item {
+  border: 1px solid var(--border);
+  border-left-width: 5px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+li.item.expired { border-left-color: var(--danger); background: var(--danger-weak); }
+li.item.soon { border-left-color: var(--warn); background: var(--warn-weak); }
+li.item.fine { border-left-color: var(--ok); }
+li.item.none { border-left-color: var(--border); }
+li.item.done { opacity: .62; }
+.item-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.item-name { font-weight: 700; }
+.badge {
+  font-size: 12px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); background: var(--bg);
+}
+.badge.status { border-color: var(--accent); color: var(--accent); background: var(--accent-weak); }
+.badge.pri-高 { border-color: var(--danger); color: var(--danger); background: var(--danger-weak); }
+.due { font-size: 13px; }
+.due.expired { color: var(--danger); font-weight: 700; }
+.due.soon { color: var(--warn); font-weight: 700; }
+.due.none { color: var(--muted); }
+.item-note { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
+.item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+.footnote { font-size: 12px; color: var(--muted); }
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  background: var(--text); color: var(--bg);
+  padding: 8px 16px; border-radius: 999px; font-size: 13px;
+  opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+
+/* ---- スマートフォン対応 ---- */
+.wrap { padding-bottom: 104px; }
+input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大されるのを防ぐ */
+.actionbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; gap: 8px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+.actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
+.actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+@media (max-width: 640px) {
+  .wrap { padding-left: 12px; padding-right: 12px; }
+  button { min-height: 44px; }
+  .item-actions button { flex: 1 1 auto; }
+  .chip { min-height: 36px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>書類・回覧の期限トラッカー</h1>
+    <p class="lead">提出期限のある書類・回覧・申請をまとめて管理します。データはこのブラウザの中だけに保存され、外部には一切送信しません。</p>
+  </header>
+
+  <div class="notice">
+    <strong>取り扱いの注意：</strong>個人情報や機微な内容は入力しないでください。書類名は「〇〇申請書（△△課分）」のように、本人を特定できない表現にとどめます。共用パソコンで使う場合は、使い終わったらブラウザのデータを消してください。
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <section class="card">
+    <h2 id="formTitle">書類を登録</h2>
+    <form id="itemForm">
+      <div class="row">
+        <div class="field wide">
+          <label for="f-title">書類名（必須）</label>
+          <input id="f-title" name="title" required placeholder="例：職員研修 受講報告書" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-kind">種別</label>
+          <select id="f-kind" name="kind">
+            <option>申請</option><option>回覧</option><option>提出</option>
+            <option>支払い</option><option>その他</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field wide">
+          <label for="f-dest">提出先・回覧先</label>
+          <input id="f-dest" name="dest" placeholder="例：総務課" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-due">期限</label>
+          <input id="f-due" name="dueOn" type="date">
+        </div>
+        <div class="field">
+          <label for="f-pri">優先度</label>
+          <select id="f-pri" name="priority">
+            <option>中</option><option>高</option><option>低</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field wide">
+          <label for="f-note">メモ</label>
+          <textarea id="f-note" name="note" placeholder="例：様式は庁内ポータルの様式集から取得"></textarea>
+        </div>
+      </div>
+      <div class="row" style="align-items:center">
+        <div class="chips" aria-label="期限のクイック入力">
+          <button type="button" class="chip" data-plus="0">今日</button>
+          <button type="button" class="chip" data-plus="1">明日</button>
+          <button type="button" class="chip" data-plus="7">1週間後</button>
+          <button type="button" class="chip" data-eom="1">今月末</button>
+        </div>
+        <div style="flex:1"></div>
+        <button type="submit" class="primary" id="submitBtn">登録する</button>
+        <button type="button" id="cancelEdit" hidden>やめる</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+      <div class="field wide">
+        <label for="q">検索</label>
+        <input id="q" placeholder="書類名・提出先・メモで絞り込み" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="kindFilter">種別</label>
+        <select id="kindFilter">
+          <option value="すべて">すべて</option>
+          <option>申請</option><option>回覧</option><option>提出</option>
+          <option>支払い</option><option>その他</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="sort">並び順</label>
+        <select id="sort">
+          <option value="due">期限が近い順</option>
+          <option value="pri">優先度順</option>
+          <option value="new">登録が新しい順</option>
+        </select>
+      </div>
+    </div>
+    <div class="chips" style="margin-top:8px" id="statusFilter" role="group" aria-label="状態で絞り込み"></div>
+  </section>
+
+  <ul class="items" id="list"></ul>
+
+  <section class="card">
+    <h2>データの持ち出し・引き継ぎ</h2>
+    <div class="chips">
+      <button type="button" id="calendarAll">未処理の期限をカレンダーに登録</button>
+      <button type="button" id="copyDue">未処理の締切一覧をコピー</button>
+      <button type="button" id="exportBtn">JSONで保存</button>
+      <button type="button" id="importBtn">JSONから読み込み</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <p class="footnote" style="margin:10px 0 0">
+      「カレンダーに登録」を押すと、端末の標準カレンダーに期限が予定として入り、<strong>前日と当日に通知</strong>が届きます。同じ書類を登録し直すと、カレンダー側の予定も更新されます（カレンダーアプリによっては新しい予定として追加されることがあります）。
+    </p>
+    <p class="footnote" style="margin:6px 0 0">
+      保存した JSON を <code>data/deadlines.json</code> に置くと、朝のブリーフ（<code>/brief</code>）が今日の締切として拾います。読み込むと今のデータは置き換わります。
+    </p>
+  </section>
+</div>
+
+<div class="actionbar">
+  <div>
+    <button type="button" class="primary" id="jumpAdd">書類を登録する</button>
+    <button type="button" id="jumpDue">期限が近いものへ</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../shared/ics.js"></script>
+<script src="../shared/native.js"></script>
+<script>
+"use strict";
+
+var STORAGE_KEY = "docs-tracker.v1";
+var STATUSES = ["未着手", "対応中", "提出済", "完了"];
+var OPEN_STATUSES = ["未着手", "対応中", "提出済"];
+var PRIORITY_ORDER = { "高": 0, "中": 1, "低": 2 };
+
+var state = load();
+var editingId = null;
+var filters = { q: "", status: "未完了", kind: "すべて", sort: "due" };
+
+function load() {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { v: 1, items: [] };
+    return normalize(JSON.parse(raw));
+  } catch (e) {
+    return { v: 1, items: [] };
+  }
+}
+
+function normalize(data) {
+  if (!data || typeof data !== "object") return { v: 1, items: [] };
+  var items = Array.isArray(data.items) ? data.items : [];
+  return {
+    v: 1,
+    items: items.filter(function (it) { return it && it.title; }).map(function (it) {
+      return {
+        id: it.id || uid(),
+        title: String(it.title),
+        kind: it.kind || "その他",
+        dest: it.dest || "",
+        dueOn: it.dueOn || "",
+        status: STATUSES.indexOf(it.status) >= 0 ? it.status : "未着手",
+        priority: PRIORITY_ORDER[it.priority] === undefined ? "中" : it.priority,
+        note: it.note || "",
+        createdAt: it.createdAt || new Date().toISOString(),
+        doneAt: it.doneAt || "",
+        icsSeq: Number(it.icsSeq) || 0
+      };
+    })
+  };
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    toast("保存できませんでした（ブラウザの設定を確認してください）");
+  }
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function pad(n) { return String(n).padStart(2, "0"); }
+
+function fmtDate(d) {
+  return [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join("-");
+}
+
+function todayStr() { return fmtDate(new Date()); }
+
+// 期限までの日数。今日なら 0、過ぎていれば負の数。期限なしは null。
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  var parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  var target = new Date(parts[0], parts[1] - 1, parts[2]);
+  var now = new Date();
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((target - today) / 86400000);
+}
+
+function isOpen(item) { return OPEN_STATUSES.indexOf(item.status) >= 0; }
+
+function dueLevel(item) {
+  if (!isOpen(item)) return "none";
+  var d = daysUntil(item.dueOn);
+  if (d === null) return "none";
+  if (d < 0) return "expired";
+  if (d <= 3) return "soon";
+  return "fine";
+}
+
+function dueText(item) {
+  var d = daysUntil(item.dueOn);
+  if (d === null) return "期限なし";
+  if (!isOpen(item)) return "期限 " + item.dueOn;
+  if (d < 0) return item.dueOn + "（" + (-d) + "日超過）";
+  if (d === 0) return item.dueOn + "（今日まで）";
+  return item.dueOn + "（あと" + d + "日）";
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function toast(msg) {
+  var el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { el.classList.remove("show"); }, 2200);
+}
+
+/* ---------- 描画 ---------- */
+
+function visibleItems() {
+  var q = filters.q.trim().toLowerCase();
+  var list = state.items.filter(function (it) {
+    if (filters.status === "未完了") { if (!isOpen(it)) return false; }
+    else if (filters.status !== "すべて" && it.status !== filters.status) return false;
+    if (filters.kind !== "すべて" && it.kind !== filters.kind) return false;
+    if (!q) return true;
+    return (it.title + " " + it.dest + " " + it.note).toLowerCase().indexOf(q) >= 0;
+  });
+  var byDue = function (a, b) {
+    var da = daysUntil(a.dueOn), db = daysUntil(b.dueOn);
+    if (da === null && db === null) return byPriority(a, b);
+    if (da === null) return 1;
+    if (db === null) return -1;
+    return da === db ? byPriority(a, b) : da - db;
+  };
+  var byPriority = function (a, b) {
+    var pa = PRIORITY_ORDER[a.priority], pb = PRIORITY_ORDER[b.priority];
+    return pa === pb ? a.title.localeCompare(b.title, "ja") : pa - pb;
+  };
+  var sorters = {
+    due: byDue,
+    pri: function (a, b) {
+      var pa = PRIORITY_ORDER[a.priority], pb = PRIORITY_ORDER[b.priority];
+      return pa === pb ? byDue(a, b) : pa - pb;
+    },
+    "new": function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); }
+  };
+  return list.sort(sorters[filters.sort] || byDue);
+}
+
+function renderStats() {
+  var open = state.items.filter(isOpen);
+  var expired = 0, today = 0, week = 0;
+  open.forEach(function (it) {
+    var d = daysUntil(it.dueOn);
+    if (d === null) return;
+    if (d < 0) expired++;
+    else if (d === 0) today++;
+    if (d >= 0 && d <= 7) week++;
+  });
+  var cards = [
+    { num: open.length, label: "未処理", cls: "" },
+    { num: expired, label: "期限超過", cls: expired ? "danger" : "" },
+    { num: today, label: "今日まで", cls: today ? "warn" : "" },
+    { num: week, label: "1週間以内", cls: "" }
+  ];
+  document.getElementById("stats").innerHTML = cards.map(function (c) {
+    return '<div class="stat ' + c.cls + '"><div class="num">' + c.num + '</div><div class="label">' + c.label + "</div></div>";
+  }).join("");
+}
+
+function renderFilters() {
+  var all = ["未完了", "すべて"].concat(STATUSES);
+  document.getElementById("statusFilter").innerHTML = all.map(function (s) {
+    var on = filters.status === s;
+    return '<button type="button" class="chip" data-status="' + esc(s) + '" aria-pressed="' + on + '">' + esc(s) + "</button>";
+  }).join("");
+}
+
+function renderList() {
+  var items = visibleItems();
+  var el = document.getElementById("list");
+  if (!items.length) {
+    el.innerHTML = '<li class="empty">該当する書類がありません。</li>';
+    return;
+  }
+  el.innerHTML = items.map(function (it) {
+    var lv = dueLevel(it);
+    var next = STATUSES[STATUSES.indexOf(it.status) + 1];
+    return '<li class="item ' + lv + (isOpen(it) ? "" : " done") + '" data-id="' + esc(it.id) + '">' +
+      '<div class="item-head">' +
+        '<span class="item-name">' + esc(it.title) + "</span>" +
+        '<span class="badge">' + esc(it.kind) + "</span>" +
+        (it.dest ? '<span class="badge">' + esc(it.dest) + "</span>" : "") +
+        '<span class="badge status">' + esc(it.status) + "</span>" +
+        (it.priority === "高" ? '<span class="badge pri-高">優先度 高</span>' : "") +
+        '<span class="due ' + lv + '">' + esc(dueText(it)) + "</span>" +
+      "</div>" +
+      (it.note ? '<div class="item-note">' + esc(it.note) + "</div>" : "") +
+      '<div class="item-actions">' +
+        (next ? '<button type="button" class="small" data-action="advance">' + esc(next) + "にする</button>" : "") +
+        (it.status !== "未着手" ? '<button type="button" class="small" data-action="back">1つ戻す</button>' : "") +
+        (it.dueOn && isOpen(it) ? '<button type="button" class="small" data-action="calendar">カレンダー</button>' : "") +
+        '<button type="button" class="small link" data-action="edit">編集</button>' +
+        '<button type="button" class="small link" data-action="delete">削除</button>' +
+      "</div></li>";
+  }).join("");
+}
+
+function render() {
+  renderStats();
+  renderFilters();
+  renderList();
+}
+
+/* ---------- 操作 ---------- */
+
+var form = document.getElementById("itemForm");
+
+form.addEventListener("submit", function (e) {
+  e.preventDefault();
+  var fd = new FormData(form);
+  var title = String(fd.get("title") || "").trim();
+  if (!title) return;
+  var values = {
+    title: title,
+    kind: String(fd.get("kind") || "その他"),
+    dest: String(fd.get("dest") || "").trim(),
+    dueOn: String(fd.get("dueOn") || ""),
+    priority: String(fd.get("priority") || "中"),
+    note: String(fd.get("note") || "").trim()
+  };
+  if (editingId) {
+    var target = state.items.find(function (it) { return it.id === editingId; });
+    if (target) Object.assign(target, values);
+    toast("更新しました");
+    stopEditing();
+  } else {
+    values.id = uid();
+    values.status = "未着手";
+    values.createdAt = new Date().toISOString();
+    values.doneAt = "";
+    state.items.push(values);
+    toast("登録しました");
+    form.reset();
+  }
+  save();
+  render();
+  document.getElementById("f-title").focus();
+});
+
+function startEditing(item) {
+  editingId = item.id;
+  document.getElementById("f-title").value = item.title;
+  document.getElementById("f-kind").value = item.kind;
+  document.getElementById("f-dest").value = item.dest;
+  document.getElementById("f-due").value = item.dueOn;
+  document.getElementById("f-pri").value = item.priority;
+  document.getElementById("f-note").value = item.note;
+  document.getElementById("formTitle").textContent = "書類を編集";
+  document.getElementById("submitBtn").textContent = "更新する";
+  document.getElementById("cancelEdit").hidden = false;
+  document.getElementById("f-title").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function stopEditing() {
+  editingId = null;
+  form.reset();
+  document.getElementById("formTitle").textContent = "書類を登録";
+  document.getElementById("submitBtn").textContent = "登録する";
+  document.getElementById("cancelEdit").hidden = true;
+}
+
+document.getElementById("cancelEdit").addEventListener("click", stopEditing);
+
+form.addEventListener("click", function (e) {
+  if (!e.target.getAttribute) return;
+  var plus = e.target.getAttribute("data-plus");
+  var eom = e.target.getAttribute("data-eom");
+  var d = new Date();
+  if (plus !== null && plus !== undefined) {
+    d.setDate(d.getDate() + Number(plus));
+  } else if (eom) {
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  } else {
+    return;
+  }
+  document.getElementById("f-due").value = fmtDate(d);
+});
+
+document.getElementById("list").addEventListener("click", function (e) {
+  var btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  var li = e.target.closest("li.item");
+  var id = li && li.getAttribute("data-id");
+  var idx = state.items.findIndex(function (it) { return it.id === id; });
+  if (idx < 0) return;
+  var item = state.items[idx];
+  var action = btn.getAttribute("data-action");
+
+  if (action === "advance") {
+    var next = STATUSES[STATUSES.indexOf(item.status) + 1];
+    if (!next) return;
+    item.status = next;
+    item.doneAt = next === "完了" ? new Date().toISOString() : "";
+    toast(next + "にしました");
+  } else if (action === "back") {
+    var prev = STATUSES[STATUSES.indexOf(item.status) - 1];
+    if (!prev) return;
+    item.status = prev;
+    item.doneAt = "";
+    toast(prev + "に戻しました");
+  } else if (action === "calendar") {
+    registerToCalendar([item]);
+    return;
+  } else if (action === "edit") {
+    startEditing(item);
+    return;
+  } else if (action === "delete") {
+    if (!confirm("「" + item.title + "」を削除しますか？")) return;
+    state.items.splice(idx, 1);
+    if (editingId === id) stopEditing();
+    toast("削除しました");
+  }
+  save();
+  render();
+});
+
+document.getElementById("q").addEventListener("input", function (e) {
+  filters.q = e.target.value;
+  renderList();
+});
+document.getElementById("kindFilter").addEventListener("change", function (e) {
+  filters.kind = e.target.value;
+  renderList();
+});
+document.getElementById("sort").addEventListener("change", function (e) {
+  filters.sort = e.target.value;
+  renderList();
+});
+document.getElementById("statusFilter").addEventListener("click", function (e) {
+  var status = e.target.getAttribute && e.target.getAttribute("data-status");
+  if (!status) return;
+  filters.status = status;
+  renderFilters();
+  renderList();
+});
+
+/* ---------- 持ち出し ---------- */
+
+/* ---------- カレンダーへの登録 ---------- */
+
+// 端末の標準カレンダーに読み込ませる予定を1件ぶん作る
+function toCalendarEvent(item) {
+  var parts = [];
+  if (item.note) parts.push(item.note);
+  parts.push("状態：" + item.status);
+  parts.push("（書類・回覧の期限トラッカーから登録）");
+  return {
+    uid: item.id + "@docs-tracker",
+    title: "【" + item.kind + "】" + item.title,
+    date: item.dueOn,
+    time: "09:00",
+    location: item.dest,
+    description: parts.join("\n"),
+    alarms: [1440, 0], // 前日の同時刻と、当日9時
+    sequence: item.icsSeq
+  };
+}
+
+function registerToCalendar(items) {
+  var target = items.filter(function (it) { return it.dueOn && isOpen(it); });
+  if (!target.length) { toast("期限が入った未処理の書類がありません"); return; }
+  var events = target.map(toCalendarEvent);
+
+  // アプリとして動いている場合は端末の通知に登録する。ブラウザではここを素通りする
+  if (window.Native && window.Native.available()) {
+    window.Native.scheduleDeadlines(events).then(function (res) {
+      if (res.ok) { toast("通知を設定しました（" + res.count + "件）"); return; }
+      if (res.reason === "denied") { toast("通知が許可されていません。設定アプリで許可してください"); return; }
+      writeCalendarFile(events, target);
+    });
+    return;
+  }
+  writeCalendarFile(events, target);
+}
+
+function writeCalendarFile(events, target) {
+  var text = window.ICS.build(events, { calendarName: "書類の期限" });
+  window.ICS.deliver(text, window.ICS.filename("deadlines")).then(function (how) {
+    if (how === "cancelled") return;
+    // 登録できたぶんだけ番号を進める（次回の登録が「更新」として扱われるように）
+    target.forEach(function (it) { it.icsSeq = (it.icsSeq || 0) + 1; });
+    save();
+    toast(how === "shared"
+      ? "カレンダーアプリを選んでください（" + target.length + "件）"
+      : "予定ファイルを保存しました（" + target.length + "件）。開くとカレンダーに登録できます");
+  });
+}
+
+document.getElementById("calendarAll").addEventListener("click", function () {
+  registerToCalendar(state.items);
+});
+
+document.getElementById("copyDue").addEventListener("click", function () {
+  var open = state.items.filter(isOpen).sort(function (a, b) {
+    var da = daysUntil(a.dueOn), db = daysUntil(b.dueOn);
+    if (da === null) return 1;
+    if (db === null) return -1;
+    return da - db;
+  });
+  if (!open.length) { toast("未処理の書類はありません"); return; }
+  var text = "未処理の書類（" + todayStr() + " 時点）\n" + open.map(function (it) {
+    return "- " + it.title + "（" + it.kind + (it.dest ? "／" + it.dest : "") + "）："
+      + dueText(it) + " ＝ " + it.status;
+  }).join("\n");
+  copyText(text);
+});
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () { toast("コピーしました"); },
+      function () { fallbackCopy(text); });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); toast("コピーしました"); }
+  catch (e) { toast("コピーできませんでした"); }
+  document.body.removeChild(ta);
+}
+
+document.getElementById("exportBtn").addEventListener("click", function () {
+  var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "deadlines-" + todayStr() + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+});
+
+document.getElementById("importBtn").addEventListener("click", function () {
+  document.getElementById("importFile").click();
+});
+
+document.getElementById("importFile").addEventListener("change", function (e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var data = normalize(JSON.parse(String(reader.result)));
+      if (!confirm("読み込むと今のデータ（" + state.items.length + " 件）は置き換わります。続けますか？")) return;
+      state = data;
+      save();
+      render();
+      toast("読み込みました");
+    } catch (err) {
+      toast("JSONを読み込めませんでした");
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+
+document.getElementById("jumpAdd").addEventListener("click", function () {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  document.getElementById("f-title").focus();
+});
+document.getElementById("jumpDue").addEventListener("click", function () {
+  var first = document.querySelector("#list li.item");
+  if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+  else toast("未処理の書類はありません");
+});
+
+/* ---------- オフラインで使えるようにする ---------- */
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () { /* 使えなくても通常動作に影響はない */ });
+  });
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>冷蔵庫の在庫・賞味期限管理</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f6fed">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="冷蔵庫">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1c1f24;
+  --muted: #667080;
+  --accent: #2f6fed;
+  --accent-weak: #e8f0ff;
+  --danger: #c0362c;
+  --danger-weak: #fdeceb;
+  --warn: #96610a;
+  --warn-weak: #fbf1de;
+  --ok: #1c7048;
+  --ok-weak: #e7f4ec;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --surface: #1f2229;
+    --border: #333842;
+    --text: #e8eaed;
+    --muted: #9aa3b0;
+    --accent: #6d9bff;
+    --accent-weak: #22304d;
+    --danger: #ff8a80;
+    --danger-weak: #3a2320;
+    --warn: #e5b567;
+    --warn-weak: #3a2f1c;
+    --ok: #7fd1a4;
+    --ok-weak: #1e3229;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.wrap { max-width: 880px; margin: 0 auto; padding: 16px 16px 64px; }
+header h1 { font-size: 20px; margin: 8px 0 4px; }
+header p.lead { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+h2 { font-size: 15px; margin: 0 0 10px; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  min-width: 96px;
+  flex: 1 1 96px;
+}
+.stat .num { font-size: 20px; font-weight: 700; }
+.stat .label { font-size: 12px; color: var(--muted); }
+.stat.danger { background: var(--danger-weak); border-color: var(--danger); }
+.stat.danger .num { color: var(--danger); }
+.stat.warn { background: var(--warn-weak); border-color: var(--warn); }
+.stat.warn .num { color: var(--warn); }
+form .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.field { flex: 1 1 130px; min-width: 0; }
+.field.wide { flex: 2 1 220px; }
+input, select, textarea, button {
+  font: inherit;
+  color: var(--text);
+}
+input, select, textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.small { padding: 4px 9px; font-size: 13px; }
+button.link { border: none; background: none; color: var(--accent); padding: 4px 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 4px 10px; font-size: 13px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
+ul.items { list-style: none; margin: 0; padding: 0; }
+li.item {
+  border: 1px solid var(--border);
+  border-left-width: 5px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+li.item.expired { border-left-color: var(--danger); background: var(--danger-weak); }
+li.item.soon { border-left-color: var(--warn); background: var(--warn-weak); }
+li.item.fine { border-left-color: var(--ok); }
+li.item.none { border-left-color: var(--border); }
+.item-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.item-name { font-weight: 700; }
+.badge {
+  font-size: 12px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); background: var(--bg);
+}
+.due { font-size: 13px; }
+.due.expired { color: var(--danger); font-weight: 700; }
+.due.soon { color: var(--warn); font-weight: 700; }
+.due.none { color: var(--muted); }
+.item-note { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
+.item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+.footnote { font-size: 12px; color: var(--muted); }
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  background: var(--text); color: var(--bg);
+  padding: 8px 16px; border-radius: 999px; font-size: 13px;
+  opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+
+/* ---- スマートフォン対応 ---- */
+.wrap { padding-bottom: 104px; }
+input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大されるのを防ぐ */
+.scanbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; gap: 8px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+.scanbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
+.scanbar button { flex: 1; min-height: 48px; font-weight: 700; }
+@media (max-width: 640px) {
+  .wrap { padding-left: 12px; padding-right: 12px; }
+  button { min-height: 44px; }
+  .item-actions button { flex: 1 1 auto; }
+  .chip { min-height: 36px; }
+}
+
+/* ---- バーコード読み取り ---- */
+.modal[hidden] { display: none; }
+.modal {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(0, 0, 0, .72);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.modal-inner {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: min(560px, 100%); max-height: 92vh; overflow: auto; padding: 14px;
+}
+.scan-frame { position: relative; }
+#scanVideo { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #000; border-radius: 8px; }
+.scan-frame .guide {
+  position: absolute; left: 8%; right: 8%; top: 38%; height: 24%;
+  border: 2px solid #fff; border-radius: 6px; pointer-events: none;
+}
+#pendingCode:not([hidden]) { display: inline-block; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>冷蔵庫の在庫・賞味期限管理</h1>
+    <p class="lead">買ったものを登録すると、期限が近い順に並べて知らせます。データはこのブラウザの中だけに保存され、外部には一切送信しません。</p>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <section class="card">
+    <h2 id="formTitle">食材を追加</h2>
+    <p class="footnote" id="pendingCodeRow" hidden style="margin:-6px 0 8px">
+      読み取ったバーコード：<span class="badge" id="pendingCode"></span>
+      <button type="button" class="link small" id="pendingCodeClear">解除</button>
+    </p>
+    <form id="itemForm">
+      <div class="row">
+        <div class="field wide">
+          <label for="f-name">品名（必須）</label>
+          <input id="f-name" name="name" required placeholder="例：牛乳" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-qty">数量</label>
+          <input id="f-qty" name="qty" type="number" min="0" step="0.5" value="1">
+        </div>
+        <div class="field">
+          <label for="f-unit">単位</label>
+          <input id="f-unit" name="unit" list="units" value="個" autocomplete="off">
+          <datalist id="units">
+            <option value="個"></option><option value="本"></option><option value="袋"></option>
+            <option value="パック"></option><option value="g"></option><option value="ml"></option>
+          </datalist>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="f-place">保管場所</label>
+          <select id="f-place" name="place">
+            <option value="冷蔵">冷蔵</option>
+            <option value="冷凍">冷凍</option>
+            <option value="常温">常温</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-expires">賞味・消費期限</label>
+          <input id="f-expires" name="expiresOn" type="date">
+        </div>
+        <div class="field wide">
+          <label for="f-note">メモ</label>
+          <input id="f-note" name="note" placeholder="例：開封済み" autocomplete="off">
+        </div>
+      </div>
+      <div class="row" style="align-items:center">
+        <div class="chips" aria-label="期限のクイック入力">
+          <button type="button" class="chip" data-plus="3">3日後</button>
+          <button type="button" class="chip" data-plus="7">1週間後</button>
+          <button type="button" class="chip" data-plus="30">1か月後</button>
+          <button type="button" class="chip" data-plus="180">半年後</button>
+        </div>
+        <div style="flex:1"></div>
+        <button type="submit" class="primary" id="submitBtn">追加する</button>
+        <button type="button" id="cancelEdit" hidden>やめる</button>
+      </div>
+    </form>
+    <div id="recent" class="chips" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+      <div class="field wide">
+        <label for="q">検索</label>
+        <input id="q" placeholder="品名・メモで絞り込み" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="sort">並び順</label>
+        <select id="sort">
+          <option value="due">期限が近い順</option>
+          <option value="new">登録が新しい順</option>
+          <option value="name">品名順</option>
+        </select>
+      </div>
+    </div>
+    <div class="chips" style="margin-top:8px" id="placeFilter" role="group" aria-label="保管場所で絞り込み"></div>
+  </section>
+
+  <ul class="items" id="list"></ul>
+
+  <section class="card">
+    <h2>データの持ち出し・引き継ぎ</h2>
+    <div class="chips">
+      <button type="button" id="calendarSoon">期限が近い食材をカレンダーに登録</button>
+      <button type="button" id="copyExpiring">期限が近い食材をコピー</button>
+      <button type="button" id="exportBtn">JSONで保存</button>
+      <button type="button" id="importBtn">JSONから読み込み</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <p class="footnote" style="margin:10px 0 0">
+      「カレンダーに登録」を押すと、期限が7日以内の食材が端末の標準カレンダーに入り、<strong>前日と当日の18時に通知</strong>が届きます。「期限が近い食材をコピー」は献立を相談するときに貼り付けて使えます。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
+    </p>
+    <p class="footnote" id="codeCount" style="margin:6px 0 0"></p>
+  </section>
+
+  <section class="card">
+    <h2>廃棄の記録（食品ロス）</h2>
+    <div id="lossSummary" class="footnote"></div>
+    <ul class="items" id="lossList" style="margin-top:8px"></ul>
+  </section>
+</div>
+
+<div class="scanbar">
+  <div>
+    <button type="button" class="primary" id="scanBtn">バーコードで追加</button>
+    <button type="button" id="jumpAdd">手で入力</button>
+  </div>
+</div>
+
+<div class="modal" id="scanModal" hidden role="dialog" aria-modal="true" aria-labelledby="scanTitle">
+  <div class="modal-inner">
+    <h2 id="scanTitle">バーコードを読み取る</h2>
+    <div class="scan-frame">
+      <video id="scanVideo" playsinline muted autoplay></video>
+      <div class="guide"></div>
+    </div>
+    <p class="footnote" id="scanStatus" role="status" aria-live="polite">カメラを起動しています…</p>
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:4px">
+      <div class="field wide" style="flex:1">
+        <label for="manualCode">読み取れないときは番号を手入力</label>
+        <input id="manualCode" inputmode="numeric" pattern="[0-9]*" placeholder="例：4901777018884" autocomplete="off">
+      </div>
+      <button type="button" id="manualOk">確定</button>
+    </div>
+    <div class="chips" style="margin-top:12px">
+      <button type="button" id="scanClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../shared/ics.js"></script>
+<script src="../shared/native.js"></script>
+<script src="ean.js"></script>
+<script>
+"use strict";
+
+var STORAGE_KEY = "fridge.v1";
+var PLACES = ["冷蔵", "冷凍", "常温"];
+
+var state = load();
+var editingId = null;
+var filters = { q: "", place: "すべて", sort: "due" };
+
+function load() {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return emptyState();
+    return normalize(JSON.parse(raw));
+  } catch (e) {
+    return emptyState();
+  }
+}
+
+function emptyState() {
+  return { v: 1, items: [], log: [], codes: {} };
+}
+
+function normalize(data) {
+  if (!data || typeof data !== "object") return emptyState();
+  return {
+    v: 1,
+    items: Array.isArray(data.items) ? data.items.filter(function (it) { return it && it.name; }) : [],
+    log: Array.isArray(data.log) ? data.log : [],
+    // バーコード（JANコード）と品名の対応。一度登録すると次回から自動で入る
+    codes: (data.codes && typeof data.codes === "object") ? data.codes : {}
+  };
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    toast("保存できませんでした（ブラウザの設定を確認してください）");
+  }
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function todayStr() {
+  var d = new Date();
+  return [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join("-");
+}
+
+function pad(n) { return String(n).padStart(2, "0"); }
+
+// 期限までの日数。今日なら 0、過ぎていれば負の数。期限なしは null。
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  var parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  var target = new Date(parts[0], parts[1] - 1, parts[2]);
+  var now = new Date();
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((target - today) / 86400000);
+}
+
+function dueLevel(dateStr) {
+  var d = daysUntil(dateStr);
+  if (d === null) return "none";
+  if (d < 0) return "expired";
+  if (d <= 3) return "soon";
+  return "fine";
+}
+
+function dueText(dateStr) {
+  var d = daysUntil(dateStr);
+  if (d === null) return "期限なし";
+  if (d < 0) return dateStr + "（" + (-d) + "日超過）";
+  if (d === 0) return dateStr + "（今日まで）";
+  return dateStr + "（あと" + d + "日）";
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function toast(msg) {
+  var el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { el.classList.remove("show"); }, 2200);
+}
+
+/* ---------- 描画 ---------- */
+
+function visibleItems() {
+  var q = filters.q.trim().toLowerCase();
+  var list = state.items.filter(function (it) {
+    if (filters.place !== "すべて" && it.place !== filters.place) return false;
+    if (!q) return true;
+    return (it.name + " " + (it.note || "")).toLowerCase().indexOf(q) >= 0;
+  });
+  var sorters = {
+    due: function (a, b) {
+      var da = daysUntil(a.expiresOn), db = daysUntil(b.expiresOn);
+      if (da === null && db === null) return a.name.localeCompare(b.name, "ja");
+      if (da === null) return 1;
+      if (db === null) return -1;
+      return da - db;
+    },
+    "new": function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); },
+    name: function (a, b) { return a.name.localeCompare(b.name, "ja"); }
+  };
+  return list.sort(sorters[filters.sort] || sorters.due);
+}
+
+function renderStats() {
+  var expired = 0, soon = 0;
+  state.items.forEach(function (it) {
+    var lv = dueLevel(it.expiresOn);
+    if (lv === "expired") expired++;
+    else if (lv === "soon") soon++;
+  });
+  var month = todayStr().slice(0, 7);
+  var discarded = state.log.filter(function (l) {
+    return l.action === "discard" && (l.at || "").slice(0, 7) === month;
+  }).length;
+
+  var cards = [
+    { num: state.items.length, label: "在庫", cls: "" },
+    { num: expired, label: "期限切れ", cls: expired ? "danger" : "" },
+    { num: soon, label: "3日以内", cls: soon ? "warn" : "" },
+    { num: discarded, label: "今月の廃棄", cls: "" }
+  ];
+  document.getElementById("stats").innerHTML = cards.map(function (c) {
+    return '<div class="stat ' + c.cls + '"><div class="num">' + c.num + '</div><div class="label">' + c.label + "</div></div>";
+  }).join("");
+}
+
+function renderFilters() {
+  var el = document.getElementById("placeFilter");
+  var all = ["すべて"].concat(PLACES);
+  el.innerHTML = all.map(function (p) {
+    var on = filters.place === p;
+    return '<button type="button" class="chip" data-place="' + esc(p) + '" aria-pressed="' + on + '">' + esc(p) + "</button>";
+  }).join("");
+}
+
+function renderRecent() {
+  var counts = {};
+  state.log.forEach(function (l) { if (l.name) counts[l.name] = (counts[l.name] || 0) + 1; });
+  var names = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 8);
+  var el = document.getElementById("recent");
+  if (!names.length) { el.innerHTML = ""; return; }
+  el.innerHTML = '<span class="footnote" style="align-self:center">よく買うもの：</span>' + names.map(function (n) {
+    return '<button type="button" class="chip" data-quick="' + esc(n) + '">' + esc(n) + "</button>";
+  }).join("");
+}
+
+function renderList() {
+  var items = visibleItems();
+  var el = document.getElementById("list");
+  if (!items.length) {
+    el.innerHTML = '<li class="empty">該当する食材がありません。</li>';
+    return;
+  }
+  el.innerHTML = items.map(function (it) {
+    var lv = dueLevel(it.expiresOn);
+    var qty = (it.qty || it.qty === 0) ? esc(it.qty) + esc(it.unit || "") : "";
+    return '<li class="item ' + lv + '" data-id="' + esc(it.id) + '">' +
+      '<div class="item-head">' +
+        '<span class="item-name">' + esc(it.name) + "</span>" +
+        (qty ? '<span class="badge">' + qty + "</span>" : "") +
+        '<span class="badge">' + esc(it.place || "冷蔵") + "</span>" +
+        '<span class="due ' + lv + '">' + esc(dueText(it.expiresOn)) + "</span>" +
+      "</div>" +
+      (it.note ? '<div class="item-note">' + esc(it.note) + "</div>" : "") +
+      '<div class="item-actions">' +
+        '<button type="button" class="small" data-action="dec">1つ減らす</button>' +
+        '<button type="button" class="small" data-action="consume">使い切り</button>' +
+        '<button type="button" class="small" data-action="discard">廃棄</button>' +
+        '<button type="button" class="small link" data-action="edit">編集</button>' +
+        '<button type="button" class="small link" data-action="delete">削除</button>' +
+      "</div></li>";
+  }).join("");
+}
+
+function renderLoss() {
+  var discards = state.log.filter(function (l) { return l.action === "discard"; }).slice(-10).reverse();
+  var month = todayStr().slice(0, 7);
+  var monthCount = state.log.filter(function (l) {
+    return l.action === "discard" && (l.at || "").slice(0, 7) === month;
+  }).length;
+  document.getElementById("lossSummary").textContent =
+    discards.length
+      ? "今月の廃棄 " + monthCount + " 件。直近の廃棄は次のとおりです。"
+      : "廃棄の記録はまだありません。";
+  document.getElementById("lossList").innerHTML = discards.map(function (l) {
+    return '<li class="item none"><div class="item-head">' +
+      '<span class="item-name">' + esc(l.name) + "</span>" +
+      '<span class="badge">' + esc((l.at || "").slice(0, 10)) + "</span>" +
+      (l.expiresOn ? '<span class="due none">期限 ' + esc(l.expiresOn) + "</span>" : "") +
+      "</div></li>";
+  }).join("");
+}
+
+function renderCodeCount() {
+  var n = Object.keys(state.codes).length;
+  document.getElementById("codeCount").textContent =
+    n ? "登録済みのバーコード：" + n + "件" : "";
+}
+
+function render() {
+  renderStats();
+  renderFilters();
+  renderRecent();
+  renderList();
+  renderLoss();
+  renderCodeCount();
+}
+
+/* ---------- 操作 ---------- */
+
+var form = document.getElementById("itemForm");
+
+form.addEventListener("submit", function (e) {
+  e.preventDefault();
+  var fd = new FormData(form);
+  var name = String(fd.get("name") || "").trim();
+  if (!name) return;
+  var values = {
+    name: name,
+    qty: fd.get("qty") === "" ? null : Number(fd.get("qty")),
+    unit: String(fd.get("unit") || "").trim(),
+    place: String(fd.get("place") || "冷蔵"),
+    expiresOn: String(fd.get("expiresOn") || ""),
+    note: String(fd.get("note") || "").trim()
+  };
+  if (editingId) {
+    var target = state.items.find(function (it) { return it.id === editingId; });
+    if (target) Object.assign(target, values);
+    toast("更新しました");
+    stopEditing();
+  } else {
+    values.id = uid();
+    values.createdAt = new Date().toISOString();
+    if (pendingCode) {
+      values.code = pendingCode;
+      // 次回このバーコードを読んだときに、品名・単位・保管場所を自動で入れる
+      state.codes[pendingCode] = { name: values.name, unit: values.unit, place: values.place };
+      clearPendingCode();
+    }
+    state.items.push(values);
+    toast("追加しました");
+    form.reset();
+    document.getElementById("f-qty").value = "1";
+    document.getElementById("f-unit").value = "個";
+  }
+  save();
+  render();
+  document.getElementById("f-name").focus();
+});
+
+function startEditing(item) {
+  editingId = item.id;
+  document.getElementById("f-name").value = item.name;
+  document.getElementById("f-qty").value = item.qty == null ? "" : item.qty;
+  document.getElementById("f-unit").value = item.unit || "";
+  document.getElementById("f-place").value = item.place || "冷蔵";
+  document.getElementById("f-expires").value = item.expiresOn || "";
+  document.getElementById("f-note").value = item.note || "";
+  document.getElementById("formTitle").textContent = "食材を編集";
+  document.getElementById("submitBtn").textContent = "更新する";
+  document.getElementById("cancelEdit").hidden = false;
+  document.getElementById("f-name").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function stopEditing() {
+  editingId = null;
+  clearPendingCode();
+  form.reset();
+  document.getElementById("f-qty").value = "1";
+  document.getElementById("f-unit").value = "個";
+  document.getElementById("formTitle").textContent = "食材を追加";
+  document.getElementById("submitBtn").textContent = "追加する";
+  document.getElementById("cancelEdit").hidden = true;
+}
+
+document.getElementById("cancelEdit").addEventListener("click", stopEditing);
+
+form.addEventListener("click", function (e) {
+  var plus = e.target.getAttribute && e.target.getAttribute("data-plus");
+  if (!plus) return;
+  var d = new Date();
+  d.setDate(d.getDate() + Number(plus));
+  document.getElementById("f-expires").value = [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join("-");
+});
+
+document.getElementById("recent").addEventListener("click", function (e) {
+  var name = e.target.getAttribute && e.target.getAttribute("data-quick");
+  if (!name) return;
+  document.getElementById("f-name").value = name;
+  document.getElementById("f-name").focus();
+});
+
+document.getElementById("list").addEventListener("click", function (e) {
+  var btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  var li = e.target.closest("li.item");
+  var id = li && li.getAttribute("data-id");
+  var idx = state.items.findIndex(function (it) { return it.id === id; });
+  if (idx < 0) return;
+  var item = state.items[idx];
+  var action = btn.getAttribute("data-action");
+
+  if (action === "dec") {
+    if (item.qty == null) { toast("数量が未設定です"); return; }
+    item.qty = Math.max(0, Number(item.qty) - 1);
+    if (item.qty === 0) { logAndRemove(idx, "consume"); toast("使い切りにしました"); }
+  } else if (action === "consume") {
+    logAndRemove(idx, "consume");
+    toast("使い切りにしました");
+  } else if (action === "discard") {
+    if (!confirm("「" + item.name + "」を廃棄として記録しますか？")) return;
+    logAndRemove(idx, "discard");
+    toast("廃棄として記録しました");
+  } else if (action === "edit") {
+    startEditing(item);
+    return;
+  } else if (action === "delete") {
+    if (!confirm("「" + item.name + "」を記録ごと削除しますか？（廃棄の記録は残りません）")) return;
+    state.items.splice(idx, 1);
+    if (editingId === id) stopEditing();
+    toast("削除しました");
+  }
+  save();
+  render();
+});
+
+function logAndRemove(idx, action) {
+  var item = state.items[idx];
+  state.log.push({
+    id: uid(),
+    name: item.name,
+    action: action,
+    qty: item.qty,
+    unit: item.unit,
+    expiresOn: item.expiresOn || "",
+    at: new Date().toISOString()
+  });
+  if (state.log.length > 500) state.log = state.log.slice(-500);
+  state.items.splice(idx, 1);
+  if (editingId === item.id) stopEditing();
+}
+
+document.getElementById("q").addEventListener("input", function (e) {
+  filters.q = e.target.value;
+  renderList();
+});
+document.getElementById("sort").addEventListener("change", function (e) {
+  filters.sort = e.target.value;
+  renderList();
+});
+document.getElementById("placeFilter").addEventListener("click", function (e) {
+  var place = e.target.getAttribute && e.target.getAttribute("data-place");
+  if (!place) return;
+  filters.place = place;
+  renderFilters();
+  renderList();
+});
+
+/* ---------- 持ち出し ---------- */
+
+/* ---------- カレンダーへの登録 ---------- */
+
+// 期限が近い食材を、端末の標準カレンダーの予定にする
+document.getElementById("calendarSoon").addEventListener("click", function () {
+  var target = state.items.filter(function (it) {
+    var days = daysUntil(it.expiresOn);
+    return days !== null && days <= 7;
+  }).sort(function (a, b) { return daysUntil(a.expiresOn) - daysUntil(b.expiresOn); });
+  if (!target.length) { toast("期限が近い食材はありません"); return; }
+
+  var events = target.map(function (it) {
+    return {
+      uid: it.id + "@fridge",
+      title: it.name + " の期限" + (it.qty ? "（" + it.qty + (it.unit || "") + "）" : ""),
+      date: it.expiresOn,
+      time: "18:00", // 夕食の支度前に知らせる
+      location: it.place,
+      description: (it.note ? it.note + "\n" : "") + "（冷蔵庫の在庫管理から登録）",
+      alarms: [1440, 0],
+      sequence: it.icsSeq || 0
+    };
+  });
+  // アプリとして動いている場合は端末の通知に登録する。ブラウザではここを素通りする
+  if (window.Native && window.Native.available()) {
+    window.Native.scheduleDeadlines(events).then(function (res) {
+      if (res.ok) { toast("通知を設定しました（" + res.count + "件）"); return; }
+      if (res.reason === "denied") { toast("通知が許可されていません。設定アプリで許可してください"); return; }
+      writeFridgeCalendarFile(events, target);
+    });
+    return;
+  }
+  writeFridgeCalendarFile(events, target);
+});
+
+function writeFridgeCalendarFile(events, target) {
+  var text = window.ICS.build(events, { calendarName: "食材の期限" });
+  window.ICS.deliver(text, window.ICS.filename("fridge")).then(function (how) {
+    if (how === "cancelled") return;
+    target.forEach(function (it) { it.icsSeq = (it.icsSeq || 0) + 1; });
+    save();
+    toast(how === "shared"
+      ? "カレンダーアプリを選んでください（" + target.length + "件）"
+      : "予定ファイルを保存しました（" + target.length + "件）。開くとカレンダーに登録できます");
+  });
+}
+
+document.getElementById("copyExpiring").addEventListener("click", function () {
+  var soon = state.items.filter(function (it) {
+    var d = daysUntil(it.expiresOn);
+    return d !== null && d <= 5;
+  }).sort(function (a, b) { return daysUntil(a.expiresOn) - daysUntil(b.expiresOn); });
+  if (!soon.length) { toast("期限が近い食材はありません"); return; }
+  var text = "期限が近い食材（" + todayStr() + " 時点）\n" + soon.map(function (it) {
+    return "- " + it.name + (it.qty ? " " + it.qty + (it.unit || "") : "") + "：" + dueText(it.expiresOn);
+  }).join("\n");
+  copyText(text);
+});
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () { toast("コピーしました"); },
+      function () { fallbackCopy(text); });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); toast("コピーしました"); }
+  catch (e) { toast("コピーできませんでした"); }
+  document.body.removeChild(ta);
+}
+
+document.getElementById("exportBtn").addEventListener("click", function () {
+  var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "fridge-" + todayStr() + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+});
+
+document.getElementById("importBtn").addEventListener("click", function () {
+  document.getElementById("importFile").click();
+});
+
+document.getElementById("importFile").addEventListener("change", function (e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var data = normalize(JSON.parse(String(reader.result)));
+      if (!confirm("読み込むと今のデータ（在庫 " + state.items.length + " 件）は置き換わります。続けますか？")) return;
+      state = data;
+      save();
+      render();
+      toast("読み込みました");
+    } catch (err) {
+      toast("JSONを読み込めませんでした");
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+
+/* ---------- バーコード読み取り ---------- */
+
+/*
+ * 読み取りは2段構え。
+ *  1. 端末が BarcodeDetector API に対応していれば、それを使う（Android Chrome など。精度が高い）
+ *  2. 非対応のとき（iOS の Safari など）は ean.js の自前デコーダで読む
+ * どちらも使えない・読めない場合のために、番号の手入力を常に用意している。
+ * カメラは https:// で開いたときだけ使える（ブラウザの制約）。
+ */
+
+var pendingCode = null;
+var scan = { stream: null, timer: null, detector: null, prepared: false, last: null, lastCount: 0, busy: false };
+var scanVideo = document.getElementById("scanVideo");
+var scanCanvas = document.createElement("canvas");
+
+function setScanStatus(msg) {
+  document.getElementById("scanStatus").textContent = msg;
+}
+
+function showPendingCode() {
+  document.getElementById("pendingCode").textContent = pendingCode || "";
+  document.getElementById("pendingCodeRow").hidden = !pendingCode;
+}
+
+function clearPendingCode() {
+  pendingCode = null;
+  showPendingCode();
+}
+
+function cameraErrorMessage(e) {
+  var name = e && e.name;
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "カメラの使用が許可されていません。ブラウザの設定で許可するか、番号を手入力してください。";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "使えるカメラが見つかりませんでした。番号を手入力してください。";
+  }
+  if (name === "NotReadableError") {
+    return "カメラを他のアプリが使用中です。閉じてからもう一度お試しください。";
+  }
+  return "カメラを起動できませんでした。番号を手入力してください。";
+}
+
+function prepareDetector() {
+  if (scan.prepared) return Promise.resolve();
+  scan.prepared = true;
+  if (!("BarcodeDetector" in window)) return Promise.resolve();
+  return window.BarcodeDetector.getSupportedFormats().then(function (formats) {
+    var want = ["ean_13", "ean_8", "upc_a", "upc_e"].filter(function (f) {
+      return formats.indexOf(f) >= 0;
+    });
+    if (want.length) scan.detector = new window.BarcodeDetector({ formats: want });
+  }).catch(function () { /* 対応していなければ自前デコーダに任せる */ });
+}
+
+function openScanner() {
+  document.getElementById("scanModal").hidden = false;
+  document.getElementById("manualCode").value = "";
+  scan.last = null;
+  scan.lastCount = 0;
+  setScanStatus("カメラを起動しています…");
+
+  if (!window.isSecureContext) {
+    setScanStatus("カメラは https:// で開いたときだけ使えます。番号を手入力してください。");
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setScanStatus("このブラウザはカメラに対応していません。番号を手入力してください。");
+    return;
+  }
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+  }).then(function (stream) {
+    scan.stream = stream;
+    scanVideo.srcObject = stream;
+    // 近距離のバーコードにピントが合い続けるようにする（対応していない端末では無視される）
+    var track = stream.getVideoTracks()[0];
+    if (track && track.applyConstraints) {
+      track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
+    }
+    return scanVideo.play().catch(function () {});
+  }).then(prepareDetector).then(function () {
+    setScanStatus("バーコードを枠の中に合わせてください。");
+    scan.timer = setInterval(tickScan, 150);
+  }).catch(function (e) {
+    setScanStatus(cameraErrorMessage(e));
+  });
+}
+
+function closeScanner() {
+  document.getElementById("scanModal").hidden = true;
+  if (scan.timer) { clearInterval(scan.timer); scan.timer = null; }
+  if (scan.stream) {
+    scan.stream.getTracks().forEach(function (t) { t.stop(); });
+    scan.stream = null;
+  }
+  scanVideo.srcObject = null;
+  scan.busy = false;
+}
+
+function tickScan() {
+  if (scan.busy || !scanVideo.videoWidth) return;
+  scan.busy = true;
+  detectOnce().then(function (code) {
+    scan.busy = false;
+    if (!code) return;
+    // 同じ番号を2回続けて読めたときだけ確定する（1回だけの誤読を拾わないため）
+    if (scan.last === code) scan.lastCount++;
+    else { scan.last = code; scan.lastCount = 1; }
+    if (scan.lastCount >= 2) acceptCode(code);
+  }, function () { scan.busy = false; });
+}
+
+function detectOnce() {
+  if (scan.detector) {
+    return scan.detector.detect(scanVideo).then(function (found) {
+      if (found && found.length) return found[0].rawValue;
+      return decodeFromCanvas();
+    }).catch(function () { return decodeFromCanvas(); });
+  }
+  return Promise.resolve(decodeFromCanvas());
+}
+
+function decodeFromCanvas() {
+  if (!window.EAN || !scanVideo.videoWidth) return null;
+  var vw = scanVideo.videoWidth, vh = scanVideo.videoHeight;
+  // 画面の白い枠に相当する中央の帯だけを切り出す
+  var bandHeight = Math.max(1, Math.round(vh * 0.34));
+  var bandTop = Math.round((vh - bandHeight) / 2);
+  // 横方向は縮小しない（細いバーが潰れると読めなくなるため）。上限は処理時間の都合
+  var w = Math.min(1280, vw);
+  var h = Math.max(1, Math.round(bandHeight * (w / vw)));
+  scanCanvas.width = w;
+  scanCanvas.height = h;
+  var ctx = scanCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(scanVideo, 0, bandTop, vw, bandHeight, 0, 0, w, h);
+  return window.EAN.decodeImageData(ctx.getImageData(0, 0, w, h));
+}
+
+// 読み取った番号をフォームに反映する
+function acceptCode(code) {
+  closeScanner();
+  if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) { /* 対応していなければ何もしない */ } }
+  pendingCode = code;
+  showPendingCode();
+  if (editingId) stopEditingKeepCode();
+
+  var known = state.codes[code];
+  document.getElementById("f-qty").value = "1";
+  if (known) {
+    document.getElementById("f-name").value = known.name;
+    document.getElementById("f-unit").value = known.unit || "個";
+    document.getElementById("f-place").value = known.place || "冷蔵";
+    document.getElementById("f-expires").focus();
+    toast("「" + known.name + "」を読み取りました");
+  } else {
+    document.getElementById("f-name").value = "";
+    document.getElementById("f-name").focus();
+    toast("初めてのバーコードです。品名を入れると次回から自動で入ります");
+  }
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// 編集中にスキャンした場合は、編集を打ち切って新規追加に戻す（読み取った番号は残す）
+function stopEditingKeepCode() {
+  var keep = pendingCode;
+  stopEditing();
+  pendingCode = keep;
+  showPendingCode();
+}
+
+document.getElementById("scanBtn").addEventListener("click", openScanner);
+document.getElementById("pendingCodeClear").addEventListener("click", function () {
+  clearPendingCode();
+  toast("バーコードの読み取りを解除しました");
+});
+document.getElementById("scanClose").addEventListener("click", closeScanner);
+document.getElementById("scanModal").addEventListener("click", function (e) {
+  if (e.target.id === "scanModal") closeScanner();
+});
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && !document.getElementById("scanModal").hidden) closeScanner();
+});
+document.getElementById("jumpAdd").addEventListener("click", function () {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  document.getElementById("f-name").focus();
+});
+document.getElementById("manualOk").addEventListener("click", function () {
+  var code = document.getElementById("manualCode").value.replace(/[^0-9]/g, "");
+  if (code.length < 8) { setScanStatus("8桁以上の番号を入力してください。"); return; }
+  if (window.EAN && !window.EAN.checksumOk(code)) {
+    toast("チェックディジットが合いません。番号を確認してください");
+  }
+  acceptCode(code);
+});
+document.getElementById("manualCode").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") { e.preventDefault(); document.getElementById("manualOk").click(); }
+});
+// 画面を離れたらカメラを確実に止める
+window.addEventListener("pagehide", closeScanner);
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "hidden") closeScanner();
+});
+
+// テストから読み取り結果を差し込むための入口（カメラのない環境で動作を確認するため）
+window.fridgeApp = { acceptCode: acceptCode };
+
+/* ---------- オフラインで使えるようにする ---------- */
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () { /* 使えなくても通常動作に影響はない */ });
+  });
+}
+
+render();
+</script>
+</body>
+</html>

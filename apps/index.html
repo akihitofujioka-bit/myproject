@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>日常アプリ</title>
+<meta name="theme-color" content="#2f6fed">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8; --surface: #fff; --border: #dfe3e8; --text: #1c1f24; --muted: #667080;
+  --accent: #2f6fed; --accent-weak: #e8f0ff; --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c; --surface: #1f2229; --border: #333842; --text: #e8eaed; --muted: #9aa3b0;
+    --accent: #6d9bff; --accent-weak: #22304d;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 16px; line-height: 1.7;
+}
+.wrap { max-width: 680px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+p.lead { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+a.app {
+  display: flex; align-items: center; gap: 14px;
+  text-decoration: none; color: inherit;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
+}
+a.app:hover, a.app:focus { border-color: var(--accent); background: var(--accent-weak); }
+a.app img { width: 52px; height: 52px; border-radius: 12px; flex: none; }
+a.app .name { font-weight: 700; }
+a.app .desc { font-size: 13px; color: var(--muted); }
+section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 20px; }
+h2 { font-size: 15px; margin: 0 0 8px; }
+ol, ul { margin: 0; padding-left: 1.3em; font-size: 14px; }
+li { margin-bottom: 4px; }
+.note { font-size: 13px; color: var(--muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>日常アプリ</h1>
+  <p class="lead">入力した内容はこの端末の中だけに保存され、どこにも送信されません。</p>
+
+  <a class="app" href="fridge/">
+    <img src="fridge/icon-192.png" alt="">
+    <span>
+      <span class="name">冷蔵庫の在庫・賞味期限管理</span><br>
+      <span class="desc">バーコードで食材を登録し、期限が近い順に並べます</span>
+    </span>
+  </a>
+
+  <a class="app" href="docs-tracker/">
+    <img src="docs-tracker/icon-192.png" alt="">
+    <span>
+      <span class="name">書類・回覧の期限トラッカー</span><br>
+      <span class="desc">提出期限のある書類を、状態とともに管理します</span>
+    </span>
+  </a>
+
+  <section>
+    <h2>iPhone のホーム画面に追加する</h2>
+    <ol>
+      <li>Safari で使いたいアプリを開く</li>
+      <li>下部の共有ボタン（□に↑）を押す</li>
+      <li>「ホーム画面に追加」を選ぶ</li>
+    </ol>
+    <p class="note">アイコンから起動できるようになり、電波の届かない場所でも開けます。Android の Chrome では、メニューの「アプリをインストール」から同じことができます。</p>
+  </section>
+
+  <section>
+    <h2>ご注意</h2>
+    <ul>
+      <li>データは端末ごとに別々です。機種変更やブラウザの変更では引き継がれません（各アプリの「JSONで保存」で書き出せます）</li>
+      <li>ブラウザの閲覧データを削除すると、入力した内容も消えます</li>
+      <li>書類トラッカーには、氏名・住所などの個人情報を入力しないでください</li>
+    </ul>
+  </section>
+</div>
+</body>
+</html>

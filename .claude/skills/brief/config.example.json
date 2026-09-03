@@ -1,0 +1,60 @@
+{
+  "_comment": "リポジトリ直下に brief.config.json としてコピーして使う。全項目が任意で、無い場合は既定値で動く。author と calendar は report.config.json があればそれを既定値として読み、ここでの指定が優先される。",
+
+  "calendar": {
+    "calendarIds": ["primary"],
+    "timeZone": "Asia/Tokyo",
+    "excludePatterns": ["移動", "ランチ", "昼休み", "ブロック", "集中時間", "Focus"],
+    "excludeDeclined": true,
+    "excludeSoloEvents": false,
+    "_note": "朝会・デイリーは日報では落とすが、ブリーフでは「今日出る会議」なので既定では残す"
+  },
+
+  "deadlines": {
+    "enabled": true,
+    "file": "data/deadlines.json",
+    "lookaheadDays": 3,
+    "staleWarnDays": 7,
+    "_note_file": "apps/docs-tracker/index.html の「JSONで保存」で書き出したファイルを置く",
+    "_note_stale": "書き出しから この日数以上経っていたら「期限データは M/D 時点」と明記する"
+  },
+
+  "fridge": {
+    "enabled": false,
+    "file": "data/fridge.json",
+    "_note": "true にすると、期限切れ・当日期限の食材を最後に1行だけ添える"
+  },
+
+  "mail": {
+    "enabled": true,
+    "query": "is:unread newer_than:3d -category:promotions -category:social",
+    "maxItems": 5,
+    "excludeSenders": ["noreply", "no-reply", "notifications@", "mailer-daemon"],
+    "_note": "読み取りのみ。既読化・返信・ラベル付けは行わない"
+  },
+
+  "carryover": {
+    "enabled": true,
+    "dailyDir": "reports/daily",
+    "_note": "前日の日報から「まだ終わっていないもの」だけを拾う"
+  },
+
+  "github": {
+    "enabled": false,
+    "repos": ["akihitofujioka-bit/myproject"],
+    "_note": "レビュー待ちPRと自分に割り当てられた期限付きIssueを拾う"
+  },
+
+  "output": {
+    "dir": "reports/brief",
+    "overwrite": "ask",
+    "maxLines": 20,
+    "drive": {
+      "enabled": true,
+      "folderId": "1hMd8_qucMKNL_RzNmuFjYVxgAoAhzYKV",
+      "folderName": "日報・週報"
+    },
+    "_note": "overwrite: ask | append | replace",
+    "_note_drive": "スマートフォンで読むための出力先。report.config.json と同じフォルダに入れている"
+  }
+}
