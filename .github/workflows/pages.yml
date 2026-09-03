@@ -1,7 +1,8 @@
 # apps/ の中の2つのアプリを GitHub Pages に公開する。
 #
 # 公開されるのは fridge / docs-tracker / トップページだけで、テストや設定ファイルは含めない。
-# 初回だけ、リポジトリの Settings → Pages → Source を "GitHub Actions" にする操作が必要。
+# Pages が未設定の場合は configure-pages の enablement で自動的に有効化を試みる。
+# 権限などで自動化できなかった場合のみ、Settings → Pages → Source を "GitHub Actions" にする。
 name: 日常アプリを公開
 
 on:
@@ -39,7 +40,11 @@ jobs:
           touch _site/.nojekyll
           find _site -type f | sort
 
+      # enablement: true にすると、Pages が未設定のリポジトリでも
+      # このワークフローから有効化を試みる（権限が足りない場合は手動設定が必要）
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
