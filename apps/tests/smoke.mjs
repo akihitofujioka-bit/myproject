@@ -394,6 +394,17 @@ console.log("== カレンダー登録（.ics の書き出し）==");
   ok(!downloadHappened, "対象がないときはファイルを作らない");
   ok((await cpage.locator("#toast").textContent()).includes("ありません"), "その旨を画面で知らせる");
 
+  // ネイティブ用の橋渡しは、ブラウザでは必ず「使えない」と判定される
+  const nat = await cpage.evaluate(() => ({
+    available: window.Native.available(),
+    id1: window.Native.idFrom("doc-1@docs-tracker"),
+    id2: window.Native.idFrom("doc-1@docs-tracker"),
+    id3: window.Native.idFrom("doc-2@docs-tracker"),
+  }));
+  ok(nat.available === false, "ブラウザでは端末通知を使わない（カレンダー登録に切り替わる）");
+  ok(nat.id1 === nat.id2 && Number.isInteger(nat.id1), "同じ項目なら通知番号が変わらない");
+  ok(nat.id1 !== nat.id3, "別の項目なら通知番号が変わる");
+
   ok(cerrs.length === 0, "JSエラーなし" + (cerrs.length ? " → " + cerrs.join(" / ") : ""));
   await cctx.close();
 }

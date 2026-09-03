@@ -328,6 +328,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="../shared/ics.js"></script>
+<script src="../shared/native.js"></script>
 <script src="ean.js"></script>
 <script>
 "use strict";
@@ -727,6 +728,19 @@ document.getElementById("calendarSoon").addEventListener("click", function () {
       sequence: it.icsSeq || 0
     };
   });
+  // アプリとして動いている場合は端末の通知に登録する。ブラウザではここを素通りする
+  if (window.Native && window.Native.available()) {
+    window.Native.scheduleDeadlines(events).then(function (res) {
+      if (res.ok) { toast("通知を設定しました（" + res.count + "件）"); return; }
+      if (res.reason === "denied") { toast("通知が許可されていません。設定アプリで許可してください"); return; }
+      writeFridgeCalendarFile(events, target);
+    });
+    return;
+  }
+  writeFridgeCalendarFile(events, target);
+});
+
+function writeFridgeCalendarFile(events, target) {
   var text = window.ICS.build(events, { calendarName: "食材の期限" });
   window.ICS.deliver(text, window.ICS.filename("fridge")).then(function (how) {
     if (how === "cancelled") return;
@@ -736,7 +750,7 @@ document.getElementById("calendarSoon").addEventListener("click", function () {
       ? "カレンダーアプリを選んでください（" + target.length + "件）"
       : "予定ファイルを保存しました（" + target.length + "件）。開くとカレンダーに登録できます");
   });
-});
+}
 
 document.getElementById("copyExpiring").addEventListener("click", function () {
   var soon = state.items.filter(function (it) {

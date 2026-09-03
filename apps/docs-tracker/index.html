@@ -300,6 +300,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="../shared/ics.js"></script>
+<script src="../shared/native.js"></script>
 <script>
 "use strict";
 
@@ -668,6 +669,20 @@ function registerToCalendar(items) {
   var target = items.filter(function (it) { return it.dueOn && isOpen(it); });
   if (!target.length) { toast("期限が入った未処理の書類がありません"); return; }
   var events = target.map(toCalendarEvent);
+
+  // アプリとして動いている場合は端末の通知に登録する。ブラウザではここを素通りする
+  if (window.Native && window.Native.available()) {
+    window.Native.scheduleDeadlines(events).then(function (res) {
+      if (res.ok) { toast("通知を設定しました（" + res.count + "件）"); return; }
+      if (res.reason === "denied") { toast("通知が許可されていません。設定アプリで許可してください"); return; }
+      writeCalendarFile(events, target);
+    });
+    return;
+  }
+  writeCalendarFile(events, target);
+}
+
+function writeCalendarFile(events, target) {
   var text = window.ICS.build(events, { calendarName: "書類の期限" });
   window.ICS.deliver(text, window.ICS.filename("deadlines")).then(function (how) {
     if (how === "cancelled") return;
