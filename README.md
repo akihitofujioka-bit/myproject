@@ -64,6 +64,14 @@ Signal や Telegram のような、**相手と自分しか読めない**1対1の
   ただし「誰から誰へ、いつ、どれくらいの大きさの暗号文が流れたか」は中継側に残る
 - **この暗号処理は第三者の監査を受けていない。**日常の連絡向けであり、身の安全に関わる重大な秘密には Signal を使うこと
 
+### 自分の iPhone に入れる
+
+**`docs/iphone-install.md`** に2通りの方法をまとめてある。
+
+- **Mac が無い場合**：Safari で開いて「ホーム画面に追加」（1分・無料）。通知は届かない
+- **Mac がある場合**：`cd mobile-messenger && npm run ios` で Xcode が開く。通知が届き、
+  鍵と履歴は iCloud バックアップから除外される
+
 ### 知り合いに配る（Android）
 
 配布用のアプリ一式は `mobile-messenger/`。手順は **`docs/android-distribution.md`**（相手にそのまま送れる説明文つき）。
@@ -73,7 +81,7 @@ Signal や Telegram のような、**相手と自分しか読めない**1対1の
 - 暗号化なしの通信を禁止し、スクリーンショットと画面録画も不可にしている
 - `npm run apk` で署名済み APK と、すり替え確認用の SHA-256 が出る
 - **APK の組み立て自体はこの環境では未検証**（Android SDK を取得できないため）。
-  設定の正しさと、APK に入るのと同じ中身が動くことまでは `node apps/tests/android-package.test.mjs` で確認済み
+  設定の正しさと、APK に入るのと同じ中身が動くことまでは `node apps/tests/mobile-package.test.mjs` で確認済み
 
 ## iPhone / Android アプリとして書き出す（`mobile/`）
 

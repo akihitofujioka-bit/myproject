@@ -6,6 +6,7 @@
  * 出力先
  *   apps/messenger/icon-{180,192,512}.png            … Web・ホーム画面に追加したとき用
  *   mobile-messenger/android の res/mipmap-各密度/ic_launcher ほか … Android アプリ用
+ *   mobile-messenger/ios の Assets.xcassets の AppIcon と Splash  … iPhone アプリ用
  *
  * 依存ライブラリなしで PNG を書き出す（zlib と CRC だけで足りるため）。
  * 図柄は「吹き出しの中に南京錠」。青地に白の吹き出し、錠は地の色で抜く。
@@ -44,21 +45,23 @@ function chunk(type, data) {
   return Buffer.concat([length, body, crc]);
 }
 
-function writePng(file, size, pixel) {
-  const raw = Buffer.alloc(size * (size * 4 + 1));
+function writePng(file, size, pixel, opaque) {
+  const channels = opaque ? 3 : 4;
+  const raw = Buffer.alloc(size * (size * channels + 1));
   let at = 0;
   for (let y = 0; y < size; y++) {
     raw[at++] = 0;   // 行ごとのフィルタ種別（0 = なし）
     for (let x = 0; x < size; x++) {
       const [r, g, b, a] = pixel(x, y);
-      raw[at++] = r; raw[at++] = g; raw[at++] = b; raw[at++] = a;
+      raw[at++] = r; raw[at++] = g; raw[at++] = b;
+      if (!opaque) raw[at++] = a;
     }
   }
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
   ihdr[8] = 8;   // 1色あたり8ビット
-  ihdr[9] = 6;   // RGBA
+  ihdr[9] = opaque ? 2 : 6;   // 2 = RGB（透過なし）／6 = RGBA
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -110,6 +113,8 @@ function draw(size, opts) {
 
         if (shape === "rounded") {
           if (inRoundRect(x, y, 0, 0, size, size, size * 0.22)) ground++;
+        } else if (shape === "square") {
+          ground++;   // 全面。iOS は角丸を OS 側で付けるため、こちらでは丸めない
         } else if (shape === "circle") {
           const d = (x - size / 2) ** 2 + (y - size / 2) ** 2;
           if (d <= (size / 2) ** 2) ground++;
@@ -157,7 +162,26 @@ function draw(size, opts) {
 /* ---------------- 書き出し ---------------- */
 
 const made = [];
-const emit = (file, size, opts) => made.push(writePng(file, size, draw(size, opts)));
+const emit = (file, size, opts) => made.push(writePng(file, size, draw(size, opts), !!opts.opaque));
+
+// 起動画面：一色の地の上に、中央へロゴを重ねる（画面いっぱいに引き伸ばしても歪まない）
+function splash(size, background, logoSize) {
+  const logo = draw(logoSize, { shape: "rounded" });
+  const origin = Math.round((size - logoSize) / 2);
+  return (x, y) => {
+    if (x >= origin && x < origin + logoSize && y >= origin && y < origin + logoSize) {
+      const [r, g, b, a] = logo(x - origin, y - origin);
+      const t = a / 255;
+      return [
+        Math.round(background[0] + (r - background[0]) * t),
+        Math.round(background[1] + (g - background[1]) * t),
+        Math.round(background[2] + (b - background[2]) * t),
+        255
+      ];
+    }
+    return [...background, 255];
+  };
+}
 
 // Web・ホーム画面に追加したとき用
 for (const size of [180, 192, 512]) {
@@ -181,6 +205,27 @@ if (fs.existsSync(path.dirname(RES))) {
   }
   // 起動画面に出す図柄（144dp 相当）
   emit(path.join(RES, "drawable-xxhdpi/splash_logo.png"), 432, { shape: "rounded" });
+}
+
+// iPhone アプリ用
+const IOS = path.join(ROOT, "mobile-messenger/ios/App/App/Assets.xcassets");
+if (fs.existsSync(IOS)) {
+  // アプリアイコン。iOS は透過も角丸も許さないため、全面を塗った不透明の画像にする
+  emit(path.join(IOS, "AppIcon.appiconset/AppIcon-512@2x.png"), 1024, { shape: "square", opaque: true });
+
+  // 起動画面。明るい配色と暗い配色の2種類を用意する
+  const SPLASH = 2732;
+  const LOGO = 720;
+  for (const [suffix, background] of [["", [245, 246, 248]], ["-dark", [22, 24, 28]]]) {
+    const first = path.join(IOS, `Splash.imageset/splash-2732x2732${suffix}.png`);
+    made.push(writePng(first, SPLASH, splash(SPLASH, background, LOGO), true));
+    // 1x・2x・3x で同じ絵を使う（画面いっぱいに広げるため、大きさの違いは意味を持たない）
+    for (const n of [1, 2]) {
+      const copy = path.join(IOS, `Splash.imageset/splash-2732x2732${suffix}-${n}.png`);
+      fs.copyFileSync(first, copy);
+      made.push(copy);
+    }
+  }
 }
 
 console.log(`アイコンを ${made.length} 個作りました。`);

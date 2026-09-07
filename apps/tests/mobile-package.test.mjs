@@ -1,13 +1,14 @@
 /*
- * 配布用 Android アプリ（mobile-messenger/）の検査。
+ * 端末アプリ（mobile-messenger/）の検査。Android と iPhone の両方を見る。
  *
- *   node apps/tests/android-package.test.mjs
+ *   node apps/tests/mobile-package.test.mjs
  *
- * 2つのことを見る。
- *  1. Android プロジェクトの設定（権限・通信・バックアップ・署名・アイコン）が意図どおりか
- *  2. APK に入るのと同じ www/ の中身が、ブラウザで実際に動くか（Playwright）
+ * 3つのことを見る。
+ *  1. Android の設定（権限・通信・バックアップ・署名・アイコン・撮影防止）が意図どおりか
+ *  2. iPhone の設定（利用目的の文言・通信・バックアップ除外・アイコン）が意図どおりか
+ *  3. アプリに入るのと同じ www/ の中身が、ブラウザで実際に動くか（Playwright）
  *
- * この作業環境では Android SDK を取得できないため、APK 自体の組み立ては確認していない。
+ * この作業環境では Android SDK も Xcode も使えないため、アプリ自体の組み立ては確認していない。
  * 確認しているのは「組み立てる材料が正しいこと」まで。
  */
 import fs from "node:fs";
@@ -22,6 +23,17 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const APP = path.join(ROOT, "mobile-messenger");
 const ANDROID = path.join(APP, "android");
 const RES = path.join(ANDROID, "app/src/main/res");
+const IOS = path.join(APP, "ios/App");
+const ASSETS = path.join(IOS, "App/Assets.xcassets");
+
+// PNG の見出し（IHDR）から大きさと色の持ち方を読む。
+// iOS のアプリアイコンは透過を持てないため、そこを確かめるのに使う。
+function pngHeader(file) {
+  if (!fs.existsSync(file)) return null;
+  const head = fs.readFileSync(file).subarray(0, 26);
+  if (head.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") return null;
+  return { width: head.readUInt32BE(16), height: head.readUInt32BE(20), colorType: head[25] };
+}
 
 let failures = 0;
 const ok = (cond, label) => {
@@ -33,7 +45,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------------- 1. Android プロジェクトの設定 ---------------- */
 
-console.log("== 求める権限 ==");
+console.log("== Android：求める権限 ==");
 const manifest = read(path.join(ANDROID, "app/src/main/AndroidManifest.xml"));
 ok(manifest.length > 0, "AndroidManifest.xml がある");
 const permissions = [...manifest.matchAll(/<uses-permission[^>]*android:name="([^"]+)"/g)].map((m) => m[1]);
@@ -42,7 +54,7 @@ ok(permissions.length === 1 && permissions[0] === "android.permission.INTERNET",
 ok(!/CAMERA|READ_MEDIA|READ_EXTERNAL_STORAGE|CONTACTS|LOCATION/.test(manifest),
   "カメラ・写真・連絡先・位置情報の権限は求めない");
 
-console.log("== 鍵と履歴を端末の外へ出さない ==");
+console.log("== Android：鍵と履歴を端末の外へ出さない ==");
 ok(/android:allowBackup="false"/.test(manifest), "自動バックアップを無効にしている");
 ok(/android:dataExtractionRules="@xml\/data_extraction_rules"/.test(manifest), "端末間の移行の対象から外す設定を指している");
 ok(/android:fullBackupContent="@xml\/backup_rules"/.test(manifest), "古い端末向けのバックアップ除外も指している");
@@ -50,18 +62,18 @@ const extraction = read(path.join(RES, "xml/data_extraction_rules.xml"));
 ok(/<cloud-backup>[\s\S]*<exclude domain="root"[\s\S]*<\/cloud-backup>/.test(extraction), "クラウドへの複製から除外している");
 ok(/<device-transfer>[\s\S]*<exclude domain="root"[\s\S]*<\/device-transfer>/.test(extraction), "端末間の移行から除外している");
 
-console.log("== 通信 ==");
+console.log("== Android：通信 ==");
 ok(/android:usesCleartextTraffic="false"/.test(manifest), "暗号化されていない http を使わない");
 const netConfig = read(path.join(RES, "xml/network_security_config.xml"));
 ok(/cleartextTrafficPermitted="false"/.test(netConfig), "通信の決まりでも http を禁じている");
 ok(/android:networkSecurityConfig="@xml\/network_security_config"/.test(manifest), "その決まりを実際に適用している");
 
-console.log("== 画面の撮影 ==");
+console.log("== Android：画面の撮影 ==");
 const activity = read(path.join(ANDROID, "app/src/main/java/jp/myproject/messenger/MainActivity.java"));
 ok(/FLAG_SECURE/.test(activity), "スクリーンショットと画面録画を止める設定が入っている");
 ok(/super\.onCreate\(savedInstanceState\);[\s\S]*FLAG_SECURE/.test(activity), "画面ができたあとに設定している");
 
-console.log("== 署名と版 ==");
+console.log("== Android：署名と版 ==");
 const gradle = read(path.join(ANDROID, "app/build.gradle"));
 ok(/signingConfigs\s*\{[\s\S]*release/.test(gradle), "配布用の署名の設定がある");
 ok(/keystore\.properties/.test(gradle), "署名鍵はファイルから読む（コードに書かない）");
@@ -74,7 +86,7 @@ for (const stray of ["messenger-release.keystore", "release.keystore", "app.jks"
   ok(!fs.existsSync(path.join(APP, stray)), "署名鍵そのものが置き去りになっていない（" + stray + "）");
 }
 
-console.log("== アイコン ==");
+console.log("== Android：アイコン ==");
 for (const density of ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"]) {
   const dir = path.join(RES, "mipmap-" + density);
   const files = ["ic_launcher.png", "ic_launcher_round.png", "ic_launcher_foreground.png", "ic_launcher_monochrome.png"];
@@ -86,6 +98,41 @@ ok(/<monochrome/.test(adaptive), "壁紙に色を合わせる表示（Android 13
 ok(/#2F6FED/i.test(read(path.join(RES, "values/ic_launcher_background.xml"))), "アイコンの地の色がアプリの色と揃っている");
 ok(fs.existsSync(path.join(RES, "drawable/splash.xml")), "起動画面が歪まない作りになっている");
 ok(/splash_background/.test(read(path.join(RES, "values-night/colors.xml"))), "暗い配色のときの起動画面も用意している");
+
+console.log("== iPhone：写真とカメラの利用目的 ==");
+const plist = read(path.join(IOS, "App/Info.plist"));
+ok(plist.length > 0, "Info.plist がある");
+ok(/<key>NSCameraUsageDescription<\/key>\s*<string>[^<]*写真[^<]*<\/string>/.test(plist),
+  "カメラを使う理由が日本語で書かれている（無いと写真を撮る瞬間に落ちる）");
+ok(/<key>NSPhotoLibraryUsageDescription<\/key>\s*<string>[^<]*写真[^<]*<\/string>/.test(plist),
+  "写真を使う理由が日本語で書かれている");
+
+console.log("== iPhone：通信とバックアップ ==");
+ok(/<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/.test(plist), "暗号化されていない http を許さない");
+const appDelegate = read(path.join(IOS, "App/AppDelegate.swift"));
+ok(/isExcludedFromBackup\s*=\s*true/.test(appDelegate), "鍵と履歴を iCloud のバックアップから外している");
+ok(/libraryDirectory/.test(appDelegate) && /documentDirectory/.test(appDelegate),
+  "アプリのデータ置き場をどちらも対象にしている");
+const sceneDelegate = read(path.join(IOS, "App/SceneDelegate.swift"));
+ok(/sceneWillResignActive/.test(sceneDelegate) && /privacyCover/.test(sceneDelegate),
+  "アプリ切り替えの一覧に会話が写らないようにしている");
+ok(/sceneDidBecomeActive/.test(sceneDelegate) && /removeFromSuperview/.test(sceneDelegate),
+  "戻ってきたら覆いを外している");
+
+console.log("== iPhone：アイコンと起動画面 ==");
+const bundle = read(path.join(IOS, "App.xcodeproj/project.pbxproj"));
+ok(/PRODUCT_BUNDLE_IDENTIFIER = jp\.myproject\.messenger;/.test(bundle), "アプリの識別子が配布用のものになっている");
+const appIcon = pngHeader(path.join(ASSETS, "AppIcon.appiconset/AppIcon-512@2x.png"));
+ok(!!appIcon && appIcon.width === 1024 && appIcon.height === 1024, "アプリアイコンが 1024×1024 である");
+ok(!!appIcon && appIcon.colorType === 2, "アプリアイコンに透過が含まれていない（iOS の決まり）");
+const splashJson = JSON.parse(read(path.join(ASSETS, "Splash.imageset/Contents.json")));
+ok(splashJson.images.length === 6, "起動画面が明るい配色・暗い配色の両方ぶん定義されている");
+ok(splashJson.images.some((i) => (i.appearances || []).some((a) => a.value === "dark")),
+  "暗い配色のときの起動画面が指定されている");
+ok(splashJson.images.every((i) => fs.existsSync(path.join(ASSETS, "Splash.imageset", i.filename))),
+  "定義されている画像がすべて存在する");
+const splashPng = pngHeader(path.join(ASSETS, "Splash.imageset/splash-2732x2732.png"));
+ok(!!splashPng && splashPng.width === 2732, "起動画面の画像が所定の大きさである");
 
 console.log("== アプリに入る中身 ==");
 const WWW = path.join(APP, "www");
@@ -102,7 +149,8 @@ ok(read(path.join(WWW, "index.html")).includes('src="shared/native.js"'), "共�
 const assets = path.join(ANDROID, "app/src/main/assets");
 ok(fs.existsSync(path.join(assets, "public/index.html")), "その中身が Android 側にも写っている（cap sync 済み）");
 ok(JSON.parse(read(path.join(assets, "capacitor.config.json"))).appId === "jp.myproject.messenger",
-  "アプリの識別子が配布用のものになっている");
+  "Android 側のアプリの識別子が配布用のものになっている");
+ok(fs.existsSync(path.join(IOS, "App/public/index.html")), "その中身が iPhone 側にも写っている（cap sync 済み）");
 
 /* ---------------- 2. APK に入るのと同じ中身を、実際に動かす ---------------- */
 
@@ -116,7 +164,7 @@ try {
   process.exit(failures ? 1 : 0);
 }
 
-console.log("== 実際に動かす（APK に入るのと同じ www を使う）==");
+console.log("== 実際に動かす（アプリに入るのと同じ www を使う）==");
 
 const RELAY_PORT = 8600 + Math.floor(Math.random() * 150);
 const RELAY = `http://127.0.0.1:${RELAY_PORT}`;

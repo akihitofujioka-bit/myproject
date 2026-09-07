@@ -1,6 +1,5 @@
 node_modules/
 www/
-ios/
 
 # 署名鍵とその暗証番号。これが漏れると、他人があなたのアプリの更新版を偽造できる。
 # 絶対にリポジトリへ入れないこと。
@@ -8,10 +7,14 @@ keystore.properties
 *.keystore
 *.jks
 
-# ビルドの中間生成物
+# Android：ビルドの中間生成物
 android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
 android/.idea/
 android/app/release/
+
+# iOS：npm run sync で作り直されるものと、ビルドの中間生成物は
+# Capacitor が用意する ios/.gitignore が除いている。ここでは足りない分だけ足す。
+ios/DerivedData/

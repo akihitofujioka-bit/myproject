@@ -1,13 +1,18 @@
-# 配布用アプリ「ふたりのメッセージ」（Android）
+# アプリ「ふたりのメッセージ」（Android / iPhone）
 
-知り合いに渡すための、**メッセージアプリ単体**の Capacitor プロジェクト。
+**メッセージアプリ単体**の Capacitor プロジェクト。
+相手に渡す Android 版と、自分の iPhone に入れる iOS 版の両方をここから作る。
 
-**手順は [`docs/android-distribution.md`](../docs/android-distribution.md) にまとめてある。**
+| 目的 | 手順書 |
+| --- | --- |
+| 知り合いに渡す（Android） | [`docs/android-distribution.md`](../docs/android-distribution.md) |
+| 自分の iPhone に入れる | [`docs/iphone-install.md`](../docs/iphone-install.md) |
 
 ```bash
 npm install     # 初回だけ
-npm run apk     # 署名済みの配布用 APK を作る
+npm run apk     # 署名済みの配布用 APK を作る（Android）
 npm run android # Android Studio で開く
+npm run ios     # Xcode で開く（Mac が必要）
 ```
 
 ## `mobile/` との違い
@@ -23,12 +28,18 @@ npm run android # Android Studio で開く
 
 ## 安全上の設定
 
-- 求める権限は**インターネット接続だけ**（カメラ・連絡先・位置情報・保存領域は求めない）
-- 自動バックアップと端末間の移行を**無効**にしている（秘密鍵と履歴を端末の外へ出さないため）
-- 暗号化なしの `http://` 通信を**禁止**している
-- スクリーンショットと画面録画を**不可**にしている（`MainActivity.java` の `FLAG_SECURE`）
+| 項目 | Android | iPhone |
+| --- | --- | --- |
+| 求める権限 | インターネット接続だけ | 写真・カメラ（利用目的を明記） |
+| バックアップ | 自動バックアップ・端末間移行を無効 | iCloud・パソコンへのバックアップから除外 |
+| `http://` 通信 | 禁止 | 禁止 |
+| スクリーンショット | **不可**（`FLAG_SECURE`） | iOS に止める仕組みが無いため**可能** |
+| アプリ切り替えの一覧 | 会話が写らない | 会話が写らない（単色で覆う） |
 
-これらは `node apps/tests/android-package.test.mjs` で機械的に検査している。
+バックアップを外しているため、**どちらの端末でも機種変更でメッセージは引き継がれない**。
+引き継ぐときはアプリの「JSONで保存」を使う。
+
+これらは `node apps/tests/mobile-package.test.mjs` で機械的に検査している。
 
 ## 署名鍵について
 

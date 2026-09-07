@@ -124,7 +124,7 @@ Google Play を通していないため、**「提供元不明のアプリ」の
 
 ## このアプリの安全上の作り込み
 
-配布にあたって、次のように設定してある（`node apps/tests/android-package.test.mjs` で検査している）。
+配布にあたって、次のように設定してある（`node apps/tests/mobile-package.test.mjs` で検査している）。
 
 | 項目 | 設定 | 理由 |
 | --- | --- | --- |

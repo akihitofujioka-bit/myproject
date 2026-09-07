@@ -142,7 +142,7 @@ node apps/tests/relay.test.mjs         # 中継サーバー（ブラウザ不要
 node apps/tests/smoke.mjs              # 冷蔵庫・書類トラッカーの画面操作ひととおり
 node apps/tests/messenger.smoke.mjs    # メッセージアプリを2画面で実際にやりとりさせる
 node apps/tests/pwa.test.mjs           # ホーム画面追加・オフライン起動
-node apps/tests/android-package.test.mjs  # 配布用 Android アプリの設定と中身
+node apps/tests/mobile-package.test.mjs  # 配布用アプリ（Android・iPhone）の設定と中身
 ```
 
 後ろ4つは Playwright を使う（`npm i -D playwright && npx playwright install chromium`）。
