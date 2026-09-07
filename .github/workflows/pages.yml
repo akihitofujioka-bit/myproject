@@ -1,6 +1,7 @@
-# apps/ の中の2つのアプリを GitHub Pages に公開する。
+# apps/ の中のアプリを GitHub Pages に公開する。
 #
-# 公開されるのは fridge / docs-tracker / トップページだけで、テストや設定ファイルは含めない。
+# 公開されるのは fridge / docs-tracker / messenger / トップページだけで、テストや設定ファイルは含めない。
+# メッセージアプリで公開されるのは画面と処理だけ。鍵も履歴も端末の中にしか無いため公開されない。
 # Pages が未設定の場合は configure-pages の enablement で自動的に有効化を試みる。
 # 権限などで自動化できなかった場合のみ、Settings → Pages → Source を "GitHub Actions" にする。
 name: 日常アプリを公開
@@ -34,7 +35,7 @@ jobs:
       - name: 公開するファイルだけを集める
         run: |
           mkdir -p _site
-          cp -r apps/fridge apps/docs-tracker apps/shared _site/
+          cp -r apps/fridge apps/docs-tracker apps/messenger apps/shared _site/
           cp apps/index.html _site/index.html
           # Jekyll による加工を止める（そのままのファイルを配りたいため）
           touch _site/.nojekyll

@@ -87,9 +87,34 @@
     });
   }
 
+  /**
+   * いますぐ端末の通知を出す（メッセージの着信など、時刻を予約しない通知）。
+   * ネイティブアプリのときは端末の通知、ブラウザのときは許可済みなら Web の通知を使う。
+   * どちらも使えなければ何もしない（画面内の表示だけで済ませる）。
+   */
+  function notifyNow(title, body, tag) {
+    var api = notifications();
+    if (api) {
+      return api.requestPermissions().then(function (res) {
+        if (!res || res.display !== "granted") return { ok: false, reason: "denied" };
+        return api.schedule({
+          notifications: [{ id: idFrom(String(tag || title) + Date.now()), title: title, body: body || "" }]
+        }).then(function () { return { ok: true }; }, function () { return { ok: false, reason: "schedule-failed" }; });
+      }, function () { return { ok: false, reason: "permission-error" }; });
+    }
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification(title, { body: body || "", tag: tag || "" });
+        return Promise.resolve({ ok: true });
+      }
+    } catch (e) { /* 通知が使えない環境 */ }
+    return Promise.resolve({ ok: false, reason: "not-available" });
+  }
+
   global.Native = {
     available: available,
     scheduleDeadlines: scheduleDeadlines,
+    notifyNow: notifyNow,
     idFrom: idFrom
   };
 })(typeof window !== "undefined" ? window : this);

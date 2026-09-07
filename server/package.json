@@ -1,0 +1,14 @@
+{
+  "name": "myproject-messenger-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "暗号化メッセージの中継サーバー。暗号文を預かって渡すだけで、中身は開けない",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

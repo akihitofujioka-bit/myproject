@@ -10,5 +10,8 @@
       "smallIcon": "ic_stat_icon",
       "iconColor": "#2f6fed"
     }
+  },
+  "android": {
+    "allowMixedContent": false
   }
 }

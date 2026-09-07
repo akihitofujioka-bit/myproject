@@ -57,7 +57,7 @@ const launchOptions = { args: ["--no-sandbox"] };
 if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMIUM_PATH;
 const browser = await chromium.launch(launchOptions);
 
-for (const app of ["fridge", "docs-tracker"]) {
+for (const app of ["fridge", "docs-tracker", "messenger"]) {
   const ctx = await browser.newContext({ serviceWorkers: "allow" });
   const page = await ctx.newPage();
   const errs = [];
@@ -81,11 +81,23 @@ for (const app of ["fridge", "docs-tracker"]) {
     ok(await page.evaluate(() => !!(window.EAN && window.EAN.decodeRow)),
       "fridge: 通信できない状態でもバーコード読み取りが使える");
   }
-  ok(await page.evaluate(() => !!(window.ICS && window.ICS.build)),
-    `${app}: 通信できない状態でもカレンダー登録が使える`);
-  ok(await page.evaluate(() => {
-    try { localStorage.setItem("x", "1"); localStorage.removeItem("x"); return true; } catch (e) { return false; }
-  }), `${app}: 通信できない状態でもデータを保存できる`);
+  if (app === "messenger") {
+    ok(await page.evaluate(() => !!(window.MsgCrypto && window.MsgCrypto.createIdentity)),
+      "messenger: 通信できない状態でも暗号処理が使える");
+    ok(await page.evaluate(() => !!(window.MsgStore && window.MsgStore.open)),
+      "messenger: 通信できない状態でも保存の仕組みが使える");
+    ok(await page.evaluate(() => new Promise((resolve) => {
+      const req = indexedDB.open("pwa-test-probe");
+      req.onsuccess = () => { req.result.close(); indexedDB.deleteDatabase("pwa-test-probe"); resolve(true); };
+      req.onerror = () => resolve(false);
+    })), "messenger: 通信できない状態でもデータを保存できる");
+  } else {
+    ok(await page.evaluate(() => !!(window.ICS && window.ICS.build)),
+      `${app}: 通信できない状態でもカレンダー登録が使える`);
+    ok(await page.evaluate(() => {
+      try { localStorage.setItem("x", "1"); localStorage.removeItem("x"); return true; } catch (e) { return false; }
+    }), `${app}: 通信できない状態でもデータを保存できる`);
+  }
   await ctx.setOffline(false);
   ok(errs.length === 0, `${app}: JSエラーなし${errs.length ? " → " + errs.join(" / ") : ""}`);
   await ctx.close();

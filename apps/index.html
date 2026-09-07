@@ -46,7 +46,7 @@ li { margin-bottom: 4px; }
 <body>
 <div class="wrap">
   <h1>日常アプリ</h1>
-  <p class="lead">入力した内容はこの端末の中だけに保存され、どこにも送信されません。</p>
+  <p class="lead">入力した内容はこの端末の中だけに保存されます（メッセージだけは、暗号にしてから相手に送ります）。</p>
 
   <a class="app" href="fridge/">
     <img src="fridge/icon-192.png" alt="">
@@ -61,6 +61,14 @@ li { margin-bottom: 4px; }
     <span>
       <span class="name">書類・回覧の期限トラッカー</span><br>
       <span class="desc">提出期限のある書類を、状態とともに管理します</span>
+    </span>
+  </a>
+
+  <a class="app" href="messenger/">
+    <img src="messenger/icon-192.png" alt="">
+    <span>
+      <span class="name">ふたりのメッセージ</span><br>
+      <span class="desc">相手と自分しか読めない形にして、文章と写真を送ります</span>
     </span>
   </a>
 
@@ -80,6 +88,7 @@ li { margin-bottom: 4px; }
       <li>データは端末ごとに別々です。機種変更やブラウザの変更では引き継がれません（各アプリの「JSONで保存」で書き出せます）</li>
       <li>ブラウザの閲覧データを削除すると、入力した内容も消えます</li>
       <li>書類トラッカーには、氏名・住所などの個人情報を入力しないでください</li>
+      <li>「ふたりのメッセージ」だけは、相手に届けるため中継サーバーを通ります。本文と写真は暗号のまま通るので中継側では読めませんが、「誰から誰へ、いつ」の記録は中継側に残ります</li>
     </ul>
   </section>
 </div>

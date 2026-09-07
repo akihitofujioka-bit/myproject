@@ -1,0 +1,1389 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ふたりのメッセージ</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f6fed">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="メッセージ">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1c1f24;
+  --muted: #667080;
+  --accent: #2f6fed;
+  --accent-weak: #e8f0ff;
+  --danger: #c0362c;
+  --danger-weak: #fdeceb;
+  --warn: #96610a;
+  --warn-weak: #fbf1de;
+  --ok: #1c7048;
+  --ok-weak: #e7f4ec;
+  --mine: #2f6fed;
+  --mine-text: #ffffff;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --surface: #1f2229;
+    --border: #333842;
+    --text: #e8eaed;
+    --muted: #9aa3b0;
+    --accent: #6d9bff;
+    --accent-weak: #22304d;
+    --danger: #ff8a80;
+    --danger-weak: #3a2320;
+    --warn: #e5b567;
+    --warn-weak: #3a2f1c;
+    --ok: #7fd1a4;
+    --ok-weak: #1e3229;
+    --mine: #3a63b8;
+    --mine-text: #ffffff;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  overscroll-behavior-y: none;
+}
+.screen { display: none; }
+.screen.active { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+.wrap { max-width: 720px; width: 100%; margin: 0 auto; padding: 16px 16px 32px; }
+
+.bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.bar .title { font-weight: 700; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar .sub { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+h1 { font-size: 20px; margin: 8px 0 4px; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+p.lead { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px; margin-bottom: 14px;
+}
+.notice {
+  border: 1px solid var(--warn); background: var(--warn-weak); color: var(--text);
+  border-radius: var(--radius); padding: 10px 12px; font-size: 13px; margin-bottom: 14px;
+}
+.notice.danger { border-color: var(--danger); background: var(--danger-weak); }
+.notice.ok { border-color: var(--ok); background: var(--ok-weak); }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+input, select, textarea, button { font: inherit; color: var(--text); }
+input, select, textarea {
+  width: 100%; padding: 9px; border: 1px solid var(--border);
+  border-radius: 7px; background: var(--bg); font-size: 16px;
+}
+textarea { resize: vertical; min-height: 56px; }
+input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+button {
+  padding: 9px 14px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface); cursor: pointer; font-size: 15px;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+button.small { padding: 5px 10px; font-size: 13px; }
+button.link { border: none; background: none; color: var(--accent); padding: 4px 6px; }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.row > .field { flex: 1 1 160px; min-width: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+code, .code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px; word-break: break-all;
+}
+
+/* 接続状態 */
+.lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.lamp.online { background: var(--ok); }
+.lamp.offline { background: var(--danger); }
+.lamp.connecting { background: var(--warn); }
+
+/* 連絡先の一覧 */
+ul.list { list-style: none; margin: 0; padding: 0; }
+ul.list li {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px; margin-bottom: 8px; cursor: pointer;
+}
+ul.list li:hover { border-color: var(--accent); }
+.avatar {
+  width: 40px; height: 40px; border-radius: 50%; flex: none;
+  background: var(--accent-weak); color: var(--accent);
+  display: flex; align-items: center; justify-content: center; font-weight: 700;
+}
+.who { flex: 1 1 auto; min-width: 0; }
+.who .name { font-weight: 700; }
+.who .preview { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge {
+  background: var(--accent); color: #fff; border-radius: 999px;
+  padding: 1px 8px; font-size: 12px; font-weight: 700; flex: none;
+}
+.badge.quiet { background: var(--bg); color: var(--muted); border: 1px solid var(--border); font-weight: 400; }
+.empty { color: var(--muted); font-size: 14px; text-align: center; padding: 24px 8px; }
+
+/* トーク画面 */
+#talkScreen.active { height: 100vh; height: 100dvh; }
+#messageList { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 12px 8px; }
+#messageList .inner { max-width: 720px; margin: 0 auto; }
+.msg { display: flex; margin-bottom: 10px; }
+.msg.out { justify-content: flex-end; }
+.bubble {
+  max-width: min(78%, 460px);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 8px 11px; white-space: pre-wrap; word-break: break-word;
+}
+.msg.out .bubble { background: var(--mine); border-color: var(--mine); color: var(--mine-text); }
+.bubble img { display: block; max-width: 100%; border-radius: 8px; margin: 2px 0 4px; cursor: zoom-in; }
+.meta { font-size: 11px; opacity: .75; margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; }
+.msg.system { justify-content: center; }
+.msg.system .bubble {
+  background: transparent; border: none; color: var(--muted);
+  font-size: 12px; text-align: center; max-width: 90%;
+}
+.msg .failed { color: var(--danger); }
+.msg.out .failed { color: #ffd7d3; }
+.once {
+  border: 1px dashed var(--accent); border-radius: 10px;
+  padding: 8px 10px; font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.msg.out .once { border-color: rgba(255,255,255,.6); }
+.gone { font-style: italic; opacity: .8; }
+
+#composer {
+  position: sticky; bottom: 0;
+  background: var(--surface); border-top: 1px solid var(--border);
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+}
+#composer .inner { max-width: 720px; margin: 0 auto; }
+#composer .line { display: flex; gap: 8px; align-items: flex-end; }
+#composer .line button { flex: none; white-space: nowrap; }
+#composer .line #text { flex: 1 1 auto; min-width: 0; }
+#text { min-height: 44px; max-height: 140px; }
+#photoPreview { display: none; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+#photoPreview img { width: 46px; height: 46px; object-fit: cover; border-radius: 6px; }
+.toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+  font-size: 13px; cursor: pointer; background: var(--surface);
+}
+.toggle.on { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+
+/* かぶせて出す画面 */
+.modal {
+  position: fixed; inset: 0; z-index: 20; display: none;
+  background: rgba(0,0,0,.55); padding: 16px;
+  align-items: center; justify-content: center;
+}
+.modal.open { display: flex; }
+.modal .panel {
+  background: var(--surface); border-radius: var(--radius);
+  padding: 16px; max-width: 520px; width: 100%; max-height: 90vh; overflow: auto;
+}
+.modal .panel.wide { max-width: 92vw; background: transparent; padding: 0; text-align: center; }
+.modal .panel.wide img { max-width: 100%; max-height: 80vh; border-radius: 8px; }
+.digits {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 17px; letter-spacing: .5px; line-height: 2;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; text-align: center; word-spacing: 6px;
+}
+#toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 30;
+  background: var(--text); color: var(--bg);
+  padding: 9px 16px; border-radius: 999px; font-size: 14px;
+  opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; text-align: center;
+}
+#toast.show { opacity: .95; }
+</style>
+</head>
+<body>
+
+<!-- ============ はじめの設定 ============ -->
+<section id="setupScreen" class="screen">
+  <div class="wrap">
+    <h1>ふたりのメッセージ</h1>
+    <p class="lead">本文と写真はこの端末と相手の端末の中だけで読める形にしてから送ります。中継する側は中身を開けません。</p>
+
+    <div class="card">
+      <h2>はじめの設定</h2>
+      <div class="field" style="margin-bottom:10px">
+        <label for="setupName">相手の画面に出る自分の名前</label>
+        <input id="setupName" maxlength="40" placeholder="例：あきひと" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="setupServer">中継サーバーの場所（https://…）</label>
+        <input id="setupServer" inputmode="url" placeholder="https://例：自分で用意した中継サーバー" autocomplete="off">
+      </div>
+      <p class="lead" style="margin-top:6px">
+        中継サーバーは、相手が電源を切っているときにメッセージを預かる役です。中身は暗号のままなので読まれません。
+        用意のしかたは <code>docs/messenger-setup.md</code> にあります。あとから変更できます。
+      </p>
+      <div class="actions">
+        <button id="setupStart" class="primary">この内容ではじめる</button>
+      </div>
+    </div>
+
+    <div class="notice">
+      <strong>ご確認ください。</strong>
+      この暗号処理は、広く使われている標準的な方式（ECDH P-256／AES-256-GCM）で作っていますが、
+      第三者の監査は受けていません。日常の連絡を他人に見られないようにする用途を想定しています。
+      身の安全に関わる重大な秘密には Signal など監査済みのアプリをお使いください。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 相手の一覧 ============ -->
+<section id="homeScreen" class="screen">
+  <div class="bar">
+    <span class="lamp" id="homeLamp"></span>
+    <span class="title">ふたりのメッセージ<br><span class="sub" id="homeStatus">準備中</span></span>
+    <button id="openSettings" class="small">設定</button>
+  </div>
+  <div class="wrap">
+    <div class="actions" style="margin:0 0 14px">
+      <button id="addContact" class="primary">相手を追加する</button>
+    </div>
+    <ul class="list" id="contactList"></ul>
+    <div class="empty" id="contactEmpty">
+      まだ相手がいません。<br>「相手を追加する」から招待コードを交換してください。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 相手の追加（コードの交換） ============ -->
+<section id="pairScreen" class="screen">
+  <div class="bar">
+    <button id="pairBack" class="small">戻る</button>
+    <span class="title">相手を追加する</span>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <h2>手順</h2>
+      <ol style="margin:0;padding-left:1.3em;font-size:14px">
+        <li>自分が<strong>誘う側</strong>なら「招待コードを作る」を押し、出てきた文字列を相手に渡す</li>
+        <li>相手はそれを下の欄に貼り付け、出てきた<strong>返信コード</strong>を送り返す</li>
+        <li>自分はその返信コードを下の欄に貼り付ける。これで完了</li>
+      </ol>
+      <p class="lead" style="margin:10px 0 0">
+        コードの受け渡しは、LINE・メール・口頭など何でも構いません（コードに秘密鍵は入っていません）。
+        ただし途中ですり替えられていないことを、あとから<strong>安全番号</strong>で確かめてください。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>1. 招待コードを作る（誘う側）</h2>
+      <div class="actions" style="margin-top:0">
+        <button id="makeInvite" class="primary">招待コードを作る</button>
+      </div>
+      <div id="inviteBox" style="display:none;margin-top:10px">
+        <label for="inviteCode">この文字列を相手に渡してください</label>
+        <textarea id="inviteCode" class="code" rows="4" readonly></textarea>
+        <div class="actions">
+          <button id="copyInvite" class="small">コピー</button>
+          <button id="shareInvite" class="small">送る</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. 相手から届いたコードを貼り付ける</h2>
+      <label for="pasteCode">招待コード・返信コードのどちらでも構いません</label>
+      <textarea id="pasteCode" class="code" rows="4" placeholder="MSG1.…"></textarea>
+      <div class="actions">
+        <button id="applyCode" class="primary">読み込む</button>
+        <button id="pasteFromClipboard" class="small">貼り付け</button>
+      </div>
+      <div id="replyBox" style="display:none;margin-top:12px">
+        <div class="notice ok">相手を登録しました。下の<strong>返信コード</strong>を相手に送り返してください。これを送らないと相手側で会話が始まりません。</div>
+        <label for="replyCode">返信コード</label>
+        <textarea id="replyCode" class="code" rows="4" readonly></textarea>
+        <div class="actions">
+          <button id="copyReply" class="small">コピー</button>
+          <button id="shareReply" class="small">送る</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ トーク ============ -->
+<section id="talkScreen" class="screen">
+  <div class="bar">
+    <button id="talkBack" class="small">戻る</button>
+    <span class="title" id="talkTitle">　<br><span class="sub" id="talkSub"></span></span>
+    <button id="openVanish" class="small">消える</button>
+    <button id="openSafety" class="small">安全番号</button>
+  </div>
+
+  <div id="messageList"><div class="inner" id="messageInner"></div></div>
+
+  <div id="composer">
+    <div class="inner">
+      <div id="photoPreview"><img id="photoThumb" alt=""><span id="photoInfo"></span><button id="photoClear" class="small">取り消す</button></div>
+      <div class="line">
+        <button id="photoBtn" class="small" title="写真を添える">写真</button>
+        <textarea id="text" rows="1" placeholder="メッセージを入力"></textarea>
+        <button id="sendBtn" class="primary">送信</button>
+      </div>
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="toggle" id="onceToggle" role="button" tabindex="0">1回だけ</span>
+        <span class="sub" id="vanishHint" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <input type="file" id="photoInput" accept="image/*" hidden>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 設定 ============ -->
+<section id="settingsScreen" class="screen">
+  <div class="bar">
+    <button id="settingsBack" class="small">戻る</button>
+    <span class="title">設定</span>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <h2>自分について</h2>
+      <div class="field" style="margin-bottom:10px">
+        <label for="myName">相手の画面に出る名前</label>
+        <input id="myName" maxlength="40">
+      </div>
+      <label>自分の宛先番号（公開鍵から決まる番号。人に見せても問題ありません）</label>
+      <div class="code" id="myId" style="padding:8px;background:var(--bg);border-radius:7px;border:1px solid var(--border)"></div>
+      <div class="actions"><button id="copyMyId" class="small">コピー</button></div>
+    </div>
+
+    <div class="card">
+      <h2>中継サーバー</h2>
+      <div class="field">
+        <label for="myServer">場所（https://…）</label>
+        <input id="myServer" inputmode="url">
+      </div>
+      <div class="actions">
+        <button id="saveServer" class="primary">保存してつなぎ直す</button>
+        <button id="testServer" class="small">つながるか確かめる</button>
+      </div>
+      <p class="lead" id="serverInfo" style="margin:10px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <h2>この端末のデータ</h2>
+      <p class="lead">
+        鍵と履歴はこの端末の中だけにあります。機種変更では引き継がれません。
+        書き出したファイルには<strong>秘密鍵がそのまま入ります</strong>。取り扱いに十分ご注意ください。
+      </p>
+      <div class="actions">
+        <button id="exportData" class="small">JSONで保存（引っ越し用）</button>
+        <button id="importData" class="small">JSONから読み込み</button>
+        <button id="wipeData" class="danger small">すべて消す</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="notice">
+      この暗号処理は第三者の監査を受けていません。日常の連絡向けです。
+      中継サーバーには「誰から誰へ、いつ、どれくらいの大きさの暗号文が流れたか」は残ります（本文と写真は残りません）。
+    </div>
+  </div>
+</section>
+
+<!-- ============ かぶせて出す画面 ============ -->
+<div class="modal" id="safetyModal">
+  <div class="panel">
+    <h2>安全番号</h2>
+    <p class="lead">
+      電話や対面など<strong>別の手段</strong>で、相手の画面に出ている番号と読み合わせてください。
+      一致すれば、コードの受け渡しが途中で入れ替えられていないことを確認できます。
+    </p>
+    <div class="digits" id="safetyDigits"></div>
+    <div class="actions"><button id="closeSafety" class="primary">閉じる</button></div>
+  </div>
+</div>
+
+<div class="modal" id="vanishModal">
+  <div class="panel">
+    <h2>消えるメッセージ</h2>
+    <p class="lead">
+      設定すると、その時刻を過ぎたメッセージが<strong>双方の端末から自動で消えます</strong>。
+      数え始めは、送った側は送信したとき、受け取った側は<strong>端末に届いたとき</strong>です。
+      設定は相手にも自動で伝わります。
+    </p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field">
+        <label for="vanishSelect">この会話の設定</label>
+        <select id="vanishSelect"></select>
+      </div>
+    </div>
+    <div class="notice">
+      <strong>できないこと。</strong>相手が画面を撮影したり、別のアプリで記録した場合までは防げません。
+      これは Signal など他のアプリでも同じです。
+    </div>
+    <div class="actions">
+      <button id="applyVanish" class="primary">この設定にする</button>
+      <button id="closeVanish" class="small">やめる</button>
+      <button id="clearHistory" class="danger small">この会話の履歴を消す</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="onceModal">
+  <div class="panel">
+    <h2>1回だけのメッセージ</h2>
+    <p class="lead">閉じると、この内容は端末から完全に消えます。</p>
+    <div id="onceBody" style="white-space:pre-wrap;word-break:break-word"></div>
+    <div class="actions"><button id="closeOnce" class="primary">閉じて消す</button></div>
+  </div>
+</div>
+
+<div class="modal" id="imageModal">
+  <div class="panel wide">
+    <img id="imageLarge" alt="">
+    <div class="actions" style="justify-content:center"><button id="closeImage" class="primary">閉じる</button></div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="../shared/native.js"></script>
+<script src="crypto.js"></script>
+<script src="store.js"></script>
+<script src="net.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (sel) { return document.querySelector(sel); };
+  var state = {
+    identity: null,
+    server: "",
+    sessions: [],
+    peerId: null,
+    messages: [],
+    net: null,
+    pendingInvite: null,
+    photo: null,
+    once: false,
+    unknownWarned: false
+  };
+
+  // 消えるまでの時間の選択肢。既定は「オフ（消えない）」
+  var TTL_CHOICES = [
+    { ms: 0, label: "オフ（消えない）" },
+    { ms: 60 * 60 * 1000, label: "1時間後" },
+    { ms: 8 * 60 * 60 * 1000, label: "8時間後" },
+    { ms: 24 * 60 * 60 * 1000, label: "1日後" },
+    { ms: 7 * 24 * 60 * 60 * 1000, label: "1週間後" },
+    { ms: 28 * 24 * 60 * 60 * 1000, label: "4週間後" }
+  ];
+  var ttlLabel = function (ms) {
+    for (var i = 0; i < TTL_CHOICES.length; i++) if (TTL_CHOICES[i].ms === Number(ms || 0)) return TTL_CHOICES[i].label;
+    return Math.round(Number(ms) / 60000) + "分後";
+  };
+
+  /* ---------------- 画面まわりの道具 ---------------- */
+
+  function show(name) {
+    ["setup", "home", "pair", "talk", "settings"].forEach(function (key) {
+      $("#" + key + "Screen").classList.toggle("active", key === name);
+    });
+    window.scrollTo(0, 0);
+  }
+
+  var toastTimer = null;
+  function toast(message) {
+    var el = $("#toast");
+    el.textContent = message;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 2600);
+  }
+
+  function openModal(id) { $("#" + id).classList.add("open"); }
+  function closeModal(id) { $("#" + id).classList.remove("open"); }
+
+  // 通信では URL に入れやすい記法（base64url）を使っているため、
+  // 画面に出すときは data: URL が読める標準の base64 に直す
+  function dataUrl(mime, data) {
+    var text = String(data || "").replace(/-/g, "+").replace(/_/g, "/");
+    while (text.length % 4) text += "=";
+    return "data:" + (mime || "image/jpeg") + ";base64," + text;
+  }
+
+  function clock(at) {
+    var d = new Date(at);
+    var today = new Date();
+    var sameDay = d.toDateString() === today.toDateString();
+    var hm = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    return sameDay ? hm : (d.getMonth() + 1) + "/" + d.getDate() + " " + hm;
+  }
+
+  function remaining(expiresAt) {
+    var left = expiresAt - Date.now();
+    if (left <= 0) return "まもなく消えます";
+    var minutes = Math.ceil(left / 60000);
+    if (minutes < 60) return "あと" + minutes + "分で消えます";
+    var hours = Math.ceil(minutes / 60);
+    if (hours < 48) return "あと" + hours + "時間で消えます";
+    return "あと" + Math.ceil(hours / 24) + "日で消えます";
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("コピーしました");
+    } catch (e) {
+      toast("コピーできませんでした。長押しで選んでください");
+    }
+  }
+
+  async function shareText(text, title) {
+    if (navigator.share) {
+      try { await navigator.share({ title: title, text: text }); return; } catch (e) { return; }
+    }
+    copyText(text);
+  }
+
+  /* ---------------- 起動 ---------------- */
+
+  async function boot() {
+    await MsgStore.open();
+    state.identity = await MsgStore.getValue("identity");
+    state.server = (await MsgStore.getValue("server")) || "";
+    state.pendingInvite = await MsgStore.getValue("pendingInvite");
+
+    if (!state.identity) { show("setup"); return; }
+    await startSession();
+  }
+
+  async function startSession() {
+    $("#myName").value = state.identity.name;
+    $("#myId").textContent = state.identity.id;
+    $("#myServer").value = state.server;
+    await refreshContacts();
+    show("home");
+    connect();
+    purgeLoop();
+  }
+
+  $("#setupStart").addEventListener("click", async function () {
+    var name = $("#setupName").value.trim();
+    var server = MsgNet.trimUrl($("#setupServer").value);
+    if (!name) return toast("名前を入れてください");
+    if (!/^https?:\/\/.+/.test(server)) return toast("中継サーバーの場所を https:// から入れてください");
+
+    $("#setupStart").disabled = true;
+    try {
+      state.identity = await MsgCrypto.createIdentity(name);
+      state.server = server;
+      await MsgStore.setValue("identity", state.identity);
+      await MsgStore.setValue("server", server);
+      await startSession();
+    } catch (e) {
+      toast("うまくいきませんでした：" + e.message);
+    } finally {
+      $("#setupStart").disabled = false;
+    }
+  });
+
+  /* ---------------- 中継サーバーとの接続 ---------------- */
+
+  function setLamp(status, detail) {
+    var lamp = $("#homeLamp");
+    lamp.className = "lamp " + status;
+    var words = { connecting: "接続中…", online: "接続済み", offline: "未接続" };
+    $("#homeStatus").textContent = (words[status] || status) + (detail ? "（" + detail + "）" : "");
+  }
+
+  function connect() {
+    if (state.net) state.net.close();
+    if (!state.server) { setLamp("offline", "中継サーバー未設定"); return; }
+
+    setLamp("connecting");
+    MsgNet.register(state.server, state.identity).then(function () {
+      state.net = MsgNet.connect(state.server, state.identity, {
+        onMessage: receive,
+        onStatus: function (status, detail) {
+          setLamp(status, detail);
+          if (status === "online") flushOutbox();
+        }
+      });
+    }, function (e) {
+      setLamp("offline", e.message);
+    });
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) {
+      if (state.net) state.net.refresh();
+      purge();
+    }
+  });
+
+  /* ---------------- 受信 ---------------- */
+
+  async function receive(item) {
+    var session = await MsgStore.getSession(item.from);
+    if (!session) {
+      // 知らない相手からの封筒は開けない。ためこまないよう受け取り済みにする
+      await MsgNet.ack(state.server, state.identity, [item.id]).catch(function () {});
+      if (!state.unknownWarned) {
+        state.unknownWarned = true;
+        toast("登録していない相手からの通信を受け取りました（開けません）");
+      }
+      return;
+    }
+
+    var opened;
+    try {
+      opened = await MsgCrypto.decrypt(session, JSON.parse(item.e));
+    } catch (e) {
+      await MsgNet.ack(state.server, state.identity, [item.id]).catch(function () {});
+      await MsgStore.addMessage({
+        peerId: item.from, dir: "in", kind: "system",
+        t: "1件のメッセージを開けませんでした（" + e.message + "）", at: item.at || Date.now()
+      });
+      if (state.peerId === item.from) await renderMessages();
+      await refreshContacts();
+      return;
+    }
+
+    // 鍵の位置は必ず先に保存する。ここで落ちても次の受信が続けられるようにするため
+    await MsgStore.putSession(opened.session);
+    await MsgNet.ack(state.server, state.identity, [item.id]).catch(function () {});
+
+    var payload = opened.payload || {};
+    var now = Date.now();
+
+    // 消える設定の変更が届いた場合
+    if (payload.ctl === "ttl") {
+      var next = Number(payload.x || 0);
+      var stored = await MsgStore.getSession(item.from);
+      stored.ttl = next;
+      await MsgStore.putSession(stored);
+      if (next === 0) await liftExpiry(item.from);
+      await MsgStore.addMessage({
+        peerId: item.from, dir: "in", kind: "system", at: now,
+        t: (stored.peer.name || "相手") + "が消えるメッセージを「" + ttlLabel(next) + "」にしました"
+      });
+    } else {
+      var ttl = Number(payload.x || 0);
+      var record = {
+        peerId: item.from, dir: "in", kind: "text", at: now,
+        t: String(payload.t || ""), img: payload.img || null, mime: payload.mime || null,
+        once: !!payload.o, opened: false
+      };
+      if (ttl > 0) record.expiresAt = now + ttl;   // 数え始めは「この端末に届いたとき」
+      await MsgStore.addMessage(record);
+
+      // 相手の設定に合わせておく（設定変更の通知を取りこぼしても食い違わないように）
+      var mine = await MsgStore.getSession(item.from);
+      if (Number(mine.ttl || 0) !== ttl) { mine.ttl = ttl; await MsgStore.putSession(mine); }
+      notifyIncoming(mine.peer.name, record);
+    }
+
+    var target = await MsgStore.getSession(item.from);
+    target.lastAt = now;
+    if (state.peerId !== item.from) target.unread = (target.unread || 0) + 1;
+    await MsgStore.putSession(target);
+
+    if (state.peerId === item.from) {
+      var follow = atBottom();
+      await updateTalkHeader();
+      await renderMessages();
+      if (follow) scrollToEnd();
+    }
+    await refreshContacts();
+  }
+
+  function notifyIncoming(name, record) {
+    if (!document.hidden) return;
+    var body = record.once ? "1回だけのメッセージ" : (record.t || (record.img ? "写真" : ""));
+    if (window.Native && Native.notifyNow) Native.notifyNow(name || "メッセージ", body, "msg");
+  }
+
+  /* ---------------- 送信 ---------------- */
+
+  async function sendPayload(peerId, payload, record) {
+    var session = await MsgStore.getSession(peerId);
+    if (!session) throw new Error("相手が見つかりません");
+
+    var sealed = await MsgCrypto.encrypt(session, payload);
+    // 鍵の位置を先に保存する。送信に失敗しても鍵は戻さない（戻すと同じ鍵を二度使うことになる）
+    sealed.session.lastAt = Date.now();
+    await MsgStore.putSession(sealed.session);
+
+    var saved = record ? await MsgStore.addMessage(record) : null;
+    try {
+      await MsgNet.send(state.server, state.identity, peerId, sealed.envelope);
+      if (saved) await MsgStore.patchMessage(saved.id, { state: "sent" });
+    } catch (e) {
+      var outboxId = MsgStore.newId();
+      await MsgStore.addOutbox({
+        id: outboxId, peerId: peerId, messageId: saved ? saved.id : null,
+        envelope: sealed.envelope, at: Date.now()
+      });
+      if (saved) await MsgStore.patchMessage(saved.id, { state: "failed" });
+      throw e;
+    }
+    return saved;
+  }
+
+  async function sendMessage() {
+    var text = $("#text").value.trim();
+    if (!text && !state.photo) return;
+    var peerId = state.peerId;
+    var session = await MsgStore.getSession(peerId);
+    var ttl = Number(session.ttl || 0);
+    var once = state.once;
+    var now = Date.now();
+
+    var payload = { t: text, x: ttl };
+    if (state.photo) { payload.img = state.photo.data; payload.mime = state.photo.mime; }
+    if (once) payload.o = 1;
+
+    // 「1回だけ」は送った側にも残さない（相手が開いたかどうかを知る手段がないため）
+    var record = once
+      ? { peerId: peerId, dir: "out", kind: "gone", at: now, t: "1回だけのメッセージを送りました", state: "sending" }
+      : {
+          peerId: peerId, dir: "out", kind: "text", at: now, state: "sending",
+          t: text, img: state.photo ? state.photo.data : null, mime: state.photo ? state.photo.mime : null
+        };
+    if (ttl > 0) record.expiresAt = now + ttl;
+
+    $("#text").value = "";
+    resizeText();
+    clearPhoto();
+    setOnce(false);
+
+    try {
+      await sendPayload(peerId, payload, record);
+    } catch (e) {
+      toast("送れませんでした。回線が戻ったら送り直します");
+    }
+    await renderMessages();
+    scrollToEnd();
+    await refreshContacts();
+  }
+
+  // 送れなかったぶんを、つながったときに送り直す
+  async function flushOutbox() {
+    var waiting = await MsgStore.listOutbox();
+    for (var i = 0; i < waiting.length; i++) {
+      var item = waiting[i];
+      try {
+        await MsgNet.send(state.server, state.identity, item.peerId, item.envelope);
+        await MsgStore.removeOutbox(item.id);
+        if (item.messageId) await MsgStore.patchMessage(item.messageId, { state: "sent" });
+      } catch (e) {
+        return;   // まだ送れない。次につながったときに再挑戦する
+      }
+    }
+    if (waiting.length) {
+      if (state.peerId) await renderMessages();
+      await refreshContacts();
+    }
+  }
+
+  /* ---------------- 消える処理 ---------------- */
+
+  // 期限を過ぎたメッセージを端末から完全に消す
+  async function purge() {
+    var now = Date.now();
+    var sessions = await MsgStore.listSessions();
+    var changed = false;
+    for (var i = 0; i < sessions.length; i++) {
+      var messages = await MsgStore.listMessages(sessions[i].peerId);
+      for (var j = 0; j < messages.length; j++) {
+        if (messages[j].expiresAt && messages[j].expiresAt <= now) {
+          await MsgStore.removeMessage(messages[j].id);
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      if (state.peerId) await renderMessages();
+      await refreshContacts();
+    }
+    return changed;
+  }
+
+  var purgeTimer = null;
+  function purgeLoop() {
+    if (purgeTimer) clearInterval(purgeTimer);
+    purge();
+    purgeTimer = setInterval(purge, 15000);
+  }
+
+  // 「オフ」に戻したとき、まだ消えていないメッセージの消える予定を取り消す
+  async function liftExpiry(peerId) {
+    var messages = await MsgStore.listMessages(peerId);
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].expiresAt) await MsgStore.patchMessage(messages[i].id, { expiresAt: null });
+    }
+  }
+
+  async function applyVanish() {
+    var ttl = Number($("#vanishSelect").value);
+    var peerId = state.peerId;
+    var session = await MsgStore.getSession(peerId);
+    session.ttl = ttl;
+    await MsgStore.putSession(session);
+    if (ttl === 0) await liftExpiry(peerId);
+
+    var now = Date.now();
+    await MsgStore.addMessage({
+      peerId: peerId, dir: "out", kind: "system", at: now,
+      t: "消えるメッセージを「" + ttlLabel(ttl) + "」にしました"
+    });
+
+    closeModal("vanishModal");
+    try {
+      await sendPayload(peerId, { ctl: "ttl", x: ttl }, null);
+      // 設定を伝えたので、画面の表示も最新にする
+      toast("設定を変えて相手にも伝えました");
+    } catch (e) {
+      toast("設定は変えました。相手への連絡は回線が戻ってから行います");
+    }
+    await updateTalkHeader();
+    await renderMessages();
+    scrollToEnd();
+  }
+
+  /* ---------------- 相手の一覧 ---------------- */
+
+  async function refreshContacts() {
+    state.sessions = await MsgStore.listSessions();
+    var list = $("#contactList");
+    list.innerHTML = "";
+    $("#contactEmpty").style.display = state.sessions.length ? "none" : "block";
+
+    for (var i = 0; i < state.sessions.length; i++) {
+      var session = state.sessions[i];
+      var messages = await MsgStore.listMessages(session.peerId);
+      var last = messages[messages.length - 1];
+      var preview = !last ? "まだやりとりがありません"
+        : last.kind === "system" ? last.t
+        : last.kind === "gone" ? last.t
+        : last.once ? "1回だけのメッセージ"
+        : (last.t || (last.img ? "写真" : ""));
+
+      var li = document.createElement("li");
+      li.dataset.peer = session.peerId;
+      li.innerHTML =
+        '<span class="avatar"></span>' +
+        '<span class="who"><span class="name"></span><span class="preview"></span></span>';
+      li.querySelector(".avatar").textContent = (session.peer.name || "?").slice(0, 1);
+      li.querySelector(".name").textContent = session.peer.name || "名前なし";
+      li.querySelector(".preview").textContent = preview;
+      if (Number(session.ttl || 0) > 0) {
+        var mark = document.createElement("span");
+        mark.className = "badge quiet";
+        mark.textContent = ttlLabel(session.ttl).replace("後", "");
+        li.appendChild(mark);
+      }
+      if (session.unread) {
+        var badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = session.unread;
+        li.appendChild(badge);
+      }
+      li.addEventListener("click", openTalkFor(session.peerId));
+      list.appendChild(li);
+    }
+  }
+
+  function openTalkFor(peerId) {
+    return function () { openTalk(peerId); };
+  }
+
+  /* ---------------- トーク画面 ---------------- */
+
+  async function openTalk(peerId) {
+    state.peerId = peerId;
+    var session = await MsgStore.getSession(peerId);
+    if (!session) return;
+    session.unread = 0;
+    await MsgStore.putSession(session);
+    clearPhoto();
+    setOnce(false);
+    await updateTalkHeader();
+    await renderMessages();
+    show("talk");
+    scrollToEnd();
+    refreshContacts();
+  }
+
+  async function updateTalkHeader() {
+    var session = await MsgStore.getSession(state.peerId);
+    if (!session) return;
+    var ttl = Number(session.ttl || 0);
+    $("#talkTitle").firstChild.textContent = session.peer.name || "名前なし";
+    $("#talkSub").textContent = ttl > 0 ? "消える：" + ttlLabel(ttl) : "消える：オフ";
+    $("#vanishHint").textContent = ttl > 0
+      ? "この会話は " + ttlLabel(ttl) + " に消えます"
+      : "この会話は消えません";
+  }
+
+  function bubbleFor(message) {
+    var wrap = document.createElement("div");
+    wrap.className = "msg " + (message.kind === "system" ? "system" : message.dir);
+    var bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    if (message.kind === "system") {
+      bubble.textContent = message.t;
+      wrap.appendChild(bubble);
+      return wrap;
+    }
+
+    if (message.kind === "gone") {
+      var gone = document.createElement("div");
+      gone.className = "gone";
+      gone.textContent = message.t;
+      bubble.appendChild(gone);
+    } else if (message.once && message.dir === "in" && !message.opened) {
+      var box = document.createElement("div");
+      box.className = "once";
+      var caption = document.createElement("span");
+      caption.textContent = "1回だけのメッセージ";
+      var button = document.createElement("button");
+      button.className = "small";
+      button.textContent = "開く";
+      button.addEventListener("click", function () { openOnce(message.id); });
+      box.appendChild(caption);
+      box.appendChild(button);
+      bubble.appendChild(box);
+    } else {
+      if (message.img) {
+        var img = document.createElement("img");
+        img.src = dataUrl(message.mime, message.img);
+        img.alt = "受け取った写真";
+        img.addEventListener("click", function () {
+          $("#imageLarge").src = img.src;
+          openModal("imageModal");
+        });
+        bubble.appendChild(img);
+      }
+      if (message.t) {
+        var text = document.createElement("div");
+        text.textContent = message.t;
+        bubble.appendChild(text);
+      }
+    }
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    var time = document.createElement("span");
+    time.textContent = clock(message.at);
+    meta.appendChild(time);
+
+    if (message.dir === "out") {
+      var mark = document.createElement("span");
+      if (message.state === "failed") { mark.textContent = "未送信"; mark.className = "failed"; }
+      else if (message.state === "sending") mark.textContent = "送信中";
+      else mark.textContent = "送信済み";
+      meta.appendChild(mark);
+    }
+    if (message.expiresAt) {
+      var left = document.createElement("span");
+      left.textContent = remaining(message.expiresAt);
+      meta.appendChild(left);
+    }
+    bubble.appendChild(meta);
+    wrap.appendChild(bubble);
+    return wrap;
+  }
+
+  async function renderMessages() {
+    if (!state.peerId) return;
+    state.messages = await MsgStore.listMessages(state.peerId);
+    var inner = $("#messageInner");
+    inner.innerHTML = "";
+    if (!state.messages.length) {
+      var empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "まだやりとりがありません。";
+      inner.appendChild(empty);
+    }
+    for (var i = 0; i < state.messages.length; i++) inner.appendChild(bubbleFor(state.messages[i]));
+  }
+
+  function scrollToEnd() {
+    var list = $("#messageList");
+    list.scrollTop = list.scrollHeight;
+  }
+
+  // 一番下あたりを見ているかどうか。過去を読み返している最中に飛ばされないようにする
+  function atBottom() {
+    var list = $("#messageList");
+    return list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+  }
+
+  async function openOnce(messageId) {
+    var messages = await MsgStore.listMessages(state.peerId);
+    var message = null;
+    for (var i = 0; i < messages.length; i++) if (messages[i].id === messageId) message = messages[i];
+    if (!message) return;
+
+    var body = $("#onceBody");
+    body.innerHTML = "";
+    if (message.img) {
+      var img = document.createElement("img");
+      img.src = dataUrl(message.mime, message.img);
+      img.alt = "1回だけの写真";
+      img.style.maxWidth = "100%";
+      img.style.borderRadius = "8px";
+      body.appendChild(img);
+    }
+    if (message.t) {
+      var text = document.createElement("div");
+      text.textContent = message.t;
+      body.appendChild(text);
+    }
+    body.dataset.messageId = messageId;
+    openModal("onceModal");
+  }
+
+  $("#closeOnce").addEventListener("click", async function () {
+    var messageId = $("#onceBody").dataset.messageId;
+    closeModal("onceModal");
+    $("#onceBody").innerHTML = "";
+    if (!messageId) return;
+    // 中身は残さず、跡だけ残す（誤解を防ぐため「表示済み」とわかるようにする）
+    await MsgStore.patchMessage(messageId, {
+      kind: "gone", t: "1回だけのメッセージ（表示済み）",
+      img: null, mime: null, once: true, opened: true
+    });
+    await renderMessages();
+    await refreshContacts();
+  });
+
+  /* ---------------- 写真 ---------------- */
+
+  // 送る前に小さくする。写真そのままでは大きすぎて中継サーバーが受け取れないため
+  async function shrink(file) {
+    var bitmap = await createImageBitmap(file);
+    var maxSide = 1600;
+    var scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    var canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    var ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close && bitmap.close();
+
+    var quality = 0.72;
+    var blob = await new Promise(function (r) { canvas.toBlob(r, "image/jpeg", quality); });
+    while (blob && blob.size > 900 * 1024 && quality > 0.4) {
+      quality -= 0.12;
+      blob = await new Promise(function (r) { canvas.toBlob(r, "image/jpeg", quality); });
+    }
+    if (!blob) throw new Error("写真を読み込めませんでした");
+    var bytes = new Uint8Array(await blob.arrayBuffer());
+    return { data: MsgCrypto.b64(bytes), mime: "image/jpeg", bytes: bytes.length };
+  }
+
+  function clearPhoto() {
+    state.photo = null;
+    $("#photoInput").value = "";
+    $("#photoPreview").style.display = "none";
+  }
+
+  $("#photoBtn").addEventListener("click", function () { $("#photoInput").click(); });
+  $("#photoClear").addEventListener("click", clearPhoto);
+  $("#photoInput").addEventListener("change", async function (ev) {
+    var file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    toast("写真を準備しています…");
+    try {
+      state.photo = await shrink(file);
+      $("#photoThumb").src = dataUrl("image/jpeg", state.photo.data);
+      $("#photoInfo").textContent = Math.round(state.photo.bytes / 1024) + " KB";
+      $("#photoPreview").style.display = "flex";
+    } catch (e) {
+      clearPhoto();
+      toast("写真を扱えませんでした：" + e.message);
+    }
+  });
+
+  /* ---------------- ペアリング ---------------- */
+
+  $("#addContact").addEventListener("click", function () {
+    $("#inviteBox").style.display = "none";
+    $("#replyBox").style.display = "none";
+    $("#pasteCode").value = "";
+    show("pair");
+  });
+
+  $("#makeInvite").addEventListener("click", async function () {
+    var invite = await MsgCrypto.createInvite(state.identity, state.server);
+    state.pendingInvite = invite.pending;
+    await MsgStore.setValue("pendingInvite", invite.pending);
+    $("#inviteCode").value = invite.code;
+    $("#inviteBox").style.display = "block";
+    toast("招待コードを作りました");
+  });
+
+  $("#copyInvite").addEventListener("click", function () { copyText($("#inviteCode").value); });
+  $("#shareInvite").addEventListener("click", function () { shareText($("#inviteCode").value, "招待コード"); });
+  $("#copyReply").addEventListener("click", function () { copyText($("#replyCode").value); });
+  $("#shareReply").addEventListener("click", function () { shareText($("#replyCode").value, "返信コード"); });
+
+  $("#pasteFromClipboard").addEventListener("click", async function () {
+    try { $("#pasteCode").value = await navigator.clipboard.readText(); }
+    catch (e) { toast("貼り付けできませんでした。手で貼り付けてください"); }
+  });
+
+  $("#applyCode").addEventListener("click", async function () {
+    var code = $("#pasteCode").value.trim();
+    if (!code) return toast("コードを貼り付けてください");
+    var kind = code.indexOf("MSG1.i.") === 0 ? "invite" : code.indexOf("MSG1.r.") === 0 ? "reply" : null;
+    if (!kind) return toast("コードの形式が違います");
+
+    try {
+      if (kind === "invite") {
+        var accepted = await MsgCrypto.acceptInvite(state.identity, code, state.server);
+        if (accepted.session.peer.id === state.identity.id) return toast("自分自身は追加できません");
+        if (await MsgStore.getSession(accepted.session.peer.id)) return toast("すでに登録済みの相手です");
+        accepted.session.ttl = 0;         // 既定は「消えない」
+        accepted.session.lastAt = Date.now();
+        await MsgStore.putSession(accepted.session);
+        await adoptServer(accepted.peerServer);
+        $("#replyCode").value = accepted.replyCode;
+        $("#replyBox").style.display = "block";
+        $("#pasteCode").value = "";
+        await refreshContacts();
+        toast(accepted.session.peer.name + " を登録しました");
+      } else {
+        if (!state.pendingInvite) return toast("先に「招待コードを作る」を押してください");
+        var done = await MsgCrypto.completeInvite(state.identity, state.pendingInvite, code);
+        if (await MsgStore.getSession(done.session.peer.id)) return toast("すでに登録済みの相手です");
+        done.session.ttl = 0;
+        done.session.lastAt = Date.now();
+        await MsgStore.putSession(done.session);
+        state.pendingInvite = null;
+        await MsgStore.setValue("pendingInvite", null);
+        $("#pasteCode").value = "";
+        $("#inviteBox").style.display = "none";
+        await refreshContacts();
+        toast(done.session.peer.name + " とやりとりできます");
+        show("home");
+      }
+    } catch (e) {
+      toast("読み込めませんでした：" + e.message);
+    }
+  });
+
+  // 相手のコードに中継サーバーが入っていて、自分がまだ決めていなければ合わせる
+  async function adoptServer(peerServer) {
+    if (!peerServer || state.server) return;
+    state.server = MsgNet.trimUrl(peerServer);
+    await MsgStore.setValue("server", state.server);
+    $("#myServer").value = state.server;
+    connect();
+  }
+
+  /* ---------------- 設定 ---------------- */
+
+  $("#openSettings").addEventListener("click", async function () {
+    $("#myName").value = state.identity.name;
+    $("#myId").textContent = state.identity.id;
+    $("#myServer").value = state.server;
+    $("#serverInfo").textContent = "";
+    show("settings");
+  });
+
+  $("#myName").addEventListener("change", async function () {
+    var name = $("#myName").value.trim().slice(0, 40);
+    if (!name) return;
+    state.identity.name = name;
+    await MsgStore.setValue("identity", state.identity);
+    toast("名前を変えました（相手の画面では次に招待するときから反映されます）");
+  });
+
+  $("#copyMyId").addEventListener("click", function () { copyText(state.identity.id); });
+
+  $("#saveServer").addEventListener("click", async function () {
+    var server = MsgNet.trimUrl($("#myServer").value);
+    if (!/^https?:\/\/.+/.test(server)) return toast("https:// から入れてください");
+    state.server = server;
+    await MsgStore.setValue("server", server);
+    connect();
+    toast("保存しました");
+  });
+
+  $("#testServer").addEventListener("click", async function () {
+    var server = MsgNet.trimUrl($("#myServer").value);
+    $("#serverInfo").textContent = "確かめています…";
+    try {
+      var info = await MsgNet.health(server);
+      $("#serverInfo").textContent = "つながりました。預かり中 " + info.queued + " 件、保存期限 " + info.retainDays + " 日。";
+    } catch (e) {
+      $("#serverInfo").textContent = "つながりませんでした：" + e.message;
+    }
+  });
+
+  $("#exportData").addEventListener("click", async function () {
+    var agreed = confirm(
+      "書き出すファイルには、あなたの秘密鍵とすべての履歴（写真を含む）がそのまま入ります。\n" +
+      "このファイルを他人に渡すと、過去と今後のメッセージを読まれます。\n\n" +
+      "機種変更などの目的で、自分だけが管理できる場所に保存しますか？");
+    if (!agreed) return;
+
+    var sessions = await MsgStore.listSessions();
+    var messages = [];
+    for (var i = 0; i < sessions.length; i++) {
+      messages = messages.concat(await MsgStore.listMessages(sessions[i].peerId));
+    }
+    var payload = {
+      app: "myproject-messenger", v: 1, at: new Date().toISOString(),
+      identity: state.identity, server: state.server, sessions: sessions, messages: messages
+    };
+    var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "messenger-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  });
+
+  $("#importData").addEventListener("click", function () { $("#importFile").click(); });
+  $("#importFile").addEventListener("change", async function (ev) {
+    var file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (!confirm("読み込むと、いまこの端末にある鍵と履歴はすべて置き換わります。よろしいですか？")) {
+      $("#importFile").value = "";
+      return;
+    }
+    try {
+      var payload = JSON.parse(await file.text());
+      if (payload.app !== "myproject-messenger") throw new Error("このアプリの保存ファイルではありません");
+      await MsgStore.clearAll();
+      await MsgStore.setValue("identity", payload.identity);
+      await MsgStore.setValue("server", payload.server || "");
+      for (var i = 0; i < (payload.sessions || []).length; i++) await MsgStore.putSession(payload.sessions[i]);
+      for (var j = 0; j < (payload.messages || []).length; j++) await MsgStore.addMessage(payload.messages[j]);
+      state.identity = payload.identity;
+      state.server = payload.server || "";
+      await startSession();
+      toast("読み込みました");
+    } catch (e) {
+      toast("読み込めませんでした：" + e.message);
+    } finally {
+      $("#importFile").value = "";
+    }
+  });
+
+  $("#wipeData").addEventListener("click", async function () {
+    if (!confirm("この端末から、鍵・相手・履歴・写真をすべて消します。元に戻せません。よろしいですか？")) return;
+    if (!confirm("本当に消してよろしいですか？　相手側の履歴は消えません。")) return;
+    if (state.net) state.net.close();
+    await MsgStore.clearAll();
+    location.reload();
+  });
+
+  /* ---------------- 消える設定・安全番号 ---------------- */
+
+  $("#openVanish").addEventListener("click", async function () {
+    var session = await MsgStore.getSession(state.peerId);
+    var select = $("#vanishSelect");
+    select.innerHTML = "";
+    TTL_CHOICES.forEach(function (choice) {
+      var option = document.createElement("option");
+      option.value = String(choice.ms);
+      option.textContent = choice.label;
+      select.appendChild(option);
+    });
+    select.value = String(Number(session.ttl || 0));
+    openModal("vanishModal");
+  });
+
+  $("#applyVanish").addEventListener("click", applyVanish);
+  $("#closeVanish").addEventListener("click", function () { closeModal("vanishModal"); });
+
+  $("#clearHistory").addEventListener("click", async function () {
+    if (!confirm("この会話の履歴を、この端末から消します。相手側には残ります。よろしいですか？")) return;
+    var messages = await MsgStore.listMessages(state.peerId);
+    for (var i = 0; i < messages.length; i++) await MsgStore.removeMessage(messages[i].id);
+    closeModal("vanishModal");
+    await renderMessages();
+    await refreshContacts();
+    toast("この端末の履歴を消しました");
+  });
+
+  $("#openSafety").addEventListener("click", async function () {
+    var session = await MsgStore.getSession(state.peerId);
+    $("#safetyDigits").textContent = await MsgCrypto.safetyNumber(state.identity, session);
+    openModal("safetyModal");
+  });
+  $("#closeSafety").addEventListener("click", function () { closeModal("safetyModal"); });
+  $("#closeImage").addEventListener("click", function () { closeModal("imageModal"); });
+
+  /* ---------------- そのほかの操作 ---------------- */
+
+  function setOnce(on) {
+    state.once = !!on;
+    $("#onceToggle").classList.toggle("on", state.once);
+  }
+  $("#onceToggle").addEventListener("click", function () { setOnce(!state.once); });
+  $("#onceToggle").addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); setOnce(!state.once); }
+  });
+
+  function resizeText() {
+    var el = $("#text");
+    el.style.height = "auto";
+    el.style.height = Math.min(140, el.scrollHeight) + "px";
+  }
+  $("#text").addEventListener("input", resizeText);
+  $("#sendBtn").addEventListener("click", function () { sendMessage().then(scrollToEnd); });
+  $("#text").addEventListener("keydown", function (ev) {
+    // パソコンでは Ctrl+Enter で送信。スマートフォンでは改行のじゃまをしない
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); sendMessage().then(scrollToEnd); }
+  });
+
+  $("#talkBack").addEventListener("click", function () { state.peerId = null; show("home"); refreshContacts(); });
+  $("#pairBack").addEventListener("click", function () { show("home"); });
+  $("#settingsBack").addEventListener("click", function () { show("home"); });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".modal"), function (modal) {
+    modal.addEventListener("click", function (ev) { if (ev.target === modal) modal.classList.remove("open"); });
+  });
+
+  if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+    navigator.serviceWorker.register("sw.js").catch(function () { /* 使えなくても動く */ });
+  }
+
+  boot().catch(function (e) {
+    document.body.innerHTML = '<div class="wrap"><div class="notice danger">起動できませんでした：' +
+      String(e && e.message) + '</div></div>';
+  });
+})();
+</script>
+</body>
+</html>
