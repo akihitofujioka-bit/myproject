@@ -1,0 +1,17 @@
+node_modules/
+www/
+ios/
+
+# 署名鍵とその暗証番号。これが漏れると、他人があなたのアプリの更新版を偽造できる。
+# 絶対にリポジトリへ入れないこと。
+keystore.properties
+*.keystore
+*.jks
+
+# ビルドの中間生成物
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/app/release/

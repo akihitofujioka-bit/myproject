@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  中継サーバーとの通信は https だけを許す。
+  http を許すと、通信の途中で内容を差し替えられる余地が生まれるため
+  （本文は暗号化されているが、やりとりの妨害や偽の応答は防げなくなる）。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- アプリ本体（明るい配色）の背景色に合わせ、起動時のちらつきを抑える -->
+    <color name="splash_background">#F5F6F8</color>
+</resources>

@@ -52,7 +52,8 @@ node server/server.mjs
 | パソコン | GitHub Pages で公開したページの `messenger/` を開く |
 | iPhone（かんたん） | Safari で開き、共有ボタン →「ホーム画面に追加」 |
 | Android（かんたん） | Chrome で開き、メニュー →「アプリをインストール」 |
-| iPhone / Android（アプリとして） | [mobile/README.md](../mobile/README.md) の手順でビルドする |
+| iPhone / Android（自分用のアプリとして） | [mobile/README.md](../mobile/README.md) の手順でビルドする |
+| **知り合いに配る（Android）** | **[android-distribution.md](android-distribution.md) の手順で APK を作って渡す** |
 
 ## 3. はじめの設定
 

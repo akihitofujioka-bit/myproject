@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 端末が暗い配色のときは、アプリ本体の暗い背景色に合わせる -->
+    <color name="splash_background">#16181C</color>
+</resources>

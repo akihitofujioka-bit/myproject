@@ -1,0 +1,22 @@
+{
+  "name": "myproject-messenger-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "「ふたりのメッセージ」を単体の Android / iPhone アプリとして配布するための設定",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-www.mjs",
+    "sync": "npm run build && cap sync",
+    "android": "npm run sync && cap open android",
+    "apk": "npm run sync && node scripts/build-apk.mjs",
+    "ios": "npm run sync && cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/local-notifications": "^8.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.1"
+  }
+}
