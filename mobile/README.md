@@ -39,9 +39,13 @@ Web の作りはそのままで、アプリとして動いているときだけ�
 
 **Android 向け**
 
-- Windows / Mac / Linux のいずれか（**Mac は不要**）
-- Android Studio（無料）
+- Windows / Mac / Linux のいずれでもよい（**Mac でも作れるし、Mac でなくても作れる**）
+- Android Studio（無料。macOS 版があり、Apple Silicon にも対応している。Xcode は要らない）
 - Node.js 18 以降
+
+> **Mac 1台あれば iPhone と Android の両方が作れる。**
+> iOS 用（`mobile/ios/`）と Android 用（`mobile/android/`）は別のフォルダに作られるため共存でき、
+> アプリを直したあとは `npm run sync` を1回実行すれば両方に反映される。
 
 ## iPhone の手順
 
@@ -100,11 +104,12 @@ Android Studio が開いたら、端末を USB で繋いで ▶︎（Run）を�
 端末側で「USBデバッグ」を有効にしておくこと（設定 → デバイス情報 →
 ビルド番号を7回タップ → 開発者向けオプション → USBデバッグ）。
 
-- **Mac は要らない。**Windows でも Linux でも同じ手順で作れる
+- **Mac でも Windows でも Linux でも、同じ手順で作れる。**iPhone と違い Mac は必須ではない
 - カメラの許可は `android/app/src/main/AndroidManifest.xml` に
   `<uses-permission android:name="android.permission.CAMERA" />` を足す
 - 写真の添付は端末標準の選択画面を使うため、追加の許可は要らない
 - 配布は APK をそのまま渡すか、Google Play（初回のみ登録料 約4,000円）
+- **自分の端末に入れるだけなら完全に無料で、期限もない**（iPhone の「7日ごとに入れ直し」のような制限がない）
 
 ## 「ふたりのメッセージ」を使うときの注意
 
