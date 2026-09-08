@@ -55,8 +55,14 @@ body {
   font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.6;
+  /* 画面上部の切り欠き（ノッチ／ダイナミックアイランド）を避ける */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 .wrap { max-width: 880px; margin: 0 auto; padding: 16px 16px 64px; }
+/* アプリ一覧へ戻る導線。アプリとして開いているとブラウザの「戻る」が無いため必ず置く */
+.backlink { margin: 0 0 4px; font-size: 14px; }
+.backlink a { color: var(--muted); text-decoration: none; display: inline-block; padding: 6px 0; min-height: 32px; }
+.backlink a:hover, .backlink a:focus { color: var(--accent); text-decoration: underline; }
 header h1 { font-size: 20px; margin: 8px 0 4px; }
 header p.lead { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 .notice {
@@ -150,6 +156,30 @@ li.item.done { opacity: .62; }
 .due.none { color: var(--muted); }
 .item-note { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
 .item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* ---- QRコードの表示（紙の書類に貼って、アプリから開けるようにする） ---- */
+.modal {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(0, 0, 0, .72);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.modal-inner {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: min(560px, 100%); max-height: 92vh; overflow: auto; padding: 14px;
+}
+.modal[hidden] { display: none; }
+.qr-sheet { text-align: center; }
+.qr-sheet svg { width: min(260px, 70vw); height: auto; display: block; margin: 8px auto; }
+.qr-title { font-weight: 700; font-size: 16px; margin: 4px 0 0; word-break: break-all; }
+.qr-url { font-size: 12px; color: var(--muted); word-break: break-all; margin: 6px 0 0; }
+
+/* 印刷するときは、貼り付ける QR だけを紙に出す */
+@media print {
+  body > *:not(.modal) { display: none !important; }
+  .modal { position: static; background: none; padding: 0; display: block; }
+  .modal-inner { border: none; width: auto; max-height: none; overflow: visible; }
+  .qr-noprint { display: none !important; }
+}
 .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
 .footnote { font-size: 12px; color: var(--muted); }
 .toast {
@@ -181,9 +211,10 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 </head>
 <body>
 <div class="wrap">
+  <p class="backlink"><a href="../index.html">← アプリ一覧にもどる</a></p>
   <header>
     <h1>書類・回覧の期限トラッカー</h1>
-    <p class="lead">提出期限のある書類・回覧・申請をまとめて管理します。データはこのブラウザの中だけに保存され、外部には一切送信しません。</p>
+    <p class="lead">提出期限のある書類・回覧・申請をまとめて管理します。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
   </header>
 
   <div class="notice">
@@ -293,12 +324,34 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <div class="actionbar">
   <div>
     <button type="button" class="primary" id="jumpAdd">書類を登録する</button>
+    <!-- QR の読み取りは端末側の機能を使うため、アプリとして開いたときだけ出す -->
+    <button type="button" id="qrScanBtn" hidden>QRで開く</button>
     <button type="button" id="jumpDue">期限が近いものへ</button>
   </div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<div class="modal" id="qrModal" hidden role="dialog" aria-modal="true" aria-labelledby="qrHeading">
+  <div class="modal-inner qr-sheet">
+    <h2 id="qrHeading" class="qr-noprint" style="font-size:16px;margin:0 0 4px;">QRコード</h2>
+    <div id="qrBox"></div>
+    <p class="qr-title" id="qrTitle"></p>
+    <p class="qr-url" id="qrUrl"></p>
+    <p class="footnote qr-noprint" style="text-align:left;">
+      この QR を印刷して書類に貼っておくと、iPhone の標準カメラで読み取るだけで、
+      アプリがこの書類を開いた状態で立ち上がります。
+      <strong>アプリを入れた端末でのみ動きます。</strong>
+    </p>
+    <div class="row qr-noprint" style="justify-content:center;gap:8px;">
+      <button type="button" id="qrPrint">印刷する</button>
+      <button type="button" id="qrClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/qr.js"></script>
+<script src="../shared/nativescan.js"></script>
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
 <script>
@@ -497,6 +550,7 @@ function renderList() {
         (next ? '<button type="button" class="small" data-action="advance">' + esc(next) + "にする</button>" : "") +
         (it.status !== "未着手" ? '<button type="button" class="small" data-action="back">1つ戻す</button>' : "") +
         (it.dueOn && isOpen(it) ? '<button type="button" class="small" data-action="calendar">カレンダー</button>' : "") +
+        '<button type="button" class="small" data-action="qr">QRコード</button>' +
         '<button type="button" class="small link" data-action="edit">編集</button>' +
         '<button type="button" class="small link" data-action="delete">削除</button>' +
       "</div></li>";
@@ -609,6 +663,9 @@ document.getElementById("list").addEventListener("click", function (e) {
     toast(prev + "に戻しました");
   } else if (action === "calendar") {
     registerToCalendar([item]);
+    return;
+  } else if (action === "qr") {
+    openQr(item);
     return;
   } else if (action === "edit") {
     startEditing(item);
@@ -788,6 +845,97 @@ if ("serviceWorker" in navigator && window.isSecureContext) {
 }
 
 render();
+
+/* ---------- QRコードの表示 ----------
+ *
+ * 紙の書類に QR を貼っておくと、iPhone の標準カメラで読むだけで
+ * アプリがその書類を開いた状態で立ち上がる。
+ * QR に入れるのは myproject://docs?id=... という短い文字列だけで、
+ * 書類名などの中身は一切入れない（紙を落としても情報が漏れないようにするため）。
+ */
+var DEEP_LINK_PREFIX = "myproject://docs?id=";
+var qrModal = document.getElementById("qrModal");
+
+// QRGen が返す modules（true が黒）を、そのまま SVG の四角に置き換える
+function qrToSvg(qr, pxPerModule) {
+  var quiet = 4;                       // 規格で決まっている余白（4マス以上）
+  var total = qr.size + quiet * 2;
+  var parts = [];
+  for (var y = 0; y < qr.size; y++) {
+    for (var x = 0; x < qr.size; x++) {
+      if (qr.modules[y][x]) parts.push('<rect x="' + (x + quiet) + '" y="' + (y + quiet) + '" width="1" height="1"/>');
+    }
+  }
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + total + ' ' + total + '" ' +
+         'width="' + (total * pxPerModule) + '" height="' + (total * pxPerModule) + '" shape-rendering="crispEdges">' +
+         '<rect width="' + total + '" height="' + total + '" fill="#ffffff"/>' +
+         '<g fill="#000000">' + parts.join("") + "</g></svg>";
+}
+
+function openQr(item) {
+  var url = DEEP_LINK_PREFIX + encodeURIComponent(item.id);
+  try {
+    var qr = window.QRGen.encode(url, "M");
+    document.getElementById("qrBox").innerHTML = qrToSvg(qr, 8);
+  } catch (err) {
+    document.getElementById("qrBox").textContent = "QRコードを作れませんでした：" + err.message;
+  }
+  document.getElementById("qrTitle").textContent = item.title;
+  document.getElementById("qrUrl").textContent = url;
+  qrModal.hidden = false;
+}
+
+document.getElementById("qrClose").addEventListener("click", function () { qrModal.hidden = true; });
+document.getElementById("qrPrint").addEventListener("click", function () { window.print(); });
+qrModal.addEventListener("click", function (e) { if (e.target === qrModal) qrModal.hidden = true; });
+
+/* ---------- QR から開かれたとき ----------
+ * myproject://docs?id=xxx で起動されると、shared/deeplink.js が
+ * このページを ?id=xxx 付きで開き直す。該当の書類だけを絞り込んで表示する。
+ */
+(function () {
+  var id = new URLSearchParams(location.search).get("id");
+  if (!id) return;
+  var item = null;
+  for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) item = state.items[i];
+  if (!item) { toast("QRの書類が見つかりませんでした"); return; }
+  var q = document.getElementById("q");
+  q.value = item.title;
+  render();
+  toast("QRから「" + item.title + "」を開きました");
+})();
+
+</script>
+<script src="../shared/deeplink.js"></script>
+<script>
+/* ---------- QRを読んで書類を開く（アプリ版のみ） ----------
+ *
+ * 紙に貼った QR を、このアプリの中から読み取る。
+ * ブラウザ版では端末側の読み取りが使えないため、ボタン自体を出さない
+ * （ブラウザで使う場合は、iPhone の標準カメラで QR を読めば同じことができる）。
+ */
+(function () {
+  if (!window.NativeScan || !window.NativeScan.available()) return;
+  document.getElementById("qrScanBtn").hidden = false;
+
+  document.getElementById("qrScanBtn").addEventListener("click", function () {
+    window.NativeScan.scan(window.NativeScan.FORMAT.QR_CODE, "書類に貼ったQRコードを枠に合わせてください")
+      .then(function (text) {
+        if (!text) return;                      // 利用者が閉じた
+        var m = /^myproject:\/\/docs\?id=(.+)$/.exec(String(text));
+        if (!m) { toast("この QR はこのアプリのものではありません"); return; }
+        var id = decodeURIComponent(m[1]);
+        var item = null;
+        for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) item = state.items[i];
+        if (!item) { toast("QRの書類が見つかりませんでした"); return; }
+        document.getElementById("q").value = item.title;
+        filters.q = item.title;
+        render();
+        toast("「" + item.title + "」を開きました");
+      });
+  });
+})();
+
 </script>
 </body>
 </html>

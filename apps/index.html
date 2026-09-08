@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>日常アプリ</title>
+<title>壱師</title>
 <meta name="theme-color" content="#2f6fed">
 <style>
 :root {
@@ -22,6 +22,8 @@ body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
   font-size: 16px; line-height: 1.7;
+  /* 画面上部の切り欠き（ノッチ／ダイナミックアイランド）を避ける */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 .wrap { max-width: 680px; margin: 0 auto; padding: 24px 16px 64px; }
 h1 { font-size: 22px; margin: 0 0 4px; }
@@ -45,10 +47,10 @@ li { margin-bottom: 4px; }
 </head>
 <body>
 <div class="wrap">
-  <h1>日常アプリ</h1>
+  <h1>壱師</h1>
   <p class="lead">入力した内容はこの端末の中だけに保存され、どこにも送信されません。</p>
 
-  <a class="app" href="fridge/">
+  <a class="app" href="fridge/index.html">
     <img src="fridge/icon-192.png" alt="">
     <span>
       <span class="name">冷蔵庫の在庫・賞味期限管理</span><br>
@@ -56,7 +58,7 @@ li { margin-bottom: 4px; }
     </span>
   </a>
 
-  <a class="app" href="docs-tracker/">
+  <a class="app" href="docs-tracker/index.html">
     <img src="docs-tracker/icon-192.png" alt="">
     <span>
       <span class="name">書類・回覧の期限トラッカー</span><br>
@@ -64,7 +66,25 @@ li { margin-bottom: 4px; }
     </span>
   </a>
 
-  <section>
+  <a class="app" href="books/index.html">
+    <img src="books/icon-192.png" alt="">
+    <span>
+      <span class="name">蔵書の管理</span><br>
+      <span class="desc">本の裏表紙のバーコード（ISBN）で登録し、読んだかどうかを記録します</span>
+    </span>
+  </a>
+
+  <a class="app" href="stock/index.html">
+    <img src="stock/icon-192.png" alt="">
+    <span>
+      <span class="name">備蓄・消耗品の管理</span><br>
+      <span class="desc">残りが少なくなったものと、期限が近いものを知らせます</span>
+    </span>
+  </a>
+
+  <!-- data-web-only: ブラウザで開いたときだけ意味がある案内。
+       アプリ版では mobile/scripts/build-www.mjs が取り除く。 -->
+  <section data-web-only>
     <h2>iPhone のホーム画面に追加する</h2>
     <ol>
       <li>Safari で使いたいアプリを開く</li>
@@ -77,11 +97,12 @@ li { margin-bottom: 4px; }
   <section>
     <h2>ご注意</h2>
     <ul>
-      <li>データは端末ごとに別々です。機種変更やブラウザの変更では引き継がれません（各アプリの「JSONで保存」で書き出せます）</li>
-      <li>ブラウザの閲覧データを削除すると、入力した内容も消えます</li>
+      <li>データは端末ごとに別々です。機種変更では引き継がれません。また、アプリで入れた内容とブラウザで入れた内容も別々に保存されます（各アプリの「JSONで保存」で書き出して移せます）</li>
+      <li>アプリを削除したとき、またはブラウザの閲覧データを消したときは、入力した内容も消えます</li>
       <li>書類トラッカーには、氏名・住所などの個人情報を入力しないでください</li>
     </ul>
   </section>
 </div>
+<script src="shared/deeplink.js"></script>
 </body>
 </html>

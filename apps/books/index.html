@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>冷蔵庫の在庫・賞味期限管理</title>
+<title>蔵書の管理</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2f6fed">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="冷蔵庫">
+<meta name="apple-mobile-web-app-title" content="蔵書">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <style>
@@ -84,10 +84,10 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 }
 .stat .num { font-size: 20px; font-weight: 700; }
 .stat .label { font-size: 12px; color: var(--muted); }
-.stat.danger { background: var(--danger-weak); border-color: var(--danger); }
-.stat.danger .num { color: var(--danger); }
 .stat.warn { background: var(--warn-weak); border-color: var(--warn); }
 .stat.warn .num { color: var(--warn); }
+.stat.ok { background: var(--ok-weak); border-color: var(--ok); }
+.stat.ok .num { color: var(--ok); }
 form .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
 .field { flex: 1 1 130px; min-width: 0; }
@@ -130,24 +130,27 @@ li.item {
   padding: 10px 12px;
   margin-bottom: 8px;
 }
-li.item.expired { border-left-color: var(--danger); background: var(--danger-weak); }
-li.item.soon { border-left-color: var(--warn); background: var(--warn-weak); }
-li.item.fine { border-left-color: var(--ok); }
-li.item.none { border-left-color: var(--border); }
+/* 状態ごとの色分け。冷蔵庫アプリが期限の近さで色を変えているのと同じ考え方 */
+li.item.unread { border-left-color: var(--border); }
+li.item.reading { border-left-color: var(--warn); background: var(--warn-weak); }
+li.item.done { border-left-color: var(--ok); background: var(--ok-weak); }
 .item-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 .item-name { font-weight: 700; }
 .badge {
   font-size: 12px; padding: 1px 7px; border-radius: 999px;
   border: 1px solid var(--border); color: var(--muted); background: var(--bg);
 }
-.due { font-size: 13px; }
-.due.expired { color: var(--danger); font-weight: 700; }
-.due.soon { color: var(--warn); font-weight: 700; }
-.due.none { color: var(--muted); }
+.status { font-size: 13px; }
+.status.unread { color: var(--muted); }
+.status.reading { color: var(--warn); font-weight: 700; }
+.status.done { color: var(--ok); font-weight: 700; }
+.item-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .item-note { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
 .item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
 .footnote { font-size: 12px; color: var(--muted); }
+.howto { font-size: 13px; color: var(--muted); margin: 0; padding-left: 1.2em; }
+.howto li { margin-bottom: 6px; }
 .toast {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
   background: var(--text); color: var(--bg);
@@ -192,92 +195,89 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   border: 2px solid #fff; border-radius: 6px; pointer-events: none;
 }
 #pendingCode:not([hidden]) { display: inline-block; margin-left: 8px; }
+#dupNote { color: var(--danger); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <p class="backlink"><a href="../index.html">← アプリ一覧にもどる</a></p>
   <header>
-    <h1>冷蔵庫の在庫・賞味期限管理</h1>
-    <p class="lead">買ったものを登録すると、期限が近い順に並べて知らせます。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
+    <h1>蔵書の管理</h1>
+    <p class="lead">持っている本を登録して、読んだかどうかと置き場所を記録します。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
   </header>
 
   <div class="stats" id="stats"></div>
 
   <section class="card">
-    <h2 id="formTitle">食材を追加</h2>
+    <h2 id="formTitle">本を追加</h2>
     <p class="footnote" id="pendingCodeRow" hidden style="margin:-6px 0 8px">
-      読み取ったバーコード：<span class="badge" id="pendingCode"></span>
+      読み取ったISBN：<span class="badge" id="pendingCode"></span>
       <button type="button" class="link small" id="pendingCodeClear">解除</button>
     </p>
+    <p class="footnote" id="dupNote" hidden style="margin:-6px 0 8px"></p>
     <form id="itemForm">
       <div class="row">
         <div class="field wide">
-          <label for="f-name">品名（必須）</label>
-          <input id="f-name" name="name" required placeholder="例：牛乳" autocomplete="off">
+          <label for="f-title">書名（必須）</label>
+          <input id="f-title" name="title" required placeholder="例：吾輩は猫である" autocomplete="off">
         </div>
         <div class="field">
-          <label for="f-qty">数量</label>
-          <input id="f-qty" name="qty" type="number" min="0" step="0.5" value="1">
+          <label for="f-author">著者</label>
+          <input id="f-author" name="author" placeholder="例：夏目漱石" autocomplete="off">
         </div>
         <div class="field">
-          <label for="f-unit">単位</label>
-          <input id="f-unit" name="unit" list="units" value="個" autocomplete="off">
-          <datalist id="units">
-            <option value="個"></option><option value="本"></option><option value="袋"></option>
-            <option value="パック"></option><option value="g"></option><option value="ml"></option>
-          </datalist>
+          <label for="f-publisher">出版社</label>
+          <input id="f-publisher" name="publisher" placeholder="例：岩波書店" autocomplete="off">
         </div>
       </div>
       <div class="row">
         <div class="field">
-          <label for="f-place">保管場所</label>
-          <select id="f-place" name="place">
-            <option value="冷蔵">冷蔵</option>
-            <option value="冷凍">冷凍</option>
-            <option value="常温">常温</option>
+          <label for="f-isbn">ISBN</label>
+          <input id="f-isbn" name="isbn" inputmode="numeric" pattern="[0-9]*" placeholder="例：9784003101018" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-status">状態</label>
+          <select id="f-status" name="status">
+            <option value="未読">未読</option>
+            <option value="読書中">読書中</option>
+            <option value="読了">読了</option>
           </select>
         </div>
         <div class="field">
-          <label for="f-expires">賞味・消費期限</label>
-          <input id="f-expires" name="expiresOn" type="date">
+          <label for="f-place">置き場所</label>
+          <input id="f-place" name="place" list="places" placeholder="例：自宅の本棚" autocomplete="off">
+          <datalist id="places"></datalist>
         </div>
         <div class="field wide">
           <label for="f-note">メモ</label>
-          <input id="f-note" name="note" placeholder="例：開封済み" autocomplete="off">
+          <input id="f-note" name="note" placeholder="例：〇〇さんから借りている" autocomplete="off">
         </div>
       </div>
       <div class="row" style="align-items:center">
-        <div class="chips" aria-label="期限のクイック入力">
-          <button type="button" class="chip" data-plus="3">3日後</button>
-          <button type="button" class="chip" data-plus="7">1週間後</button>
-          <button type="button" class="chip" data-plus="30">1か月後</button>
-          <button type="button" class="chip" data-plus="180">半年後</button>
-        </div>
         <div style="flex:1"></div>
         <button type="submit" class="primary" id="submitBtn">追加する</button>
         <button type="button" id="cancelEdit" hidden>やめる</button>
       </div>
     </form>
-    <div id="recent" class="chips" style="margin-top:10px"></div>
   </section>
 
   <section class="card">
     <div class="row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
       <div class="field wide">
         <label for="q">検索</label>
-        <input id="q" placeholder="品名・メモで絞り込み" autocomplete="off">
+        <input id="q" placeholder="書名・著者・メモで絞り込み" autocomplete="off">
       </div>
       <div class="field">
         <label for="sort">並び順</label>
         <select id="sort">
-          <option value="due">期限が近い順</option>
           <option value="new">登録が新しい順</option>
-          <option value="name">品名順</option>
+          <option value="title">書名順</option>
+          <option value="author">著者順</option>
+          <option value="status">状態順</option>
         </select>
       </div>
     </div>
-    <div class="chips" style="margin-top:8px" id="placeFilter" role="group" aria-label="保管場所で絞り込み"></div>
+    <div class="chips" style="margin-top:8px" id="statusFilter" role="group" aria-label="状態で絞り込み"></div>
   </section>
 
   <ul class="items" id="list"></ul>
@@ -285,22 +285,29 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   <section class="card">
     <h2>データの持ち出し・引き継ぎ</h2>
     <div class="chips">
-      <button type="button" id="calendarSoon">期限が近い食材をカレンダーに登録</button>
-      <button type="button" id="copyExpiring">期限が近い食材をコピー</button>
+      <button type="button" id="copyList">一覧をコピー</button>
       <button type="button" id="exportBtn">JSONで保存</button>
       <button type="button" id="importBtn">JSONから読み込み</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
     <p class="footnote" style="margin:10px 0 0">
-      「カレンダーに登録」を押すと、期限が7日以内の食材が端末の標準カレンダーに入り、<strong>前日と当日の18時に通知</strong>が届きます。「期限が近い食材をコピー」は献立を相談するときに貼り付けて使えます。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
+      「一覧をコピー」は、持っている本の一覧を文章にして貼り付けられるようにします。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。ISBN と書名の対応も一緒に保存されます。
     </p>
     <p class="footnote" id="codeCount" style="margin:6px 0 0"></p>
   </section>
 
   <section class="card">
-    <h2>廃棄の記録（食品ロス）</h2>
-    <div id="lossSummary" class="footnote"></div>
-    <ul class="items" id="lossList" style="margin-top:8px"></ul>
+    <h2>使い方</h2>
+    <ol class="howto">
+      <li><strong>本の裏表紙のバーコードを読みます。</strong>画面下の「バーコードで追加」を押して、カメラをバーコードに合わせてください。日本の本のバーコードは<strong>上下2段</strong>になっています。読み取るのは<strong>上側（978 または 979 で始まる方）</strong>です。下側は「日本図書コード」（192 で始まる分類と価格の番号）なので、このアプリでは受け付けません。間違えて下側を読んだときは、その旨を画面に出してそのまま読み取りを続けます。</li>
+      <li><strong>初めての本は、書名を手で入力してください。</strong>バーコードから書名が自動で出てくることはありません。<strong>2回目以降</strong>は、同じ本（同じ ISBN）を読むと、前に入力した書名・著者・出版社が自動で入ります。</li>
+      <li><strong>なぜ書名が自動で出ないのか。</strong>バーコードの番号から書名を調べるには、外部の書誌データベースへ問い合わせる必要があります。このアプリは「入力した内容をどこにも送信しない」という方針で作っているため、外部への問い合わせを一切行いません。そのため、<strong>一度自分で入力して覚えさせる</strong>方式が唯一の手段です。覚えた件数はひとつ上の「データの持ち出し・引き継ぎ」に表示されます。</li>
+      <li><strong>すでに登録済みの本を読んだときは</strong>「この本はすでに登録されています」と表示します。二重に登録しないよう、必要がなければそのまま「やめる」で入力を取りやめてください。</li>
+      <li><strong>状態は「未読・読書中・読了」の3つ</strong>です。一覧の各件にあるボタンでいつでも切り替えられます。色でも見分けられるようにしてあります。</li>
+      <li><strong>データはこの端末の中だけ</strong>に残ります。サーバーには保存しません。<strong>アプリを削除したとき、またはブラウザのデータを消したときは、蔵書の記録も消えます。</strong>大切な記録は「JSONで保存」で控えを取ってください。</li>
+      <li><strong>別の端末へ引き継ぐときは「JSONで保存」</strong>を押してファイルを書き出し、移りたい端末で「JSONから読み込み」を押してそのファイルを選んでください。覚えた ISBN と書名の対応も一緒に移ります。</li>
+      <li>カメラが使えない場所や読み取れないときは、読み取り画面の下にある入力欄に ISBN の13桁を直接入力できます。バーコードを使わず、はじめから手で入力してもかまいません（「手で入力」ボタン）。</li>
+    </ol>
   </section>
 </div>
 
@@ -319,10 +326,11 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <div class="guide"></div>
     </div>
     <p class="footnote" id="scanStatus" role="status" aria-live="polite">カメラを起動しています…</p>
+    <p class="footnote">本のバーコードは上下2段です。<strong>上側（978 で始まる方）</strong>を枠に合わせてください。</p>
     <div style="display:flex;gap:8px;align-items:flex-end;margin-top:4px">
       <div class="field wide" style="flex:1">
-        <label for="manualCode">読み取れないときは番号を手入力</label>
-        <input id="manualCode" inputmode="numeric" pattern="[0-9]*" placeholder="例：4901777018884" autocomplete="off">
+        <label for="manualCode">読み取れないときはISBNを手入力</label>
+        <input id="manualCode" inputmode="numeric" pattern="[0-9]*" placeholder="例：9784003101018" autocomplete="off">
       </div>
       <button type="button" id="manualOk">確定</button>
     </div>
@@ -334,19 +342,19 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="../shared/ics.js"></script>
-<script src="../shared/native.js"></script>
-<script src="ean.js"></script>
+<script src="../fridge/ean.js"></script>
 <script src="../shared/nativescan.js"></script>
 <script>
 "use strict";
 
-var STORAGE_KEY = "fridge.v1";
-var PLACES = ["冷蔵", "冷凍", "常温"];
+var STORAGE_KEY = "books.v1";
+var STATUSES = ["未読", "読書中", "読了"];
+// 状態を CSS のクラス名に対応させる（日本語をそのままクラス名にしないため）
+var STATUS_CLASS = { "未読": "unread", "読書中": "reading", "読了": "done" };
 
 var state = load();
 var editingId = null;
-var filters = { q: "", place: "すべて", sort: "due" };
+var filters = { q: "", status: "すべて", sort: "new" };
 
 function load() {
   try {
@@ -359,18 +367,24 @@ function load() {
 }
 
 function emptyState() {
-  return { v: 1, items: [], log: [], codes: {} };
+  return { v: 1, items: [], isbns: {} };
 }
 
 function normalize(data) {
   if (!data || typeof data !== "object") return emptyState();
   return {
     v: 1,
-    items: Array.isArray(data.items) ? data.items.filter(function (it) { return it && it.name; }) : [],
-    log: Array.isArray(data.log) ? data.log : [],
-    // バーコード（JANコード）と品名の対応。一度登録すると次回から自動で入る
-    codes: (data.codes && typeof data.codes === "object") ? data.codes : {}
+    items: Array.isArray(data.items) ? data.items.filter(function (it) { return it && it.title; }).map(fixItem) : [],
+    // ISBN と書名・著者・出版社の対応。一度登録すると次回から自動で入る
+    isbns: (data.isbns && typeof data.isbns === "object") ? data.isbns : {}
   };
+}
+
+// 古いデータや手で編集された JSON でも壊れないように、足りない項目を補う
+function fixItem(it) {
+  if (STATUSES.indexOf(it.status) < 0) it.status = "未読";
+  if (!it.id) it.id = uid();
+  return it;
 }
 
 function save() {
@@ -392,33 +406,6 @@ function todayStr() {
 
 function pad(n) { return String(n).padStart(2, "0"); }
 
-// 期限までの日数。今日なら 0、過ぎていれば負の数。期限なしは null。
-function daysUntil(dateStr) {
-  if (!dateStr) return null;
-  var parts = dateStr.split("-").map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return null;
-  var target = new Date(parts[0], parts[1] - 1, parts[2]);
-  var now = new Date();
-  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((target - today) / 86400000);
-}
-
-function dueLevel(dateStr) {
-  var d = daysUntil(dateStr);
-  if (d === null) return "none";
-  if (d < 0) return "expired";
-  if (d <= 3) return "soon";
-  return "fine";
-}
-
-function dueText(dateStr) {
-  var d = daysUntil(dateStr);
-  if (d === null) return "期限なし";
-  if (d < 0) return dateStr + "（" + (-d) + "日超過）";
-  if (d === 0) return dateStr + "（今日まで）";
-  return dateStr + "（あと" + d + "日）";
-}
-
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -433,46 +420,65 @@ function toast(msg) {
   toast._t = setTimeout(function () { el.classList.remove("show"); }, 2200);
 }
 
+/* ---------- ISBN の判定 ---------- */
+
+/*
+ * ISBN-13 は規格上 EAN-13（JANコード）そのものなので、ean.js でそのまま読める。
+ * ただし 978／979 で始まるものだけが書籍を表す。
+ * 日本の本のバーコードは上下2段で、上段が ISBN（978…）、
+ * 下段は日本図書コード（192… で始まる分類・価格のコード）。
+ * 下段や食品の JAN を読んでしまったときは採用せず、案内を出す。
+ */
+function isIsbn13(code) {
+  return /^97[89][0-9]{10}$/.test(String(code || ""));
+}
+
+function notIsbnMessage(code) {
+  if (/^192/.test(String(code || ""))) {
+    return "下段の日本図書コード（" + code + "）を読み取りました。本のバーコード（978で始まる方）を読み取ってください。2段あるうちの上側です。";
+  }
+  return "本のバーコードではないようです（" + code + "）。本のバーコード（978で始まる方）を読み取ってください。2段あるうちの上側です。";
+}
+
+// ISBN を桁だけにそろえる（ハイフンや空白を取り除く）
+function cleanIsbn(s) {
+  return String(s == null ? "" : s).replace(/[^0-9]/g, "");
+}
+
 /* ---------- 描画 ---------- */
 
 function visibleItems() {
   var q = filters.q.trim().toLowerCase();
   var list = state.items.filter(function (it) {
-    if (filters.place !== "すべて" && it.place !== filters.place) return false;
+    if (filters.status !== "すべて" && it.status !== filters.status) return false;
     if (!q) return true;
-    return (it.name + " " + (it.note || "")).toLowerCase().indexOf(q) >= 0;
+    return (it.title + " " + (it.author || "") + " " + (it.note || "")).toLowerCase().indexOf(q) >= 0;
   });
   var sorters = {
-    due: function (a, b) {
-      var da = daysUntil(a.expiresOn), db = daysUntil(b.expiresOn);
-      if (da === null && db === null) return a.name.localeCompare(b.name, "ja");
-      if (da === null) return 1;
-      if (db === null) return -1;
-      return da - db;
-    },
     "new": function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); },
-    name: function (a, b) { return a.name.localeCompare(b.name, "ja"); }
+    title: function (a, b) { return a.title.localeCompare(b.title, "ja"); },
+    author: function (a, b) {
+      var r = (a.author || "").localeCompare(b.author || "", "ja");
+      return r !== 0 ? r : a.title.localeCompare(b.title, "ja");
+    },
+    status: function (a, b) {
+      var r = STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status);
+      return r !== 0 ? r : (b.createdAt || "").localeCompare(a.createdAt || "");
+    }
   };
-  return list.sort(sorters[filters.sort] || sorters.due);
+  return list.sort(sorters[filters.sort] || sorters["new"]);
+}
+
+function countByStatus(status) {
+  return state.items.filter(function (it) { return it.status === status; }).length;
 }
 
 function renderStats() {
-  var expired = 0, soon = 0;
-  state.items.forEach(function (it) {
-    var lv = dueLevel(it.expiresOn);
-    if (lv === "expired") expired++;
-    else if (lv === "soon") soon++;
-  });
-  var month = todayStr().slice(0, 7);
-  var discarded = state.log.filter(function (l) {
-    return l.action === "discard" && (l.at || "").slice(0, 7) === month;
-  }).length;
-
   var cards = [
-    { num: state.items.length, label: "在庫", cls: "" },
-    { num: expired, label: "期限切れ", cls: expired ? "danger" : "" },
-    { num: soon, label: "3日以内", cls: soon ? "warn" : "" },
-    { num: discarded, label: "今月の廃棄", cls: "" }
+    { num: state.items.length, label: "蔵書", cls: "" },
+    { num: countByStatus("未読"), label: "未読", cls: "" },
+    { num: countByStatus("読書中"), label: "読書中", cls: countByStatus("読書中") ? "warn" : "" },
+    { num: countByStatus("読了"), label: "読了", cls: countByStatus("読了") ? "ok" : "" }
   ];
   document.getElementById("stats").innerHTML = cards.map(function (c) {
     return '<div class="stat ' + c.cls + '"><div class="num">' + c.num + '</div><div class="label">' + c.label + "</div></div>";
@@ -480,22 +486,20 @@ function renderStats() {
 }
 
 function renderFilters() {
-  var el = document.getElementById("placeFilter");
-  var all = ["すべて"].concat(PLACES);
-  el.innerHTML = all.map(function (p) {
-    var on = filters.place === p;
-    return '<button type="button" class="chip" data-place="' + esc(p) + '" aria-pressed="' + on + '">' + esc(p) + "</button>";
+  var el = document.getElementById("statusFilter");
+  var all = ["すべて"].concat(STATUSES);
+  el.innerHTML = all.map(function (s) {
+    var on = filters.status === s;
+    return '<button type="button" class="chip" data-status="' + esc(s) + '" aria-pressed="' + on + '">' + esc(s) + "</button>";
   }).join("");
 }
 
-function renderRecent() {
-  var counts = {};
-  state.log.forEach(function (l) { if (l.name) counts[l.name] = (counts[l.name] || 0) + 1; });
-  var names = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 8);
-  var el = document.getElementById("recent");
-  if (!names.length) { el.innerHTML = ""; return; }
-  el.innerHTML = '<span class="footnote" style="align-self:center">よく買うもの：</span>' + names.map(function (n) {
-    return '<button type="button" class="chip" data-quick="' + esc(n) + '">' + esc(n) + "</button>";
+// 置き場所の候補を、これまでに入力した値から作る
+function renderPlaces() {
+  var seen = {};
+  state.items.forEach(function (it) { if (it.place) seen[it.place] = true; });
+  document.getElementById("places").innerHTML = Object.keys(seen).map(function (p) {
+    return '<option value="' + esc(p) + '"></option>';
   }).join("");
 }
 
@@ -503,61 +507,47 @@ function renderList() {
   var items = visibleItems();
   var el = document.getElementById("list");
   if (!items.length) {
-    el.innerHTML = '<li class="empty">該当する食材がありません。</li>';
+    el.innerHTML = '<li class="empty">該当する本がありません。</li>';
     return;
   }
   el.innerHTML = items.map(function (it) {
-    var lv = dueLevel(it.expiresOn);
-    var qty = (it.qty || it.qty === 0) ? esc(it.qty) + esc(it.unit || "") : "";
-    return '<li class="item ' + lv + '" data-id="' + esc(it.id) + '">' +
+    var cls = STATUS_CLASS[it.status] || "unread";
+    var sub = [];
+    if (it.author) sub.push("著者：" + esc(it.author));
+    if (it.publisher) sub.push("出版社：" + esc(it.publisher));
+    if (it.isbn) sub.push("ISBN：" + esc(it.isbn));
+    // 今の状態以外への切り替えボタンを並べる
+    var switches = STATUSES.filter(function (s) { return s !== it.status; }).map(function (s) {
+      return '<button type="button" class="small" data-action="status" data-to="' + esc(s) + '">' + esc(s) + "にする</button>";
+    }).join("");
+    return '<li class="item ' + cls + '" data-id="' + esc(it.id) + '">' +
       '<div class="item-head">' +
-        '<span class="item-name">' + esc(it.name) + "</span>" +
-        (qty ? '<span class="badge">' + qty + "</span>" : "") +
-        '<span class="badge">' + esc(it.place || "冷蔵") + "</span>" +
-        '<span class="due ' + lv + '">' + esc(dueText(it.expiresOn)) + "</span>" +
+        '<span class="item-name">' + esc(it.title) + "</span>" +
+        '<span class="status ' + cls + '">' + esc(it.status) + "</span>" +
+        (it.place ? '<span class="badge">' + esc(it.place) + "</span>" : "") +
+        '<span class="badge">' + esc((it.createdAt || "").slice(0, 10)) + " 登録</span>" +
       "</div>" +
+      (sub.length ? '<div class="item-sub">' + sub.join("／") + "</div>" : "") +
       (it.note ? '<div class="item-note">' + esc(it.note) + "</div>" : "") +
       '<div class="item-actions">' +
-        '<button type="button" class="small" data-action="dec">1つ減らす</button>' +
-        '<button type="button" class="small" data-action="consume">使い切り</button>' +
-        '<button type="button" class="small" data-action="discard">廃棄</button>' +
+        switches +
         '<button type="button" class="small link" data-action="edit">編集</button>' +
         '<button type="button" class="small link" data-action="delete">削除</button>' +
       "</div></li>";
   }).join("");
 }
 
-function renderLoss() {
-  var discards = state.log.filter(function (l) { return l.action === "discard"; }).slice(-10).reverse();
-  var month = todayStr().slice(0, 7);
-  var monthCount = state.log.filter(function (l) {
-    return l.action === "discard" && (l.at || "").slice(0, 7) === month;
-  }).length;
-  document.getElementById("lossSummary").textContent =
-    discards.length
-      ? "今月の廃棄 " + monthCount + " 件。直近の廃棄は次のとおりです。"
-      : "廃棄の記録はまだありません。";
-  document.getElementById("lossList").innerHTML = discards.map(function (l) {
-    return '<li class="item none"><div class="item-head">' +
-      '<span class="item-name">' + esc(l.name) + "</span>" +
-      '<span class="badge">' + esc((l.at || "").slice(0, 10)) + "</span>" +
-      (l.expiresOn ? '<span class="due none">期限 ' + esc(l.expiresOn) + "</span>" : "") +
-      "</div></li>";
-  }).join("");
-}
-
 function renderCodeCount() {
-  var n = Object.keys(state.codes).length;
+  var n = Object.keys(state.isbns).length;
   document.getElementById("codeCount").textContent =
-    n ? "登録済みのバーコード：" + n + "件" : "";
+    n ? "覚えているISBN：" + n + "件" : "";
 }
 
 function render() {
   renderStats();
   renderFilters();
-  renderRecent();
+  renderPlaces();
   renderList();
-  renderLoss();
   renderCodeCount();
 }
 
@@ -568,53 +558,63 @@ var form = document.getElementById("itemForm");
 form.addEventListener("submit", function (e) {
   e.preventDefault();
   var fd = new FormData(form);
-  var name = String(fd.get("name") || "").trim();
-  if (!name) return;
+  var title = String(fd.get("title") || "").trim();
+  if (!title) return;
+  var isbn = cleanIsbn(fd.get("isbn"));
   var values = {
-    name: name,
-    qty: fd.get("qty") === "" ? null : Number(fd.get("qty")),
-    unit: String(fd.get("unit") || "").trim(),
-    place: String(fd.get("place") || "冷蔵"),
-    expiresOn: String(fd.get("expiresOn") || ""),
+    title: title,
+    author: String(fd.get("author") || "").trim(),
+    publisher: String(fd.get("publisher") || "").trim(),
+    isbn: isbn,
+    status: STATUSES.indexOf(String(fd.get("status"))) >= 0 ? String(fd.get("status")) : "未読",
+    place: String(fd.get("place") || "").trim(),
     note: String(fd.get("note") || "").trim()
   };
   if (editingId) {
     var target = state.items.find(function (it) { return it.id === editingId; });
     if (target) Object.assign(target, values);
+    rememberIsbn(values);
     toast("更新しました");
     stopEditing();
   } else {
     values.id = uid();
     values.createdAt = new Date().toISOString();
-    if (pendingCode) {
-      values.code = pendingCode;
-      // 次回このバーコードを読んだときに、品名・単位・保管場所を自動で入れる
-      state.codes[pendingCode] = { name: values.name, unit: values.unit, place: values.place };
-      clearPendingCode();
-    }
+    // 次回この ISBN を読んだときに、書名・著者・出版社を自動で入れる
+    rememberIsbn(values);
+    clearPendingCode();
     state.items.push(values);
     toast("追加しました");
     form.reset();
-    document.getElementById("f-qty").value = "1";
-    document.getElementById("f-unit").value = "個";
+    document.getElementById("f-status").value = "未読";
   }
   save();
   render();
-  document.getElementById("f-name").focus();
+  document.getElementById("f-title").focus();
 });
+
+// ISBN と書名の対応を覚える。ISBN が入っていないときは何もしない
+function rememberIsbn(values) {
+  if (!isIsbn13(values.isbn)) return;
+  state.isbns[values.isbn] = {
+    title: values.title,
+    author: values.author,
+    publisher: values.publisher
+  };
+}
 
 function startEditing(item) {
   editingId = item.id;
-  document.getElementById("f-name").value = item.name;
-  document.getElementById("f-qty").value = item.qty == null ? "" : item.qty;
-  document.getElementById("f-unit").value = item.unit || "";
-  document.getElementById("f-place").value = item.place || "冷蔵";
-  document.getElementById("f-expires").value = item.expiresOn || "";
+  document.getElementById("f-title").value = item.title;
+  document.getElementById("f-author").value = item.author || "";
+  document.getElementById("f-publisher").value = item.publisher || "";
+  document.getElementById("f-isbn").value = item.isbn || "";
+  document.getElementById("f-status").value = item.status || "未読";
+  document.getElementById("f-place").value = item.place || "";
   document.getElementById("f-note").value = item.note || "";
-  document.getElementById("formTitle").textContent = "食材を編集";
+  document.getElementById("formTitle").textContent = "本を編集";
   document.getElementById("submitBtn").textContent = "更新する";
   document.getElementById("cancelEdit").hidden = false;
-  document.getElementById("f-name").focus();
+  document.getElementById("f-title").focus();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -622,29 +622,13 @@ function stopEditing() {
   editingId = null;
   clearPendingCode();
   form.reset();
-  document.getElementById("f-qty").value = "1";
-  document.getElementById("f-unit").value = "個";
-  document.getElementById("formTitle").textContent = "食材を追加";
+  document.getElementById("f-status").value = "未読";
+  document.getElementById("formTitle").textContent = "本を追加";
   document.getElementById("submitBtn").textContent = "追加する";
   document.getElementById("cancelEdit").hidden = true;
 }
 
 document.getElementById("cancelEdit").addEventListener("click", stopEditing);
-
-form.addEventListener("click", function (e) {
-  var plus = e.target.getAttribute && e.target.getAttribute("data-plus");
-  if (!plus) return;
-  var d = new Date();
-  d.setDate(d.getDate() + Number(plus));
-  document.getElementById("f-expires").value = [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join("-");
-});
-
-document.getElementById("recent").addEventListener("click", function (e) {
-  var name = e.target.getAttribute && e.target.getAttribute("data-quick");
-  if (!name) return;
-  document.getElementById("f-name").value = name;
-  document.getElementById("f-name").focus();
-});
 
 document.getElementById("list").addEventListener("click", function (e) {
   var btn = e.target.closest("button[data-action]");
@@ -656,22 +640,16 @@ document.getElementById("list").addEventListener("click", function (e) {
   var item = state.items[idx];
   var action = btn.getAttribute("data-action");
 
-  if (action === "dec") {
-    if (item.qty == null) { toast("数量が未設定です"); return; }
-    item.qty = Math.max(0, Number(item.qty) - 1);
-    if (item.qty === 0) { logAndRemove(idx, "consume"); toast("使い切りにしました"); }
-  } else if (action === "consume") {
-    logAndRemove(idx, "consume");
-    toast("使い切りにしました");
-  } else if (action === "discard") {
-    if (!confirm("「" + item.name + "」を廃棄として記録しますか？")) return;
-    logAndRemove(idx, "discard");
-    toast("廃棄として記録しました");
+  if (action === "status") {
+    var to = btn.getAttribute("data-to");
+    if (STATUSES.indexOf(to) < 0) return;
+    item.status = to;
+    toast("「" + item.title + "」を" + to + "にしました");
   } else if (action === "edit") {
     startEditing(item);
     return;
   } else if (action === "delete") {
-    if (!confirm("「" + item.name + "」を記録ごと削除しますか？（廃棄の記録は残りません）")) return;
+    if (!confirm("「" + item.title + "」を削除しますか？（ISBNと書名の対応は残ります）")) return;
     state.items.splice(idx, 1);
     if (editingId === id) stopEditing();
     toast("削除しました");
@@ -679,22 +657,6 @@ document.getElementById("list").addEventListener("click", function (e) {
   save();
   render();
 });
-
-function logAndRemove(idx, action) {
-  var item = state.items[idx];
-  state.log.push({
-    id: uid(),
-    name: item.name,
-    action: action,
-    qty: item.qty,
-    unit: item.unit,
-    expiresOn: item.expiresOn || "",
-    at: new Date().toISOString()
-  });
-  if (state.log.length > 500) state.log = state.log.slice(-500);
-  state.items.splice(idx, 1);
-  if (editingId === item.id) stopEditing();
-}
 
 document.getElementById("q").addEventListener("input", function (e) {
   filters.q = e.target.value;
@@ -704,70 +666,25 @@ document.getElementById("sort").addEventListener("change", function (e) {
   filters.sort = e.target.value;
   renderList();
 });
-document.getElementById("placeFilter").addEventListener("click", function (e) {
-  var place = e.target.getAttribute && e.target.getAttribute("data-place");
-  if (!place) return;
-  filters.place = place;
+document.getElementById("statusFilter").addEventListener("click", function (e) {
+  var status = e.target.getAttribute && e.target.getAttribute("data-status");
+  if (!status) return;
+  filters.status = status;
   renderFilters();
   renderList();
 });
 
 /* ---------- 持ち出し ---------- */
 
-/* ---------- カレンダーへの登録 ---------- */
-
-// 期限が近い食材を、端末の標準カレンダーの予定にする
-document.getElementById("calendarSoon").addEventListener("click", function () {
-  var target = state.items.filter(function (it) {
-    var days = daysUntil(it.expiresOn);
-    return days !== null && days <= 7;
-  }).sort(function (a, b) { return daysUntil(a.expiresOn) - daysUntil(b.expiresOn); });
-  if (!target.length) { toast("期限が近い食材はありません"); return; }
-
-  var events = target.map(function (it) {
-    return {
-      uid: it.id + "@fridge",
-      title: it.name + " の期限" + (it.qty ? "（" + it.qty + (it.unit || "") + "）" : ""),
-      date: it.expiresOn,
-      time: "18:00", // 夕食の支度前に知らせる
-      location: it.place,
-      description: (it.note ? it.note + "\n" : "") + "（冷蔵庫の在庫管理から登録）",
-      alarms: [1440, 0],
-      sequence: it.icsSeq || 0
-    };
-  });
-  // アプリとして動いている場合は端末の通知に登録する。ブラウザではここを素通りする
-  if (window.Native && window.Native.available()) {
-    window.Native.scheduleDeadlines(events).then(function (res) {
-      if (res.ok) { toast("通知を設定しました（" + res.count + "件）"); return; }
-      if (res.reason === "denied") { toast("通知が許可されていません。設定アプリで許可してください"); return; }
-      writeFridgeCalendarFile(events, target);
-    });
-    return;
-  }
-  writeFridgeCalendarFile(events, target);
-});
-
-function writeFridgeCalendarFile(events, target) {
-  var text = window.ICS.build(events, { calendarName: "食材の期限" });
-  window.ICS.deliver(text, window.ICS.filename("fridge")).then(function (how) {
-    if (how === "cancelled") return;
-    target.forEach(function (it) { it.icsSeq = (it.icsSeq || 0) + 1; });
-    save();
-    toast(how === "shared"
-      ? "カレンダーアプリを選んでください（" + target.length + "件）"
-      : "予定ファイルを保存しました（" + target.length + "件）。開くとカレンダーに登録できます");
-  });
-}
-
-document.getElementById("copyExpiring").addEventListener("click", function () {
-  var soon = state.items.filter(function (it) {
-    var d = daysUntil(it.expiresOn);
-    return d !== null && d <= 5;
-  }).sort(function (a, b) { return daysUntil(a.expiresOn) - daysUntil(b.expiresOn); });
-  if (!soon.length) { toast("期限が近い食材はありません"); return; }
-  var text = "期限が近い食材（" + todayStr() + " 時点）\n" + soon.map(function (it) {
-    return "- " + it.name + (it.qty ? " " + it.qty + (it.unit || "") : "") + "：" + dueText(it.expiresOn);
+document.getElementById("copyList").addEventListener("click", function () {
+  var items = visibleItems();
+  if (!items.length) { toast("該当する本がありません"); return; }
+  var text = "蔵書一覧（" + todayStr() + " 時点、" + items.length + "冊）\n" + items.map(function (it) {
+    return "- " + it.title +
+      (it.author ? "／" + it.author : "") +
+      (it.publisher ? "／" + it.publisher : "") +
+      "：" + it.status +
+      (it.place ? "（" + it.place + "）" : "");
   }).join("\n");
   copyText(text);
 });
@@ -797,7 +714,7 @@ document.getElementById("exportBtn").addEventListener("click", function () {
   var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
   var a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "fridge-" + todayStr() + ".json";
+  a.download = "books-" + todayStr() + ".json";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -815,7 +732,7 @@ document.getElementById("importFile").addEventListener("change", function (e) {
   reader.onload = function () {
     try {
       var data = normalize(JSON.parse(String(reader.result)));
-      if (!confirm("読み込むと今のデータ（在庫 " + state.items.length + " 件）は置き換わります。続けますか？")) return;
+      if (!confirm("読み込むと今のデータ（蔵書 " + state.items.length + " 冊）は置き換わります。続けますか？")) return;
       state = data;
       save();
       render();
@@ -839,7 +756,7 @@ document.getElementById("importFile").addEventListener("change", function (e) {
  */
 
 var pendingCode = null;
-var scan = { stream: null, timer: null, detector: null, prepared: false, last: null, lastCount: 0, busy: false };
+var scan = { stream: null, timer: null, detector: null, prepared: false, last: null, lastCount: 0, busy: false, rejected: null };
 var scanVideo = document.getElementById("scanVideo");
 var scanCanvas = document.createElement("canvas");
 
@@ -855,6 +772,14 @@ function showPendingCode() {
 function clearPendingCode() {
   pendingCode = null;
   showPendingCode();
+  showDupNote("");
+}
+
+// 「すでに登録されています」の案内
+function showDupNote(msg) {
+  var el = document.getElementById("dupNote");
+  el.textContent = msg || "";
+  el.hidden = !msg;
 }
 
 function cameraErrorMessage(e) {
@@ -888,6 +813,7 @@ function openScanner() {
   document.getElementById("manualCode").value = "";
   scan.last = null;
   scan.lastCount = 0;
+  scan.rejected = null;
   setScanStatus("カメラを起動しています…");
 
   if (!window.isSecureContext) {
@@ -911,7 +837,7 @@ function openScanner() {
     }
     return scanVideo.play().catch(function () {});
   }).then(prepareDetector).then(function () {
-    setScanStatus("バーコードを枠の中に合わせてください。");
+    setScanStatus("本のバーコード（上側・978で始まる方）を枠の中に合わせてください。");
     scan.timer = setInterval(tickScan, 150);
   }).catch(function (e) {
     setScanStatus(cameraErrorMessage(e));
@@ -938,7 +864,7 @@ function tickScan() {
     // 同じ番号を2回続けて読めたときだけ確定する（1回だけの誤読を拾わないため）
     if (scan.last === code) scan.lastCount++;
     else { scan.last = code; scan.lastCount = 1; }
-    if (scan.lastCount >= 2) acceptCode(code);
+    if (scan.lastCount >= 2) handleScannedCode(code);
   }, function () { scan.busy = false; });
 }
 
@@ -968,7 +894,20 @@ function decodeFromCanvas() {
   return window.EAN.decodeImageData(ctx.getImageData(0, 0, w, h));
 }
 
-// 読み取った番号をフォームに反映する
+// 読み取った番号が本のものかどうかを見て、採用するかどうかを決める
+function handleScannedCode(code) {
+  if (isIsbn13(code)) { acceptCode(code); return; }
+  // ISBN でないもの（下段の日本図書コード、食品の JAN など）は採用しない
+  if (scan.rejected !== code) {
+    scan.rejected = code;
+    setScanStatus(notIsbnMessage(code));
+  }
+  // 同じ番号をもう一度読み直せるように数え直す（読み取りはそのまま続ける）
+  scan.last = null;
+  scan.lastCount = 0;
+}
+
+// 読み取ったISBNをフォームに反映する
 function acceptCode(code) {
   closeScanner();
   if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) { /* 対応していなければ何もしない */ } }
@@ -976,18 +915,32 @@ function acceptCode(code) {
   showPendingCode();
   if (editingId) stopEditingKeepCode();
 
-  var known = state.codes[code];
-  document.getElementById("f-qty").value = "1";
+  var known = state.isbns[code];
+  var dup = state.items.find(function (it) { return it.isbn === code; });
+  document.getElementById("f-isbn").value = code;
+  document.getElementById("f-status").value = "未読";
   if (known) {
-    document.getElementById("f-name").value = known.name;
-    document.getElementById("f-unit").value = known.unit || "個";
-    document.getElementById("f-place").value = known.place || "冷蔵";
-    document.getElementById("f-expires").focus();
-    toast("「" + known.name + "」を読み取りました");
+    document.getElementById("f-title").value = known.title || "";
+    document.getElementById("f-author").value = known.author || "";
+    document.getElementById("f-publisher").value = known.publisher || "";
+    document.getElementById("f-place").focus();
   } else {
-    document.getElementById("f-name").value = "";
-    document.getElementById("f-name").focus();
-    toast("初めてのバーコードです。品名を入れると次回から自動で入ります");
+    document.getElementById("f-title").value = "";
+    document.getElementById("f-author").value = "";
+    document.getElementById("f-publisher").value = "";
+    document.getElementById("f-title").focus();
+  }
+
+  if (dup) {
+    // 二重登録を防ぐため、すでに持っている本であることをはっきり出す
+    showDupNote("この本はすでに登録されています：「" + dup.title + "」（" + dup.status + "）。もう1冊登録する必要がなければ「やめる」で取りやめてください。");
+    document.getElementById("cancelEdit").hidden = false;
+    toast("この本はすでに登録されています");
+  } else {
+    showDupNote("");
+    toast(known
+      ? "「" + known.title + "」を読み取りました"
+      : "初めてのISBNです。書名を入れると次回から自動で入ります");
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -1004,17 +957,18 @@ function stopEditingKeepCode() {
  * ブラウザ版は今までどおり画面内のカメラと自前デコーダを使う。 */
 document.getElementById("scanBtn").addEventListener("click", function () {
   if (!window.NativeScan || !window.NativeScan.available()) { openScanner(); return; }
-  window.NativeScan.scan(window.NativeScan.FORMAT.ALL, "商品のバーコードを枠に合わせてください")
+  window.NativeScan.scan(window.NativeScan.FORMAT.ALL, "本のバーコード（978で始まる上側）を枠に合わせてください")
     .then(function (code) {
       if (!code) return;                       // 利用者が閉じた
-      var digits = String(code).replace(/[^0-9]/g, "");
-      if (!digits) { toast("バーコードとして読み取れませんでした"); return; }
+      var digits = cleanIsbn(code);
+      if (!isIsbn13(digits)) { toast(notIsbnMessage(digits || code)); return; }
       acceptCode(digits);
     });
 });
 document.getElementById("pendingCodeClear").addEventListener("click", function () {
   clearPendingCode();
-  toast("バーコードの読み取りを解除しました");
+  document.getElementById("f-isbn").value = "";
+  toast("ISBNの読み取りを解除しました");
 });
 document.getElementById("scanClose").addEventListener("click", closeScanner);
 document.getElementById("scanModal").addEventListener("click", function (e) {
@@ -1025,11 +979,12 @@ document.addEventListener("keydown", function (e) {
 });
 document.getElementById("jumpAdd").addEventListener("click", function () {
   window.scrollTo({ top: 0, behavior: "smooth" });
-  document.getElementById("f-name").focus();
+  document.getElementById("f-title").focus();
 });
 document.getElementById("manualOk").addEventListener("click", function () {
-  var code = document.getElementById("manualCode").value.replace(/[^0-9]/g, "");
-  if (code.length < 8) { setScanStatus("8桁以上の番号を入力してください。"); return; }
+  var code = cleanIsbn(document.getElementById("manualCode").value);
+  if (code.length !== 13) { setScanStatus("ISBNは13桁です。978または979で始まる番号を入力してください。"); return; }
+  if (!isIsbn13(code)) { setScanStatus(notIsbnMessage(code)); return; }
   if (window.EAN && !window.EAN.checksumOk(code)) {
     toast("チェックディジットが合いません。番号を確認してください");
   }
@@ -1045,7 +1000,7 @@ document.addEventListener("visibilitychange", function () {
 });
 
 // テストから読み取り結果を差し込むための入口（カメラのない環境で動作を確認するため）
-window.fridgeApp = { acceptCode: acceptCode };
+window.booksApp = { acceptCode: acceptCode, handleScannedCode: handleScannedCode, isIsbn13: isIsbn13 };
 
 /* ---------- オフラインで使えるようにする ---------- */
 if ("serviceWorker" in navigator && window.isSecureContext) {

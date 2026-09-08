@@ -28,6 +28,8 @@
 | トップページ | `https://akihitofujioka-bit.github.io/myproject/` |
 | 冷蔵庫 | `https://akihitofujioka-bit.github.io/myproject/fridge/` |
 | 書類トラッカー | `https://akihitofujioka-bit.github.io/myproject/docs-tracker/` |
+| 蔵書 | `https://akihitofujioka-bit.github.io/myproject/books/` |
+| 備蓄・消耗品 | `https://akihitofujioka-bit.github.io/myproject/stock/` |
 
 ### iPhone のホーム画面に追加する
 

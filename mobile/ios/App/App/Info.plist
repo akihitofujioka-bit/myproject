@@ -6,8 +6,19 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>ja</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>jp.myproject.dailyapps</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>myproject</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleDisplayName</key>
-	<string>日常アプリ</string>
+	<string>壱師</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

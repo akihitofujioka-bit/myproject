@@ -1,6 +1,6 @@
 {
   "appId": "jp.myproject.dailyapps",
-  "appName": "日常アプリ",
+  "appName": "壱師",
   "webDir": "www",
   "ios": {
     "contentInset": "always"
