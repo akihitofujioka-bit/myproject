@@ -3,14 +3,17 @@
 `apps/` の2つのアプリを、そのまま **iPhone のネイティブアプリ**に包むための設定一式。
 Web の作りはそのままで、アプリとして動いているときだけ端末の通知機能を使う。
 
-> **重要：この手順は未検証です。**
-> iOS のビルドには Mac と Xcode が必要で、この作業環境（Linux）では実行も確認もできません。
-> 設定ファイルと `www` の組み立てまでは動作を確認しています（`npm install` と `npm run build` は通ります）。
-> Xcode 以降の手順は一般的なやり方に沿って書いたもので、実機で確かめていません。
+> **どこまで確認済みか**
+> - iOS プロジェクトの生成（`npx cap add ios`）、`npm install`、`www` の組み立て、`cap sync` までは
+>   **この環境で実行して成功を確認済み**。生成された `ios/` はこのリポジトリに入っている
+> - **Xcode でのビルドと実機での動作は未検証**（Mac が必要なため）。手順は一般的なやり方に沿って書いている
+
+Capacitor 8 は CocoaPods を使わず Swift Package Manager で依存を解決するため、
+**Mac 側で必要なのは Xcode の操作だけ**になっている。
 
 ## アプリにすると何が変わるか
 
-| | ホーム画面に追加（今の形） | ネイティブアプリ |
+| | ホーム画面に追加（PWA） | ネイティブアプリ |
 | --- | --- | --- |
 | 起動・オフライン | できる | できる |
 | バーコード読み取り | できる（自前デコーダ） | できる（さらに高精度な部品も追加可） |
@@ -22,6 +25,17 @@ Web の作りはそのままで、アプリとして動いているときだけ�
 `apps/shared/native.js` が「アプリとして動いているか」を判定し、
 アプリなら端末の通知に登録、ブラウザならこれまでどおりカレンダーに登録する。
 
+## 準備済みのもの
+
+このリポジトリの `mobile/ios/` に Xcode プロジェクトが入っている。次は設定済み。
+
+- アプリ名：**日常アプリ**（`CFBundleDisplayName`）
+- Bundle Identifier：`jp.myproject.dailyapps`
+- **カメラの利用目的**（`NSCameraUsageDescription`）— 未設定だと読み取り時にアプリが落ちるため設定済み
+- アプリアイコンと起動画面
+- 画面の向き：縦のみ／対応 iOS：15.0 以降
+- ローカル通知プラグイン（`@capacitor/local-notifications`）
+
 ## 必要なもの
 
 - Mac（macOS）
@@ -29,39 +43,30 @@ Web の作りはそのままで、アプリとして動いているときだけ�
 - Node.js 18 以降
 - Apple ID（無料のもので可）
 
-## 手順
+## 手順（Mac で）
 
-### 1. 準備（Mac のターミナルで）
+### 1. 取得して組み立てる
 
 ```bash
 git clone https://github.com/akihitofujioka-bit/myproject.git
 cd myproject/mobile
-npm install
-npm run build     # apps/ の中身を www/ に写す
-npx cap add ios   # iOS のプロジェクトを作る（初回だけ）
+npm install       # Xcode を開く前に必須（Package.swift が node_modules を参照するため）
+npm run sync      # apps/ の中身を www/ に写し、iOS プロジェクトへ反映する
 ```
 
-### 2. カメラの利用目的を書く（必須）
-
-`mobile/ios/App/App/Info.plist` を開き、`<dict>` の中に次の2行を足す。
-**これを忘れるとバーコード読み取りの瞬間にアプリが落ちる。**
-
-```xml
-<key>NSCameraUsageDescription</key>
-<string>商品のバーコードを読み取るためにカメラを使用します</string>
-```
-
-### 3. Xcode で開いてiPhoneに入れる
+### 2. Xcode で開く
 
 ```bash
-npm run ios       # www を作り直して Xcode を開く
+open ios/App/App.xcodeproj
 ```
 
-Xcode が開いたら：
+初回は Swift Package の取得が走るので、ネットワークに繋いだまま少し待つ。
+
+### 3. 署名して実機に入れる
 
 1. 左の一覧から **App** を選び、**Signing & Capabilities** タブを開く
 2. **Team** に自分の Apple ID を選ぶ（初回は「Add an Account…」から登録）
-3. **Bundle Identifier** が他人と重複するとエラーになる。その場合は `jp.myproject.dailyapps` の後ろに何か足す
+3. Bundle Identifier が他人と重複するとエラーになる。その場合は `jp.myproject.dailyapps` の後ろに何か足す
 4. iPhone を Mac に繋ぎ、画面上部の実行先を自分の iPhone にする
 5. ▶︎（Run）を押す
 
@@ -69,6 +74,12 @@ Xcode が開いたら：
 
 初回は「信頼されていない開発元」と出るので、
 **設定 → 一般 → VPNとデバイス管理** から自分の Apple ID を選び「信頼」する。
+
+そのあとアプリを開き、
+
+- **通知の許可**：「カレンダーに登録」を初めて押したときに聞かれる。許可すると、以降は
+  カレンダーを経由せずアプリから直接通知が出る
+- **カメラの許可**：バーコードを初めて読むときに聞かれる
 
 ## 費用と有効期限
 
@@ -80,17 +91,20 @@ Xcode が開いたら：
 
 ## アプリを更新するとき
 
-`apps/` の中身を直したあと、Mac で次を実行して Xcode から再ビルドする。
+`apps/` の中身が変わったら、Mac で次を実行して Xcode から再ビルドする。
 
 ```bash
 cd mobile
-npm run sync      # www を作り直し、iOS プロジェクトに反映する
-npm run ios
+git pull
+npm run sync
+open ios/App/App.xcodeproj
 ```
 
 ## 補足
 
 - **Service Worker は www から除いている。** アプリ内ではファイルが端末にあるため不要
+- `ios/App/App/public`（web の実体）と `capacitor.config.json` は `npm run sync` で作られる生成物のため、
+  git の管理対象外にしている。**clone 直後は必ず `npm run sync` を実行する**
 - **バーコードをさらに高精度にしたい場合**は、Apple / Google の読み取り部品を使うプラグインを足せる。
   `npm i @capacitor-mlkit/barcode-scanning` を入れたうえで、`apps/shared/native.js` に
   読み取り用の関数を足し、`apps/fridge/index.html` の読み取り処理から呼ぶ形になる（未実装）
