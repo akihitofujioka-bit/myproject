@@ -48,6 +48,10 @@
   }
 }
 * { box-sizing: border-box; }
+/* iOS の日付入力は独自の最小幅を持つため、隣の欄と横並びにすると重なる。
+   見た目（「年/月/日」の表記）は残したいので、外観の指定は変えず、
+   狭い画面では下の .field.date で1行を占有させることで重なりを防ぐ。 */
+input[type="date"] { min-width: 0; }
 body {
   margin: 0;
   background: var(--bg);
@@ -169,6 +173,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 .scanbar button { flex: 1; min-height: 48px; font-weight: 700; }
 @media (max-width: 640px) {
   .wrap { padding-left: 12px; padding-right: 12px; }
+  /* 日付欄は横幅を取るので、狭い画面では1行を占有させる */
+  .field.date { flex: 1 1 100%; }
   button { min-height: 44px; }
   .item-actions button { flex: 1 1 auto; }
   .chip { min-height: 36px; }
@@ -210,11 +216,17 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       読み取ったバーコード：<span class="badge" id="pendingCode"></span>
       <button type="button" class="link small" id="pendingCodeClear">解除</button>
     </p>
+    <div id="recentBox" hidden style="margin:0 0 12px">
+      <p class="footnote" style="margin:0 0 6px">よく登録する食材（押すと内容が入ります）</p>
+      <div id="recentChips" class="chips"></div>
+    </div>
+
     <form id="itemForm">
       <div class="row">
         <div class="field wide">
           <label for="f-name">品名（必須）</label>
-          <input id="f-name" name="name" required placeholder="例：牛乳" autocomplete="off">
+          <input id="f-name" name="name" required placeholder="例：牛乳" autocomplete="off" list="nameList">
+          <datalist id="nameList"></datalist>
         </div>
         <div class="field">
           <label for="f-qty">数量</label>
@@ -238,13 +250,14 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
             <option value="常温">常温</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field date">
           <label for="f-expires">賞味・消費期限</label>
           <input id="f-expires" name="expiresOn" type="date">
         </div>
         <div class="field wide">
           <label for="f-note">メモ</label>
-          <input id="f-note" name="note" placeholder="例：開封済み" autocomplete="off">
+          <input id="f-note" name="note" placeholder="例：開封済み" autocomplete="off" list="noteList">
+          <datalist id="noteList"></datalist>
         </div>
       </div>
       <div class="row" style="align-items:center">
@@ -552,6 +565,59 @@ function renderCodeCount() {
     n ? "登録済みのバーコード：" + n + "件" : "";
 }
 
+
+/* ---------- 入力を減らす仕組み（端末の中だけで動く） ----------
+ *  ・過去に入れた値を、入力欄の候補として出す
+ *  ・よく登録するものを押すだけで内容を入れる
+ */
+function pastValues(field) {
+  var count = {};
+  state.items.forEach(function (it) {
+    var v = String(it[field] == null ? "" : it[field]).trim();
+    if (v) count[v] = (count[v] || 0) + 1;
+  });
+  return Object.keys(count).sort(function (a, b) {
+    if (count[b] !== count[a]) return count[b] - count[a];
+    return a.localeCompare(b, "ja");
+  });
+}
+
+function fillDatalist(id, values) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = values.slice(0, 50).map(function (v) {
+    return '<option value="' + esc(v) + '"></option>';
+  }).join("");
+}
+
+function renderRecentChips() {
+  var names = pastValues("name").slice(0, 6);
+  var box = document.getElementById("recentBox");
+  box.hidden = names.length === 0;
+  document.getElementById("recentChips").innerHTML = names.map(function (t) {
+    return '<button type="button" class="chip" data-recent="' + esc(t) + '">' + esc(t) + "</button>";
+  }).join("");
+}
+
+document.getElementById("recentChips").addEventListener("click", function (e) {
+  var btn = e.target.closest("button[data-recent]");
+  if (!btn) return;
+  var key = btn.getAttribute("data-recent");
+  var last = null;
+  state.items.forEach(function (it) {
+    if (String(it["name"] || "") === key) {
+      if (!last || String(it.createdAt || "") > String(last.createdAt || "")) last = it;
+    }
+  });
+  if (!last) return;
+  if (editingId) stopEditing();
+  document.getElementById("f-name").value = last.name || "";
+  document.getElementById("f-unit").value = last.unit || "";
+  document.getElementById("f-place").value = last.place || "";
+  document.getElementById("f-note").value = last.note || "";
+  toast("内容を入れました。確認して登録してください");
+});
+
 function render() {
   renderStats();
   renderFilters();
@@ -559,6 +625,9 @@ function render() {
   renderList();
   renderLoss();
   renderCodeCount();
+  fillDatalist("nameList", pastValues("name"));
+  fillDatalist("noteList", pastValues("note"));
+  renderRecentChips();
 }
 
 /* ---------- 操作 ---------- */
@@ -1010,6 +1079,9 @@ document.getElementById("scanBtn").addEventListener("click", function () {
       var digits = String(code).replace(/[^0-9]/g, "");
       if (!digits) { toast("バーコードとして読み取れませんでした"); return; }
       acceptCode(digits);
+    })
+    .catch(function (err) {
+      toast("カメラを開けませんでした：" + (err && err.message ? err.message : "原因不明"));
     });
 });
 document.getElementById("pendingCodeClear").addEventListener("click", function () {

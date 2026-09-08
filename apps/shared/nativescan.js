@@ -45,16 +45,25 @@
    */
   function scan(hint, guide) {
     if (!available()) return Promise.resolve(null);
+    // 下の4つはプラグイン側で必須。1つでも欠けると引数の変換に失敗し、
+    // カメラが開く前にエラーで終わる（scanOrientation の渡し忘れで実際にそうなった）。
     return global.Capacitor.nativePromise(PLUGIN, "scanBarcode", {
       hint: typeof hint === "number" ? hint : FORMAT.ALL,
       scanInstructions: guide || "枠の中にコードを合わせてください",
-      scanButton: false,
-      cameraDirection: 1   // 背面カメラ
+      scanButton: false,   // 「読み取る」ボタンは出さず、かざすだけで読む
+      cameraDirection: 1,  // 1=背面カメラ / それ以外=前面
+      scanOrientation: 1   // 1=縦 / 2=横 / それ以外=自動。アプリは縦向き固定
     }).then(function (res) {
       return (res && res.ScanResult) ? String(res.ScanResult) : null;
-    }).catch(function () {
-      // 利用者が閉じた場合もここに来る。エラー扱いにはしない
-      return null;
+    }).catch(function (err) {
+      // 利用者が自分で閉じたときもここに来る。それは失敗ではないので黙って戻る。
+      // それ以外は原因が分からないと直せないため、呼び出し側に伝える。
+      var msg = (err && (err.message || err.errorMessage)) ? String(err.message || err.errorMessage) : String(err || "");
+      if (global.console && console.warn) console.warn("[NativeScan] 読み取り終了:", msg, err);
+      if (/cancel|閉じ|dismiss|abort/i.test(msg) || msg === "") return null;
+      var e = new Error(msg);
+      e.nativeScanError = true;
+      throw e;
     });
   }
 

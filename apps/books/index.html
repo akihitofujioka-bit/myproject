@@ -215,6 +215,11 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <button type="button" class="link small" id="pendingCodeClear">解除</button>
     </p>
     <p class="footnote" id="dupNote" hidden style="margin:-6px 0 8px"></p>
+    <div id="recentBox" hidden style="margin:0 0 12px">
+      <p class="footnote" style="margin:0 0 6px">よく登録する著者（押すと内容が入ります）</p>
+      <div id="recentChips" class="chips"></div>
+    </div>
+
     <form id="itemForm">
       <div class="row">
         <div class="field wide">
@@ -223,11 +228,13 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
         </div>
         <div class="field">
           <label for="f-author">著者</label>
-          <input id="f-author" name="author" placeholder="例：夏目漱石" autocomplete="off">
+          <input id="f-author" name="author" placeholder="例：夏目漱石" autocomplete="off" list="authorList">
+          <datalist id="authorList"></datalist>
         </div>
         <div class="field">
           <label for="f-publisher">出版社</label>
-          <input id="f-publisher" name="publisher" placeholder="例：岩波書店" autocomplete="off">
+          <input id="f-publisher" name="publisher" placeholder="例：岩波書店" autocomplete="off" list="publisherList">
+          <datalist id="publisherList"></datalist>
         </div>
       </div>
       <div class="row">
@@ -543,12 +550,67 @@ function renderCodeCount() {
     n ? "覚えているISBN：" + n + "件" : "";
 }
 
+
+/* ---------- 入力を減らす仕組み（端末の中だけで動く） ----------
+ *  ・過去に入れた値を、入力欄の候補として出す
+ *  ・よく登録するものを押すだけで内容を入れる
+ */
+function pastValues(field) {
+  var count = {};
+  state.items.forEach(function (it) {
+    var v = String(it[field] == null ? "" : it[field]).trim();
+    if (v) count[v] = (count[v] || 0) + 1;
+  });
+  return Object.keys(count).sort(function (a, b) {
+    if (count[b] !== count[a]) return count[b] - count[a];
+    return a.localeCompare(b, "ja");
+  });
+}
+
+function fillDatalist(id, values) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = values.slice(0, 50).map(function (v) {
+    return '<option value="' + esc(v) + '"></option>';
+  }).join("");
+}
+
+function renderRecentChips() {
+  var names = pastValues("author").slice(0, 6);
+  var box = document.getElementById("recentBox");
+  box.hidden = names.length === 0;
+  document.getElementById("recentChips").innerHTML = names.map(function (t) {
+    return '<button type="button" class="chip" data-recent="' + esc(t) + '">' + esc(t) + "</button>";
+  }).join("");
+}
+
+document.getElementById("recentChips").addEventListener("click", function (e) {
+  var btn = e.target.closest("button[data-recent]");
+  if (!btn) return;
+  var key = btn.getAttribute("data-recent");
+  var last = null;
+  state.items.forEach(function (it) {
+    if (String(it["author"] || "") === key) {
+      if (!last || String(it.createdAt || "") > String(last.createdAt || "")) last = it;
+    }
+  });
+  if (!last) return;
+  if (editingId) stopEditing();
+  document.getElementById("f-author").value = last.author || "";
+  document.getElementById("f-publisher").value = last.publisher || "";
+  document.getElementById("f-place").value = last.place || "";
+  toast("内容を入れました。確認して登録してください");
+});
+
 function render() {
   renderStats();
   renderFilters();
   renderPlaces();
   renderList();
   renderCodeCount();
+  fillDatalist("authorList", pastValues("author"));
+  fillDatalist("publisherList", pastValues("publisher"));
+  renderRecentChips();
 }
 
 /* ---------- 操作 ---------- */
@@ -963,6 +1025,9 @@ document.getElementById("scanBtn").addEventListener("click", function () {
       var digits = cleanIsbn(code);
       if (!isIsbn13(digits)) { toast(notIsbnMessage(digits || code)); return; }
       acceptCode(digits);
+    })
+    .catch(function (err) {
+      toast("カメラを開けませんでした：" + (err && err.message ? err.message : "原因不明"));
     });
 });
 document.getElementById("pendingCodeClear").addEventListener("click", function () {

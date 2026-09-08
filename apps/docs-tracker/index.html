@@ -48,6 +48,10 @@
   }
 }
 * { box-sizing: border-box; }
+/* iOS の日付入力は独自の最小幅を持つため、隣の欄と横並びにすると重なる。
+   見た目（「年/月/日」の表記）は残したいので、外観の指定は変えず、
+   狭い画面では下の .field.date で1行を占有させることで重なりを防ぐ。 */
+input[type="date"] { min-width: 0; }
 body {
   margin: 0;
   background: var(--bg);
@@ -203,6 +207,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 .actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
 @media (max-width: 640px) {
   .wrap { padding-left: 12px; padding-right: 12px; }
+  /* 日付欄は横幅を取るので、狭い画面では1行を占有させる */
+  .field.date { flex: 1 1 100%; }
   button { min-height: 44px; }
   .item-actions button { flex: 1 1 auto; }
   .chip { min-height: 36px; }
@@ -225,11 +231,32 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
   <section class="card">
     <h2 id="formTitle">書類を登録</h2>
+    <!-- B: 過去の登録から、よく使うものをワンタップで呼び出す -->
+    <div id="recentBox" hidden style="margin:0 0 12px">
+      <p class="footnote" style="margin:0 0 6px">よく登録する書類（押すと内容が入ります）</p>
+      <div id="recentChips" class="chips"></div>
+    </div>
+
+    <!-- C: 通知文やメールを貼り付けて、書類名と期限を拾う -->
+    <details id="pasteBox" style="margin:0 0 12px">
+      <summary style="cursor:pointer;font-size:14px">文面を貼り付けて読み取る</summary>
+      <p class="footnote" style="margin:6px 0">
+        通知やメールの本文を貼り付けて「読み取る」を押すと、<strong>書類名と期限</strong>を推測して入力欄に入れます。
+        必ず内容をご確認のうえ登録してください。<strong>貼り付けた文面はどこにも送信されません。</strong>
+      </p>
+      <textarea id="pasteText" rows="4" placeholder="例：〇〇調査の実施について（依頼）&#10;提出期限　令和7年10月3日（金）まで" style="width:100%"></textarea>
+      <div class="row" style="gap:8px;margin-top:6px">
+        <button type="button" id="pasteParse">読み取る</button>
+        <button type="button" class="link small" id="pasteClear">消す</button>
+      </div>
+    </details>
+
     <form id="itemForm">
       <div class="row">
         <div class="field wide">
           <label for="f-title">書類名（必須）</label>
-          <input id="f-title" name="title" required placeholder="例：職員研修 受講報告書" autocomplete="off">
+          <input id="f-title" name="title" required placeholder="例：職員研修 受講報告書" autocomplete="off" list="titleList">
+          <datalist id="titleList"></datalist>
         </div>
         <div class="field">
           <label for="f-kind">種別</label>
@@ -242,9 +269,10 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <div class="row">
         <div class="field wide">
           <label for="f-dest">提出先・回覧先</label>
-          <input id="f-dest" name="dest" placeholder="例：総務課" autocomplete="off">
+          <input id="f-dest" name="dest" placeholder="例：総務課" autocomplete="off" list="destList">
+          <datalist id="destList"></datalist>
         </div>
-        <div class="field">
+        <div class="field date">
           <label for="f-due">期限</label>
           <input id="f-due" name="dueOn" type="date">
         </div>
@@ -561,6 +589,9 @@ function render() {
   renderStats();
   renderFilters();
   renderList();
+  fillDatalist("titleList", pastValues("title"));
+  fillDatalist("destList", pastValues("dest"));
+  renderRecentChips();
 }
 
 /* ---------- 操作 ---------- */
@@ -846,6 +877,7 @@ if ("serviceWorker" in navigator && window.isSecureContext) {
 
 render();
 
+
 /* ---------- QRコードの表示 ----------
  *
  * 紙の書類に QR を貼っておくと、iPhone の標準カメラで読むだけで
@@ -893,17 +925,198 @@ qrModal.addEventListener("click", function (e) { if (e.target === qrModal) qrMod
  * myproject://docs?id=xxx で起動されると、shared/deeplink.js が
  * このページを ?id=xxx 付きで開き直す。該当の書類だけを絞り込んで表示する。
  */
-(function () {
-  var id = new URLSearchParams(location.search).get("id");
-  if (!id) return;
+// QR から渡された書類を、その場で絞り込んで表示する。
+// shared/deeplink.js からも呼べるよう、名前を付けて公開しておく。
+function openDocById(id) {
   var item = null;
   for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) item = state.items[i];
   if (!item) { toast("QRの書類が見つかりませんでした"); return; }
-  var q = document.getElementById("q");
-  q.value = item.title;
+  document.getElementById("q").value = item.title;
+  filters.q = item.title;
   render();
   toast("QRから「" + item.title + "」を開きました");
+}
+window.openDocById = openDocById;
+
+(function () {
+  var id = new URLSearchParams(location.search).get("id");
+  if (id) openDocById(id);
 })();
+
+
+/* ==========================================================================
+ * 入力を減らすための仕組み（すべて端末の中だけで動く。外部には何も送らない）
+ *
+ *  A. 入力候補   … 過去に入れた書類名・提出先を候補として出す
+ *  B. ワンタップ … よく登録する書類を押すだけで内容を入れる
+ *  C. 貼り付け   … 通知文やメールから書類名と期限を推測する
+ * ========================================================================== */
+
+/* ---------- A. 入力候補 ---------- */
+
+// 過去の値を、よく使う順に並べて返す
+function pastValues(field) {
+  var count = {};
+  state.items.forEach(function (it) {
+    var v = String(it[field] || "").trim();
+    if (v) count[v] = (count[v] || 0) + 1;
+  });
+  return Object.keys(count).sort(function (a, b) {
+    if (count[b] !== count[a]) return count[b] - count[a];
+    return a.localeCompare(b, "ja");
+  });
+}
+
+function fillDatalist(id, values) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = values.slice(0, 50).map(function (v) {
+    return '<option value="' + esc(v) + '"></option>';
+  }).join("");
+}
+
+/* ---------- B. よく登録する書類をワンタップで ---------- */
+
+function renderRecentChips() {
+  var titles = pastValues("title").slice(0, 6);
+  var box = document.getElementById("recentBox");
+  box.hidden = titles.length === 0;
+  document.getElementById("recentChips").innerHTML = titles.map(function (t) {
+    return '<button type="button" class="chip" data-recent="' + esc(t) + '">' + esc(t) + "</button>";
+  }).join("");
+}
+
+// 同じ書類名で最後に登録したものを、期限だけ空にして入れ直す
+document.getElementById("recentChips").addEventListener("click", function (e) {
+  var btn = e.target.closest("button[data-recent]");
+  if (!btn) return;
+  var title = btn.getAttribute("data-recent");
+  var last = null;
+  state.items.forEach(function (it) {
+    if (it.title === title) {
+      if (!last || String(it.createdAt || "") > String(last.createdAt || "")) last = it;
+    }
+  });
+  if (!last) return;
+  if (editingId) stopEditing();
+  document.getElementById("f-title").value = last.title;
+  document.getElementById("f-kind").value = last.kind || "その他";
+  document.getElementById("f-dest").value = last.dest || "";
+  document.getElementById("f-pri").value = last.priority || "中";
+  document.getElementById("f-note").value = last.note || "";
+  document.getElementById("f-due").value = "";      // 期限は毎回変わるので空にする
+  document.getElementById("f-due").focus();
+  toast("内容を入れました。期限を選んで登録してください");
+});
+
+/* ---------- C. 貼り付けた文面から読み取る ---------- */
+
+// 全角の数字を半角に直す（行政文書では全角がよく使われる）
+function toHalfWidth(text) {
+  return String(text || "").replace(/[０-９]/g, function (c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  }).replace(/[／　]/g, function (c) { return c === "／" ? "/" : " "; });
+}
+
+// 元号の開始年（その元号の1年が西暦何年か）
+var ERA_BASE = { "令和": 2018, "平成": 1988, "昭和": 1925 };
+
+/**
+ * 文面から期限らしき日付を1つ選ぶ。YYYY-MM-DD を返す。見つからなければ ""。
+ * 「期限」「締切」「まで」といった語の近くにある日付を優先する。
+ */
+function guessDueDate(text) {
+  var t = toHalfWidth(text);
+  var found = [];
+  var re, m;
+
+  // 令和7年10月3日 / 令和元年10月3日
+  re = /(令和|平成|昭和)\s*(元|[0-9]{1,2})\s*年\s*([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日/g;
+  while ((m = re.exec(t)) !== null) {
+    var eraYear = m[2] === "元" ? 1 : parseInt(m[2], 10);
+    found.push({ at: m.index, y: ERA_BASE[m[1]] + eraYear, mo: +m[3], d: +m[4] });
+  }
+  // 2026年10月3日
+  re = /([0-9]{4})\s*年\s*([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日/g;
+  while ((m = re.exec(t)) !== null) found.push({ at: m.index, y: +m[1], mo: +m[2], d: +m[3] });
+  // 2026-10-03 / 2026/10/3
+  re = /([0-9]{4})[-\/]([0-9]{1,2})[-\/]([0-9]{1,2})/g;
+  while ((m = re.exec(t)) !== null) found.push({ at: m.index, y: +m[1], mo: +m[2], d: +m[3] });
+  // 10月3日 / 10/3（年がないので、今日以降になるよう年を補う）
+  var today = new Date();
+  re = /(?:^|[^0-9\/-])([0-9]{1,2})\s*(?:月|\/)\s*([0-9]{1,2})\s*日?(?![0-9\/-])/g;
+  while ((m = re.exec(t)) !== null) {
+    var mo = +m[1], d = +m[2];
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+    var y = today.getFullYear();
+    if (new Date(y, mo - 1, d) < new Date(today.getFullYear(), today.getMonth(), today.getDate())) y += 1;
+    found.push({ at: m.index, y: y, mo: mo, d: d });
+  }
+
+  if (!found.length) return "";
+
+  // 「期限」「締切」「まで」に近いものを優先する
+  var keywords = /(期限|締切|締め切り|まで|提出日|回答日)/g;
+  var marks = [];
+  var km;
+  while ((km = keywords.exec(t)) !== null) marks.push(km.index);
+
+  found.forEach(function (f) {
+    f.score = 9999;
+    marks.forEach(function (k) { f.score = Math.min(f.score, Math.abs(k - f.at)); });
+  });
+  found.sort(function (a, b) { return a.score - b.score || a.at - b.at; });
+
+  var best = found[0];
+  var dt = new Date(best.y, best.mo - 1, best.d);
+  if (isNaN(dt.getTime()) || dt.getMonth() !== best.mo - 1) return "";   // 2月30日などを弾く
+  return best.y + "-" + ("0" + best.mo).slice(-2) + "-" + ("0" + best.d).slice(-2);
+}
+
+/**
+ * 文面から書類名らしき一行を選ぶ。
+ * 「件名」「標題」などの見出しがあればそれを、無ければ最初の意味のある行を使う。
+ */
+function guessTitle(text) {
+  var lines = String(text || "").split(/\r?\n/).map(function (l) { return l.trim(); })
+    .filter(function (l) { return l.length > 0; });
+  if (!lines.length) return "";
+
+  for (var i = 0; i < lines.length; i++) {
+    var m = /^(?:件名|標題|表題|題名|文書名)\s*[:：]?\s*(.+)$/.exec(lines[i]);
+    if (m && m[1].trim()) return m[1].trim().slice(0, 60);
+  }
+  // 日付や差出人だけの行は避けて、最初の行を採る
+  for (var j = 0; j < lines.length; j++) {
+    if (/^[0-9令和平成昭和\s年月日（）()・:：-]+$/.test(lines[j])) continue;
+    return lines[j].slice(0, 60);
+  }
+  return lines[0].slice(0, 60);
+}
+
+document.getElementById("pasteParse").addEventListener("click", function () {
+  var text = document.getElementById("pasteText").value;
+  if (!text.trim()) { toast("文面を貼り付けてください"); return; }
+
+  var title = guessTitle(text);
+  var due = guessDueDate(text);
+  if (!title && !due) { toast("書類名も期限も見つかりませんでした。手で入れてください"); return; }
+
+  if (editingId) stopEditing();
+  if (title) document.getElementById("f-title").value = title;
+  if (due) document.getElementById("f-due").value = due;
+
+  var msg = [];
+  if (title) msg.push("書類名");
+  if (due) msg.push("期限（" + due + "）");
+  toast(msg.join("と") + "を入れました。内容を確認してください");
+  document.getElementById("f-title").focus();
+});
+
+document.getElementById("pasteClear").addEventListener("click", function () {
+  document.getElementById("pasteText").value = "";
+});
+
 
 </script>
 <script src="../shared/deeplink.js"></script>
@@ -932,6 +1145,9 @@ qrModal.addEventListener("click", function (e) { if (e.target === qrModal) qrMod
         filters.q = item.title;
         render();
         toast("「" + item.title + "」を開きました");
+      })
+      .catch(function (err) {
+        toast("カメラを開けませんでした：" + (err && err.message ? err.message : "原因不明"));
       });
   });
 })();
