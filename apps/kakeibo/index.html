@@ -1,0 +1,1186 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>家計簿</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f6fed">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="家計簿">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1c1f24;
+  --muted: #667080;
+  --accent: #2f6fed;
+  --accent-weak: #e8f0ff;
+  --danger: #c0362c;
+  --danger-weak: #fdeceb;
+  --warn: #96610a;
+  --warn-weak: #fbf1de;
+  --ok: #1c7048;
+  --ok-weak: #e7f4ec;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --surface: #1f2229;
+    --border: #333842;
+    --text: #e8eaed;
+    --muted: #9aa3b0;
+    --accent: #6d9bff;
+    --accent-weak: #22304d;
+    --danger: #ff8a80;
+    --danger-weak: #3a2320;
+    --warn: #e5b567;
+    --warn-weak: #3a2f1c;
+    --ok: #7fd1a4;
+    --ok-weak: #1e3229;
+  }
+}
+* { box-sizing: border-box; }
+input[type="date"] { min-width: 0; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  /* 画面上部の切り欠き（ノッチ／ダイナミックアイランド）を避ける */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.wrap { max-width: 880px; margin: 0 auto; padding: 16px 16px 104px; }
+/* アプリ一覧へ戻る導線。アプリとして開いているとブラウザの「戻る」が無いため必ず置く */
+.backlink { margin: 0 0 4px; font-size: 14px; }
+.backlink a { color: var(--muted); text-decoration: none; display: inline-block; padding: 6px 0; min-height: 32px; }
+.backlink a:hover, .backlink a:focus { color: var(--accent); text-decoration: underline; }
+header h1 { font-size: 20px; margin: 8px 0 4px; }
+header p.lead { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+h2 { font-size: 15px; margin: 0 0 10px; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  min-width: 96px;
+  flex: 1 1 96px;
+}
+.stat .num { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat .label { font-size: 12px; color: var(--muted); }
+.stat.danger { background: var(--danger-weak); border-color: var(--danger); }
+.stat.danger .num { color: var(--danger); }
+.stat.warn { background: var(--warn-weak); border-color: var(--warn); }
+.stat.warn .num { color: var(--warn); }
+form .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.field { flex: 1 1 130px; min-width: 0; }
+.field.wide { flex: 2 1 220px; }
+input, select, textarea, button { font: inherit; color: var(--text); }
+input, select, textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input.amount { font-size: 18px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.small { padding: 4px 9px; font-size: 13px; }
+button.link { border: none; background: none; color: var(--accent); padding: 4px 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 4px 10px; font-size: 13px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
+
+/* 月の切り替え */
+.monthbar { display: flex; align-items: center; gap: 8px; justify-content: center; margin-bottom: 14px; }
+.monthbar .label { font-weight: 700; font-size: 17px; min-width: 9em; text-align: center; font-variant-numeric: tabular-nums; }
+.monthbar button { min-width: 44px; }
+
+/* 費目別の内訳。
+   1系列（金額）の大きさを比べるだけなので、費目ごとに色を分けない。
+   色分けは「どの色がどの費目か」を覚える手間を増やすだけで、情報を増やさないため。
+   棒は左端（0円）に固定し、値の側だけ角を丸める。 */
+.breakdown { display: grid; grid-template-columns: auto minmax(60px, 1fr) auto; gap: 7px 10px; align-items: center; }
+.bar-label { font-size: 13px; white-space: nowrap; }
+.bar-track { height: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bar-value { font-size: 13px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bar-share { color: var(--muted); font-size: 12px; margin-left: 4px; }
+
+/* 月の予算に対する進み具合 */
+.budget-track { height: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin: 6px 0 4px; }
+.budget-fill { height: 100%; background: var(--ok); border-radius: 0 4px 4px 0; }
+.budget-fill.warn { background: var(--warn); }
+.budget-fill.over { background: var(--danger); }
+
+ul.items { list-style: none; margin: 0; padding: 0; }
+li.item {
+  border: 1px solid var(--border);
+  border-left-width: 5px;
+  border-left-color: var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.item-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.item-amount { font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
+.item-store { font-weight: 700; }
+.badge {
+  font-size: 12px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); background: var(--bg);
+}
+.badge.cat { border-color: var(--accent); color: var(--accent); background: var(--accent-weak); }
+.item-note { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
+.item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+.footnote { font-size: 12px; color: var(--muted); }
+ul.howto { font-size: 13px; color: var(--muted); margin: 8px 0 0; padding-left: 1.2em; }
+ul.howto li { margin-bottom: 5px; }
+table.preview { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+table.preview th, table.preview td { border: 1px solid var(--border); padding: 3px 6px; text-align: left; white-space: nowrap; overflow: hidden; max-width: 12em; text-overflow: ellipsis; }
+table.preview th { background: var(--bg); color: var(--muted); font-weight: normal; }
+.scroll-x { overflow-x: auto; }
+.toast {
+  position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%);
+  background: var(--text); color: var(--bg);
+  padding: 8px 16px; border-radius: 999px; font-size: 13px;
+  opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 40;
+  max-width: 90vw; text-align: center;
+}
+.toast.show { opacity: 1; }
+
+/* ---- スマートフォン対応 ---- */
+input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大されるのを防ぐ */
+.actionbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; gap: 8px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+.actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
+.actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+@media (max-width: 640px) {
+  .wrap { padding-left: 12px; padding-right: 12px; }
+  /* 4枚を2枚ずつ2段に並べる（3+1で1枚だけ横長になるのを防ぐ） */
+  .stat { flex: 1 1 calc(50% - 4px); }
+  /* 日付欄は横幅を取るので、狭い画面では1行を占有させる */
+  .field.date { flex: 1 1 100%; }
+  button { min-height: 44px; }
+  .item-actions button { flex: 1 1 auto; }
+  .chip { min-height: 36px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="backlink"><a href="../index.html">← アプリ一覧にもどる</a></p>
+  <header>
+    <h1>家計簿</h1>
+    <p class="lead">レシートを見て合計額だけを入れていく家計簿です。店名から費目を自動で選び、よく行く店はボタン1つで入ります。データはこの端末の中だけに保存され、外部には一切送信しません。はじめての方は、いちばん下の「使い方」をお読みください。</p>
+  </header>
+
+  <div class="monthbar">
+    <button type="button" id="prevMonth" aria-label="前の月">◀</button>
+    <span class="label" id="monthLabel"></span>
+    <button type="button" id="nextMonth" aria-label="次の月">▶</button>
+    <button type="button" id="thisMonth" class="small">今月</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <section class="card" id="budgetCard" hidden>
+    <h2>今月の予算</h2>
+    <div class="budget-track"><div class="budget-fill" id="budgetFill"></div></div>
+    <p class="footnote" id="budgetText" style="margin:0"></p>
+  </section>
+
+  <section class="card">
+    <h2 id="formTitle">支出を記録</h2>
+    <form id="entryForm">
+      <div class="row">
+        <div class="field">
+          <label for="f-amount">金額（必須）</label>
+          <input id="f-amount" name="amount" class="amount" type="number" inputmode="numeric" min="0" step="1" required placeholder="例 1280">
+        </div>
+        <div class="field">
+          <label for="f-category">費目</label>
+          <select id="f-category" name="category"></select>
+        </div>
+        <div class="field date">
+          <label for="f-date">日付</label>
+          <input id="f-date" name="date" type="date" required>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field wide">
+          <label for="f-store">店名・支払先</label>
+          <input id="f-store" name="store" placeholder="例：〇〇スーパー" autocomplete="off" list="storeList">
+          <datalist id="storeList"></datalist>
+        </div>
+        <div class="field wide">
+          <label for="f-note">メモ</label>
+          <input id="f-note" name="note" placeholder="例：週末の買い出し" autocomplete="off" list="noteList">
+          <datalist id="noteList"></datalist>
+        </div>
+      </div>
+      <div class="row" style="align-items:center">
+        <div class="chips" aria-label="日付のクイック入力">
+          <button type="button" class="chip" data-day="0">今日</button>
+          <button type="button" class="chip" data-day="-1">昨日</button>
+        </div>
+        <div style="flex:1"></div>
+        <button type="submit" class="primary" id="submitBtn">記録する</button>
+        <button type="button" id="cancelEdit" hidden>やめる</button>
+      </div>
+    </form>
+    <div id="recentBox" hidden style="margin-top:10px">
+      <p class="footnote" style="margin:0 0 6px">よく行く店（押すと店名と費目が入ります）</p>
+      <div class="chips" id="recentChips"></div>
+    </div>
+  </section>
+
+  <section class="card" id="breakdownCard">
+    <h2>費目別の内訳</h2>
+    <div class="breakdown" id="breakdown"></div>
+    <p class="footnote" id="breakdownEmpty" style="margin:0"></p>
+  </section>
+
+  <section class="card">
+    <div class="row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin:0">
+      <div class="field wide">
+        <label for="q">検索</label>
+        <input id="q" placeholder="店名・メモ・費目で絞り込み" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="sort">並び順</label>
+        <select id="sort">
+          <option value="date">日付が新しい順</option>
+          <option value="amountDesc">金額が大きい順</option>
+          <option value="store">店名順</option>
+        </select>
+      </div>
+    </div>
+    <div class="chips" style="margin-top:8px" id="catFilter" role="group" aria-label="費目で絞り込み"></div>
+  </section>
+
+  <ul class="items" id="list"></ul>
+
+  <section class="card">
+    <h2>データの持ち出し・引き継ぎ</h2>
+    <div class="chips">
+      <button type="button" id="exportCsv">表計算用に書き出す（CSV）</button>
+      <button type="button" id="importCsvBtn">明細を取り込む（CSV）</button>
+      <button type="button" id="exportBtn">JSONで保存</button>
+      <button type="button" id="importBtn">JSONから読み込み</button>
+      <input type="file" id="importCsvFile" accept=".csv,text/csv" hidden>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <p class="footnote" style="margin:10px 0 0">
+      「表計算用に書き出す」は表示中の月ぶんを CSV にします。Excel や表計算ソフトでそのまま開けます。
+      「明細を取り込む」では、クレジットカードや電子マネーの利用明細（CSV）を読み込めます。<strong>ファイルは端末の中だけで読み取り、どこにも送信しません。</strong>
+      保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。
+    </p>
+  </section>
+
+  <section class="card" id="csvCard" hidden>
+    <h2>取り込む列を選ぶ</h2>
+    <p class="footnote" id="csvInfo" style="margin:0 0 8px"></p>
+    <div class="row">
+      <div class="field">
+        <label for="csvDate">日付の列</label>
+        <select id="csvDate"></select>
+      </div>
+      <div class="field">
+        <label for="csvStore">内容・店名の列</label>
+        <select id="csvStore"></select>
+      </div>
+      <div class="field">
+        <label for="csvAmount">金額の列</label>
+        <select id="csvAmount"></select>
+      </div>
+    </div>
+    <div class="scroll-x"><table class="preview" id="csvPreview"></table></div>
+    <div class="chips" style="margin-top:10px">
+      <button type="button" class="primary" id="csvImportRun">この内容で取り込む</button>
+      <button type="button" id="csvCancel">やめる</button>
+    </div>
+    <p class="footnote" style="margin:8px 0 0">同じ日付・金額・内容の記録がすでにある場合は取り込みません（二重計上を防ぐため）。費目は店名から推定し、分からないものは「未分類」にします。</p>
+  </section>
+
+  <section class="card">
+    <h2>設定</h2>
+    <div class="row">
+      <div class="field">
+        <label for="f-budget">1か月の予算（任意・円）</label>
+        <input id="f-budget" type="number" inputmode="numeric" min="0" step="1000" placeholder="例：60000">
+      </div>
+      <div class="field wide">
+        <label for="f-cats">費目（読点か改行で区切って書き換えられます）</label>
+        <input id="f-cats" placeholder="食費、日用品、交通費">
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <button type="button" id="saveSettings">設定を保存</button>
+      </div>
+    </div>
+    <p class="footnote" style="margin:6px 0 0">費目を減らしても、すでに記録した内容の費目名はそのまま残ります。</p>
+  </section>
+
+  <section class="card">
+    <h2>使い方</h2>
+    <p class="footnote" style="margin:0">
+      レシートの<strong>合計額だけ</strong>を記録していく家計簿です。品目ごとの明細は取りません。明細まで記録しようとすると手間が増えて続かなくなるためで、月ごとの傾向をつかむには合計で十分だという考え方によります。
+    </p>
+    <ul class="howto">
+      <li><strong>入力は金額・費目・日付の3つだけです。</strong>店名とメモは任意ですが、店名を入れておくと次回から費目を自動で選べるようになります。</li>
+      <li><strong>同じ店で2回目からは費目が自動で入ります。</strong>その店で過去にいちばん多く使った費目を選びます。店名に「スーパー」「薬局」「病院」などが含まれる場合は、初回から推定します。</li>
+      <li><strong>「よく行く店」のボタンを押すと、店名と費目がまとめて入ります。</strong>金額と日付だけ入れれば記録できます。</li>
+      <li><strong>カードや電子マネーの明細は CSV で取り込めます。</strong>「明細を取り込む」でファイルを選び、日付・内容・金額がどの列かを指定してください。同じ内容が二重に入らないよう確認してから取り込みます。</li>
+      <li><strong>レシートのバーコードからは金額を読み取れません。</strong>レシートに印字されているのは取引番号で、金額や品目は含まれていないためです。したがって金額は手で入れる方式にしています。</li>
+      <li><strong>データはこの端末の中だけに残ります。</strong>サーバーには送りません。アプリを削除したとき、またはブラウザのサイトデータを消したときは一緒に消えるため、「JSONで保存」で控えを取り、別の端末へ移すときは「JSONから読み込み」を使ってください。</li>
+    </ul>
+  </section>
+</div>
+
+<div class="actionbar">
+  <div>
+    <button type="button" class="primary" id="jumpAdd">支出を記録する</button>
+    <button type="button" id="jumpList">一覧を見る</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+var STORAGE_KEY = "kakeibo.v1";
+var DEFAULT_CATEGORIES = ["食費", "日用品", "交通費", "水道光熱費", "通信費", "医療費", "交際費", "その他"];
+var UNKNOWN = "未分類";
+
+/* 店名から費目を推す手がかり。店名に含まれていれば、その費目を既定にする。
+   あくまで初回の候補で、記録するときに変更できる。 */
+var HINTS = [
+  ["食費", ["スーパー", "マーケット", "ストア", "青果", "精肉", "鮮魚", "ベーカリー", "パン", "八百屋", "酒", "コンビニ", "セブン", "ローソン", "ファミリーマート", "食堂", "レストラン", "弁当"]],
+  ["日用品", ["ドラッグ", "薬局", "ホームセンター", "百円", "１００円", "100円", "ダイソー", "セリア", "무", "無印", "ニトリ"]],
+  ["交通費", ["JR", "鉄道", "電鉄", "バス", "タクシー", "駐車", "ガソリン", "ＥＮＥＯＳ", "エネオス", "高速", "ＥＴＣ", "ETC", "交通", "ＩＣ", "スイカ", "Suica", "PASMO"]],
+  ["水道光熱費", ["電力", "電気", "ガス", "水道", "エネルギー"]],
+  ["通信費", ["通信", "ドコモ", "ａｕ", "au", "ソフトバンク", "楽天モバイル", "光", "インターネット", "携帯"]],
+  ["医療費", ["病院", "クリニック", "医院", "歯科", "整骨", "接骨", "調剤"]],
+  ["交際費", ["居酒屋", "ギフト", "贈答", "花屋", "会費"]]
+];
+
+var state = load();
+var currentMonth = monthOf(new Date());
+var editingId = null;
+var filters = { q: "", category: "すべて", sort: "date" };
+var csvStaging = null;
+
+/* ---------- 保存と読み出し ---------- */
+
+function emptyState() {
+  return { v: 1, items: [], categories: DEFAULT_CATEGORIES.slice(), budget: null };
+}
+
+function load() {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return emptyState();
+    return normalize(JSON.parse(raw));
+  } catch (e) {
+    return emptyState();
+  }
+}
+
+function normalize(data) {
+  if (!data || typeof data !== "object") return emptyState();
+  var cats = Array.isArray(data.categories) && data.categories.length
+    ? data.categories.map(String).filter(Boolean)
+    : DEFAULT_CATEGORIES.slice();
+  return {
+    v: 1,
+    items: (Array.isArray(data.items) ? data.items : []).filter(function (it) {
+      return it && isDate(it.date) && isFinite(Number(it.amount));
+    }).map(function (it) {
+      return {
+        id: it.id || uid(),
+        date: String(it.date),
+        amount: Math.round(Number(it.amount)),
+        category: String(it.category || UNKNOWN),
+        store: String(it.store || ""),
+        note: String(it.note || ""),
+        createdAt: it.createdAt || new Date().toISOString()
+      };
+    }),
+    categories: cats,
+    budget: (data.budget === null || data.budget === undefined || data.budget === "") ? null : Math.round(Number(data.budget)) || null
+  };
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    toast("保存できませんでした（ブラウザの設定を確認してください）");
+  }
+}
+
+/* ---------- 小さな道具 ---------- */
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function pad(n) { return String(n).padStart(2, "0"); }
+
+function isDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s)); }
+
+function fmtDate(d) {
+  return [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join("-");
+}
+
+function todayStr() { return fmtDate(new Date()); }
+
+function monthOf(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1); }
+
+function monthOfStr(s) { return String(s).slice(0, 7); }
+
+function shiftMonth(month, diff) {
+  var p = month.split("-").map(Number);
+  var d = new Date(p[0], p[1] - 1 + diff, 1);
+  return monthOf(d);
+}
+
+function monthLabel(month) {
+  var p = month.split("-").map(Number);
+  return p[0] + "年" + p[1] + "月";
+}
+
+function yen(n) {
+  return Math.round(Number(n) || 0).toLocaleString("ja-JP") + "円";
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function toast(msg) {
+  var el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { el.classList.remove("show"); }, 2600);
+}
+
+/* ---------- 費目の推定 ---------- */
+
+// その店で過去にいちばん多く使った費目。無ければ店名の手がかりから推す。
+function guessCategory(store) {
+  var s = String(store || "").trim();
+  if (!s) return "";
+  var count = {};
+  state.items.forEach(function (it) {
+    if (it.store === s && it.category && it.category !== UNKNOWN) {
+      count[it.category] = (count[it.category] || 0) + 1;
+    }
+  });
+  var best = Object.keys(count).sort(function (a, b) { return count[b] - count[a]; })[0];
+  if (best) return best;
+
+  var lower = s.toLowerCase();
+  for (var i = 0; i < HINTS.length; i++) {
+    var cat = HINTS[i][0], words = HINTS[i][1];
+    for (var j = 0; j < words.length; j++) {
+      if (lower.indexOf(String(words[j]).toLowerCase()) >= 0) return cat;
+    }
+  }
+  return "";
+}
+
+/* ---------- 集計 ---------- */
+
+function itemsOfMonth(month) {
+  return state.items.filter(function (it) { return monthOfStr(it.date) === month; });
+}
+
+function sum(items) {
+  return items.reduce(function (a, it) { return a + it.amount; }, 0);
+}
+
+function byCategory(items) {
+  var map = {};
+  items.forEach(function (it) {
+    var c = it.category || UNKNOWN;
+    map[c] = (map[c] || 0) + it.amount;
+  });
+  return Object.keys(map).map(function (c) {
+    return { category: c, total: map[c] };
+  }).sort(function (a, b) { return b.total - a.total; });
+}
+
+/* ---------- 描画 ---------- */
+
+function renderMonth() {
+  document.getElementById("monthLabel").textContent = monthLabel(currentMonth);
+}
+
+function renderStats() {
+  var items = itemsOfMonth(currentMonth);
+  var total = sum(items);
+  var prev = sum(itemsOfMonth(shiftMonth(currentMonth, -1)));
+  var diff = total - prev;
+  var diffText = prev === 0 ? "—" : (diff >= 0 ? "+" : "−") + Math.abs(diff).toLocaleString("ja-JP");
+
+  // 表示中の月が今月なら経過日数で、過去の月なら月の日数で割る
+  var p = currentMonth.split("-").map(Number);
+  var daysInMonth = new Date(p[0], p[1], 0).getDate();
+  var now = new Date();
+  var days = (currentMonth === monthOf(now)) ? Math.max(1, now.getDate()) : daysInMonth;
+  var perDay = items.length ? Math.round(total / days) : 0;
+
+  var cards = [
+    { num: total.toLocaleString("ja-JP"), label: "今月の合計（円）", cls: "" },
+    { num: diffText, label: "前月比（円）", cls: diff > 0 && prev > 0 ? "warn" : "" },
+    { num: perDay.toLocaleString("ja-JP"), label: "1日あたり（円）", cls: "" },
+    { num: String(items.length), label: "記録した件数", cls: "" }
+  ];
+  document.getElementById("stats").innerHTML = cards.map(function (c) {
+    return '<div class="stat ' + c.cls + '"><div class="num">' + esc(c.num) + '</div><div class="label">' + esc(c.label) + "</div></div>";
+  }).join("");
+}
+
+function renderBudget() {
+  var card = document.getElementById("budgetCard");
+  if (!state.budget) { card.hidden = true; return; }
+  card.hidden = false;
+  var total = sum(itemsOfMonth(currentMonth));
+  var ratio = total / state.budget;
+  var fill = document.getElementById("budgetFill");
+  fill.style.width = Math.min(100, Math.round(ratio * 100)) + "%";
+  fill.className = "budget-fill" + (ratio >= 1 ? " over" : (ratio >= 0.8 ? " warn" : ""));
+  var rest = state.budget - total;
+  document.getElementById("budgetText").textContent =
+    yen(total) + " ／ " + yen(state.budget) + "（" + Math.round(ratio * 100) + "％）"
+    + (rest >= 0 ? "　残り " + yen(rest) : "　" + yen(-rest) + " 超過");
+}
+
+function renderBreakdown() {
+  var items = itemsOfMonth(currentMonth);
+  var rows = byCategory(items);
+  var box = document.getElementById("breakdown");
+  var empty = document.getElementById("breakdownEmpty");
+  if (!rows.length) {
+    box.innerHTML = "";
+    empty.textContent = "この月の記録はまだありません。";
+    return;
+  }
+  empty.textContent = "";
+  var total = sum(items);
+  var max = rows[0].total;
+  box.innerHTML = rows.map(function (r) {
+    var width = max ? Math.max(1, Math.round((r.total / max) * 100)) : 0;
+    var share = total ? Math.round((r.total / total) * 100) : 0;
+    return '<div class="bar-label">' + esc(r.category) + "</div>" +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + width + '%"></div></div>' +
+      '<div class="bar-value">' + esc(r.total.toLocaleString("ja-JP")) + '円<span class="bar-share">' + share + "%</span></div>";
+  }).join("");
+}
+
+function renderCategoryOptions() {
+  var sel = document.getElementById("f-category");
+  var keep = sel.value;
+  var cats = state.categories.slice();
+  if (cats.indexOf(UNKNOWN) < 0) cats.push(UNKNOWN);
+  sel.innerHTML = cats.map(function (c) {
+    return '<option value="' + esc(c) + '">' + esc(c) + "</option>";
+  }).join("");
+  if (keep && cats.indexOf(keep) >= 0) sel.value = keep;
+}
+
+function renderFilters() {
+  var used = {};
+  itemsOfMonth(currentMonth).forEach(function (it) { used[it.category || UNKNOWN] = true; });
+  var cats = ["すべて"].concat(Object.keys(used));
+  document.getElementById("catFilter").innerHTML = cats.map(function (c) {
+    var on = filters.category === c;
+    return '<button type="button" class="chip" data-cat="' + esc(c) + '" aria-pressed="' + on + '">' + esc(c) + "</button>";
+  }).join("");
+}
+
+function visibleItems() {
+  var q = filters.q.trim().toLowerCase();
+  var list = itemsOfMonth(currentMonth).filter(function (it) {
+    if (filters.category !== "すべて" && (it.category || UNKNOWN) !== filters.category) return false;
+    if (!q) return true;
+    return (it.store + " " + it.note + " " + it.category).toLowerCase().indexOf(q) >= 0;
+  });
+  var sorters = {
+    date: function (a, b) {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return (b.createdAt || "").localeCompare(a.createdAt || "");
+    },
+    amountDesc: function (a, b) { return b.amount - a.amount; },
+    store: function (a, b) { return String(a.store).localeCompare(String(b.store), "ja"); }
+  };
+  return list.sort(sorters[filters.sort] || sorters.date);
+}
+
+function renderList() {
+  var items = visibleItems();
+  var el = document.getElementById("list");
+  if (!items.length) {
+    el.innerHTML = '<li class="empty">この条件に合う記録がありません。</li>';
+    return;
+  }
+  el.innerHTML = items.map(function (it) {
+    return '<li class="item" data-id="' + esc(it.id) + '">' +
+      '<div class="item-head">' +
+        '<span class="item-amount">' + esc(yen(it.amount)) + "</span>" +
+        '<span class="badge cat">' + esc(it.category || UNKNOWN) + "</span>" +
+        (it.store ? '<span class="item-store">' + esc(it.store) + "</span>" : "") +
+        '<span class="badge">' + esc(it.date) + "</span>" +
+      "</div>" +
+      (it.note ? '<div class="item-note">' + esc(it.note) + "</div>" : "") +
+      '<div class="item-actions">' +
+        '<button type="button" class="small" data-action="same">同じ内容で記録</button>' +
+        '<button type="button" class="small link" data-action="edit">編集</button>' +
+        '<button type="button" class="small link" data-action="delete">削除</button>' +
+      "</div></li>";
+  }).join("");
+}
+
+function pastValues(field) {
+  var count = {};
+  state.items.forEach(function (it) {
+    var v = String(it[field] == null ? "" : it[field]).trim();
+    if (v) count[v] = (count[v] || 0) + 1;
+  });
+  return Object.keys(count).sort(function (a, b) {
+    if (count[b] !== count[a]) return count[b] - count[a];
+    return a.localeCompare(b, "ja");
+  });
+}
+
+function fillDatalist(id, values) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = values.slice(0, 50).map(function (v) {
+    return '<option value="' + esc(v) + '"></option>';
+  }).join("");
+}
+
+function renderRecentChips() {
+  var stores = pastValues("store").slice(0, 6);
+  document.getElementById("recentBox").hidden = stores.length === 0;
+  document.getElementById("recentChips").innerHTML = stores.map(function (s) {
+    return '<button type="button" class="chip" data-store="' + esc(s) + '">' + esc(s) + "</button>";
+  }).join("");
+}
+
+function render() {
+  renderMonth();
+  renderStats();
+  renderBudget();
+  renderBreakdown();
+  renderCategoryOptions();
+  renderFilters();
+  renderList();
+  fillDatalist("storeList", pastValues("store"));
+  fillDatalist("noteList", pastValues("note"));
+  renderRecentChips();
+}
+
+/* ---------- 記録する ---------- */
+
+var form = document.getElementById("entryForm");
+
+form.addEventListener("submit", function (e) {
+  e.preventDefault();
+  var fd = new FormData(form);
+  var amount = Math.round(Number(fd.get("amount")));
+  if (!isFinite(amount) || amount < 0) { toast("金額を入れてください"); return; }
+  var date = String(fd.get("date") || "");
+  if (!isDate(date)) { toast("日付を入れてください"); return; }
+
+  var values = {
+    date: date,
+    amount: amount,
+    category: String(fd.get("category") || UNKNOWN),
+    store: String(fd.get("store") || "").trim(),
+    note: String(fd.get("note") || "").trim()
+  };
+
+  if (editingId) {
+    var target = state.items.find(function (it) { return it.id === editingId; });
+    if (target) Object.assign(target, values);
+    toast("更新しました");
+    stopEditing();
+  } else {
+    values.id = uid();
+    values.createdAt = new Date().toISOString();
+    state.items.push(values);
+    toast(yen(amount) + " を記録しました");
+    resetForm();
+  }
+  // 記録した月を表示する（先月ぶんを後から入れたときに迷わないように）
+  currentMonth = monthOfStr(values.date);
+  save();
+  render();
+  document.getElementById("f-amount").focus();
+});
+
+function resetForm() {
+  form.reset();
+  document.getElementById("f-date").value = todayStr();
+  renderCategoryOptions();
+}
+
+function startEditing(item) {
+  editingId = item.id;
+  document.getElementById("f-amount").value = item.amount;
+  document.getElementById("f-date").value = item.date;
+  document.getElementById("f-store").value = item.store;
+  document.getElementById("f-note").value = item.note;
+  renderCategoryOptions();
+  var sel = document.getElementById("f-category");
+  if (Array.prototype.some.call(sel.options, function (o) { return o.value === item.category; })) {
+    sel.value = item.category;
+  } else {
+    // 費目一覧から消された費目でも、編集中は選べるようにする
+    sel.insertAdjacentHTML("beforeend", '<option value="' + esc(item.category) + '">' + esc(item.category) + "</option>");
+    sel.value = item.category;
+  }
+  document.getElementById("formTitle").textContent = "記録を編集";
+  document.getElementById("submitBtn").textContent = "更新する";
+  document.getElementById("cancelEdit").hidden = false;
+  document.getElementById("f-amount").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function stopEditing() {
+  editingId = null;
+  resetForm();
+  document.getElementById("formTitle").textContent = "支出を記録";
+  document.getElementById("submitBtn").textContent = "記録する";
+  document.getElementById("cancelEdit").hidden = true;
+}
+
+document.getElementById("cancelEdit").addEventListener("click", stopEditing);
+
+// 店名を入れ終わったら費目を推す（すでに選ばれている場合は変えない）
+document.getElementById("f-store").addEventListener("change", function () {
+  var guess = guessCategory(this.value);
+  if (!guess) return;
+  var sel = document.getElementById("f-category");
+  if (sel.selectedIndex <= 0 || sel.value === UNKNOWN) {
+    if (Array.prototype.some.call(sel.options, function (o) { return o.value === guess; })) sel.value = guess;
+  }
+});
+
+form.addEventListener("click", function (e) {
+  var day = e.target.getAttribute && e.target.getAttribute("data-day");
+  if (day === null || day === undefined) return;
+  var d = new Date();
+  d.setDate(d.getDate() + Number(day));
+  document.getElementById("f-date").value = fmtDate(d);
+});
+
+document.getElementById("recentChips").addEventListener("click", function (e) {
+  var btn = e.target.closest("button[data-store]");
+  if (!btn) return;
+  var store = btn.getAttribute("data-store");
+  if (editingId) stopEditing();
+  document.getElementById("f-store").value = store;
+  var guess = guessCategory(store);
+  var sel = document.getElementById("f-category");
+  if (guess && Array.prototype.some.call(sel.options, function (o) { return o.value === guess; })) sel.value = guess;
+  document.getElementById("f-amount").focus();
+  toast("店名と費目を入れました。金額を入れてください");
+});
+
+document.getElementById("list").addEventListener("click", function (e) {
+  var btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  var li = e.target.closest("li.item");
+  var id = li && li.getAttribute("data-id");
+  var idx = state.items.findIndex(function (it) { return it.id === id; });
+  if (idx < 0) return;
+  var item = state.items[idx];
+  var action = btn.getAttribute("data-action");
+
+  if (action === "edit") {
+    startEditing(item);
+    return;
+  }
+  if (action === "same") {
+    if (editingId) stopEditing();
+    document.getElementById("f-store").value = item.store;
+    document.getElementById("f-note").value = item.note;
+    document.getElementById("f-date").value = todayStr();
+    renderCategoryOptions();
+    document.getElementById("f-category").value = item.category;
+    document.getElementById("f-amount").value = "";
+    document.getElementById("f-amount").focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    toast("金額を入れてください");
+    return;
+  }
+  if (action === "delete") {
+    if (!confirm(yen(item.amount) + "（" + (item.store || item.category) + "）の記録を削除しますか？")) return;
+    state.items.splice(idx, 1);
+    if (editingId === id) stopEditing();
+    toast("削除しました");
+    save();
+    render();
+  }
+});
+
+/* ---------- 月の移動と絞り込み ---------- */
+
+document.getElementById("prevMonth").addEventListener("click", function () {
+  currentMonth = shiftMonth(currentMonth, -1);
+  render();
+});
+document.getElementById("nextMonth").addEventListener("click", function () {
+  currentMonth = shiftMonth(currentMonth, 1);
+  render();
+});
+document.getElementById("thisMonth").addEventListener("click", function () {
+  currentMonth = monthOf(new Date());
+  render();
+});
+document.getElementById("q").addEventListener("input", function (e) {
+  filters.q = e.target.value;
+  renderList();
+});
+document.getElementById("sort").addEventListener("change", function (e) {
+  filters.sort = e.target.value;
+  renderList();
+});
+document.getElementById("catFilter").addEventListener("click", function (e) {
+  var cat = e.target.getAttribute && e.target.getAttribute("data-cat");
+  if (!cat) return;
+  filters.category = cat;
+  renderFilters();
+  renderList();
+});
+document.getElementById("jumpAdd").addEventListener("click", function () {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  document.getElementById("f-amount").focus();
+});
+document.getElementById("jumpList").addEventListener("click", function () {
+  document.getElementById("list").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+/* ---------- 設定 ---------- */
+
+function renderSettings() {
+  document.getElementById("f-budget").value = state.budget == null ? "" : state.budget;
+  document.getElementById("f-cats").value = state.categories.join("、");
+}
+
+document.getElementById("saveSettings").addEventListener("click", function () {
+  var budgetRaw = document.getElementById("f-budget").value;
+  state.budget = budgetRaw === "" ? null : Math.max(0, Math.round(Number(budgetRaw))) || null;
+  var cats = document.getElementById("f-cats").value
+    .split(/[、,\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+  if (cats.length) state.categories = cats;
+  save();
+  renderSettings();
+  render();
+  toast("設定を保存しました");
+});
+
+/* ---------- 書き出しと取り込み ---------- */
+
+function downloadBlob(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+function csvCell(v) {
+  var s = String(v == null ? "" : v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+document.getElementById("exportCsv").addEventListener("click", function () {
+  var items = itemsOfMonth(currentMonth).slice().sort(function (a, b) { return a.date.localeCompare(b.date); });
+  if (!items.length) { toast("この月の記録がありません"); return; }
+  var lines = [["日付", "費目", "金額", "店名", "メモ"].join(",")];
+  items.forEach(function (it) {
+    lines.push([it.date, it.category, it.amount, it.store, it.note].map(csvCell).join(","));
+  });
+  // Excel が文字化けしないよう、先頭に BOM を付ける
+  var blob = new Blob(["﻿" + lines.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+  downloadBlob(blob, "kakeibo-" + currentMonth + ".csv");
+  toast(items.length + "件を書き出しました");
+});
+
+document.getElementById("exportBtn").addEventListener("click", function () {
+  downloadBlob(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }),
+    "kakeibo-" + todayStr() + ".json");
+});
+
+document.getElementById("importBtn").addEventListener("click", function () {
+  document.getElementById("importFile").click();
+});
+
+document.getElementById("importFile").addEventListener("change", function (e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var data = normalize(JSON.parse(String(reader.result)));
+      if (!confirm("読み込むと今のデータ（" + state.items.length + "件）は置き換わります。続けますか？")) return;
+      state = data;
+      save();
+      renderSettings();
+      render();
+      toast("読み込みました");
+    } catch (err) {
+      toast("JSONを読み込めませんでした");
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+
+/* ---------- 明細CSVの取り込み ---------- */
+
+/* 引用符に対応した CSV の読み取り。"" は " 1文字として扱う。 */
+function parseCsv(text) {
+  var rows = [];
+  var row = [];
+  var cell = "";
+  var inQuotes = false;
+  for (var i = 0; i < text.length; i++) {
+    var ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i++; }
+        else inQuotes = false;
+      } else cell += ch;
+      continue;
+    }
+    if (ch === '"') { inQuotes = true; continue; }
+    if (ch === ",") { row.push(cell); cell = ""; continue; }
+    if (ch === "\r") continue;
+    if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; continue; }
+    cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ""; }); });
+}
+
+/* 日本のカード明細は Shift_JIS のことが多い。まず UTF-8 で読み、
+   置換文字（文字化けの印）が出たら Shift_JIS で読み直す。 */
+function decodeCsv(buffer) {
+  var utf8 = new TextDecoder("utf-8").decode(buffer);
+  if (utf8.indexOf("�") < 0) return utf8.replace(/^﻿/, "");
+  try {
+    return new TextDecoder("shift_jis").decode(buffer).replace(/^﻿/, "");
+  } catch (e) {
+    return utf8.replace(/^﻿/, "");
+  }
+}
+
+// 「2026/9/3」「2026年9月3日」「26-09-03」などを YYYY-MM-DD に直す
+function toIsoDate(value) {
+  var s = String(value || "").trim();
+  var m = s.match(/(\d{4})\D{1,2}(\d{1,2})\D{1,2}(\d{1,2})/);
+  if (m) return m[1] + "-" + pad(m[2]) + "-" + pad(m[3]);
+  m = s.match(/^(\d{2})\D{1,2}(\d{1,2})\D{1,2}(\d{1,2})$/);
+  if (m) return "20" + m[1] + "-" + pad(m[2]) + "-" + pad(m[3]);
+  return "";
+}
+
+// 「1,280」「￥1,280」「1280円」「-1280」を数値にする
+function toAmount(value) {
+  var s = String(value || "").replace(/[０-９]/g, function (c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  }).replace(/[^0-9.\-]/g, "");
+  if (!s || s === "-") return NaN;
+  return Math.round(Number(s));
+}
+
+function guessColumn(header, rows, kind) {
+  var names = {
+    date: ["日付", "利用日", "ご利用日", "date", "取引日"],
+    store: ["利用店名", "ご利用先", "内容", "摘要", "店名", "利用先", "description", "memo"],
+    amount: ["金額", "利用金額", "ご利用金額", "支払金額", "amount", "円"]
+  }[kind];
+  for (var i = 0; i < header.length; i++) {
+    var h = String(header[i]).toLowerCase();
+    for (var j = 0; j < names.length; j++) {
+      if (h.indexOf(String(names[j]).toLowerCase()) >= 0) return i;
+    }
+  }
+  // 見出しで分からなければ中身から推す
+  for (var c = 0; c < header.length; c++) {
+    var ok = 0, seen = 0;
+    for (var r = 0; r < Math.min(rows.length, 8); r++) {
+      var v = rows[r][c];
+      if (v === undefined || String(v).trim() === "") continue;
+      seen++;
+      if (kind === "date" && toIsoDate(v)) ok++;
+      if (kind === "amount" && isFinite(toAmount(v)) && Math.abs(toAmount(v)) >= 10) ok++;
+    }
+    if (seen && ok / seen > 0.7 && kind !== "store") return c;
+  }
+  return -1;
+}
+
+document.getElementById("importCsvBtn").addEventListener("click", function () {
+  document.getElementById("importCsvFile").click();
+});
+
+document.getElementById("importCsvFile").addEventListener("change", function (e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    var rows = parseCsv(decodeCsv(reader.result));
+    if (rows.length < 2) { toast("読み取れる行がありませんでした"); return; }
+    // 先頭行が見出しか、すでにデータかを判定する
+    var first = rows[0];
+    var headerLooksLikeData = toIsoDate(first[0]) || isFinite(toAmount(first[first.length - 1]));
+    var header = headerLooksLikeData ? first.map(function (_, i) { return (i + 1) + "列目"; }) : first;
+    var body = headerLooksLikeData ? rows : rows.slice(1);
+    csvStaging = { header: header, rows: body, name: file.name };
+    showCsvCard();
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = "";
+});
+
+function showCsvCard() {
+  var card = document.getElementById("csvCard");
+  card.hidden = false;
+  var h = csvStaging.header, rows = csvStaging.rows;
+  document.getElementById("csvInfo").textContent =
+    csvStaging.name + "：" + rows.length + "行を読み取りました。取り込む列を確認してください。";
+
+  ["csvDate", "csvStore", "csvAmount"].forEach(function (id, i) {
+    var sel = document.getElementById(id);
+    sel.innerHTML = h.map(function (name, idx) {
+      return '<option value="' + idx + '">' + esc(name || (idx + 1) + "列目") + "</option>";
+    }).join("");
+    var kind = ["date", "store", "amount"][i];
+    var guess = guessColumn(h, rows, kind);
+    if (guess >= 0) sel.value = String(guess);
+  });
+
+  var head = "<tr>" + h.map(function (n) { return "<th>" + esc(n) + "</th>"; }).join("") + "</tr>";
+  var bodyHtml = rows.slice(0, 3).map(function (r) {
+    return "<tr>" + h.map(function (_, i) { return "<td>" + esc(r[i] || "") + "</td>"; }).join("") + "</tr>";
+  }).join("");
+  document.getElementById("csvPreview").innerHTML = head + bodyHtml;
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.getElementById("csvCancel").addEventListener("click", function () {
+  csvStaging = null;
+  document.getElementById("csvCard").hidden = true;
+});
+
+document.getElementById("csvImportRun").addEventListener("click", function () {
+  if (!csvStaging) return;
+  var di = Number(document.getElementById("csvDate").value);
+  var si = Number(document.getElementById("csvStore").value);
+  var ai = Number(document.getElementById("csvAmount").value);
+
+  var added = 0, skipped = 0, ignored = 0;
+  // すでにある記録と同じもの（日付・金額・店名が一致）は取り込まない
+  var seen = {};
+  state.items.forEach(function (it) { seen[it.date + "|" + it.amount + "|" + it.store] = true; });
+
+  csvStaging.rows.forEach(function (r) {
+    var date = toIsoDate(r[di]);
+    var amount = toAmount(r[ai]);
+    var store = String(r[si] == null ? "" : r[si]).trim();
+    if (!date || !isFinite(amount) || amount <= 0) { ignored++; return; }
+    var key = date + "|" + amount + "|" + store;
+    if (seen[key]) { skipped++; return; }
+    seen[key] = true;
+    state.items.push({
+      id: uid(),
+      date: date,
+      amount: amount,
+      category: guessCategory(store) || UNKNOWN,
+      store: store,
+      note: "明細から取り込み",
+      createdAt: new Date().toISOString()
+    });
+    added++;
+  });
+
+  save();
+  csvStaging = null;
+  document.getElementById("csvCard").hidden = true;
+  render();
+  toast(added + "件を取り込みました"
+    + (skipped ? "／重複 " + skipped + "件は除外" : "")
+    + (ignored ? "／読めない行 " + ignored + "件" : ""));
+});
+
+/* ---------- オフラインで使えるようにする ---------- */
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () { /* 使えなくても通常動作に影響はない */ });
+  });
+}
+
+// テストから内部の関数を確かめるための入口
+window.kakeiboApp = {
+  parseCsv: parseCsv,
+  toIsoDate: toIsoDate,
+  toAmount: toAmount,
+  guessCategory: guessCategory,
+  guessColumn: guessColumn
+};
+
+document.getElementById("f-date").value = todayStr();
+renderSettings();
+render();
+</script>
+</body>
+</html>
