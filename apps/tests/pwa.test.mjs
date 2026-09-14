@@ -57,7 +57,16 @@ const launchOptions = { args: ["--no-sandbox"] };
 if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMIUM_PATH;
 const browser = await chromium.launch(launchOptions);
 
-for (const app of ["fridge", "docs-tracker"]) {
+// アプリごとに持っている機能が違うため、確かめる項目も分ける
+const APPS = [
+  { name: "fridge", barcode: true, calendar: true },
+  { name: "docs-tracker", calendar: true },
+  { name: "books", barcode: true },
+  { name: "stock", barcode: true, calendar: true },
+  { name: "kakeibo" },
+];
+
+for (const { name: app, barcode, calendar } of APPS) {
   const ctx = await browser.newContext({ serviceWorkers: "allow" });
   const page = await ctx.newPage();
   const errs = [];
@@ -77,12 +86,14 @@ for (const app of ["fridge", "docs-tracker"]) {
   const resp = await page.reload().catch(() => null);
   ok(!!resp && resp.ok(), `${app}: 通信できない状態でも起動する`);
   ok((await page.locator("h1").count()) === 1, `${app}: 通信できない状態でも画面が出る`);
-  if (app === "fridge") {
+  if (barcode) {
     ok(await page.evaluate(() => !!(window.EAN && window.EAN.decodeRow)),
-      "fridge: 通信できない状態でもバーコード読み取りが使える");
+      `${app}: 通信できない状態でもバーコード読み取りが使える`);
   }
-  ok(await page.evaluate(() => !!(window.ICS && window.ICS.build)),
-    `${app}: 通信できない状態でもカレンダー登録が使える`);
+  if (calendar) {
+    ok(await page.evaluate(() => !!(window.ICS && window.ICS.build)),
+      `${app}: 通信できない状態でもカレンダー登録が使える`);
+  }
   ok(await page.evaluate(() => {
     try { localStorage.setItem("x", "1"); localStorage.removeItem("x"); return true; } catch (e) { return false; }
   }), `${app}: 通信できない状態でもデータを保存できる`);
