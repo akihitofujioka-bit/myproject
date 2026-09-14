@@ -41,6 +41,7 @@ Google カレンダーの予定、期限の近い書類、要対応のメール�
 | 書類・回覧の期限トラッカー | 提出期限のある書類・回覧・申請の管理 | `apps/docs-tracker/` |
 | 蔵書の管理 | 本の ISBN バーコードでの登録、未読/読書中/読了の記録 | `apps/books/` |
 | 備蓄・消耗品の管理 | 防災備蓄・常備薬・消耗品の残数と期限の管理、補充時期の通知 | `apps/stock/` |
+| 家計簿 | レシートの合計額の記録、費目別の内訳、明細CSVの取り込み | `apps/kakeibo/` |
 
 - パソコンでは `index.html` を開くだけで使える
 - **iPhone で使うには GitHub Pages への公開が必要**（カメラとオフライン起動はブラウザの決まりで https でしか動かないため）。`main` への変更を `.github/workflows/pages.yml` が自動で公開し、Safari で開いて「ホーム画面に追加」すると通常のアプリのように使える。初回だけ Settings → Pages の Source を「GitHub Actions」にする操作が要る
@@ -58,7 +59,7 @@ Google カレンダーの予定、期限の近い書類、要対応のメール�
 
 ## iPhone アプリとして書き出す（`mobile/`）
 
-`apps/` の2つのアプリを Capacitor でネイティブアプリに包むための設定一式。
+`apps/` のアプリを Capacitor でネイティブアプリに包むための設定一式。
 アプリとして動いているときは、カレンダーを経由せず**アプリから直接通知**が出せる。
 
 - 手順: `mobile/README.md`
@@ -66,3 +67,11 @@ Google カレンダーの予定、期限の近い書類、要対応のメール�
 - Mac での作業は `npm install && npm run sync` のあと Xcode を開き、署名して実行するだけ
 - iOS のビルドと実機動作は未検証（Mac が必要なため）
 - アプリ本体は `apps/` 側だけを直せばよく、`npm run sync` で反映する
+
+## gikai_editor — 議会だより 原稿編集ツール
+
+各議員からばらばらの様式で届く原稿を、校正・要約し、写真を配置して、
+Word の様式に流し込むためのオフライン専用ツールです。
+
+- 使い方: [`gikai_editor/README.md`](gikai_editor/README.md)
+- 起動: `cd gikai_editor && python app.py`（Windows は `起動.bat` をダブルクリック）

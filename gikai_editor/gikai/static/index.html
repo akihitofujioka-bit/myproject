@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>議会だより 原稿編集ツール</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <img class="applogo" src="icon.png" alt="">
+  <div class="brand">議会だより 原稿編集ツール</div>
+  <div class="proj" id="projLabel">プロジェクト未選択</div>
+  <div class="spacer"></div>
+  <span class="offline" title="外部への通信は行いません">オフライン動作</span>
+  <button class="ghost" id="btnHelp">使い方</button>
+  <button class="ghost" id="btnSettings">設定</button>
+  <button class="ghost" id="btnQuit" title="ツールを終了します">終了</button>
+</header>
+
+<div class="modebar">
+  <button class="mode on" data-mode="easy">かんたん作成</button>
+  <button class="mode" data-mode="pro">くわしく編集</button>
+  <span class="modehint" id="modeHint">フォルダに入れて、ボタンひとつで作ります。</span>
+</div>
+
+<nav class="steps" id="steps" hidden>
+  <button data-step="project" class="on">① 号を作る</button>
+  <button data-step="import">② 原稿を集める</button>
+  <button data-step="edit">③ 校正・要約</button>
+  <button data-step="photo">④ 写真</button>
+  <button data-step="layout">⑤ 紙面に組む</button>
+  <button data-step="export">⑥ 書き出し</button>
+</nav>
+
+<main>
+
+<!-- かんたん作成 ------------------------------------------------------- -->
+<section id="pane-easy" class="pane on">
+
+  <div class="card ez" id="ezStep1">
+    <div class="ezhead"><span class="num">1</span>
+      <h2>号とページ数を決める</h2>
+      <button class="whatis" data-help="step1" title="この手順の使い方">?</button></div>
+    <div class="row">
+      <label>号の名前<input id="ezTitle" placeholder="例: 第204号"></label>
+      <label>発行日<input id="ezDate" placeholder="例: 令和8年10月31日"></label>
+      <button class="primary" id="ezCreate">この号をはじめる</button>
+      <span class="ezproj" id="ezProj"></span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>最大ページ数
+        <input id="ezPages" type="number" min="0" max="64" step="2" value="22"></label>
+      <button id="ezSavePages">この枚数にする</button>
+      <span class="hint" id="ezPagesNote">ここまでに収まるように、長い原稿を自動で要約します。
+        ページ数は号ごとに変わってかまいません（この枚数ちょうどにはしません）。
+        0 なら成り行き。</span>
+    </div>
+    <div class="row" id="ezOpenRow" hidden>
+      <span class="hint">前に作った号を続きから：</span>
+      <select id="ezOpen"></select>
+      <button id="ezOpenBtn">開く</button>
+    </div>
+  </div>
+
+  <div class="card ez" id="ezStep2">
+    <div class="ezhead"><span class="num">2</span>
+      <h2>フォルダに原稿と写真を入れる</h2>
+      <button class="whatis" data-help="step2" title="この手順の使い方">?</button></div>
+    <p class="hint">紙面の区分ごとにフォルダを作ります。
+      載せたい区分のフォルダへ、原稿と写真をそのまま入れてください。
+      <b>どのフォルダに入れたかが、そのまま紙面の場所になります。</b></p>
+    <div class="row">
+      <button class="primary" id="ezOpenInbox">原稿フォルダを開く</button>
+      <button id="ezRescan">入れ終わったので数え直す</button>
+      <span class="hint" id="ezInboxPath"></span>
+    </div>
+    <div class="row" id="ezPhotoRow" hidden>
+      <button class="primary" id="ezAssign">写真を原稿に割り当てる</button>
+      <span class="hint" id="ezPhotoNote"></span>
+    </div>
+    <div id="ezFolders" class="folders"></div>
+    <details class="tips">
+      <summary>載せる順番と、写真の付け方</summary>
+      <ul class="hint">
+        <li><b>順番</b> … ファイル名の先頭に番号を付けると、その順に載ります
+          （<code>01_あいさつ.docx</code> → <code>02_森下けい子.docx</code>）</li>
+        <li><b>写真</b> … 原稿と同じ名前にすると、その記事のそばに入ります
+          （<code>森下けい子.docx</code> ↔ <code>森下けい子.jpg</code>）。
+          複数なら <code>森下けい子1.jpg</code> <code>森下けい子2.jpg</code></li>
+        <li>名前が合わない写真は、その区分の先頭の記事に付きます</li>
+        <li>フォルダから消したものは、作り直すと紙面からも消えます</li>
+      </ul>
+    </details>
+  </div>
+
+  <div class="card ez" id="ezStep3">
+    <div class="ezhead"><span class="num">3</span>
+      <h2>ボタンひとつで作る</h2>
+      <button class="whatis" data-help="step3" title="この手順の使い方">?</button></div>
+    <div class="row">
+      <button class="bigbtn" id="ezBuild">議会だよりを作る</button>
+      <span class="hint" id="ezBuildNote">1ページ5段の縦書きで、区分の順に組み上げます。
+        何度でも押せます。</span>
+    </div>
+    <div id="ezResult"></div>
+  </div>
+
+  <div class="card ez" id="ezStep4">
+    <div class="ezhead"><span class="num">4</span>
+      <h2>できあがりを見て、書き出す</h2>
+      <button class="whatis" data-help="step4" title="この手順の使い方">?</button></div>
+    <div class="row">
+      <button class="primary" id="ezPreview">できあがりを見る</button>
+      <button id="ezOpenWord">Word で開く</button>
+      <button id="ezOpenOut">保存フォルダを開く</button>
+      <span class="hint" id="ezOutNote">まだ作っていません。</span>
+    </div>
+    <div id="ezPreviewBox"></div>
+  </div>
+
+</section>
+
+
+<!-- ①  ------------------------------------------------------------- -->
+<section id="pane-project" class="pane">
+  <h1>号を作る</h1>
+  <p class="hint">1つの号ぶんの作業を、パソコンの中のフォルダにまとめて保存します。外部には送信しません。</p>
+
+  <div class="card">
+    <h2>新しい号をはじめる</h2>
+    <div class="row">
+      <label>号の名前<input id="newTitle" placeholder="例: 第204号"></label>
+      <label>号数<input id="newNo" placeholder="例: 204"></label>
+      <label>発行日<input id="newDate" placeholder="例: 令和8年10月31日"></label>
+      <button class="primary" id="btnCreate">作成</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>保存済みの号を開く</h2>
+    <div id="projectList" class="list"></div>
+    <p class="hint" id="wsPath"></p>
+  </div>
+</section>
+
+<!-- ②  ------------------------------------------------------------- -->
+<section id="pane-import" class="pane">
+  <h1>原稿を集める</h1>
+  <p class="hint">議員から届いたファイルを、様式がばらばらのままここに入れてください。
+    Word（.docx / .doc）・テキスト・PDF・リッチテキストに対応します。</p>
+
+  <div class="card">
+    <div class="drop" id="dropManu">
+      <strong>ここにファイルをドラッグ＆ドロップ</strong>
+      <span>または</span>
+      <button class="primary" id="btnPickManu">ファイルを選ぶ</button>
+      <input type="file" id="fileManu" multiple hidden
+             accept=".docx,.doc,.txt,.md,.rtf,.pdf,.odt,.csv">
+    </div>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="optNormalize" checked>
+        取り込むときに表記を整える（半角カナ→全角、数字の全角半角、句読点）</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>直接貼り付ける</h2>
+    <div class="row">
+      <label>見出し<input id="pasteTitle" placeholder="未入力でも構いません"></label>
+      <label>執筆者<input id="pasteAuthor" placeholder="例: 森下けい子"></label>
+    </div>
+    <textarea id="pasteText" rows="6" placeholder="メール本文などをそのまま貼り付けてください"></textarea>
+    <button class="primary" id="btnPaste">記事として追加</button>
+  </div>
+
+  <div class="card">
+    <h2>取り込んだ原稿（<span id="artCount">0</span>件）</h2>
+    <div class="row toolbar">
+      <label class="check"><input type="checkbox" id="chkAll"> すべて選択</label>
+      <span class="selinfo" id="selInfo">0 件を選択中</span>
+      <button class="danger" id="btnDeleteSel" disabled>選択した原稿を削除</button>
+      <span class="spacer"></span>
+      <button id="btnAssignSections">区分を自動で振り分ける</button>
+    </div>
+    <p class="hint">区分は原稿のファイル名や見出しから自動で見当を付けます。
+      違っていれば一覧から選び直せます。</p>
+    <div id="importList" class="list"></div>
+  </div>
+</section>
+
+<!-- ③  ------------------------------------------------------------- -->
+<section id="pane-edit" class="pane">
+  <h1>校正・要約</h1>
+  <p class="hint">議会だよりの構成（表紙 → 行政報告 → 審議したこと・決まったこと →
+    閉会中の委員会活動報告 → 一般質問 → 特集 → 最終ページ）の順に並んでいます。
+    上から順に仕上げていってください。</p>
+  <div class="split">
+    <aside class="sidelist">
+      <div id="outlineList"></div>
+    </aside>
+
+    <div class="editor" id="editorArea">
+      <p class="empty">左の一覧から記事を選んでください。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ④  ------------------------------------------------------------- -->
+<section id="pane-photo" class="pane">
+  <h1>写真</h1>
+  <p class="hint">写真は枠の縦横比に合わせて自動で切り出します（洋服の裾上げと同じ考え方）。
+    印刷に耐える解像度かどうかも判定します。</p>
+  <div class="card">
+    <div class="drop" id="dropPhoto">
+      <strong>写真をドラッグ＆ドロップ</strong>
+      <span>または</span>
+      <button class="primary" id="btnPickPhoto">写真を選ぶ</button>
+      <input type="file" id="filePhoto" multiple hidden accept="image/*">
+    </div>
+  </div>
+
+  <div class="card autobox">
+    <h2>原稿の名前で自動割り付け</h2>
+    <p class="hint" style="margin-bottom:10px">
+      <b>写真のファイル名を原稿と同じにしておくと、その記事に結びつけて、
+      記事が載るページの写真枠へ自動で入れます。</b>
+      説明文（キャプション）の枠も、写真のそばのものを押さえます。</p>
+    <table class="namerule">
+      <tr><th>原稿</th><td><code>森下けい子_原稿.docx</code></td></tr>
+      <tr><th>写真</th><td><code>森下けい子_原稿.jpg</code>
+        複数あるときは <code>森下けい子_原稿1.jpg</code>
+        <code>森下けい子_原稿2.jpg</code>（番号順に並びます）</td></tr>
+    </table>
+    <p class="hint">議員名だけ（<code>森下けい子.jpg</code>）でも結びつきます。
+      判定できなかった写真は手で選べます。</p>
+    <div class="row" style="margin:12px 0 0">
+      <button class="primary" id="btnAutoLayout">自動で割り付ける</button>
+      <label class="check"><input type="checkbox" id="autoSlots" checked>
+        様式の写真枠まで割り当てる（外すと記事との結びつけだけ）</label>
+    </div>
+  </div>
+  <div id="photoGrid" class="photogrid"></div>
+</section>
+
+<!-- ⑤  ------------------------------------------------------------- -->
+<section id="pane-layout" class="pane">
+  <h1>紙面に組む</h1>
+
+  <div class="card autobox">
+    <h2>組み方を選ぶ</h2>
+    <div class="modes">
+      <label class="mode">
+        <input type="radio" name="mode" value="auto" checked>
+        <span class="t">自動組版（おすすめ）</span>
+        <span class="d">1ページ5段・縦書きは固定したまま、原稿と写真の分量に合わせて
+          <b>ページ数と段送りを自動で調節</b>します。原稿が増えればページが増えます。</span>
+      </label>
+      <label class="mode">
+        <input type="radio" name="mode" value="slots">
+        <span class="t">前号の様式に差し込む</span>
+        <span class="d">前号の Word の枠に、文字と写真だけを入れ替えます。
+          レイアウトは前号のままなので、<b>枠の数と大きさは変わりません</b>。</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card" id="autoPane">
+    <h2>紙面の決まりごと</h2>
+    <p class="hint">ここで決めた形は、中身によらず変わりません。</p>
+    <div class="row">
+      <label>段数（1ページ）<input id="lyCols" type="number" min="1" max="10" value="5"></label>
+      <label>本文の大きさ（pt）<input id="lyBody" type="number" step="0.5" min="7" max="16" value="10.5"></label>
+      <label>見出しの大きさ（pt）<input id="lyHead" type="number" step="0.5" min="9" max="30" value="16"></label>
+      <label>行送り（倍）<input id="lyLine" type="number" step="0.05" min="1" max="2.5" value="1.45"></label>
+    </div>
+    <div class="row">
+      <label>上の余白（mm）<input id="lyMT" type="number" step="1" value="15"></label>
+      <label>下の余白（mm）<input id="lyMB" type="number" step="1" value="12"></label>
+      <label>左右の余白（mm）<input id="lyMX" type="number" step="1" value="15"></label>
+      <label>段間（mm）<input id="lyGap" type="number" step="0.5" value="6"></label>
+    </div>
+    <div class="row">
+      <label>本文のフォント<input id="lyFont" value="ＭＳ 明朝"></label>
+      <label>見出しのフォント<input id="lyHFont" value="ＭＳ ゴシック"></label>
+      <label>写真の大きさ（段の高さに対する割合）<input id="lyPhoto" type="number" step="0.05" min="0.2" max="1" value="0.62"></label>
+      <button id="btnSaveLayout">保存</button>
+    </div>
+    <p class="metrics" id="lyMetrics"></p>
+  </div>
+
+  <div class="card" id="pagePane">
+    <h2>ページ数を合わせる</h2>
+    <p class="hint">目標のページ数を入れると、いまの分量で何ページになるか、
+      収めるには何字詰めればよいかを計算します。</p>
+    <div class="row">
+      <label>目標ページ数<input id="lyTarget" type="number" min="0" max="64" value="0"
+        placeholder="0 なら成り行き"></label>
+      <button id="btnPlan">いまの分量を見る</button>
+      <button id="btnFitPages">目標に合わせてまとめて詰める</button>
+    </div>
+    <div id="planResult"></div>
+  </div>
+
+  <div class="card" id="slotsPane" hidden>
+    <h2>様式（Word）</h2>
+    <p class="hint">前号の Word ファイルをそのまま様式として使えます。
+      レイアウトには一切手を加えず、文字と写真の中身だけを差し替えます。</p>
+    <div class="row">
+      <button class="primary" id="btnPickTemplate">様式を読み込む</button>
+      <input type="file" id="fileTemplate" hidden accept=".docx,.doc">
+      <span id="templateState" class="hint">未読み込み</span>
+    </div>
+  </div>
+
+  <div class="card slotsOnly" hidden>
+    <h2>差し込み先の割り当て</h2>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="slotFilterText" checked> 文字が入っている枠だけ表示</label>
+      <label>絞り込み<input id="slotSearch" placeholder="枠の中身で検索"></label>
+    </div>
+    <div class="tablewrap">
+      <table id="slotTable">
+        <thead><tr>
+          <th>頁</th><th>枠</th><th>種類</th><th>いまの中身（前号）</th><th>字数</th><th>差し込む記事</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card slotsOnly" hidden>
+    <h2>写真の差し替え先</h2>
+    <div id="imageSlots" class="list"></div>
+  </div>
+</section>
+
+<!-- ⑥  ------------------------------------------------------------- -->
+<section id="pane-export" class="pane">
+  <h1>書き出し</h1>
+  <div class="card">
+    <div class="row">
+      <label>ファイル名<input id="expName" placeholder="議会だより第204号_差込.docx"></label>
+      <label class="check"><input type="checkbox" id="expPdf"> PDF も作る（LibreOffice が必要）</label>
+      <button class="primary" id="btnExport">Word に書き出す</button>
+      <button class="ghost" id="btnPreview">紙面プレビュー</button>
+    </div>
+    <div id="exportResult"></div>
+  </div>
+  <div class="card">
+    <h2>仕上げの手順</h2>
+    <ol class="hint">
+      <li>書き出した Word ファイルを Word で開きます。</li>
+      <li>枠からあふれた文字がないか、見開きで確認します（あふれた場合は③に戻って字数を詰めます）。</li>
+      <li>色・網かけ・罫線は様式が持っているので、そのまま印刷所に渡せます。</li>
+    </ol>
+  </div>
+</section>
+
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modalbox">
+    <div class="modalhead"><span id="modalTitle"></span><button class="ghost" id="modalClose">閉じる</button></div>
+    <div class="modalbody" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
