@@ -1,0 +1,456 @@
+{
+  "_comment": "議会だよりの表記ルール。第203号の Word 原稿と印刷版の差分から確認した実際のハウスルールを含む。severity: error / warn / info",
+  "house": {
+    "_comment": "この広報誌で実際に行われている書き換え（原稿→印刷版で確認済み）",
+    "rules": [
+      {
+        "find": "等",
+        "to": "など",
+        "severity": "warn",
+        "note": "本誌は「等」を「など」に開く",
+        "context_exclude": [
+          "等分",
+          "等級",
+          "平等",
+          "均等",
+          "同等",
+          "上等",
+          "対等",
+          "等身",
+          "高等",
+          "初等",
+          "中等",
+          "等閑",
+          "等式",
+          "不等",
+          "劣等",
+          "優等",
+          "一等",
+          "二等",
+          "三等"
+        ]
+      },
+      {
+        "find": "ひとつ",
+        "to": "一つ",
+        "severity": "warn",
+        "note": "本誌は漢数字表記"
+      },
+      {
+        "find": "買入れ",
+        "to": "買い入れ",
+        "severity": "warn",
+        "note": "送り仮名を付ける"
+      },
+      {
+        "find": "にて",
+        "to": "で",
+        "severity": "warn",
+        "note": "「にて」は「で」に"
+      },
+      {
+        "find": "子供",
+        "to": "子ども",
+        "severity": "warn",
+        "note": "本誌は「子ども」"
+      },
+      {
+        "find": "様々",
+        "to": "さまざま",
+        "severity": "warn",
+        "note": "本誌は仮名書き"
+      }
+    ]
+  },
+  "kana": {
+    "_comment": "公用文で仮名書きにするのが通例の語",
+    "rules": [
+      {
+        "find": "出来る",
+        "to": "できる",
+        "severity": "warn"
+      },
+      {
+        "find": "出来ない",
+        "to": "できない",
+        "severity": "warn"
+      },
+      {
+        "find": "有る",
+        "to": "ある",
+        "severity": "info"
+      },
+      {
+        "find": "無い",
+        "to": "ない",
+        "severity": "info"
+      },
+      {
+        "find": "下さい",
+        "to": "ください",
+        "severity": "warn"
+      },
+      {
+        "find": "頂く",
+        "to": "いただく",
+        "severity": "warn"
+      },
+      {
+        "find": "頂き",
+        "to": "いただき",
+        "severity": "warn"
+      },
+      {
+        "find": "致します",
+        "to": "いたします",
+        "severity": "warn"
+      },
+      {
+        "find": "致しました",
+        "to": "いたしました",
+        "severity": "warn"
+      },
+      {
+        "find": "居る",
+        "to": "いる",
+        "severity": "info"
+      },
+      {
+        "find": "行なう",
+        "to": "行う",
+        "severity": "warn"
+      },
+      {
+        "find": "更に",
+        "to": "さらに",
+        "severity": "info"
+      },
+      {
+        "find": "既に",
+        "to": "すでに",
+        "severity": "info"
+      },
+      {
+        "find": "全て",
+        "to": "すべて",
+        "severity": "info"
+      },
+      {
+        "find": "殆ど",
+        "to": "ほとんど",
+        "severity": "warn"
+      },
+      {
+        "find": "迄",
+        "to": "まで",
+        "severity": "warn"
+      },
+      {
+        "find": "但し",
+        "to": "ただし",
+        "severity": "warn"
+      },
+      {
+        "find": "尚、",
+        "to": "なお、",
+        "severity": "warn"
+      },
+      {
+        "find": "勿論",
+        "to": "もちろん",
+        "severity": "warn"
+      },
+      {
+        "find": "沢山",
+        "to": "たくさん",
+        "severity": "warn"
+      },
+      {
+        "find": "色々",
+        "to": "いろいろ",
+        "severity": "warn"
+      },
+      {
+        "find": "宜しく",
+        "to": "よろしく",
+        "severity": "warn"
+      },
+      {
+        "find": "丁度",
+        "to": "ちょうど",
+        "severity": "warn"
+      },
+      {
+        "find": "或いは",
+        "to": "あるいは",
+        "severity": "warn"
+      },
+      {
+        "find": "尚且つ",
+        "to": "なおかつ",
+        "severity": "warn"
+      },
+      {
+        "find": "私達",
+        "to": "私たち",
+        "severity": "warn"
+      },
+      {
+        "find": "何時",
+        "to": "いつ",
+        "severity": "info"
+      },
+      {
+        "find": "為に",
+        "to": "ために",
+        "severity": "info"
+      },
+      {
+        "find": "毎に",
+        "to": "ごとに",
+        "severity": "info"
+      },
+      {
+        "find": "従って",
+        "to": "したがって",
+        "severity": "info"
+      }
+    ]
+  },
+  "redundant": {
+    "_comment": "重言・冗長表現",
+    "rules": [
+      {
+        "find": "まず最初に",
+        "to": "まず／最初に",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "一番最初",
+        "to": "最初",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "必ず必要",
+        "to": "必要",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "後で後悔",
+        "to": "後悔",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "日本に来日",
+        "to": "来日",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "返事を返す",
+        "to": "返事をする",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "炎天下の下",
+        "to": "炎天下",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "捺印を押す",
+        "to": "押印する",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "収入が入る",
+        "to": "収入がある",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "訪問に訪れ",
+        "to": "訪れ",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "過半数を超え",
+        "to": "半数を超え／過半数に達し",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "約半数程度",
+        "to": "半数程度",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "はっきりと明言",
+        "to": "明言",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "各地域ごと",
+        "to": "地域ごと／各地域",
+        "severity": "warn",
+        "note": "重言"
+      },
+      {
+        "find": "することができる",
+        "to": "できる",
+        "severity": "info",
+        "note": "冗長"
+      },
+      {
+        "find": "というふうに",
+        "to": "のように",
+        "severity": "info",
+        "note": "冗長"
+      },
+      {
+        "find": "に関しまして",
+        "to": "について",
+        "severity": "info",
+        "note": "冗長"
+      },
+      {
+        "find": "ということである",
+        "to": "という",
+        "severity": "info",
+        "note": "冗長"
+      },
+      {
+        "find": "であるところの",
+        "to": "である",
+        "severity": "info",
+        "note": "冗長"
+      }
+    ]
+  },
+  "keigo": {
+    "_comment": "二重敬語・敬語の誤り",
+    "rules": [
+      {
+        "find": "お伺いさせていただ",
+        "to": "伺い",
+        "severity": "warn",
+        "note": "二重敬語"
+      },
+      {
+        "find": "ご覧になられ",
+        "to": "ご覧になり",
+        "severity": "warn",
+        "note": "二重敬語"
+      },
+      {
+        "find": "おっしゃられ",
+        "to": "おっしゃい",
+        "severity": "warn",
+        "note": "二重敬語"
+      },
+      {
+        "find": "拝見させていただ",
+        "to": "拝見し",
+        "severity": "warn",
+        "note": "二重敬語"
+      },
+      {
+        "find": "お見えになられ",
+        "to": "お見えになり",
+        "severity": "warn",
+        "note": "二重敬語"
+      },
+      {
+        "find": "ご説明させていただ",
+        "to": "説明し",
+        "severity": "info",
+        "note": "冗長な敬語"
+      },
+      {
+        "find": "とんでもございません",
+        "to": "とんでもないことです",
+        "severity": "info"
+      }
+    ]
+  },
+  "symbols": {
+    "_comment": "記号・機種依存文字",
+    "rules": [
+      {
+        "find": "①",
+        "to": "(1)",
+        "severity": "warn",
+        "note": "丸数字は機種依存文字。印刷所によって化ける"
+      },
+      {
+        "find": "②",
+        "to": "(2)",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "③",
+        "to": "(3)",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "④",
+        "to": "(4)",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "⑤",
+        "to": "(5)",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "㈱",
+        "to": "（株）",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "㈲",
+        "to": "（有）",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "℡",
+        "to": "電話",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "№",
+        "to": "No.",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "㍻",
+        "to": "平成",
+        "severity": "warn",
+        "note": "機種依存文字"
+      },
+      {
+        "find": "㎡",
+        "to": "平方メートル",
+        "severity": "info",
+        "note": "縦書きでは組みにくい"
+      }
+    ]
+  }
+}

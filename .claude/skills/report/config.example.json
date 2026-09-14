@@ -1,0 +1,76 @@
+{
+  "_comment": "リポジトリ直下に report.config.json としてコピーして使う。全項目が任意で、無い場合は既定値で動く。",
+
+  "author": {
+    "name": "藤岡 明仁",
+    "githubLogin": null,
+    "emails": ["akihitofujioka@gmail.com"],
+    "_note": "githubLogin が null のときは get_me で自動判定する"
+  },
+
+  "sources": {
+    "plaud": true,
+    "calendar": true,
+    "github": true,
+    "_note": "収集の主軸は plaud と calendar。github は開発作業がある期間だけ埋まる"
+  },
+
+  "plaud": {
+    "matchBy": "start_at",
+    "lookaroundDays": 1,
+    "minDurationSeconds": 10,
+    "useTranscriptFallback": true,
+    "inventoryPrecheck": true,
+    "dedupeOverlappingDevices": true,
+    "_note_matchBy": "APIの日付フィルタはアップロード日で効くため、録音日(start_at, UTC)でクライアント側から絞り直す",
+    "_note_lookaround": "前日の会議が翌日アップされるので前後この日数だけ広めに取得する",
+    "_note_transcript": "false にすると要約(note)のみ使い、全文取得を一切しない",
+    "_note_precheck": "get_file で source_list / note_list の有無を先に確認し、空の録音に get_note や get_transcript を投げない",
+    "_note_dedupe": "2台のデバイスで同じ会議を録音した場合(serial_numberが別で時間帯が重なる)、1件に名寄せする"
+  },
+
+  "calendar": {
+    "calendarIds": ["primary"],
+    "timeZone": "Asia/Tokyo",
+    "excludePatterns": ["朝会", "デイリー", "移動", "ランチ", "昼休み", "ブロック", "集中時間", "Focus"],
+    "excludeAllDay": true,
+    "keepAllDayDeadlines": true,
+    "excludeDeclined": true,
+    "excludeSoloEvents": false,
+    "dedupeSameTitleAndTime": true,
+    "_note_solo": "自分で登録した予定は参加者リストが空になる。true にすると実在の会議まで消えるので既定は false",
+    "_note_deadline": "終日予定でも「締め切り」「期限」を含むものは予定セクションに残す"
+  },
+
+  "github": {
+    "repos": ["akihitofujioka-bit/myproject"],
+    "includeLocalGitLog": true,
+    "authorFilter": "self+assistant",
+    "_note_author": "self | self+assistant | none。Claude Code経由のコミットは author が Claude になるため既定は self+assistant。他人と共同のリポジトリでは self にする",
+    "_note_repos": "repos が空のときはローカルの git log のみ使う"
+  },
+
+  "output": {
+    "dailyDir": "reports/daily",
+    "weeklyDir": "reports/weekly",
+    "overwrite": "ask",
+    "drive": {
+      "enabled": true,
+      "folderId": "1hMd8_qucMKNL_RzNmuFjYVxgAoAhzYKV",
+      "folderName": "日報・週報"
+    },
+    "_note": "overwrite: ask | append | replace。当日分に午後の会議を追記する使い方が多いので ask 推奨"
+  },
+
+  "template": {
+    "tone": "formal",
+    "dailySections": ["会議・打ち合わせ", "その他の業務", "明日の予定", "課題・相談事項"],
+    "weeklySections": ["サマリ", "主な会議と決定事項", "進行中の案件", "来週の予定", "リスク・課題"]
+  },
+
+  "privacy": {
+    "redactExternalNames": true,
+    "excludeTopics": ["人事", "評価", "給与", "報酬", "契約条件"],
+    "_note": "excludeTopics に触れる内容は報告書に転記せず「非公開の議題あり」とだけ書く"
+  }
+}
