@@ -75,3 +75,25 @@ Word の様式に流し込むためのオフライン専用ツールです。
 
 - 使い方: [`gikai_editor/README.md`](gikai_editor/README.md)
 - 起動: `cd gikai_editor && python app.py`（Windows は `起動.bat` をダブルクリック）
+
+## 議会だより編集部（Electron 版・計画段階）
+
+議員から提出された記事を、決められたレイアウトに流し込んで議会だより（広報紙）を
+作成するためのデスクトップアプリの**設計と技術検証**。Electron（Windows / Mac）で、
+オフライン・ローカル完結を前提としている。
+
+- [設計・仕様書](docs/design-spec.md)
+- [進捗・再開ガイド](docs/progress.md) — 中断／再開時はまずこれ
+- [開発セットアップ](docs/dev-setup.md)
+- [P0 PoC 結果](docs/poc-p0-results.md) — 縦書き出力などの技術検証
+
+```bash
+npm install
+npm run dev        # 開発起動
+npm run build      # ビルド
+npm run test:core  # 中核ロジックの単体テスト
+```
+
+> **注意：`gikai_editor/`（Python 版）と目的が重なっています。**
+> `gikai_editor/` のほうが実装とテストが揃っており、実際に動きます。
+> こちらは設計と技術検証の記録として残しているものです。どちらを本流にするかは未決定です。

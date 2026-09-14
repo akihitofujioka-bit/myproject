@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>取り込み・正規化ワークベンチ（PoC）</title>
+<style>
+  :root { --line:#d8dce3; --accent:#2b6cb0; --bg:#f5f6f8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Hiragino Kaku Gothic ProN","Noto Sans JP","IPAGothic",sans-serif;
+         background:var(--bg); color:#222; }
+  header { background:#1f3a5f; color:#fff; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; }
+  header .file { font-size:13px; opacity:.85; }
+  .wrap { display:grid; grid-template-columns: 1fr 1fr; gap:14px; padding:14px; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .panel h2 { margin:0; font-size:13px; padding:8px 12px; background:#eef1f5; border-bottom:1px solid var(--line); }
+  .panel .inner { padding:12px; }
+
+  /* 左: 手書き原稿用紙のスキャン（再現） */
+  .manuscript {
+    background:
+      repeating-linear-gradient(0deg, transparent 0 31px, #f0c8c0 31px 32px),
+      repeating-linear-gradient(90deg, transparent 0 31px, #f0c8c0 31px 32px),
+      #fffdf7;
+    border:1px solid #e3b8af; height:330px; padding:6px;
+    writing-mode: vertical-rl; font-family: "IPAGothic",serif; color:#3a3a3a; line-height:32px;
+    letter-spacing:6px; overflow:hidden;
+  }
+  .manuscript .hw { font-size:20px; }
+  .scan-tools { margin-top:8px; font-size:12px; color:#666; }
+  .scan-tools button { font-size:12px; margin-right:6px; }
+
+  /* 右: 正規化フォーム */
+  label { display:block; font-size:12px; color:#555; margin:10px 0 4px; }
+  input[type=text], textarea, select { width:100%; padding:7px 8px; border:1px solid var(--line);
+    border-radius:6px; font-size:14px; font-family:inherit; }
+  textarea { height:150px; resize:vertical; line-height:1.7; }
+  .row { display:flex; gap:10px; }
+  .row > div { flex:1; }
+  .count { font-size:12px; color:#2b8a3e; text-align:right; margin-top:4px; }
+  .count.over { color:#c0392b; font-weight:bold; }
+  .source-badge { display:inline-block; font-size:11px; background:#fde2c4; color:#9a5a00;
+    border-radius:10px; padding:2px 8px; margin-left:8px; }
+
+  footer { padding:10px 16px; font-size:12px; color:#555; background:#eef1f5; border-top:1px solid var(--line); }
+</style>
+</head>
+<body>
+  <header>
+    <div>取り込み・正規化ワークベンチ <span class="source-badge">手書き原稿</span></div>
+    <div class="file">提出物: 山田太郎_原稿.pdf（スキャン）</div>
+  </header>
+
+  <div class="wrap">
+    <!-- 左: スキャン原稿（参照） -->
+    <div class="panel">
+      <h2>① スキャン原稿（参照しながら書き起こし）</h2>
+      <div class="inner">
+        <div class="manuscript">
+          <div class="hw">一般質問　防災対策について　山田太郎　私は今回の一般質問で、近年頻発する集中豪雨への備えについて市の見解を質しました。特に高齢者世帯への避難情報の伝達手段について…</div>
+        </div>
+        <div class="scan-tools">
+          <button>＋ 拡大</button><button>－ 縮小</button><button>↻ 回転</button>
+          画像を見ながら右に入力します（自動OCRは使わずオフライン完結）。
+        </div>
+      </div>
+    </div>
+
+    <!-- 右: 正規化フォーム -->
+    <div class="panel">
+      <h2>② 正規化フォーム（同じ記事データに整える）</h2>
+      <div class="inner">
+        <label>記事タイトル</label>
+        <input type="text" value="一般質問　防災対策について" />
+        <div class="row">
+          <div>
+            <label>議員</label>
+            <select><option>山田 太郎（市民クラブ・議席3）</option></select>
+          </div>
+          <div>
+            <label>コーナー</label>
+            <select><option>一般質問</option></select>
+          </div>
+        </div>
+        <label>本文（書き起こし）</label>
+        <textarea>私は今回の一般質問で、近年頻発する集中豪雨への備えについて市の見解を質しました。特に高齢者世帯への避難情報の伝達手段について、防災無線に加え、戸別受信機の配布拡大を提案しました。</textarea>
+        <div class="count">412 / 450 字</div>
+        <label>写真（別ファイル添付）</label>
+        <input type="text" value="山田太郎_写真1.jpg（解像度OK）" />
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Word/Excel 提出の場合は ① に自動抽出結果が入り、② で補正するだけ。どの形式でも出力先は同じ「記事データ」。
+  </footer>
+</body>
+</html>
