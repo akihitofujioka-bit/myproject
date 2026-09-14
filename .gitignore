@@ -1,8 +1,5 @@
-# Node（議会だより編集部・Electron 版）
+# Node（mobile/ のビルドと apps/tests の Playwright）
 node_modules/
-out/
-release/
-dist/
 *.log
 .DS_Store
 
