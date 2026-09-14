@@ -658,7 +658,7 @@ form.addEventListener("submit", function (e) {
     if (pendingCode) {
       values.code = pendingCode;
       // 次回このバーコードを読んだときに、品名・単位・保管場所を自動で入れる
-      state.codes[pendingCode] = { name: values.name, unit: values.unit, place: values.place };
+      state.codes[window.EAN.memoryKey(pendingCode)] = { name: values.name, unit: values.unit, place: values.place };
       clearPendingCode();
     }
     state.items.push(values);
@@ -1045,7 +1045,7 @@ function acceptCode(code) {
   showPendingCode();
   if (editingId) stopEditingKeepCode();
 
-  var known = state.codes[code];
+  var known = state.codes[window.EAN.memoryKey(code)] || state.codes[code];
   document.getElementById("f-qty").value = "1";
   if (known) {
     document.getElementById("f-name").value = known.name;
@@ -1056,7 +1056,9 @@ function acceptCode(code) {
   } else {
     document.getElementById("f-name").value = "";
     document.getElementById("f-name").focus();
-    toast("初めてのバーコードです。品名を入れると次回から自動で入ります");
+    toast(window.EAN.isInStoreCode(code)
+      ? "この番号はお店の中だけで使う番号です。品名を入れると、次回は番号が変わっても引き当てます"
+      : "初めてのバーコードです。品名を入れると次回から自動で入ります");
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -1078,6 +1080,11 @@ document.getElementById("scanBtn").addEventListener("click", function () {
       if (!code) return;                       // 利用者が閉じた
       var digits = String(code).replace(/[^0-9]/g, "");
       if (!digits) { toast("バーコードとして読み取れませんでした"); return; }
+      // QRコードや物流ラベルを商品として覚えてしまわないよう、商品コードか確かめる
+      if (!window.EAN.isProductCode(digits)) {
+        toast("商品のバーコードではないようです。商品コード（13桁など）を読み取ってください");
+        return;
+      }
       acceptCode(digits);
     })
     .catch(function (err) {

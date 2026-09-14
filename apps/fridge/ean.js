@@ -270,10 +270,45 @@
     return null;
   }
 
+
+  /**
+   * 店内コード（インストアマーキング）かどうか。
+   * 先頭が 02 または 20〜29 の13桁は、店が自分の店の中だけで使う番号で、
+   * 価格や重さが埋め込まれている。そのため同じ商品でも買うたびに番号が変わる。
+   * 卵・精肉・青果などの量り売り・パック品でよく使われる。
+   */
+  function isInStoreCode(code) {
+    return /^(02|2\d)\d{11}$/.test(String(code));
+  }
+
+  /**
+   * 商品のバーコードとして妥当か（桁数とチェックディジット）。
+   * QRコードや物流ラベルなど、商品コードでないものを覚えてしまうのを防ぐ。
+   */
+  function isProductCode(code) {
+    var c = String(code);
+    if (!/^\d+$/.test(c)) return false;
+    if (c.length !== 8 && c.length !== 12 && c.length !== 13) return false;
+    return checksumOk(c);
+  }
+
+  /**
+   * 品名を覚えるときの鍵。
+   * 店内コードは番号の後ろ側（価格など）が毎回変わるため、商品を表す前方部分だけを使う。
+   * 普通の商品コードはそのまま使う。
+   */
+  function memoryKey(code) {
+    var c = String(code);
+    return isInStoreCode(c) ? "IS:" + c.slice(0, 7) : c;
+  }
+
   global.EAN = {
     decodeImageData: decodeImageData,
     decodeRow: decodeRow,
     checksumOk: checksumOk,
+    isInStoreCode: isInStoreCode,
+    isProductCode: isProductCode,
+    memoryKey: memoryKey,
     L_PATTERNS: L_PATTERNS,
     FIRST_DIGIT_ENCODINGS: FIRST_DIGIT_ENCODINGS
   };
