@@ -1,5 +1,5 @@
 /*
- * apps/ の2つのアプリの動作確認（Playwright）。
+ * apps/ のアプリの動作確認（Playwright）。
  *
  *   npm i -D playwright && npx playwright install chromium
  *   node apps/tests/smoke.mjs
@@ -291,11 +291,13 @@ console.log("== apps/index.html（トップページ）==");
   const lerrs = [];
   lpage.on("pageerror", (e) => lerrs.push(String(e)));
   await lpage.goto("file://" + path.join(ROOT, "apps/index.html"));
-  ok((await lpage.title()) === "日常アプリ", "タイトル");
-  ok((await lpage.locator("a.app").count()) === 2, "2つのアプリへのリンクがある");
+  ok((await lpage.title()).length > 0, "タイトルがある");
   const hrefs = await lpage.locator("a.app").evaluateAll((els) => els.map((e) => e.getAttribute("href")));
-  ok(hrefs.join(",") === "fridge/,docs-tracker/", "リンク先が相対パス（公開後もそのまま動く）");
-  ok((await lpage.locator("a.app img").count()) === 2, "アイコンが表示される");
+  ok(hrefs.length >= 4, "アプリへのリンクがある（" + hrefs.length + "件）");
+  ok(hrefs.every((h) => h && !h.startsWith("/") && !/^https?:/.test(h)),
+    "リンク先がすべて相対パス（公開後もそのまま動く）");
+  ok(hrefs.includes("fridge/index.html") || hrefs.includes("fridge/"), "冷蔵庫へのリンクがある");
+  ok((await lpage.locator("a.app img").count()) === hrefs.length, "すべてにアイコンが表示される");
   const iconOk = await lpage.locator("a.app img").first().evaluate((el) => el.naturalWidth > 0);
   ok(iconOk, "アイコン画像が実際に読み込める");
   ok((await lpage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1, "横スクロールが出ない");
@@ -393,6 +395,46 @@ console.log("== カレンダー登録（.ics の書き出し）==");
   await cpage.waitForTimeout(400);
   ok(!downloadHappened, "対象がないときはファイルを作らない");
   ok((await cpage.locator("#toast").textContent()).includes("ありません"), "その旨を画面で知らせる");
+
+
+  // 店内コード（卵・精肉などで使われる、買うたびに番号が変わるバーコード）
+  const withCd = (base) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) {
+      const fromRight = base.length - i;
+      sum += Number(base[i]) * (fromRight % 2 === 1 ? 3 : 1);
+    }
+    return base + String((10 - (sum % 10)) % 10);
+  };
+  const packA = withCd("201234500298");   // 1パック目（価格 298円ぶんが末尾に入る想定）
+  const packB = withCd("201234500348");   // 2パック目（価格が違うので番号も違う）
+  ok(packA !== packB, "同じ商品でもパックごとに番号が違う（前提の確認）");
+
+  await cpage.goto("file://" + path.join(ROOT, "apps/fridge/index.html"));
+  await cpage.evaluate(() => localStorage.clear());
+  await cpage.reload();
+
+  await cpage.click("#scanBtn");
+  await cpage.fill("#manualCode", packA);
+  await cpage.click("#manualOk");
+  ok((await cpage.inputValue("#f-name")) === "", "1パック目は品名が空");
+  await cpage.fill("#f-name", "たまご");
+  await cpage.fill("#f-expires", d(7));
+  await cpage.click("#submitBtn");
+
+  await cpage.click("#scanBtn");
+  await cpage.fill("#manualCode", packB);
+  await cpage.click("#manualOk");
+  ok((await cpage.inputValue("#f-name")) === "たまご",
+    "2パック目は番号が違っても品名が自動で入る（今回の不具合の再現と修正）");
+
+  // 別商品の店内コードは引き当てない
+  await cpage.click("#scanBtn");
+  await cpage.fill("#manualCode", withCd("209999900298"));
+  await cpage.click("#manualOk");
+  ok((await cpage.inputValue("#f-name")) === "", "別商品の店内コードでは品名が入らない");
+  await cpage.click("#scanBtn");
+  await cpage.click("#scanClose");
 
   // ネイティブ用の橋渡しは、ブラウザでは必ず「使えない」と判定される
   const nat = await cpage.evaluate(() => ({

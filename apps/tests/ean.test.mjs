@@ -117,5 +117,39 @@ const broken = encode13(code).split("");
 broken.splice(20, 7, ...L[(Number(code[3]) + 1) % 10].split(""));
 ok(EAN.decodeRow(toBits(broken.join(""))) !== code, "1桁壊れたものを正解として返さない");
 
+console.log("== 店内コード（インストアマーキング）==");
+// 正しいチェックディジットを付ける
+const withCd = (base) => {
+  let sum = 0;
+  for (let i = 0; i < base.length; i++) {
+    const fromRight = base.length - i;
+    sum += Number(base[i]) * (fromRight % 2 === 1 ? 3 : 1);
+  }
+  return base + String((10 - (sum % 10)) % 10);
+};
+const inStoreA = withCd("201234506789");   // 同じ商品・価格ちがい
+const inStoreB = withCd("201234599999");
+const normal = withCd("490177701888");
+
+ok(EAN.isInStoreCode(inStoreA), "先頭20〜29を店内コードと判定する");
+ok(EAN.isInStoreCode(withCd("021234506789")), "先頭02も店内コードと判定する");
+ok(!EAN.isInStoreCode(normal), "普通の商品コードは店内コードではない");
+ok(!EAN.isInStoreCode(withCd("9784101010")), "13桁でないものは店内コードではない");
+
+ok(EAN.memoryKey(inStoreA) === EAN.memoryKey(inStoreB),
+  "同じ商品なら価格が違っても同じ鍵になる（卵・精肉などの量り売り対策）");
+ok(EAN.memoryKey(inStoreA) !== EAN.memoryKey(withCd("209999906789")),
+  "別の商品なら別の鍵になる");
+ok(EAN.memoryKey(normal) === normal, "普通の商品コードは番号そのものが鍵");
+
+console.log("== 商品コードかどうかの判定 ==");
+ok(EAN.isProductCode(normal), "13桁の商品コードを受け入れる");
+ok(EAN.isProductCode(inStoreA), "店内コードも商品コードとして受け入れる");
+ok(EAN.isProductCode("49123456"), "8桁（JAN-8）を受け入れる");
+ok(!EAN.isProductCode("4901777018881"), "チェックディジットが合わないものを弾く");
+ok(!EAN.isProductCode("https://example.com/item/123"), "QRコードの文字列を弾く");
+ok(!EAN.isProductCode("1234567890"), "桁数が合わないものを弾く");
+ok(!EAN.isProductCode(""), "空文字を弾く");
+
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて通過");
 process.exit(failures ? 1 : 0);
