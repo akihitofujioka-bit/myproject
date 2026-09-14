@@ -5,12 +5,25 @@
 # 権限などで自動化できなかった場合のみ、Settings → Pages → Source を "GitHub Actions" にする。
 name: 日常アプリを公開
 
+# 【一時停止中】自動実行を止めています。
+#
+# 理由: リポジトリで GitHub Pages が有効になっていないため、変更のたびに
+#       この処理が失敗し（Get Pages site failed / Create Pages site failed）、
+#       Actions が赤くなって本当の不具合が埋もれるため。
+#       現在はネイティブアプリ（mobile/）で使っているので、公開は必須ではない。
+#
+# 再開する手順:
+#   1. Settings → Pages → Source を「GitHub Actions」にする（管理者本人の操作が必要）
+#   2. 下の push: の3行のコメントを外す
+#   3. Actions の「日常アプリを公開」→「Run workflow」で1回手動実行する
+#
+# 停止中でも「Run workflow」からの手動実行はできます。
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/**"
-      - ".github/workflows/pages.yml"
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "apps/**"
+  #     - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
