@@ -63,10 +63,10 @@ const APPS = [
   { name: "docs-tracker", calendar: true },
   { name: "books", barcode: true },
   { name: "stock", barcode: true, calendar: true },
-  { name: "kakeibo" },
+  { name: "kakeibo", receipt: true },
 ];
 
-for (const { name: app, barcode, calendar } of APPS) {
+for (const { name: app, barcode, calendar, receipt } of APPS) {
   const ctx = await browser.newContext({ serviceWorkers: "allow" });
   const page = await ctx.newPage();
   const errs = [];
@@ -93,6 +93,10 @@ for (const { name: app, barcode, calendar } of APPS) {
   if (calendar) {
     ok(await page.evaluate(() => !!(window.ICS && window.ICS.build)),
       `${app}: 通信できない状態でもカレンダー登録が使える`);
+  }
+  if (receipt) {
+    ok(await page.evaluate(() => !!(window.Receipt && window.Receipt.parse)),
+      `${app}: 通信できない状態でもレシートの読み取り部品が使える`);
   }
   ok(await page.evaluate(() => {
     try { localStorage.setItem("x", "1"); localStorage.removeItem("x"); return true; } catch (e) { return false; }

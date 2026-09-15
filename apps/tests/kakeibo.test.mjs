@@ -8,6 +8,7 @@
  */
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -289,6 +290,34 @@ ok(body.charCodeAt(0) === 0xFEFF, "Excel で文字化けしないよう BOM を�
 ok(body.split("\r\n")[0].replace(/^﻿/, "") === "日付,費目,金額,店名,メモ", "見出しの行");
 ok(body.split("\r\n").filter((l) => l.trim()).length === 5, "見出し＋4件");
 ok(body.includes("2026-09-01,食費,3480,"), "内容が入る");
+
+
+/* ---------------- レシート撮影（アプリ版だけの機能）---------------- */
+console.log("== レシートの読み取り ==");
+await fresh();
+ok(await page.evaluate(() => window.ReceiptScan.available() === false), "ブラウザでは撮影機能を使えないと判定する");
+ok(await page.locator("#scanReceipt").isHidden(), "撮影ボタンはブラウザでは出ない");
+ok(await page.locator("#scanReceiptBar").isHidden(), "下部の撮影ボタンもブラウザでは出ない");
+ok(await page.locator("#jumpAdd").isVisible(), "代わりに「支出を記録する」が出る");
+
+// 認識結果（Mac で Vision を走らせた本物の出力）を流し込んで、入力欄が埋まることを確かめる
+await record({ amount: 500, category: "食費", date: d(-3), store: "サンプルスーパー" }); // 過去の店名として覚えさせる
+const fixture = JSON.parse(fs.readFileSync(path.join(FIXTURES, "receipt-a_super.json"), "utf8")).lines;
+const parsed = await page.evaluate((lines) => window.kakeiboApp.applyReceipt(lines), fixture);
+ok(parsed.total && parsed.total.value === 1205, "合計を取り出す");
+ok((await page.inputValue("#f-amount")) === "1205", "金額欄に合計が入る");
+ok((await page.inputValue("#f-date")) === "2026-09-15", "日付欄にレシートの日付が入る");
+ok((await page.inputValue("#f-store")) === "サンプルスーパー", "店名は過去に入れた表記を優先する");
+ok((await page.inputValue("#f-category")) === "食費", "店名から費目も入る");
+ok(await page.locator("#ocrBox").isVisible(), "読み取った内容の確認欄が出る");
+ok((await page.locator("#ocrRows").textContent()).includes("合計 ¥1,205"), "読み取った行がそのまま見られる");
+ok((await page.locator("#ocrSummary").textContent()).includes("合計 1,205円"), "入れた項目の要約が出る");
+await page.click("#submitBtn");
+ok((await page.locator("li.item", { hasText: "1,205円" }).count()) === 1, "そのまま記録できる");
+
+const nothing = await page.evaluate(() => window.kakeiboApp.applyReceipt([{ text: "ありがとうございました", x: 0, y: 0, width: 0.5, height: 0.03 }]));
+ok(!nothing.total && !nothing.date, "読めなかったときは何も入れない");
+ok((await page.locator("#ocrSummary").textContent()).includes("見つけられません"), "読めなかった旨を出す");
 
 /* ---------------- スマートフォンでの表示 ---------------- */
 console.log("== スマートフォン表示 ==");

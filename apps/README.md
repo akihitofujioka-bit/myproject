@@ -104,6 +104,8 @@ iPhone の Safari には、アプリだけで「3日後に鳴らす」という�
 - **費目は店名から推定する。** その店で過去にいちばん多く使った費目を選び、履歴が無い場合は店名に含まれる語（「スーパー」「薬局」「病院」など）から推す
 - **カード・電子マネーの明細は CSV で取り込める。** 日付・内容・金額の列を指定する方式で、列の並びは自動で推測する。日本の明細に多い Shift_JIS も読める。同じ日付・金額・店名の記録は二重に入らない
 - **レシートのバーコードは使っていない。** レシートに印字されているのは取引番号で、金額も品目も含まれていないため
+- **iPhone アプリではレシートを撮って合計・日付・店名を自動入力できる（第2段階）。** 撮影は VisionKit の書類カメラ、文字認識は Vision（`mobile/ios/App/App/ReceiptScannerPlugin.swift`）。どちらも端末内で完結する。認識した行から合計・日付・店名を取り出す規則は `apps/shared/receipt.js` にあり、`apps/tests/receipt.test.mjs` で検証している
+- 読み取り規則を実物のレシートで確かめるには、写真を `mobile/tools/ocr-probe.swift` に通すと、アプリと同じ認識結果（JSON）が得られる。それを `receipt.test.mjs` の fixture に加えれば、アプリを作り直さずに規則を直せる
 
 費目別の内訳は、費目ごとに色を分けず**単色の横棒**で表している。1系列（金額）の大小を比べるだけなので、色を分けても情報が増えず、どの色がどの費目かを覚える手間だけが増えるため。
 
@@ -130,6 +132,7 @@ iPhone の Safari には、アプリだけで「3日後に鳴らす」という�
 node apps/tests/ean.test.mjs     # バーコード読み取り（ブラウザ不要）
 node apps/tests/ics.test.mjs     # カレンダー用ファイルの生成（ブラウザ不要）
 node apps/tests/kakeibo.test.mjs # 家計簿のCSV取り込みと費目の推定
+node apps/tests/receipt.test.mjs # レシートの認識結果から合計・日付・店名を取り出す（ブラウザ不要）
 node apps/tests/smoke.mjs        # 画面操作ひととおり
 node apps/tests/pwa.test.mjs     # ホーム画面追加・オフライン起動
 ```

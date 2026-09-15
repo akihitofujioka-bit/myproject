@@ -89,6 +89,21 @@ open ios/App/App.xcodeproj
 家族や同僚に配るのでなければ、まず無料で試して、7日ごとの再インストールが面倒なら
 契約を検討する、という順序で問題ない。
 
+## アプリ内で定義しているプラグイン
+
+- **ReceiptScanner**（`ios/App/App/ReceiptScannerPlugin.swift`）— 家計簿の「レシートを撮る」。VisionKit の書類カメラで撮影し、Vision で日本語の文字認識をして「行の断片と位置」を JS に返す。合計・日付・店名の取り出しは JS 側（`apps/shared/receipt.js`）
+- 登録は `ios/App/App/ViewController.swift`（`CAPBridgeViewController` を継承し `capacitorDidLoad` で登録）。`Main.storyboard` の画面クラスをこの `ViewController` にしてある
+- `npm run sync` は `Package.swift` を書き換えるが、これらのファイルは触らないので消えない
+
+### 実物のレシートで読み取りを検証する（Mac）
+
+```bash
+swiftc -O -o /tmp/ocr-probe mobile/tools/ocr-probe.swift
+/tmp/ocr-probe レシートの写真.jpg > 認識結果.json
+```
+
+アプリと同じ文字認識を Mac で走らせ、同じ形の JSON を得られる。うまく取れないレシートがあれば、この JSON を `apps/tests/fixtures/` に加えて `apps/shared/receipt.js` を直す。写真も結果も Mac の中だけで処理される。
+
 ## アプリを更新するとき
 
 `apps/` の中身が変わったら、Mac で次を実行して Xcode から再ビルドする。
