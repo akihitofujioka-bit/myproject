@@ -1201,12 +1201,40 @@ function applyReceipt(lines) {
   return parsed;
 }
 
+var scanning = false;
+
+// 押したことが分かるようにする。カメラが開かないときに
+// 「押せていないのか、開けないのか」を利用者が区別できないためのもの。
+function setScanningState(on) {
+  scanning = on;
+  ["scanReceipt", "scanReceiptBar"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = on;
+    el.textContent = on ? "カメラを起動しています…" : "📷 レシートを撮る";
+  });
+}
+
 function scanReceipt() {
+  if (scanning) return;
   if (!window.ReceiptScan || !window.ReceiptScan.available()) { toast("この環境ではレシート撮影を使えません"); return; }
+  setScanningState(true);
+  toast("カメラを起動しています…");
+  // ネイティブ側から何も返ってこない場合に、ボタンが押せないまま固まるのを防ぐ。
+  // カメラが開いていればこの通知は画面の後ろに出るだけで害はない。
+  var stuck = setTimeout(function () {
+    if (!scanning) return;
+    setScanningState(false);
+    toast("カメラが開かないときは、アプリを開き直してからもう一度お試しください");
+  }, 12000);
   window.ReceiptScan.scan().then(function (res) {
+    clearTimeout(stuck);
+    setScanningState(false);
     if (res.cancelled) return;
     applyReceipt(res.lines);
   }).catch(function (err) {
+    clearTimeout(stuck);
+    setScanningState(false);
     toast("撮影できませんでした：" + (err && err.message ? err.message : "原因不明"));
   });
 }
