@@ -131,6 +131,7 @@ iPhone の Safari には、アプリだけで「3日後に鳴らす」という�
 ```
 node apps/tests/ean.test.mjs     # バーコード読み取り（ブラウザ不要）
 node apps/tests/ics.test.mjs     # カレンダー用ファイルの生成（ブラウザ不要）
+node apps/tests/nativebridge.test.mjs  # iPhone アプリ内の Capacitor ブリッジでの判定（ブラウザ不要）
 node apps/tests/kakeibo.test.mjs # 家計簿のCSV取り込みと費目の推定
 node apps/tests/receipt.test.mjs # レシートの認識結果から合計・日付・店名を取り出す（ブラウザ不要）
 node apps/tests/smoke.mjs        # 画面操作ひととおり

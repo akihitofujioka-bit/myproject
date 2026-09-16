@@ -11,11 +11,21 @@
   var PLUGIN = "ReceiptScanner";
 
   function available() {
-    var cap = global.Capacitor;
-    if (!cap || typeof cap.isNativePlatform !== "function" || !cap.isNativePlatform()) return false;
-    if (typeof cap.nativePromise !== "function") return false;
-    if (typeof cap.isPluginAvailable === "function") return cap.isPluginAvailable(PLUGIN);
-    return true;
+    // 判定は nativescan.js（バーコード読み取り）と同じ方式に揃えている。
+    //
+    // Capacitor.isPluginAvailable() は使わない。このアプリは素の HTML で
+    // @capacitor/core の JS ランタイムを読み込んでいないため、注入される
+    // window.Capacitor には Plugins が無く、isPluginAvailable() は
+    // 「Cannot convert undefined or null to object」で例外になる。
+    // その例外で家計簿画面のスクリプトが止まり、ボタンが出なかった（2026-09-16）。
+    try {
+      var cap = global.Capacitor;
+      return !!(cap &&
+                typeof cap.isNativePlatform === "function" && cap.isNativePlatform() &&
+                typeof cap.nativePromise === "function");
+    } catch (e) {
+      return false;
+    }
   }
 
   /**
