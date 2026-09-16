@@ -14,6 +14,7 @@ import UIKit
 import Capacitor
 import Vision
 import VisionKit
+import AVFoundation
 
 @objc(ReceiptScannerPlugin)
 public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCameraViewControllerDelegate {
@@ -37,12 +38,45 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
             call.reject("この端末では書類カメラを使えません")
             return
         }
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        if status == .denied || status == .restricted {
+            call.reject("カメラの使用が許可されていません。設定アプリで許可してください")
+            return
+        }
         pendingCall = call
         DispatchQueue.main.async {
+            // 表示先が見つからない・ふさがっている場合に黙って終わらないようにする。
+            // 以前は present の結果を確かめておらず、失敗しても画面に何も出なかった。
+            guard let host = self.hostViewController() else {
+                self.pendingCall = nil
+                call.reject("カメラ画面を開けませんでした（表示先の画面が見つかりません）")
+                return
+            }
+            if host.presentedViewController != nil {
+                self.pendingCall = nil
+                call.reject("ほかの画面が開いています。閉じてからもう一度お試しください")
+                return
+            }
             let camera = VNDocumentCameraViewController()
             camera.delegate = self
-            self.bridge?.viewController?.present(camera, animated: true)
+            camera.modalPresentationStyle = .fullScreen
+            host.present(camera, animated: true)
         }
+    }
+
+    /// カメラ画面を載せる画面を探す。
+    /// bridge の画面が取れないことがあるため、そのときは前面のウインドウからたどる。
+    private func hostViewController() -> UIViewController? {
+        var top: UIViewController? = bridge?.viewController
+        if top == nil {
+            let scene = UIApplication.shared.connectedScenes
+                .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+            top = scene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
+        }
+        while let presented = top?.presentedViewController {
+            top = presented
+        }
+        return top
     }
 
     // MARK: - VNDocumentCameraViewControllerDelegate
