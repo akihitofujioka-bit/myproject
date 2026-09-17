@@ -6,9 +6,9 @@
 | --- | --- | --- |
 | 冷蔵庫の在庫・賞味期限管理 | 食材の期限管理、バーコードでの登録、食品ロスの記録 | `apps/fridge/` |
 | 書類・回覧の期限トラッカー | 提出期限のある書類・回覧・申請の管理 | `apps/docs-tracker/` |
-| 蔵書の管理 | ISBN での登録と読書状況の記録 | `apps/books/` |
 | 備蓄・消耗品の管理 | 在庫が少なくなったものと期限が近いものの通知 | `apps/stock/` |
 | 家計簿 | レシートの合計額の記録、費目別の内訳、明細CSVの取り込み | `apps/kakeibo/` |
+| ポイントカード | カード・会員証の撮影保管、バーコードの画面表示 | `apps/cards/` |
 
 ## iPhone で使う（GitHub Pages で公開する）
 
@@ -31,8 +31,9 @@
 | トップページ | `https://akihitofujioka-bit.github.io/myproject/` |
 | 冷蔵庫 | `https://akihitofujioka-bit.github.io/myproject/fridge/` |
 | 書類トラッカー | `https://akihitofujioka-bit.github.io/myproject/docs-tracker/` |
-| 蔵書 | `https://akihitofujioka-bit.github.io/myproject/books/` |
 | 備蓄・消耗品 | `https://akihitofujioka-bit.github.io/myproject/stock/` |
+| 家計簿 | `https://akihitofujioka-bit.github.io/myproject/kakeibo/` |
+| ポイントカード | `https://akihitofujioka-bit.github.io/myproject/cards/` |
 
 ### iPhone のホーム画面に追加する
 
