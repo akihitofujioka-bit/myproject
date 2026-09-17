@@ -95,5 +95,48 @@ for (const [name, want] of cases) {
   ok(storeOk, `${name}: 店名 ${r.store && r.store.value}`);
 }
 
+console.log("== 買ったもの（明細）の取り出し ==");
+{
+  const items = (texts) => R.findItems(R.rowsFromLines(frag(texts)));
+
+  // 実物のレシート4種
+  const expected = {
+    "a_super": [["牛乳 1000ml", 248], ["たまご 10個", 298], ["鶏むね肉", 412], ["食パン", 158]],
+    "b_drug": [["洗剤 詰替", 398], ["ティッシュ 5箱", 428], ["シャンプー", 1374]],
+    "c_pharmacy": [["調剤基本料", 580], ["薬剤料", 1400]],
+    "d_conveni": [["おにぎり 鮭", 150], ["お茶 500ml", 140], ["パン", 250]],
+  };
+  for (const [name, want] of Object.entries(expected)) {
+    const lines = JSON.parse(fs.readFileSync(path.join(FIX, `receipt-${name}.json`), "utf8"));
+    const got = R.parse(Array.isArray(lines) ? lines : lines.lines, {}).items;
+    const same = got.length === want.length
+      && got.every((it, i) => it.name === want[i][0] && it.price === want[i][1]);
+    ok(same, `${name}: ${want.length}件を品名・金額どおりに取り出す`
+      + (same ? "" : " → " + JSON.stringify(got)));
+  }
+
+  // 支払い・税・店舗情報の行は明細にしない
+  ok(items(["牛乳 ¥248", "小計 ¥248", "消費税 ¥19", "合計 ¥267"]).length === 1,
+    "小計より下は明細にしない");
+  ok(items(["おにぎり ¥150", "合計 3点 ¥540", "現金 ¥1,000", "お釣 ¥460"]).length === 1,
+    "合計より下の支払い欄を拾わない");
+  ok(items(["サンプルスーパー 日高店", "TEL 0889-24-1234", "牛乳 ¥248"]).length === 1,
+    "店名と電話番号を明細にしない");
+  ok(items(["登録番号 T1234567890123", "牛乳 ¥248"]).length === 1, "登録番号を明細にしない");
+  ok(items(["高知県高岡郡日高村本郷1-2-3", "牛乳 ¥248"]).length === 1, "住所を明細にしない");
+  ok(items(["2026年9月15日(月) 18:42", "牛乳 ¥248"]).length === 1, "日付を明細にしない");
+  ok(items(["値引 -¥50", "牛乳 ¥248"]).length === 1, "値引きを明細にしない");
+  ok(items(["ポイント 12P", "牛乳 ¥248"]).length === 1, "ポイントを明細にしない");
+
+  // 品名の切り出し
+  ok(items(["牛乳 1000ml ¥248"])[0].name === "牛乳 1000ml",
+    "品名の中の数字（1000ml）を値段と間違えない");
+  ok(items(["牛乳 1000ml ¥248"])[0].price === 248, "値段は通貨記号のついたほうを採る");
+  ok(items(["調剤基本料 580円"])[0].price === 580, "「円」表記も値段として読む");
+  ok(items(["たまご ¥298 ※"])[0].name === "たまご", "軽減税率の印を品名に残さない");
+  ok(items(["¥248"]).length === 0, "値段だけの行は明細にしない");
+  ok(items(["----"]).length === 0, "区切り線を明細にしない");
+}
+
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて通過");
 process.exit(failures ? 1 : 0);

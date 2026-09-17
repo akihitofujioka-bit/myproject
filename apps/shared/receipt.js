@@ -194,6 +194,49 @@
     return null;
   }
 
+  /* ---------- 買ったもの（明細） ---------- */
+
+  // 明細ではない行。支払い・税・店舗情報など
+  var NOT_ITEM = /小\s*計|合\s*計|お会計|ご請求|請求額|お支払|支払|お預|預り|お釣|釣銭|おつり|内税|外税|消費税|税率|税込|税抜|税別|課税|対象|割引|値引|ポイント|残高|返金|現金|クレジット|カード|電子マネー|チャージ|レシート|領収|ありがとう|またお越し/i;
+
+  /**
+   * 買ったものを1行ずつ取り出す。
+   *
+   * レシートは「店舗情報 → 明細 → 小計・合計 → 支払い」の順に並ぶため、
+   * 小計・合計の行が出たところで打ち切る。
+   * 明細と見なすのは「品名らしい文字」と「通貨記号か『円』が付いた金額」が
+   * 同じ行にあるもの。「牛乳 1000ml ¥248」の 1000 のような、
+   * 通貨記号の無い数字は品名の一部として扱う。
+   */
+  function findItems(rows) {
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var text = normalize(rows[i].text).trim();
+      if (!text) continue;
+      // ここから下は合計と支払いの欄
+      if (/小\s*計/.test(text) || TOTAL_LABEL.test(text)) break;
+      if (NOT_ITEM.test(text)) continue;
+      if (NOT_AMOUNT_LINE.test(text)) continue;
+
+      // 通貨記号か「円」が付いた金額だけを値段とみなす
+      var priced = amountsIn(text).filter(function (a) { return a.yen; });
+      if (!priced.length) continue;
+      var price = priced[priced.length - 1].value;
+      if (price <= 0) continue;
+
+      // 行末の値段を取り除いたものを品名とする
+      var name = text
+        .replace(/(?:¥|\\)?\s*\d{1,3}(?:,\d{3})*\s*(?:円)?\s*[*※＊]?\s*$/, "")
+        .replace(/[\s　]+$/, "")
+        .trim();
+      // 品名に文字が残らないもの（値段だけの行）は明細にしない
+      if (!name || !/[^\d\s.,:;\-–—()（）%％*※＊]/.test(name)) continue;
+
+      out.push({ name: name, price: price });
+    }
+    return out;
+  }
+
   /* ---------- まとめ ---------- */
 
   /**
@@ -208,11 +251,13 @@
       total: findTotal(rows),
       date: findDate(rows),
       store: findStore(rows, opts && opts.knownStores),
+      items: findItems(rows),
       rows: rows.map(function (r) { return r.text; })
     };
   }
 
   global.Receipt = {
+    findItems: findItems,
     parse: parse,
     rowsFromLines: rowsFromLines,
     amountsIn: amountsIn,
