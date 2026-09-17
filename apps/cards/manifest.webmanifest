@@ -1,6 +1,6 @@
 {
-  "name": "蔵書の管理",
-  "short_name": "蔵書",
+  "name": "ポイントカード",
+  "short_name": "カード",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",

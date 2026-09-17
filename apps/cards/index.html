@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ポイントカード</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f6fed">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="カード">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1c1f24;
+  --muted: #667080;
+  --accent: #2f6fed;
+  --accent-weak: #e8f0ff;
+  --danger: #c0362c;
+  --danger-weak: #fdeceb;
+  --warn: #96610a;
+  --warn-weak: #fbf1de;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --surface: #1f2229;
+    --border: #333842;
+    --text: #e8eaed;
+    --muted: #9aa3b0;
+    --accent: #6d9bff;
+    --accent-weak: #22304d;
+    --danger: #ff8a80;
+    --danger-weak: #3a2320;
+    --warn: #e5b567;
+    --warn-weak: #3a2f1c;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; } /* 個別の display 指定より hidden 属性を優先させる */
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  /* 画面上部の切り欠き（ノッチ／ダイナミックアイランド）を避ける */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.wrap { max-width: 880px; margin: 0 auto; padding: 16px 16px 104px; }
+/* アプリ一覧へ戻る導線。アプリとして開いているとブラウザの「戻る」が無いため必ず置く */
+.backlink { margin: 0 0 4px; font-size: 14px; }
+.backlink a { color: var(--muted); text-decoration: none; display: inline-block; padding: 6px 0; min-height: 32px; }
+.backlink a:hover, .backlink a:focus { color: var(--accent); text-decoration: underline; }
+header h1 { font-size: 20px; margin: 8px 0 4px; }
+header p.lead { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+h2 { font-size: 15px; margin: 0 0 10px; }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.field { flex: 1 1 130px; min-width: 0; }
+.field.wide { flex: 2 1 220px; }
+input, select, textarea, button { font: inherit; color: var(--text); }
+input, select, textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  font-size: 16px; /* iOS で入力時に拡大されるのを防ぐ */
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  cursor: pointer;
+  min-height: 44px;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+button.small { padding: 4px 9px; font-size: 13px; min-height: 36px; }
+button.link { border: none; background: none; color: var(--accent); padding: 2px 4px; min-height: 0; font-size: inherit; text-decoration: underline; }
+button[disabled] { opacity: .5; cursor: default; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 4px 10px; font-size: 13px; border-radius: 999px; min-height: 36px;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.toolbar .search { flex: 1 1 200px; }
+.footnote { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.empty { color: var(--muted); text-align: center; padding: 28px 8px; }
+
+/* ---- カード一覧 ---- */
+ul.cards { list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+li.cardtile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; cursor: pointer;
+}
+li.cardtile:hover, li.cardtile:focus-within { border-color: var(--accent); }
+li.cardtile button.open { display: block; width: 100%; padding: 0; border: none; background: none; text-align: left; border-radius: 0; }
+.thumb {
+  width: 100%; aspect-ratio: 8 / 5; object-fit: cover; display: block; background: var(--accent-weak);
+}
+.thumb.placeholder { display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 26px; font-weight: 700; }
+.tile-body { padding: 8px 10px 10px; }
+.tile-body .name { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-body .code { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- 下部の固定ボタン ---- */
+.actionbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+.actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
+.actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+
+/* ---- モーダル ---- */
+.modal[hidden] { display: none; }
+.modal {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(0, 0, 0, .72);
+  display: flex; align-items: flex-start; justify-content: center; padding: 12px;
+  overflow: auto;
+}
+.modal-inner {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: min(600px, 100%); padding: 14px; margin: env(safe-area-inset-top) 0 24px;
+}
+.modal h2 { margin-bottom: 12px; }
+.modal-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.modal-actions button { flex: 1 1 auto; }
+
+/* 写真の枠（登録画面） */
+.photos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.photo-slot { border: 1px dashed var(--border); border-radius: 8px; padding: 8px; text-align: center; }
+.photo-slot img { width: 100%; aspect-ratio: 8 / 5; object-fit: cover; border-radius: 6px; display: block; background: var(--bg); }
+.photo-slot .slot-empty { aspect-ratio: 8 / 5; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; background: var(--bg); border-radius: 6px; }
+.photo-slot .slot-actions { display: flex; gap: 6px; margin-top: 6px; }
+.photo-slot .slot-actions button { flex: 1; white-space: nowrap; padding-left: 4px; padding-right: 4px; }
+.photo-slot input[type="file"] { display: none; }
+
+/* 表示画面 */
+.viewer { text-align: center; }
+.viewer .vname { font-size: 20px; font-weight: 700; margin: 0 0 8px; }
+.barcode-box {
+  background: #fff; border-radius: 10px; padding: 14px 8px;
+  margin: 0 auto 6px; overflow: hidden;
+}
+.barcode-box canvas { max-width: 100%; display: block; margin: 0 auto; image-rendering: pixelated; }
+.viewer .vcode { font-size: 22px; letter-spacing: .06em; font-variant-numeric: tabular-nums; word-break: break-all; margin: 0 0 4px; }
+.viewer .vhint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.viewer .vphotos { display: grid; gap: 10px; text-align: left; }
+.viewer .vphotos img { width: 100%; border-radius: 8px; display: block; }
+.viewer .vmemo { text-align: left; white-space: pre-wrap; font-size: 14px; background: var(--bg); border-radius: 8px; padding: 8px 10px; margin: 10px 0 0; }
+
+/* バーコード読み取り（ブラウザ版） */
+.scan-frame { position: relative; }
+#scanVideo { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #000; border-radius: 8px; }
+.scan-frame .guide {
+  position: absolute; left: 8%; right: 8%; top: 38%; height: 24%;
+  border: 2px solid #fff; border-radius: 6px; pointer-events: none;
+}
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 13px;
+  opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 40; max-width: 90vw;
+}
+.toast.show { opacity: 1; }
+.warnbox { background: var(--warn-weak); border: 1px solid var(--warn); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+ul.help { padding-left: 1.3em; margin: 0; font-size: 14px; }
+ul.help li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="backlink"><a href="../index.html">← アプリ一覧にもどる</a></p>
+  <header>
+    <h1>ポイントカード</h1>
+    <p class="lead">ポイントカードや会員証を撮影して保管し、レジで画面を見せられるようにします。バーコードのあるカードは番号を読み取っておくと、画面に大きく表示できます。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
+  </header>
+
+  <div class="warnbox" id="storageWarn" hidden></div>
+
+  <div class="toolbar">
+    <input type="search" class="search" id="search" placeholder="店名で探す" aria-label="店名で探す" autocomplete="off">
+    <div class="chips" role="group" aria-label="並び順">
+      <button type="button" class="chip" data-sort="recent" aria-pressed="true">最近使った順</button>
+      <button type="button" class="chip" data-sort="name" aria-pressed="false">名前順</button>
+    </div>
+  </div>
+
+  <ul class="cards" id="cardList"></ul>
+  <p class="empty" id="emptyMsg">まだカードがありません。下の「カードを追加」から登録してください。</p>
+
+  <section class="card">
+    <h2>控えの保存と読み込み</h2>
+    <div class="row">
+      <button type="button" id="exportBtn">JSONで保存</button>
+      <button type="button" id="importBtn">JSONから読み込み</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <p class="footnote">写真も一緒に保存されるため、ファイルは大きくなります（カード1枚あたり数百KB程度）。読み込むと今のデータは置き換わります。</p>
+  </section>
+
+  <section class="card">
+    <h2>使い方</h2>
+    <ul class="help">
+      <li><strong>カードを追加</strong> → 店名を入れ、「表を撮る」でカードを撮影します。裏面に注意書きや番号があるカードは「裏を撮る」も使ってください。</li>
+      <li>カードにバーコードがあれば「番号を読み取る」で取り込めます。レジでは、そのカードを開いて<strong>画面のバーコードをスキャナにかざす</strong>か、写真を見せてください。</li>
+      <li>画面のバーコードが読み取れない店もあります。そのときは番号を伝えるか、写真を見せる使い方になります。読み取りやすくするには、画面の明るさを上げてください。</li>
+      <li><strong>クレジットカード・キャッシュカード・保険証・マイナンバーカード・運転免許証は登録しないでください。</strong>このアプリはポイントカードや会員証のためのもので、番号そのものが重要なカードを守る仕組み（暗証番号など）はありません。</li>
+      <li><strong>データはこの端末の中だけに残ります。</strong>サーバーには送りません。アプリを削除したとき、またはブラウザのサイトデータを消したときは一緒に消えるため、「JSONで保存」で控えを取り、別の端末へ移すときは「JSONから読み込み」を使ってください。</li>
+    </ul>
+  </section>
+</div>
+
+<div class="actionbar">
+  <div>
+    <button type="button" class="primary" id="addBtn">カードを追加</button>
+  </div>
+</div>
+
+<!-- 登録・編集 -->
+<div class="modal" id="editModal" hidden role="dialog" aria-modal="true" aria-labelledby="editTitle">
+  <div class="modal-inner">
+    <h2 id="editTitle">カードを追加</h2>
+    <form id="editForm" autocomplete="off">
+      <div class="row">
+        <div class="field wide">
+          <label for="f-name">店名・カード名（必須）</label>
+          <input id="f-name" type="text" required maxlength="60" placeholder="例 ○○薬局 ポイントカード">
+        </div>
+      </div>
+
+      <label>写真</label>
+      <div class="photos">
+        <div class="photo-slot" data-side="front">
+          <img id="p-front" alt="表面" hidden>
+          <div class="slot-empty" id="e-front">表面</div>
+          <div class="slot-actions">
+            <button type="button" class="small" data-shoot="front">表を撮る</button>
+            <button type="button" class="small" data-clear="front" hidden>消す</button>
+          </div>
+          <input type="file" accept="image/*" capture="environment" data-file="front">
+        </div>
+        <div class="photo-slot" data-side="back">
+          <img id="p-back" alt="裏面" hidden>
+          <div class="slot-empty" id="e-back">裏面（任意）</div>
+          <div class="slot-actions">
+            <button type="button" class="small" data-shoot="back">裏を撮る</button>
+            <button type="button" class="small" data-clear="back" hidden>消す</button>
+          </div>
+          <input type="file" accept="image/*" capture="environment" data-file="back">
+        </div>
+      </div>
+      <p class="footnote">写真は縮小して保存します。撮り直すときは、もう一度「撮る」を押してください。撮影済みの写真を使うときは
+        <button type="button" class="link" data-pick="front">表を選ぶ</button> /
+        <button type="button" class="link" data-pick="back">裏を選ぶ</button>
+      </p>
+      <input type="file" accept="image/*" data-file="front" hidden>
+      <input type="file" accept="image/*" data-file="back" hidden>
+
+      <div class="row" style="margin-top:12px">
+        <div class="field wide">
+          <label for="f-code">バーコードの番号（任意）</label>
+          <input id="f-code" type="text" inputmode="text" maxlength="300" placeholder="例 4901234567894">
+        </div>
+        <div class="field" style="flex:0 0 auto; display:flex; align-items:flex-end">
+          <button type="button" id="scanBtn">番号を読み取る</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="f-format">表示する形式</label>
+          <select id="f-format">
+            <option value="auto">自動（番号から判断）</option>
+            <option value="ean13">JAN/EAN-13（13桁）</option>
+            <option value="ean8">EAN-8（8桁）</option>
+            <option value="upca">UPC-A（12桁）</option>
+            <option value="code128">Code128（英数字）</option>
+            <option value="qr">QRコード</option>
+            <option value="none">番号だけ表示（描画しない）</option>
+          </select>
+        </div>
+      </div>
+      <p class="footnote" id="formatNote" style="margin-bottom:10px"></p>
+
+      <div class="row">
+        <div class="field wide">
+          <label for="f-memo">メモ（任意）</label>
+          <textarea id="f-memo" rows="2" maxlength="300" placeholder="例 有効期限、ポイント倍の日など"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="submit" class="primary" id="saveBtn">保存</button>
+        <button type="button" id="cancelBtn">キャンセル</button>
+        <button type="button" class="danger" id="deleteBtn" hidden>このカードを削除</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 表示（レジで見せる画面） -->
+<div class="modal" id="viewModal" hidden role="dialog" aria-modal="true" aria-labelledby="viewName">
+  <div class="modal-inner viewer">
+    <p class="vname" id="viewName"></p>
+    <div class="barcode-box" id="barcodeBox" hidden>
+      <canvas id="barcodeCanvas"></canvas>
+    </div>
+    <p class="vcode" id="viewCode" hidden></p>
+    <p class="vhint" id="viewHint" hidden>読み取りにくいときは画面を明るくしてください</p>
+    <div class="vphotos" id="viewPhotos"></div>
+    <p class="vmemo" id="viewMemo" hidden></p>
+    <div class="modal-actions">
+      <button type="button" id="viewEdit">編集</button>
+      <button type="button" class="primary" id="viewClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- バーコード読み取り（ブラウザ版。アプリ版は端末側の読み取りを使う） -->
+<div class="modal" id="scanModal" hidden role="dialog" aria-modal="true" aria-labelledby="scanTitle">
+  <div class="modal-inner">
+    <h2 id="scanTitle">バーコードを読み取る</h2>
+    <div class="scan-frame">
+      <video id="scanVideo" playsinline muted autoplay></video>
+      <div class="guide"></div>
+    </div>
+    <p class="footnote" id="scanStatus" role="status" aria-live="polite">カメラを起動しています…</p>
+    <div class="modal-actions">
+      <button type="button" id="scanClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../shared/deeplink.js"></script>
+<script src="../shared/qr.js"></script>
+<script src="../shared/barcode.js"></script>
+<script src="../fridge/ean.js"></script>
+<script src="../shared/nativescan.js"></script>
+<script>
+"use strict";
+
+/* =========================================================
+ * 保存（IndexedDB）
+ * 写真を保存するため localStorage（上限が約5MB）ではなく IndexedDB を使う。
+ * 1件 = { id, name, memo, code, format, front(Blob|null), back(Blob|null),
+ *         createdAt, updatedAt, lastUsed }
+ * ========================================================= */
+var DB_NAME = "cards";
+var STORE = "cards";
+var dbPromise = null;
+var memoryOnly = false;   // IndexedDB が使えないときの逃げ道（画面を閉じると消える）
+var memoryStore = {};
+
+function openDb() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise(function (resolve, reject) {
+    if (!window.indexedDB) { reject(new Error("IndexedDB なし")); return; }
+    var req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = function () {
+      var db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+    };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error || new Error("IndexedDB を開けません")); };
+    req.onblocked = function () { reject(new Error("IndexedDB が他のタブで使用中です")); };
+  }).catch(function (e) {
+    memoryOnly = true;
+    var warn = document.getElementById("storageWarn");
+    warn.hidden = false;
+    warn.textContent = "この環境では保存領域が使えないため、登録したカードは画面を閉じると消えます（" + (e && e.message ? e.message : e) + "）。";
+    return null;
+  });
+  return dbPromise;
+}
+
+function tx(mode, fn) {
+  return openDb().then(function (db) {
+    if (!db) return fn(null);
+    return new Promise(function (resolve, reject) {
+      var t = db.transaction(STORE, mode);
+      var store = t.objectStore(STORE);
+      var out = fn(store);
+      t.oncomplete = function () { resolve(out); };
+      t.onerror = function () { reject(t.error); };
+      t.onabort = function () { reject(t.error || new Error("保存が中断されました")); };
+    });
+  });
+}
+
+function dbAll() {
+  if (memoryOnly) return Promise.resolve(Object.keys(memoryStore).map(function (k) { return memoryStore[k]; }));
+  return openDb().then(function (db) {
+    if (!db) return dbAll();
+    return new Promise(function (resolve, reject) {
+      var req = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+      req.onsuccess = function () { resolve(req.result || []); };
+      req.onerror = function () { reject(req.error); };
+    });
+  });
+}
+
+function dbPut(item) {
+  if (memoryOnly) { memoryStore[item.id] = item; return Promise.resolve(item); }
+  return tx("readwrite", function (store) { if (store) store.put(item); return item; });
+}
+
+function dbDelete(id) {
+  if (memoryOnly) { delete memoryStore[id]; return Promise.resolve(); }
+  return tx("readwrite", function (store) { if (store) store.delete(id); });
+}
+
+function dbClear() {
+  if (memoryOnly) { memoryStore = {}; return Promise.resolve(); }
+  return tx("readwrite", function (store) { if (store) store.clear(); });
+}
+
+/* =========================================================
+ * 画像の縮小
+ * カードの写真をそのまま保存すると1枚 3〜5MB になるので、長辺 1600px の JPEG に縮める
+ * （バーコードや文字が読める大きさは保ちつつ、1枚 200〜400KB 程度になる）。
+ * ========================================================= */
+var MAX_EDGE = 1600;
+
+function loadImage(blob) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(blob);
+    var img = new Image();
+    img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("画像を読み込めませんでした")); };
+    img.src = url;
+  });
+}
+
+function shrinkImage(blob) {
+  return loadImage(blob).then(function (img) {
+    var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    if (!w || !h) throw new Error("画像の大きさが分かりません");
+    var scale = Math.min(1, MAX_EDGE / Math.max(w, h));
+    var canvas = document.createElement("canvas");
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    return new Promise(function (resolve, reject) {
+      canvas.toBlob(function (out) {
+        if (out) resolve(out); else reject(new Error("画像を変換できませんでした"));
+      }, "image/jpeg", 0.85);
+    });
+  });
+}
+
+/* =========================================================
+ * 状態と一覧
+ * ========================================================= */
+var cards = [];
+var sortMode = "recent";
+var objectUrls = [];   // 一覧のサムネイル用。描き直すたびに解放する
+var editingId = null;
+var draft = { front: null, back: null };   // 編集中の写真（Blob）
+var viewingId = null;
+
+function uid() {
+  return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function toast(msg) {
+  var el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(function () { el.classList.remove("show"); }, 2200);
+}
+
+function releaseUrls() {
+  objectUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+  objectUrls = [];
+}
+
+function objectUrl(blob) {
+  var u = URL.createObjectURL(blob);
+  objectUrls.push(u);
+  return u;
+}
+
+function visibleCards() {
+  var q = document.getElementById("search").value.trim().toLowerCase();
+  var list = cards.filter(function (c) {
+    if (!q) return true;
+    return (c.name || "").toLowerCase().indexOf(q) >= 0 || (c.memo || "").toLowerCase().indexOf(q) >= 0 || (c.code || "").indexOf(q) >= 0;
+  });
+  list.sort(function (a, b) {
+    if (sortMode === "name") return (a.name || "").localeCompare(b.name || "", "ja");
+    return (b.lastUsed || b.createdAt || 0) - (a.lastUsed || a.createdAt || 0);
+  });
+  return list;
+}
+
+function render() {
+  releaseUrls();
+  var ul = document.getElementById("cardList");
+  ul.innerHTML = "";
+  var list = visibleCards();
+  document.getElementById("emptyMsg").hidden = cards.length > 0;
+  if (cards.length && !list.length) {
+    var p = document.createElement("li");
+    p.className = "empty";
+    p.style.gridColumn = "1 / -1";
+    p.textContent = "該当するカードがありません";
+    ul.appendChild(p);
+  }
+  list.forEach(function (c) {
+    var li = document.createElement("li");
+    li.className = "cardtile";
+    li.dataset.id = c.id;
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "open";
+    btn.setAttribute("aria-label", c.name + " を開く");
+    if (c.front) {
+      var img = document.createElement("img");
+      img.className = "thumb";
+      img.alt = "";
+      img.src = objectUrl(c.front);
+      btn.appendChild(img);
+    } else {
+      var ph = document.createElement("div");
+      ph.className = "thumb placeholder";
+      ph.textContent = (c.name || "?").slice(0, 1);
+      btn.appendChild(ph);
+    }
+    var body = document.createElement("div");
+    body.className = "tile-body";
+    var name = document.createElement("div");
+    name.className = "name";
+    name.textContent = c.name;
+    var code = document.createElement("div");
+    code.className = "code";
+    code.textContent = c.code ? c.code : (c.back ? "写真 2枚" : "写真のみ");
+    body.appendChild(name);
+    body.appendChild(code);
+    btn.appendChild(body);
+    btn.addEventListener("click", function () { openViewer(c.id); });
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+}
+
+function reload() {
+  return dbAll().then(function (list) {
+    cards = list.map(normalize);
+    render();
+  });
+}
+
+function normalize(c) {
+  return {
+    id: String(c.id || uid()),
+    name: String(c.name || ""),
+    memo: String(c.memo || ""),
+    code: String(c.code || ""),
+    format: c.format || "auto",
+    front: c.front instanceof Blob ? c.front : null,
+    back: c.back instanceof Blob ? c.back : null,
+    createdAt: Number(c.createdAt) || Date.now(),
+    updatedAt: Number(c.updatedAt) || Date.now(),
+    lastUsed: Number(c.lastUsed) || 0
+  };
+}
+
+/* =========================================================
+ * 登録・編集
+ * ========================================================= */
+function showDraftPhoto(side) {
+  var img = document.getElementById("p-" + side);
+  var empty = document.getElementById("e-" + side);
+  var clearBtn = document.querySelector("[data-clear='" + side + "']");
+  if (img.src && img.src.indexOf("blob:") === 0) URL.revokeObjectURL(img.src);
+  if (draft[side]) {
+    img.src = URL.createObjectURL(draft[side]);
+    img.hidden = false;
+    empty.hidden = true;
+    clearBtn.hidden = false;
+  } else {
+    img.removeAttribute("src");
+    img.hidden = true;
+    empty.hidden = false;
+    clearBtn.hidden = true;
+  }
+}
+
+function openEditor(card) {
+  editingId = card ? card.id : null;
+  draft = { front: card ? card.front : null, back: card ? card.back : null };
+  document.getElementById("editTitle").textContent = card ? "カードを編集" : "カードを追加";
+  document.getElementById("f-name").value = card ? card.name : "";
+  document.getElementById("f-code").value = card ? card.code : "";
+  document.getElementById("f-format").value = card ? card.format : "auto";
+  document.getElementById("f-memo").value = card ? card.memo : "";
+  document.getElementById("deleteBtn").hidden = !card;
+  showDraftPhoto("front");
+  showDraftPhoto("back");
+  updateFormatNote();
+  document.getElementById("scanBtn").hidden = false;
+  document.getElementById("editModal").hidden = false;
+  document.getElementById("f-name").focus();
+}
+
+function closeEditor() {
+  document.getElementById("editModal").hidden = true;
+  editingId = null;
+  draft = { front: null, back: null };
+  showDraftPhoto("front");
+  showDraftPhoto("back");
+}
+
+// 番号と形式の組み合わせが描けるかどうかをその場で知らせる
+function updateFormatNote() {
+  var code = document.getElementById("f-code").value.trim();
+  var fmt = document.getElementById("f-format").value;
+  var note = document.getElementById("formatNote");
+  if (!code) { note.textContent = "番号を入れなければ、写真だけのカードとして保存します。"; return; }
+  var eff = effectiveFormat(code, fmt);
+  if (fmt === "none") { note.textContent = "番号は文字として表示し、バーコードは描きません。"; return; }
+  if (!eff) { note.textContent = "この番号はどの形式でも描けません。「番号だけ表示」にするか、番号を確かめてください。"; return; }
+  try {
+    if (eff !== "qr") window.Barcode.encode(code, eff);
+    note.textContent = "表示形式: " + window.Barcode.FORMAT_LABEL[eff] + (fmt === "auto" ? "（自動判断）" : "");
+  } catch (e) {
+    note.textContent = "この番号は " + window.Barcode.FORMAT_LABEL[eff] + " として描けません: " + e.message;
+  }
+}
+
+function effectiveFormat(code, fmt) {
+  if (!code) return null;
+  if (fmt === "none") return null;
+  if (fmt === "auto") return window.Barcode.guessFormat(code);
+  return fmt;
+}
+
+function saveCard(ev) {
+  if (ev) ev.preventDefault();
+  var name = document.getElementById("f-name").value.trim();
+  if (!name) { document.getElementById("f-name").focus(); return Promise.resolve(false); }
+  var code = document.getElementById("f-code").value.trim();
+  var fmt = document.getElementById("f-format").value;
+  var eff = effectiveFormat(code, fmt);
+  if (code && fmt !== "none" && fmt !== "auto" && eff !== "qr") {
+    try { window.Barcode.encode(code, eff); }
+    catch (e) { toast("番号と形式が合いません: " + e.message); return Promise.resolve(false); }
+  }
+  var now = Date.now();
+  var existing = editingId ? cards.find(function (c) { return c.id === editingId; }) : null;
+  var item = {
+    id: existing ? existing.id : uid(),
+    name: name,
+    memo: document.getElementById("f-memo").value.trim(),
+    code: code,
+    format: fmt,
+    front: draft.front,
+    back: draft.back,
+    createdAt: existing ? existing.createdAt : now,
+    updatedAt: now,
+    lastUsed: existing ? existing.lastUsed : 0
+  };
+  return dbPut(item).then(function () {
+    closeEditor();
+    toast(existing ? "保存しました" : "カードを追加しました");
+    return reload().then(function () { return true; });
+  }).catch(function (e) {
+    toast("保存できませんでした: " + (e && e.message ? e.message : e));
+    return false;
+  });
+}
+
+function deleteCard(id) {
+  var c = cards.find(function (x) { return x.id === id; });
+  if (!c) return Promise.resolve();
+  if (!confirm("「" + c.name + "」を削除します。写真も消えます。よろしいですか？")) return Promise.resolve();
+  return dbDelete(id).then(function () {
+    closeEditor();
+    closeViewer();
+    toast("削除しました");
+    return reload();
+  });
+}
+
+function takePhoto(side, file) {
+  if (!file) return Promise.resolve();
+  if (!/^image\//.test(file.type) && !/\.(jpe?g|png|heic|heif|webp)$/i.test(file.name || "")) {
+    toast("画像ファイルを選んでください");
+    return Promise.resolve();
+  }
+  toast("写真を取り込んでいます…");
+  return shrinkImage(file).then(function (blob) {
+    draft[side] = blob;
+    showDraftPhoto(side);
+    toast("写真を取り込みました（" + Math.round(blob.size / 1024) + "KB）");
+  }).catch(function (e) {
+    // HEIC など canvas が扱えない形式のときは、そのまま保存する（表示はブラウザ任せ）
+    if (file.size <= 3 * 1024 * 1024) {
+      draft[side] = file;
+      showDraftPhoto(side);
+      toast("縮小できなかったため、そのまま保存します");
+    } else {
+      toast("写真を取り込めませんでした: " + (e && e.message ? e.message : e));
+    }
+  });
+}
+
+/* =========================================================
+ * 表示（レジで見せる画面）
+ * ========================================================= */
+var viewerUrls = [];
+
+function drawCode(card) {
+  var box = document.getElementById("barcodeBox");
+  var canvas = document.getElementById("barcodeCanvas");
+  var codeEl = document.getElementById("viewCode");
+  var hint = document.getElementById("viewHint");
+  var eff = effectiveFormat(card.code, card.format);
+  codeEl.hidden = !card.code;
+  codeEl.textContent = card.code;
+  box.hidden = true;
+  hint.hidden = true;
+  if (!eff) return;
+  try {
+    // 画面の横幅いっぱいに描く。1次元コードは 1 モジュールが 2px 以上になるようにしたい
+    var avail = Math.min(560, Math.max(240, (document.documentElement.clientWidth || 360) - 64));
+    var dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    if (eff === "qr") {
+      var q = window.QRGen.encode(card.code, "M");
+      var quiet = 4;
+      var total = q.size + quiet * 2;
+      var side = Math.min(avail, 300);
+      var scale = Math.max(2, Math.floor(side * dpr / total));
+      canvas.width = canvas.height = total * scale;
+      canvas.style.width = canvas.style.height = (canvas.width / dpr) + "px";
+      var ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#000";
+      for (var y = 0; y < q.size; y++) {
+        for (var x = 0; x < q.size; x++) {
+          if (q.modules[y][x]) ctx.fillRect((x + quiet) * scale, (y + quiet) * scale, scale, scale);
+        }
+      }
+    } else {
+      window.Barcode.toCanvas(canvas, card.code, eff, { width: avail, height: 110, dpr: dpr });
+    }
+    box.hidden = false;
+    hint.hidden = false;
+  } catch (e) {
+    codeEl.textContent = card.code + "（描画できません: " + e.message + "）";
+  }
+}
+
+function openViewer(id) {
+  var card = cards.find(function (c) { return c.id === id; });
+  if (!card) return;
+  viewingId = id;
+  document.getElementById("viewName").textContent = card.name;
+  drawCode(card);
+  var photos = document.getElementById("viewPhotos");
+  viewerUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+  viewerUrls = [];
+  photos.innerHTML = "";
+  [["front", "表面"], ["back", "裏面"]].forEach(function (pair) {
+    if (!card[pair[0]]) return;
+    var img = document.createElement("img");
+    img.alt = pair[1];
+    var u = URL.createObjectURL(card[pair[0]]);
+    viewerUrls.push(u);
+    img.src = u;
+    photos.appendChild(img);
+  });
+  var memo = document.getElementById("viewMemo");
+  memo.hidden = !card.memo;
+  memo.textContent = card.memo;
+  document.getElementById("viewModal").hidden = false;
+  document.getElementById("viewModal").scrollTop = 0;
+  // 「最近使った順」のために、開いた時刻を記録する（保存に失敗しても表示は続ける）
+  card.lastUsed = Date.now();
+  dbPut(card).catch(function () {});
+}
+
+function closeViewer() {
+  document.getElementById("viewModal").hidden = true;
+  viewerUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+  viewerUrls = [];
+  if (viewingId) { viewingId = null; render(); }
+}
+
+/* =========================================================
+ * バーコード読み取り
+ * アプリ版: 端末側の読み取り（Vision。QR・Code128 なども読める）
+ * ブラウザ版: 画面内カメラ。BarcodeDetector があれば多形式、無ければ自前の EAN デコーダ
+ * ========================================================= */
+var scan = { stream: null, timer: null, detector: null, prepared: false, last: null, lastCount: 0, busy: false };
+var scanVideo = document.getElementById("scanVideo");
+var scanCanvas = document.createElement("canvas");
+
+function setScanStatus(msg) { document.getElementById("scanStatus").textContent = msg; }
+
+function cameraErrorMessage(e) {
+  var name = e && e.name;
+  if (name === "NotAllowedError" || name === "SecurityError") return "カメラの使用が許可されていません。設定で許可するか、番号を手入力してください。";
+  if (name === "NotFoundError" || name === "OverconstrainedError") return "使えるカメラが見つかりませんでした。番号を手入力してください。";
+  if (name === "NotReadableError") return "カメラを他のアプリが使用中です。閉じてからもう一度お試しください。";
+  return "カメラを起動できませんでした。番号を手入力してください。";
+}
+
+function startScan() {
+  if (window.NativeScan && window.NativeScan.available()) {
+    var btn = document.getElementById("scanBtn");
+    btn.disabled = true;
+    return window.NativeScan.scan(window.NativeScan.FORMAT.ALL, "カードのバーコードを枠に合わせてください").then(function (code) {
+      btn.disabled = false;
+      if (code) acceptCode(code);
+    }).catch(function (e) {
+      btn.disabled = false;
+      toast("読み取れませんでした: " + (e && e.message ? e.message : e));
+    });
+  }
+  openScanner();
+  return Promise.resolve();
+}
+
+function prepareDetector() {
+  if (scan.prepared) return Promise.resolve();
+  scan.prepared = true;
+  if (!("BarcodeDetector" in window)) return Promise.resolve();
+  return window.BarcodeDetector.getSupportedFormats().then(function (formats) {
+    var want = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code", "itf", "codabar"].filter(function (f) {
+      return formats.indexOf(f) >= 0;
+    });
+    if (want.length) scan.detector = new window.BarcodeDetector({ formats: want });
+  }).catch(function () { /* 対応していなければ自前デコーダに任せる */ });
+}
+
+function openScanner() {
+  document.getElementById("scanModal").hidden = false;
+  scan.last = null;
+  scan.lastCount = 0;
+  setScanStatus("カメラを起動しています…");
+  if (!window.isSecureContext) { setScanStatus("カメラは https:// で開いたときだけ使えます。番号を手入力してください。"); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setScanStatus("このブラウザはカメラに対応していません。番号を手入力してください。"); return; }
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+  }).then(function (stream) {
+    scan.stream = stream;
+    scanVideo.srcObject = stream;
+    var track = stream.getVideoTracks()[0];
+    if (track && track.applyConstraints) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
+    return scanVideo.play().catch(function () {});
+  }).then(prepareDetector).then(function () {
+    setScanStatus(scan.detector ? "バーコードまたはQRコードを枠の中に合わせてください。" : "バーコード（JAN）を枠の中に合わせてください。");
+    scan.timer = setInterval(tickScan, 150);
+  }).catch(function (e) { setScanStatus(cameraErrorMessage(e)); });
+}
+
+function closeScanner() {
+  document.getElementById("scanModal").hidden = true;
+  if (scan.timer) { clearInterval(scan.timer); scan.timer = null; }
+  if (scan.stream) { scan.stream.getTracks().forEach(function (t) { t.stop(); }); scan.stream = null; }
+  scanVideo.srcObject = null;
+  scan.busy = false;
+}
+
+function tickScan() {
+  if (scan.busy || !scanVideo.videoWidth) return;
+  scan.busy = true;
+  detectOnce().then(function (code) {
+    scan.busy = false;
+    if (!code) return;
+    // 同じ番号を2回続けて読めたときだけ確定する（1回だけの誤読を拾わないため）
+    if (scan.last === code) scan.lastCount++; else { scan.last = code; scan.lastCount = 1; }
+    if (scan.lastCount >= 2) { closeScanner(); acceptCode(code); }
+  }, function () { scan.busy = false; });
+}
+
+function detectOnce() {
+  if (scan.detector) {
+    return scan.detector.detect(scanVideo).then(function (found) {
+      if (found && found.length) return found[0].rawValue;
+      return decodeFromCanvas();
+    }).catch(function () { return decodeFromCanvas(); });
+  }
+  return Promise.resolve(decodeFromCanvas());
+}
+
+function decodeFromCanvas() {
+  if (!window.EAN || !scanVideo.videoWidth) return null;
+  var vw = scanVideo.videoWidth, vh = scanVideo.videoHeight;
+  var bandHeight = Math.max(1, Math.round(vh * 0.34));
+  var bandTop = Math.round((vh - bandHeight) / 2);
+  var w = Math.min(1280, vw);
+  var h = Math.max(1, Math.round(bandHeight * (w / vw)));
+  scanCanvas.width = w;
+  scanCanvas.height = h;
+  var ctx = scanCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(scanVideo, 0, bandTop, vw, bandHeight, 0, 0, w, h);
+  return window.EAN.decodeImageData(ctx.getImageData(0, 0, w, h));
+}
+
+function acceptCode(code) {
+  if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) { /* 対応していなければ何もしない */ } }
+  document.getElementById("f-code").value = String(code).trim();
+  document.getElementById("f-format").value = "auto";
+  updateFormatNote();
+  toast("番号を読み取りました");
+}
+
+/* =========================================================
+ * 控えの保存・読み込み（写真は Base64 の data URL に変換して JSON に入れる）
+ * ========================================================= */
+function blobToDataUrl(blob) {
+  return new Promise(function (resolve, reject) {
+    var r = new FileReader();
+    r.onload = function () { resolve(r.result); };
+    r.onerror = function () { reject(r.error); };
+    r.readAsDataURL(blob);
+  });
+}
+
+function dataUrlToBlob(url) {
+  if (typeof url !== "string" || url.indexOf("data:") !== 0) return null;
+  var m = /^data:([^;,]+)?(;base64)?,(.*)$/.exec(url);
+  if (!m) return null;
+  var type = m[1] || "application/octet-stream";
+  var bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  var arr = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: type });
+}
+
+function exportJson() {
+  return Promise.all(cards.map(function (c) {
+    return Promise.all([c.front ? blobToDataUrl(c.front) : null, c.back ? blobToDataUrl(c.back) : null]).then(function (imgs) {
+      return { id: c.id, name: c.name, memo: c.memo, code: c.code, format: c.format, front: imgs[0], back: imgs[1], createdAt: c.createdAt, updatedAt: c.updatedAt, lastUsed: c.lastUsed };
+    });
+  })).then(function (list) {
+    var text = JSON.stringify({ app: "cards", version: 1, exportedAt: new Date().toISOString(), cards: list }, null, 1);
+    var blob = new Blob([text], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "cards-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast("保存しました（" + list.length + "件）");
+    return text;
+  });
+}
+
+function importJson(text) {
+  var data;
+  try { data = JSON.parse(text); } catch (e) { toast("JSON として読めませんでした"); return Promise.resolve(false); }
+  if (!data || data.app !== "cards" || !Array.isArray(data.cards)) { toast("このアプリの控えファイルではありません"); return Promise.resolve(false); }
+  if (cards.length && !confirm("今のカード " + cards.length + " 件を、ファイルの " + data.cards.length + " 件で置き換えます。よろしいですか？")) return Promise.resolve(false);
+  return dbClear().then(function () {
+    return data.cards.reduce(function (p, raw) {
+      return p.then(function () {
+        var item = normalize(Object.assign({}, raw, { front: dataUrlToBlob(raw.front), back: dataUrlToBlob(raw.back) }));
+        return dbPut(item);
+      });
+    }, Promise.resolve());
+  }).then(function () {
+    toast("読み込みました（" + data.cards.length + "件）");
+    return reload().then(function () { return true; });
+  });
+}
+
+/* =========================================================
+ * 画面のつなぎ込み
+ * ========================================================= */
+document.getElementById("addBtn").addEventListener("click", function () { openEditor(null); });
+document.getElementById("editForm").addEventListener("submit", saveCard);
+document.getElementById("cancelBtn").addEventListener("click", closeEditor);
+document.getElementById("deleteBtn").addEventListener("click", function () { if (editingId) deleteCard(editingId); });
+document.getElementById("scanBtn").addEventListener("click", startScan);
+document.getElementById("scanClose").addEventListener("click", closeScanner);
+document.getElementById("f-code").addEventListener("input", updateFormatNote);
+document.getElementById("f-format").addEventListener("change", updateFormatNote);
+document.getElementById("viewClose").addEventListener("click", closeViewer);
+document.getElementById("viewEdit").addEventListener("click", function () {
+  var card = cards.find(function (c) { return c.id === viewingId; });
+  closeViewer();
+  if (card) openEditor(card);
+});
+document.getElementById("search").addEventListener("input", render);
+Array.prototype.forEach.call(document.querySelectorAll(".chip[data-sort]"), function (chip) {
+  chip.addEventListener("click", function () {
+    sortMode = chip.dataset.sort;
+    Array.prototype.forEach.call(document.querySelectorAll(".chip[data-sort]"), function (c) {
+      c.setAttribute("aria-pressed", c === chip ? "true" : "false");
+    });
+    render();
+  });
+});
+Array.prototype.forEach.call(document.querySelectorAll("[data-shoot]"), function (btn) {
+  btn.addEventListener("click", function () {
+    document.querySelector("input[capture][data-file='" + btn.dataset.shoot + "']").click();
+  });
+});
+Array.prototype.forEach.call(document.querySelectorAll("[data-pick]"), function (btn) {
+  btn.addEventListener("click", function () {
+    document.querySelector("input:not([capture])[data-file='" + btn.dataset.pick + "']").click();
+  });
+});
+Array.prototype.forEach.call(document.querySelectorAll("input[data-file]"), function (input) {
+  input.addEventListener("change", function () {
+    var file = input.files && input.files[0];
+    input.value = "";
+    takePhoto(input.dataset.file, file);
+  });
+});
+Array.prototype.forEach.call(document.querySelectorAll("[data-clear]"), function (btn) {
+  btn.addEventListener("click", function () {
+    draft[btn.dataset.clear] = null;
+    showDraftPhoto(btn.dataset.clear);
+  });
+});
+document.getElementById("exportBtn").addEventListener("click", exportJson);
+document.getElementById("importBtn").addEventListener("click", function () { document.getElementById("importFile").click(); });
+document.getElementById("importFile").addEventListener("change", function () {
+  var f = this.files && this.files[0];
+  this.value = "";
+  if (!f) return;
+  f.text().then(importJson);
+});
+// モーダルの外側（暗い部分）をタップしたら閉じる
+[["editModal", closeEditor], ["viewModal", closeViewer], ["scanModal", closeScanner]].forEach(function (pair) {
+  document.getElementById(pair[0]).addEventListener("click", function (ev) {
+    if (ev.target === this) pair[1]();
+  });
+});
+document.addEventListener("keydown", function (ev) {
+  if (ev.key !== "Escape") return;
+  if (!document.getElementById("scanModal").hidden) closeScanner();
+  else if (!document.getElementById("viewModal").hidden) closeViewer();
+  else if (!document.getElementById("editModal").hidden) closeEditor();
+});
+
+// 端末側の読み取りが無い環境でも、手入力の導線は常に残す
+if (!window.isSecureContext && !(window.NativeScan && window.NativeScan.available())) {
+  document.getElementById("scanBtn").title = "カメラは https:// で開いたときだけ使えます";
+}
+
+reload();
+
+// ホーム画面に追加して使うための登録（アプリ版では sw.js が無いので何もしない）
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register("sw.js").catch(function () {});
+}
+
+// 動作確認（apps/tests）から使うための窓口
+window.cardsApp = {
+  reload: reload,
+  saveCard: saveCard,
+  openEditor: openEditor,
+  openViewer: openViewer,
+  closeViewer: closeViewer,
+  takePhoto: takePhoto,
+  acceptCode: acceptCode,
+  exportJson: exportJson,
+  importJson: importJson,
+  effectiveFormat: effectiveFormat,
+  shrinkImage: shrinkImage,
+  getCards: function () { return cards; },
+  isMemoryOnly: function () { return memoryOnly; }
+};
+</script>
+</body>
+</html>

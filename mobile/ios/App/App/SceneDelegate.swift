@@ -8,7 +8,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        // 素の CAPBridgeViewController ではなく、自作プラグイン（レシート撮影）を登録する
+        // ViewController を使う。以前は素の画面を生成していたため、storyboard で指定した
+        // ViewController が使われず、プラグインの登録コードが一度も動いていなかった。
+        window?.rootViewController = ViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
