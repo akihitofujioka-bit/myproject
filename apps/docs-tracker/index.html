@@ -331,6 +331,17 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
   <ul class="items" id="list"></ul>
 
+  <!-- 端末側の書類カメラを使うため、アプリとして開いたときだけ出す -->
+  <section class="card" id="docPhotoCard" hidden>
+    <h2>書類を撮って写真に保存</h2>
+    <p class="footnote" style="margin:0 0 10px">
+      回覧や掲示物を撮って、iPhone の写真アプリに保存します。書類の四隅を自動で見つけて歪みを直します。
+      <strong>シャッター音は鳴りません</strong>（書類カメラは映像から1コマを切り出す仕組みのためで、Apple 純正の「メモ」の書類スキャンと同じです）。
+      撮った画像はこのアプリには残らず、写真アプリにだけ保存されます。
+    </p>
+    <button type="button" class="primary" id="docPhotoBtn">📄 書類を撮る</button>
+  </section>
+
   <section class="card">
     <h2>データの持ち出し・引き継ぎ</h2>
     <div class="chips">
@@ -380,6 +391,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
 <script src="../shared/qr.js"></script>
 <script src="../shared/nativescan.js"></script>
+<script src="../shared/receiptscan.js"></script>
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
 <script>
@@ -1151,6 +1163,45 @@ document.getElementById("pasteClear").addEventListener("click", function () {
       });
   });
 })();
+
+/* ---------- 書類を撮って写真に保存 ---------- */
+
+var photographing = false;
+
+function setDocPhotoState(on) {
+  photographing = on;
+  var el = document.getElementById("docPhotoBtn");
+  el.disabled = on;
+  el.textContent = on ? "カメラを起動しています…" : "📄 書類を撮る";
+}
+
+document.getElementById("docPhotoBtn").addEventListener("click", function () {
+  if (photographing) return;
+  if (!window.ReceiptScan || !window.ReceiptScan.available()) { toast("この環境では書類の撮影を使えません"); return; }
+  setDocPhotoState(true);
+  toast("カメラを起動しています…");
+  // 返ってこないときにボタンが固まらないようにする
+  var stuck = setTimeout(function () {
+    if (!photographing) return;
+    setDocPhotoState(false);
+    toast("カメラが開かないときは、アプリを開き直してからもう一度お試しください");
+  }, 12000);
+  window.ReceiptScan.scanToPhotos().then(function (res) {
+    clearTimeout(stuck);
+    setDocPhotoState(false);
+    if (res.cancelled) return;
+    toast(res.saved + "枚を写真アプリに保存しました");
+  }).catch(function (err) {
+    clearTimeout(stuck);
+    setDocPhotoState(false);
+    toast("保存できませんでした：" + (err && err.message ? err.message : "原因不明"));
+  });
+});
+
+// 端末側の書類カメラが使えるときだけ出す
+if (window.ReceiptScan && window.ReceiptScan.available()) {
+  document.getElementById("docPhotoCard").hidden = false;
+}
 
 </script>
 </body>

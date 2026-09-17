@@ -15,6 +15,7 @@ import Capacitor
 import Vision
 import VisionKit
 import AVFoundation
+import Photos
 
 @objc(ReceiptScannerPlugin)
 public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCameraViewControllerDelegate {
@@ -22,10 +23,13 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
     public let jsName = "ReceiptScanner"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "scan", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "scanToPhotos", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise)
     ]
 
     private var pendingCall: CAPPluginCall?
+    /// 撮ったものの扱い方。"text" = 文字を読み取って返す / "photos" = 写真アプリに保存する
+    private var mode: String = "text"
 
     @objc func isSupported(_ call: CAPPluginCall) {
         call.resolve(["supported": VNDocumentCameraViewController.isSupported])
@@ -34,6 +38,18 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
     /// 書類カメラを開き、撮影された最初のページを文字認識して返す。
     /// 利用者が閉じた場合は { cancelled: true } を返す（失敗ではない）。
     @objc func scan(_ call: CAPPluginCall) {
+        startCamera(call, mode: "text")
+    }
+
+    /// 書類カメラを開き、撮ったページを写真アプリに保存する。
+    /// 書類カメラは映像から1コマを切り出す仕組みのため、シャッター音は鳴らない
+    /// （Apple 純正の「メモ」の書類スキャンと同じ）。
+    @objc func scanToPhotos(_ call: CAPPluginCall) {
+        startCamera(call, mode: "photos")
+    }
+
+    private func startCamera(_ call: CAPPluginCall, mode: String) {
+        self.mode = mode
         guard VNDocumentCameraViewController.isSupported else {
             call.reject("この端末では書類カメラを使えません")
             return
@@ -90,6 +106,10 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
             call.resolve(["cancelled": true])
             return
         }
+        if mode == "photos" {
+            savePages(scan, call: call)
+            return
+        }
         // 1枚目だけを使う（レシートは1枚で完結するため）
         let image = scan.imageOfPage(at: 0)
         recognize(image: image) { result in
@@ -118,6 +138,34 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         controller.dismiss(animated: true)
         pendingCall?.reject("カメラでエラーが起きました: \(error.localizedDescription)")
         pendingCall = nil
+    }
+
+    // MARK: - 写真アプリへの保存
+
+    /// 撮ったページをすべて写真アプリに追加する。
+    /// 追加だけの許可（addOnly）を求めるため、既存の写真を読むことはない。
+    private func savePages(_ scan: VNDocumentCameraScan, call: CAPPluginCall) {
+        var images: [UIImage] = []
+        for index in 0..<scan.pageCount {
+            images.append(scan.imageOfPage(at: index))
+        }
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else {
+                call.reject("写真への追加が許可されていません。設定アプリで許可してください")
+                return
+            }
+            PHPhotoLibrary.shared().performChanges({
+                for image in images {
+                    _ = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
+            }, completionHandler: { success, error in
+                if success {
+                    call.resolve(["cancelled": false, "saved": images.count])
+                } else {
+                    call.reject("写真に保存できませんでした: \(error?.localizedDescription ?? "原因不明")")
+                }
+            })
+        }
     }
 
     // MARK: - 文字認識

@@ -6,17 +6,6 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>ja</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>jp.myproject.dailyapps</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>myproject</string>
-			</array>
-		</dict>
-	</array>
 	<key>CFBundleDisplayName</key>
 	<string>壱師</string>
 	<key>CFBundleExecutable</key>
@@ -31,12 +20,25 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>jp.myproject.dailyapps</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>myproject</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>商品のバーコードを読み取るためにカメラを使用します。撮影した映像は端末の中だけで処理され、どこにも送信しません。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>撮影した書類を写真アプリに保存するために使用します。既存の写真を読み取ることはありません。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
