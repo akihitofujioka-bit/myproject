@@ -186,6 +186,23 @@ li.item.done { opacity: .62; }
 }
 .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
 .footnote { font-size: 12px; color: var(--muted); }
+/* 読み取った会議の確認欄 */
+.meeting {
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--bg);
+}
+.meeting .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.meeting .head input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
+.meeting .head .no { font-weight: 700; }
+.meeting .warn { color: var(--warn); font-size: 12px; }
+/* 共通の input 指定（width:100%）がチェックボックスにも効いてしまうため戻す */
+.meeting label.check { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text); margin: 0; min-height: 40px; }
+.meeting label.check input[type="checkbox"] { width: 22px; height: 22px; flex: none; margin: 0; }
+
 .toast {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
   background: var(--text); color: var(--bg);
@@ -262,7 +279,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
           <label for="f-kind">種別</label>
           <select id="f-kind" name="kind">
             <option>申請</option><option>回覧</option><option>提出</option>
-            <option>支払い</option><option>その他</option>
+            <option>会議</option><option>支払い</option><option>その他</option>
           </select>
         </div>
       </div>
@@ -314,7 +331,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
         <select id="kindFilter">
           <option value="すべて">すべて</option>
           <option>申請</option><option>回覧</option><option>提出</option>
-          <option>支払い</option><option>その他</option>
+          <option>会議</option><option>支払い</option><option>その他</option>
         </select>
       </div>
       <div class="field">
@@ -332,6 +349,28 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   <ul class="items" id="list"></ul>
 
   <!-- 端末側の書類カメラを使うため、アプリとして開いたときだけ出す -->
+  <section class="card" id="meetingCard" hidden>
+    <h2>会議の通知を読み取る</h2>
+    <p class="footnote" style="margin:0 0 10px">
+      開催通知を撮ると、<strong>会議名・日付・時刻・場所・懇親会の有無</strong>を読み取ります。
+      通知の書き方は文書ごとに違うため、<strong>必ず内容を確認してから登録してください</strong>。
+      1枚に複数の会議が載っている場合は分けて読み取ります。
+    </p>
+    <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
+  </section>
+
+  <section class="card" id="meetingConfirm" hidden>
+    <h2>読み取った会議（確認して登録）</h2>
+    <p class="footnote" id="meetingSummary" style="margin:0 0 10px"></p>
+    <div id="meetingForms"></div>
+    <div class="chips" style="margin-top:10px">
+      <button type="button" class="primary" id="meetingRegisterBoth">カレンダーとアプリに登録</button>
+      <button type="button" id="meetingRegisterCal">カレンダーだけ</button>
+      <button type="button" id="meetingRegisterApp">アプリだけ</button>
+      <button type="button" class="link" id="meetingCancel">やめる</button>
+    </div>
+  </section>
+
   <section class="card" id="docPhotoCard" hidden>
     <h2>書類を撮って写真に保存</h2>
     <p class="footnote" style="margin:0 0 10px">
@@ -392,6 +431,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/qr.js"></script>
 <script src="../shared/nativescan.js"></script>
 <script src="../shared/receiptscan.js"></script>
+<script src="../shared/receipt.js"></script>
+<script src="../shared/meeting.js"></script>
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
 <script>
@@ -1202,6 +1243,208 @@ document.getElementById("docPhotoBtn").addEventListener("click", function () {
 if (window.ReceiptScan && window.ReceiptScan.available()) {
   document.getElementById("docPhotoCard").hidden = false;
 }
+
+/* ---------- 会議の通知を読み取って登録する ---------- */
+
+var scannedMeetings = [];
+var meetingBusy = false;
+
+function setMeetingBusy(on) {
+  meetingBusy = on;
+  var el = document.getElementById("meetingScanBtn");
+  el.disabled = on;
+  el.textContent = on ? "カメラを起動しています…" : "📄 会議の通知を撮る";
+}
+
+document.getElementById("meetingScanBtn").addEventListener("click", function () {
+  if (meetingBusy) return;
+  if (!window.ReceiptScan || !window.ReceiptScan.available()) { toast("この環境では読み取りを使えません"); return; }
+  setMeetingBusy(true);
+  toast("カメラを起動しています…");
+  var stuck = setTimeout(function () {
+    if (!meetingBusy) return;
+    setMeetingBusy(false);
+    toast("カメラが開かないときは、アプリを開き直してからもう一度お試しください");
+  }, 12000);
+  window.ReceiptScan.scan().then(function (res) {
+    clearTimeout(stuck);
+    setMeetingBusy(false);
+    if (res.cancelled) return;
+    applyMeetingScan(res.lines);
+  }).catch(function (err) {
+    clearTimeout(stuck);
+    setMeetingBusy(false);
+    toast("読み取れませんでした：" + (err && err.message ? err.message : "原因不明"));
+  });
+});
+
+// 認識結果から会議を取り出して確認欄に出す（テストからも呼べるよう関数に分ける）
+function applyMeetingScan(lines) {
+  var rows = window.Receipt.rowsFromLines(lines).map(function (r) { return r.text; });
+  var found = window.Meeting.parse(rows, {});
+  renderMeetings(found);
+  if (!found.length) toast("会議の予定を見つけられませんでした");
+  else toast(found.length + "件の会議を読み取りました。内容を確認してください");
+  return found;
+}
+
+function renderMeetings(list) {
+  scannedMeetings = list || [];
+  var box = document.getElementById("meetingConfirm");
+  box.hidden = !scannedMeetings.length;
+  if (!scannedMeetings.length) { document.getElementById("meetingForms").innerHTML = ""; return; }
+
+  document.getElementById("meetingSummary").textContent =
+    scannedMeetings.length + "件を読み取りました。間違いがあればこの画面で直してから登録してください。";
+
+  document.getElementById("meetingForms").innerHTML = scannedMeetings.map(function (m, i) {
+    var warn = m.dateConfidence === "medium"
+      ? '<div class="warn">※ 通知に年が書かれていなかったため、いちばん近い年を当てはめています。確認してください</div>' : "";
+    return '<div class="meeting" data-idx="' + i + '">' +
+      '<div class="head"><input type="checkbox" id="mtg' + i + '" checked>' +
+        '<label class="no" for="mtg' + i + '">' + (i + 1) + "件目</label></div>" +
+      '<div class="row">' +
+        '<div class="field wide"><label>会議名</label><input class="m-title" value="' + esc(m.title) + '"></div>' +
+        '<div class="field date"><label>日付</label><input type="date" class="m-date" value="' + esc(m.date) + '"></div>' +
+      "</div>" +
+      '<div class="row">' +
+        '<div class="field"><label>開始</label><input type="time" class="m-start" value="' + esc(m.startTime) + '"></div>' +
+        '<div class="field"><label>終了（任意）</label><input type="time" class="m-end" value="' + esc(m.endTime) + '"></div>' +
+        '<div class="field wide"><label>場所</label><input class="m-place" value="' + esc(m.place) + '"></div>' +
+      "</div>" +
+      '<div class="row" style="align-items:flex-end">' +
+        '<div class="field"><label class="check"><input type="checkbox" class="m-social"' +
+          (m.social.has ? " checked" : "") + "> 懇親会あり</label></div>" +
+        '<div class="field"><label>会費（円）</label><input type="number" class="m-fee" min="0" value="' +
+          (m.social.fee == null ? "" : m.social.fee) + '"></div>' +
+      "</div>" + warn +
+      "</div>";
+  }).join("");
+}
+
+// 画面で直された内容を読み取る（チェックの付いたものだけ）
+function collectMeetings() {
+  var out = [];
+  Array.prototype.forEach.call(document.querySelectorAll("#meetingForms .meeting"), function (el) {
+    var i = Number(el.getAttribute("data-idx"));
+    if (!document.getElementById("mtg" + i).checked) return;
+    var get = function (cls) { var n = el.querySelector("." + cls); return n ? n.value.trim() : ""; };
+    var social = el.querySelector(".m-social").checked;
+    var fee = el.querySelector(".m-fee").value;
+    out.push({
+      title: get("m-title") || "会議",
+      date: get("m-date"),
+      startTime: get("m-start"),
+      endTime: get("m-end"),
+      place: get("m-place"),
+      social: { has: social, fee: fee === "" ? null : Number(fee) }
+    });
+  });
+  return out;
+}
+
+function meetingNote(m) {
+  var parts = [];
+  if (m.startTime) parts.push(m.startTime + (m.endTime ? "〜" + m.endTime : "") + " 開始");
+  if (m.social.has) parts.push("懇親会あり" + (m.social.fee ? "（会費 " + m.social.fee.toLocaleString("ja-JP") + "円）" : ""));
+  else parts.push("懇親会なし");
+  parts.push("（会議の通知から登録）");
+  return parts.join("\n");
+}
+
+// アプリの一覧に会議として登録する
+function registerMeetingsToApp(list) {
+  var now = new Date().toISOString();
+  list.forEach(function (m) {
+    state.items.push({
+      id: uid(),
+      title: m.title,
+      kind: "会議",
+      dest: m.place,
+      dueOn: m.date,
+      status: "未着手",
+      priority: "中",
+      note: meetingNote(m),
+      createdAt: now,
+      doneAt: "",
+      icsSeq: 0
+    });
+  });
+  save();
+  render();
+}
+
+// 端末のカレンダーに予定として渡す
+function registerMeetingsToCalendar(list) {
+  var events = list.map(function (m, i) {
+    var minutes = 60;
+    if (m.startTime && m.endTime) {
+      var sp = m.startTime.split(":").map(Number), ep = m.endTime.split(":").map(Number);
+      var diff = (ep[0] * 60 + ep[1]) - (sp[0] * 60 + sp[1]);
+      if (diff > 0) minutes = diff;
+    }
+    return {
+      uid: "mtg-" + Date.now() + "-" + i + "@docs-tracker",
+      title: m.title,
+      date: m.date,
+      time: m.startTime || "09:00",
+      durationMinutes: minutes,
+      location: m.place,
+      description: meetingNote(m),
+      alarms: [1440, 30],   // 前日の同時刻と、開始30分前
+      sequence: 0
+    };
+  });
+  var text = window.ICS.build(events, { calendarName: "会議" });
+  return window.ICS.deliver(text, window.ICS.filename("meetings"));
+}
+
+function registerMeetings(mode) {
+  var list = collectMeetings().filter(function (m) { return m.date; });
+  var skipped = collectMeetings().length - list.length;
+  if (!list.length) {
+    toast(skipped ? "日付が空の会議は登録できません。日付を入れてください" : "登録するものにチェックを付けてください");
+    return;
+  }
+  var done = [];
+  if (mode === "app" || mode === "both") {
+    registerMeetingsToApp(list);
+    done.push("アプリに" + list.length + "件");
+  }
+  if (mode === "cal" || mode === "both") {
+    registerMeetingsToCalendar(list).then(function (how) {
+      if (how === "cancelled") return;
+      toast(how === "shared"
+        ? "カレンダーアプリを選んでください（" + list.length + "件）"
+        : "予定ファイルを保存しました（" + list.length + "件）。開くとカレンダーに登録できます");
+    });
+    done.push("カレンダーに" + list.length + "件");
+  } else {
+    toast(done.join("／") + "登録しました" + (skipped ? "（日付が空の" + skipped + "件は除く）" : ""));
+  }
+  if (mode === "app") renderMeetings([]);
+}
+
+document.getElementById("meetingRegisterBoth").addEventListener("click", function () { registerMeetings("both"); });
+document.getElementById("meetingRegisterCal").addEventListener("click", function () { registerMeetings("cal"); });
+document.getElementById("meetingRegisterApp").addEventListener("click", function () { registerMeetings("app"); });
+document.getElementById("meetingCancel").addEventListener("click", function () {
+  renderMeetings([]);
+  toast("読み取った内容を取り消しました");
+});
+
+// 端末側の書類カメラが使えるときだけ出す
+if (window.ReceiptScan && window.ReceiptScan.available()) {
+  document.getElementById("meetingCard").hidden = false;
+}
+
+// テストから読み取り結果を差し込むための入口
+window.docsApp = {
+  applyMeetingScan: applyMeetingScan,
+  renderMeetings: renderMeetings,
+  collectMeetings: collectMeetings,
+  registerMeetings: registerMeetings
+};
 
 </script>
 </body>

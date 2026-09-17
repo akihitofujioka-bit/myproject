@@ -9,6 +9,7 @@
  */
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -513,6 +514,91 @@ console.log("== 書類の撮影（apps/docs-tracker）==");
   await ctx3.close();
 
   ok(derrs.length === 0, "JSエラーなし" + (derrs.length ? " → " + derrs.join(" / ") : ""));
+}
+
+/* ---------------- 会議の通知の読み取りと登録 ---------------- */
+console.log("== 会議の通知（apps/docs-tracker）==");
+{
+  const mctx = await browser.newContext({ acceptDownloads: true });
+  const mp = await mctx.newPage();
+  const merrs = [];
+  mp.on("pageerror", (e) => merrs.push(String(e)));
+  const url = "file://" + path.join(ROOT, "apps/docs-tracker/index.html");
+  const asLines = (text) => text.split("\n").map((t, i) => ({ text: t, x: 0, y: i * 0.04, width: 0.8, height: 0.03, confidence: 1 }));
+  const notice = (name) => fs.readFileSync(path.join(ROOT, "apps/tests/fixtures", `meeting-${name}.txt`), "utf8");
+
+  await mp.goto(url);
+  ok(!(await mp.locator("#meetingCard").isVisible()), "ブラウザでは会議の読み取りカードを出さない");
+
+  await mp.addInitScript(() => {
+    window.Capacitor = { isNativePlatform: () => true, nativePromise: () => Promise.resolve({ cancelled: true }) };
+  });
+  await mp.goto(url);
+  await mp.evaluate(() => localStorage.clear());
+  await mp.reload();
+  ok(await mp.locator("#meetingCard").isVisible(), "アプリとして開くと会議の読み取りカードが出る");
+
+  // 1枚に2件の通知
+  const found = await mp.evaluate((l) => window.docsApp.applyMeetingScan(l), asLines(notice("c_multi")));
+  ok(found.length === 2, "1枚から2件の会議を読み取る");
+  ok(await mp.locator("#meetingConfirm").isVisible(), "確認欄が出る");
+  ok((await mp.locator(".meeting").count()) === 2, "会議ごとに欄が分かれる");
+  ok((await mp.locator(".m-title").first().inputValue()) === "議会運営委員会", "会議名が入る");
+  ok((await mp.locator(".m-date").first().inputValue()) === "2026-10-03", "日付が入る");
+  ok((await mp.locator(".m-start").first().inputValue()) === "10:00", "開始時刻が入る");
+  ok((await mp.locator(".m-place").nth(1).inputValue()) === "村民会館 第2会議室", "場所が入る");
+  ok(await mp.locator(".m-social").nth(1).isChecked(), "懇親会ありにチェックが入る");
+  ok((await mp.locator(".m-fee").nth(1).inputValue()) === "4000", "会費が入る");
+
+  // 画面で直した内容が使われる
+  await mp.fill(".m-title >> nth=0", "議会運営委員会（臨時）");
+  await mp.uncheck("#mtg1");
+  await mp.click("#meetingRegisterApp");
+  let items = await mp.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1")).items);
+  ok(items.length === 1, "チェックを外した会議は登録しない");
+  ok(items[0].title === "議会運営委員会（臨時）", "画面で直した会議名で登録される");
+  ok(items[0].kind === "会議", "種別は「会議」");
+  ok(items[0].dueOn === "2026-10-03", "期限は開催日");
+  ok(items[0].dest === "議会棟 委員会室", "提出先は場所");
+  ok(items[0].note.includes("10:00 開始") && items[0].note.includes("懇親会なし"), "メモに時刻と懇親会の有無が入る");
+  ok(!(await mp.locator("#meetingConfirm").isVisible()), "アプリに登録すると確認欄が閉じる");
+
+  // カレンダーに渡す
+  await mp.evaluate((l) => window.docsApp.applyMeetingScan(l), asLines(notice("a_committee")));
+  const [download] = await Promise.all([mp.waitForEvent("download"), mp.click("#meetingRegisterCal")]);
+  const stream = await download.createReadStream();
+  let ics = "";
+  for await (const chunk of stream) ics += chunk.toString("utf8");
+  const unfolded = ics.replace(/\r\n /g, "");
+  ok(download.suggestedFilename().startsWith("meetings-"), "会議用のファイル名で書き出す");
+  ok(unfolded.includes("SUMMARY:日高村議会 総務常任委員会"), "件名は会議名");
+  ok(unfolded.includes("DTSTART:20261015T133000"), "開始日時が入る");
+  ok(unfolded.includes("DTEND:20261015T143000"), "終了時刻が無いときは1時間にする");
+  ok(unfolded.includes("LOCATION:村民会館 2階 第1会議室"), "場所が入る");
+  ok(unfolded.includes("懇親会あり"), "懇親会の有無を予定の説明に入れる");
+  ok(unfolded.includes("TRIGGER:-P1D") && unfolded.includes("TRIGGER:-PT30M"), "前日と30分前に通知する");
+
+  // 日付が無いものは登録できない
+  await mp.evaluate((l) => window.docsApp.applyMeetingScan(l), asLines(notice("a_committee")));
+  await mp.fill(".m-date >> nth=0", "");
+  await mp.click("#meetingRegisterApp");
+  ok((await mp.locator("#toast").textContent()).includes("日付"), "日付が空だと登録せず促す");
+
+  // やめる
+  await mp.click("#meetingCancel");
+  ok(!(await mp.locator("#meetingConfirm").isVisible()), "「やめる」で確認欄が閉じる");
+
+  // 年の書かれていない通知には注意書きを出す
+  await mp.evaluate((l) => window.docsApp.applyMeetingScan(l), asLines(notice("c_multi")));
+  ok((await mp.locator(".meeting .warn").count()) === 2, "年が無い日付には確認を促す注意書きを出す");
+
+  // 会議でない書類
+  const none = await mp.evaluate(() => window.docsApp.applyMeetingScan(
+    [{ text: "ありがとうございました", x: 0, y: 0, width: 0.5, height: 0.03 }]));
+  ok(none.length === 0 && !(await mp.locator("#meetingConfirm").isVisible()), "会議でない書類では何も出さない");
+
+  ok(merrs.length === 0, "JSエラーなし" + (merrs.length ? " → " + merrs.join(" / ") : ""));
+  await mctx.close();
 }
 
 console.log("\nJSエラー: " + (errors.length ? "\n  " + errors.join("\n  ") : "なし"));
