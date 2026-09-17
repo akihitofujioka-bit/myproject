@@ -29,6 +29,40 @@
         };
       }
     },
+    // 日用品は備蓄アプリの台帳に入れる。残りが少なくなったら知らせる仕組みが
+    // そのまま使えるため。職場向けの備蓄と混ざらないよう、保管場所で分けている。
+    household: {
+      key: "stock.v1",
+      label: "日用品",
+      make: function (item) {
+        return {
+          name: item.name,
+          qty: 1,
+          unit: "個",
+          minQty: null,
+          place: "日用品",
+          expiresOn: "",
+          note: item.note || ""
+        };
+      }
+    },
+    // 常備薬も備蓄アプリの台帳に入れる。使用期限の管理がそのまま使えるため。
+    // 期限はレシートに載らないので空で入る（箱を見て入れてもらう）。
+    medicine: {
+      key: "stock.v1",
+      label: "医薬品",
+      make: function (item) {
+        return {
+          name: item.name,
+          qty: 1,
+          unit: "個",
+          minQty: null,
+          place: "医薬品",
+          expiresOn: "",
+          note: item.note || ""
+        };
+      }
+    },
     stock: {
       key: "stock.v1",
       label: "備蓄",
