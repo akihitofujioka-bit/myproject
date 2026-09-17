@@ -364,6 +364,22 @@ console.log("== 買ったものの振り分け ==");
   ok(stock.items.map((i) => i.name).join("/") === "鶏むね肉/食パン", "外したものは送られない");
   ok(stock.items[0].minQty === null, "備蓄の形（最低在庫数）に合わせて入る");
 
+  // 日用品・医薬品（どちらも備蓄アプリの台帳に、保管場所を分けて入る）
+  await page.evaluate(() => localStorage.removeItem("stock.v1"));
+  await page.click("#toggleAll");
+  await page.click("#toggleAll");   // 全部にチェックを戻す
+  await page.click("#sendHousehold");
+  let s2 = await page.evaluate(() => JSON.parse(localStorage.getItem("stock.v1")));
+  ok(s2.items.length === 4 && s2.items.every((i) => i.place === "日用品"),
+    "「日用品へ」は保管場所を日用品にして入れる");
+  await page.click("#sendMedicine");
+  s2 = await page.evaluate(() => JSON.parse(localStorage.getItem("stock.v1")));
+  ok(s2.items.slice(4).every((i) => i.place === "医薬品"), "「医薬品へ」は保管場所を医薬品にして入れる");
+  ok(s2.items.length === 8, "同じ台帳に足していく（前の分は消えない）");
+  await page.evaluate(() => localStorage.removeItem("stock.v1"));
+  await page.uncheck("#rcpt0");
+  await page.uncheck("#rcpt1");
+
   // メモに残す
   await page.click("#sendNote");
   ok((await page.inputValue("#f-note")) === "鶏むね肉／食パン", "メモに品名が入る");
