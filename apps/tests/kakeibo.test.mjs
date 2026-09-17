@@ -331,6 +331,75 @@ ok(await mp.evaluate(() => parseFloat(getComputedStyle(document.querySelector("i
 ok(await mp.evaluate(() => !!document.querySelector('link[rel="manifest"]')), "マニフェストを読み込んでいる");
 await mobile.close();
 
+/* ---------------- 買ったものの振り分け ---------------- */
+console.log("== 買ったものの振り分け ==");
+{
+  await fresh();
+  const fixture = JSON.parse(fs.readFileSync(path.join(FIXTURES, "receipt-a_super.json"), "utf8"));
+  const lines = Array.isArray(fixture) ? fixture : fixture.lines;
+  await page.evaluate((l) => window.kakeiboApp.applyReceipt(l), lines);
+
+  ok(await page.locator("#itemsBox").isVisible(), "読み取ると買ったものの一覧が出る");
+  ok((await page.locator("#itemList li").count()) === 4, "4件が並ぶ");
+  ok((await page.locator("#itemList .nm").first().textContent()) === "牛乳 1000ml", "品名が出る");
+  ok((await page.locator("#itemList .pr").first().textContent()) === "248円", "値段が出る");
+  ok(await page.locator("#rcpt0").isChecked(), "はじめは全部にチェックが付く");
+
+  // 冷蔵庫へ
+  await page.click("#sendFridge");
+  const fridge = await page.evaluate(() => JSON.parse(localStorage.getItem("fridge.v1") || "null"));
+  ok(!!fridge && fridge.items.length === 4, "冷蔵庫に4件入る");
+  ok(fridge.items.map((i) => i.name).join("/") === "牛乳 1000ml/たまご 10個/鶏むね肉/食パン", "品名がそのまま入る");
+  ok(fridge.items[0].qty === 1 && fridge.items[0].place === "冷蔵", "数量1・冷蔵で入る");
+  ok(fridge.items[0].expiresOn === "", "期限は空（レシートに載らないため）");
+  ok(fridge.items[0].note === "レシートから登録", "どこから来たか分かるようにする");
+  ok(!!fridge.items[0].id && !!fridge.items[0].createdAt, "冷蔵庫アプリと同じ形で入る");
+
+  // チェックを外したものは送らない
+  await page.uncheck("#rcpt0");
+  await page.uncheck("#rcpt1");
+  await page.click("#sendStock");
+  const stock = await page.evaluate(() => JSON.parse(localStorage.getItem("stock.v1") || "null"));
+  ok(!!stock && stock.items.length === 2, "チェックを付けた2件だけ備蓄に入る");
+  ok(stock.items.map((i) => i.name).join("/") === "鶏むね肉/食パン", "外したものは送られない");
+  ok(stock.items[0].minQty === null, "備蓄の形（最低在庫数）に合わせて入る");
+
+  // メモに残す
+  await page.click("#sendNote");
+  ok((await page.inputValue("#f-note")) === "鶏むね肉／食パン", "メモに品名が入る");
+
+  // 全部外す・全部選ぶ
+  await page.click("#toggleAll");
+  ok((await page.locator("#itemList input:checked").count()) === 0, "「全部外す」で解除できる");
+  ok((await page.locator("#toggleAll").textContent()) === "全部選ぶ", "ボタンの文字が入れ替わる");
+  await page.click("#toggleAll");
+  ok((await page.locator("#itemList input:checked").count()) === 4, "「全部選ぶ」で戻せる");
+
+  // 何も選ばずに送ったとき
+  await page.click("#toggleAll");
+  await page.click("#sendFridge");
+  ok((await page.locator("#toast").textContent()).includes("チェック"), "何も選ばずに送ると促される");
+  const stillFour = await page.evaluate(() => JSON.parse(localStorage.getItem("fridge.v1")).items.length);
+  ok(stillFour === 4, "何も選ばなければ送り先は変わらない");
+
+  // 送り先のデータが壊れているときは上書きしない
+  await page.evaluate(() => localStorage.setItem("stock.v1", "こわれたデータ"));
+  await page.click("#toggleAll");
+  await page.click("#sendStock");
+  ok((await page.locator("#toast").textContent()).includes("上書きを避ける"), "壊れた送り先には書き込まず知らせる");
+  ok((await page.evaluate(() => localStorage.getItem("stock.v1"))) === "こわれたデータ", "壊れたデータを上書きしない");
+
+  // 記録すると一覧は片付く
+  await page.fill("#f-amount", "1205");
+  await page.click("#submitBtn");
+  ok(!(await page.locator("#itemsBox").isVisible()), "記録すると一覧が消える");
+
+  // 品目が取れないレシートでは出さない
+  await page.evaluate(() => window.kakeiboApp.applyReceipt(
+    [{ text: "ありがとうございました", x: 0, y: 0, width: 0.5, height: 0.03 }]));
+  ok(!(await page.locator("#itemsBox").isVisible()), "品目が無いときは一覧を出さない");
+}
+
 console.log("\nJSエラー: " + (errors.length ? "\n  " + errors.join("\n  ") : "なし"));
 if (errors.length) failures++;
 await browser.close();

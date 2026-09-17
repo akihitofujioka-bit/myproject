@@ -171,6 +171,13 @@ table.preview { width: 100%; border-collapse: collapse; font-size: 12px; margin-
 table.preview th, table.preview td { border: 1px solid var(--border); padding: 3px 6px; text-align: left; white-space: nowrap; overflow: hidden; max-width: 12em; text-overflow: ellipsis; }
 table.preview th { background: var(--bg); color: var(--muted); font-weight: normal; }
 .scroll-x { overflow-x: auto; }
+/* 買ったものの一覧（チェックして送る） */
+ul.picklist { list-style: none; margin: 0; padding: 0; }
+ul.picklist li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+ul.picklist input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
+ul.picklist .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.picklist .pr { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 .toast {
   position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%);
   background: var(--text); color: var(--bg);
@@ -270,6 +277,16 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <p class="footnote" id="ocrSummary" style="margin:6px 0"></p>
       <pre class="footnote" id="ocrRows" style="white-space:pre-wrap;margin:0;max-height:12em;overflow:auto"></pre>
     </details>
+    <div id="itemsBox" hidden style="margin-top:10px">
+      <p class="footnote" style="margin:0 0 6px">買ったもの（送るものにチェックを付けてください）</p>
+      <ul class="picklist" id="itemList"></ul>
+      <div class="chips" style="margin-top:8px">
+        <button type="button" class="small" id="sendFridge">冷蔵庫へ</button>
+        <button type="button" class="small" id="sendStock">備蓄へ</button>
+        <button type="button" class="small" id="sendNote">メモに残す</button>
+        <button type="button" class="small link" id="toggleAll">全部外す</button>
+      </div>
+    </div>
     <div id="recentBox" hidden style="margin-top:10px">
       <p class="footnote" style="margin:0 0 6px">よく行く店（押すと店名と費目が入ります）</p>
       <div class="chips" id="recentChips"></div>
@@ -373,6 +390,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <li><strong>「よく行く店」のボタンを押すと、店名と費目がまとめて入ります。</strong>金額と日付だけ入れれば記録できます。</li>
       <li><strong>カードや電子マネーの明細は CSV で取り込めます。</strong>「明細を取り込む」でファイルを選び、日付・内容・金額がどの列かを指定してください。同じ内容が二重に入らないよう確認してから取り込みます。</li>
       <li><strong>iPhone アプリでは「レシートを撮る」で合計・日付・店名を自動で入れられます。</strong>iPhone 標準の文字認識を使い、写真も文字も端末の外には出しません。読み取り結果は必ず確認してから「記録する」を押してください。うまく読めないときは、明るい場所でレシートを平らにし、枠いっぱいに収めて撮り直してください。</li>
+      <li><strong>買ったものは、冷蔵庫や備蓄アプリに送れます。</strong>レシートを撮ると品目の一覧が出るので、送るものにチェックを付けて「冷蔵庫へ」「備蓄へ」を押してください。品名がそのまま在庫に入るため、バーコードで1つずつ登録する手間が省けます。賞味期限はレシートに載らないので、送った先のアプリで入れてください。「メモに残す」を押すと、品名を家計簿の記録のメモ欄に入れます。</li>
       <li><strong>レシートのバーコードからは金額を読み取れません。</strong>レシートに印字されているのは取引番号で、金額や品目は含まれていないためです。</li>
       <li><strong>データはこの端末の中だけに残ります。</strong>サーバーには送りません。アプリを削除したとき、またはブラウザのサイトデータを消したときは一緒に消えるため、「JSONで保存」で控えを取り、別の端末へ移すときは「JSONから読み込み」を使ってください。</li>
     </ul>
@@ -390,6 +408,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="../shared/receipt.js"></script>
+<script src="../shared/inbox.js"></script>
 <script src="../shared/receiptscan.js"></script>
 <script>
 "use strict";
@@ -773,6 +792,7 @@ form.addEventListener("submit", function (e) {
 
 function resetForm() {
   form.reset();
+  renderReceiptItems([]);
   document.getElementById("f-date").value = todayStr();
   renderCategoryOptions();
 }
@@ -1195,6 +1215,7 @@ function applyReceipt(lines) {
     ? "入れた項目：" + filled.join("／") + "。確認して「記録する」を押してください"
     : "合計・日付・店名を見つけられませんでした。手で入力してください";
   document.getElementById("ocrRows").textContent = parsed.rows.join("\n");
+  renderReceiptItems(parsed.items);
   window.scrollTo({ top: 0, behavior: "smooth" });
   (parsed.total ? document.getElementById("f-category") : document.getElementById("f-amount")).focus();
   toast(filled.length ? "読み取りました。内容を確認してください" : "読み取れませんでした");
@@ -1214,6 +1235,57 @@ function setScanningState(on) {
     el.textContent = on ? "カメラを起動しています…" : "📷 レシートを撮る";
   });
 }
+
+/* ---------- 買ったものの振り分け ---------- */
+
+var receiptItems = [];
+
+function renderReceiptItems(items) {
+  receiptItems = items || [];
+  document.getElementById("itemsBox").hidden = !receiptItems.length;
+  document.getElementById("itemList").innerHTML = receiptItems.map(function (it, i) {
+    return '<li><input type="checkbox" id="rcpt' + i + '" data-idx="' + i + '" checked>' +
+      '<label class="nm" for="rcpt' + i + '">' + esc(it.name) + "</label>" +
+      '<span class="pr">' + esc(yen(it.price)) + "</span></li>";
+  }).join("");
+  document.getElementById("toggleAll").textContent = "全部外す";
+}
+
+function checkedReceiptItems() {
+  var boxes = document.querySelectorAll("#itemList input[type=checkbox]");
+  return Array.prototype.filter.call(boxes, function (c) { return c.checked; })
+    .map(function (c) { return receiptItems[Number(c.getAttribute("data-idx"))]; })
+    .filter(Boolean);
+}
+
+// 冷蔵庫・備蓄へ送る。送り先の台帳に足すだけで、既にある項目には触れない
+function sendReceiptItems(target) {
+  var picked = checkedReceiptItems();
+  if (!picked.length) { toast("送るものにチェックを付けてください"); return; }
+  if (!window.Inbox) { toast("送り先の仕組みを読み込めていません"); return; }
+  var res = window.Inbox.add(target, picked.map(function (it) {
+    return { name: it.name, note: "レシートから登録" };
+  }));
+  if (!res.ok) { toast(res.reason); return; }
+  toast(window.Inbox.labelOf(target) + "に" + res.added + "件送りました（期限は" + window.Inbox.labelOf(target) + "アプリで入れてください）");
+}
+
+document.getElementById("sendFridge").addEventListener("click", function () { sendReceiptItems("fridge"); });
+document.getElementById("sendStock").addEventListener("click", function () { sendReceiptItems("stock"); });
+document.getElementById("sendNote").addEventListener("click", function () {
+  var picked = checkedReceiptItems();
+  if (!picked.length) { toast("残すものにチェックを付けてください"); return; }
+  var names = picked.map(function (it) { return it.name; }).join("／");
+  var note = document.getElementById("f-note");
+  note.value = note.value ? note.value + " " + names : names;
+  toast("メモに入れました。確認して「記録する」を押してください");
+});
+document.getElementById("toggleAll").addEventListener("click", function () {
+  var boxes = document.querySelectorAll("#itemList input[type=checkbox]");
+  var turnOn = this.textContent === "全部選ぶ";
+  Array.prototype.forEach.call(boxes, function (c) { c.checked = turnOn; });
+  this.textContent = turnOn ? "全部外す" : "全部選ぶ";
+});
 
 function scanReceipt() {
   if (scanning) return;
