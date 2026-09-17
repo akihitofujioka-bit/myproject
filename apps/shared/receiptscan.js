@@ -1,5 +1,12 @@
 /*
- * レシート撮影（iOS アプリ内の ReceiptScanner プラグイン）への橋渡し。
+ * 書類カメラ（iOS アプリ内の ReceiptScanner プラグイン）への橋渡し。
+ *
+ * 2つの使い方がある。
+ *   scan()          … 撮って文字を読み取る（家計簿のレシート読み取り）
+ *   scanToPhotos()  … 撮って写真アプリに保存する（書類トラッカーの書類撮影）
+ *
+ * どちらも VisionKit の書類カメラを使う。書類カメラは映像から1コマを切り出す
+ * 仕組みのため、シャッター音は鳴らない（Apple 純正の「メモ」の書類スキャンと同じ）。
  *
  * アプリとして動いていて、かつプラグインが登録されているときだけ使える。
  * ブラウザで開いたときは available() が false を返し、呼び出し側はボタンを出さない。
@@ -40,5 +47,17 @@
     });
   }
 
-  global.ReceiptScan = { available: available, scan: scan };
+  /**
+   * 書類カメラを開いて撮り、そのまま写真アプリに保存する。
+   * 戻り値: { cancelled: boolean, saved: 保存した枚数 }
+   * 利用者が閉じたときは cancelled: true（失敗ではない）。
+   */
+  function scanToPhotos() {
+    if (!available()) return Promise.resolve({ cancelled: true, saved: 0 });
+    return global.Capacitor.nativePromise(PLUGIN, "scanToPhotos", {}).then(function (res) {
+      return { cancelled: !!(res && res.cancelled), saved: (res && res.saved) || 0 };
+    });
+  }
+
+  global.ReceiptScan = { available: available, scan: scan, scanToPhotos: scanToPhotos };
 })(typeof window !== "undefined" ? window : this);

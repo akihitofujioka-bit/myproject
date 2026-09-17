@@ -451,6 +451,70 @@ console.log("== カレンダー登録（.ics の書き出し）==");
   await cctx.close();
 }
 
+/* ---------------- 書類を撮って写真に保存（書類トラッカー）---------------- */
+console.log("== 書類の撮影（apps/docs-tracker）==");
+{
+  const docPage = await (await browser.newContext()).newPage();
+  const derrs = [];
+  docPage.on("pageerror", (e) => derrs.push(String(e)));
+  const url = "file://" + path.join(ROOT, "apps/docs-tracker/index.html");
+
+  // ブラウザでは出さない（端末側の書類カメラが要るため）
+  await docPage.goto(url);
+  ok(!(await docPage.locator("#docPhotoCard").isVisible()), "ブラウザでは撮影のカードを出さない");
+
+  // アプリとして動いている状況を作る
+  const asApp = (result) => docPage.addInitScript((r) => {
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      nativePromise: (plugin, method) => {
+        window.__called = plugin + "." + method;
+        return r && r.__reject ? Promise.reject(new Error(r.message)) : Promise.resolve(r);
+      },
+    };
+  }, result);
+
+  await asApp({ cancelled: false, saved: 2 });
+  await docPage.reload();
+  ok(await docPage.locator("#docPhotoCard").isVisible(), "アプリとして開くと撮影のカードが出る");
+  await docPage.click("#docPhotoBtn");
+  await docPage.waitForTimeout(200);
+  ok((await docPage.evaluate(() => window.__called)) === "ReceiptScanner.scanToPhotos",
+    "写真に保存する方の呼び出しを使う");
+  ok((await docPage.locator("#toast").textContent()).includes("2枚"), "保存した枚数を知らせる");
+  ok((await docPage.locator("#docPhotoBtn").textContent()) === "📄 書類を撮る", "終わるとボタンが戻る");
+
+  // 利用者が閉じたときは何も言わない
+  const ctx2 = await browser.newContext();
+  const p2 = await ctx2.newPage();
+  await p2.addInitScript(() => {
+    window.Capacitor = { isNativePlatform: () => true, nativePromise: () => Promise.resolve({ cancelled: true }) };
+  });
+  await p2.goto(url);
+  await p2.click("#docPhotoBtn");
+  await p2.waitForTimeout(200);
+  ok(!(await p2.locator("#toast").textContent()).includes("枚"), "閉じたときは保存の知らせを出さない");
+  await ctx2.close();
+
+  // 失敗したときは理由を出す
+  const ctx3 = await browser.newContext();
+  const p3 = await ctx3.newPage();
+  await p3.addInitScript(() => {
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      nativePromise: () => Promise.reject(new Error("写真への追加が許可されていません。設定アプリで許可してください")),
+    };
+  });
+  await p3.goto(url);
+  await p3.click("#docPhotoBtn");
+  await p3.waitForTimeout(200);
+  ok((await p3.locator("#toast").textContent()).includes("許可されていません"), "失敗の理由を画面に出す");
+  ok((await p3.locator("#docPhotoBtn").isDisabled()) === false, "失敗してもボタンは押せる状態に戻る");
+  await ctx3.close();
+
+  ok(derrs.length === 0, "JSエラーなし" + (derrs.length ? " → " + derrs.join(" / ") : ""));
+}
+
 console.log("\nJSエラー: " + (errors.length ? "\n  " + errors.join("\n  ") : "なし"));
 if (errors.length) failures++;
 await browser.close();
