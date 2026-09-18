@@ -42,5 +42,11 @@ fi
 VERSION=$(grep -o '<span id="version">[^<]*' "$APP/public/index.html" | sed 's/.*>//')
 echo "▶ iPhone へインストール中（版 $VERSION）…"
 xcrun devicectl device install app --device "$DEVICE" "$APP" | grep -E "App installed|bundleID"
-xcrun devicectl device process launch --device "$DEVICE" jp.myproject.dailyapps >/dev/null
-echo "✓ 完了。トップ画面の一番下に「版 $VERSION」と出ていれば新しい版です。"
+
+# 起動はおまけ。iPhone がロック中だと拒否されるので、その場合は手で開いてもらう。
+if xcrun devicectl device process launch --device "$DEVICE" jp.myproject.dailyapps >/dev/null 2>&1; then
+  echo "✓ 完了。アプリを起動しました。"
+else
+  echo "✓ インストールは完了（iPhone がロック中のため自動起動はできませんでした。ホーム画面から開いてください）。"
+fi
+echo "  トップ画面の一番下に「版 $VERSION」と出ていれば新しい版です。"
