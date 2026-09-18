@@ -4,6 +4,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +34,30 @@ for (const file of ["fridge/sw.js", "docs-tracker/sw.js", "stock/sw.js", "kakeib
   if (after === before) throw new Error("data-web-only の節が見つかりませんでした");
   fs.writeFileSync(indexPath, after);
   console.log("アプリでは不要な案内（data-web-only）を取り除きました");
+}
+
+// 版表記。「いま入っているアプリがどの版か」を画面で確かめられるよう、
+// 組み立てた日時と git のコミット番号をトップページに埋め込む。
+// 未コミットの変更を含むときは番号の後ろに + を付ける。
+{
+  const git = (...args) => {
+    try { return execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim(); }
+    catch { return ""; }
+  };
+  const hash = git("rev-parse", "--short", "HEAD") || "不明";
+  const dirty = git("status", "--porcelain", "--", "apps", "mobile/scripts") !== "";
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const version = `${stamp}（${hash}${dirty ? "+" : ""}）`;
+
+  const indexPath = path.join(WWW, "index.html");
+  const before = fs.readFileSync(indexPath, "utf8");
+  const after = before.replace(/(<span id="version">)[^<]*(<\/span>)/, `$1${version}$2`);
+  if (after === before) throw new Error('版表記の欄（<span id="version">）が見つかりませんでした');
+  fs.writeFileSync(indexPath, after);
+  fs.writeFileSync(path.join(WWW, "version.txt"), version + "\n");
+  console.log(`版: ${version}`);
 }
 
 const count = fs.readdirSync(WWW, { recursive: true }).length;

@@ -302,6 +302,8 @@ console.log("== apps/index.html（トップページ）==");
   const iconOk = await lpage.locator("a.app img").first().evaluate((el) => el.naturalWidth > 0);
   ok(iconOk, "アイコン画像が実際に読み込める");
   ok((await lpage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1, "横スクロールが出ない");
+  const ver = await lpage.locator("#version").textContent();
+  ok(ver && ver.trim().length > 0, "版表記の欄がある（" + ver + "）");
   ok(lerrs.length === 0, "JSエラーなし");
   await lp.close();
 }

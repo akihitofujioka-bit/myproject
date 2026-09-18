@@ -43,6 +43,8 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 ol, ul { margin: 0; padding-left: 1.3em; font-size: 14px; }
 li { margin-bottom: 4px; }
 .note { font-size: 13px; color: var(--muted); margin-top: 10px; }
+/* 版表記。アプリ版では mobile/scripts/build-www.mjs が組み立て時刻とコミット番号に置き換える */
+.version { font-size: 12px; color: var(--muted); text-align: center; margin: 24px 0 0; }
 </style>
 </head>
 <body>
@@ -110,6 +112,8 @@ li { margin-bottom: 4px; }
       <li>書類トラッカーには、氏名・住所などの個人情報を入力しないでください。ポイントカードには、クレジットカード・保険証・マイナンバーカードなど番号そのものが重要なカードを登録しないでください</li>
     </ul>
   </section>
+
+  <p class="version">版 <span id="version">開発版（apps/ を直接開いています）</span></p>
 </div>
 <script src="shared/deeplink.js"></script>
 </body>
