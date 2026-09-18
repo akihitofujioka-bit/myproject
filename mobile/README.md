@@ -106,14 +106,18 @@ swiftc -O -o /tmp/ocr-probe mobile/tools/ocr-probe.swift
 
 ## アプリを更新するとき
 
-`apps/` の中身が変わったら、Mac で次を実行して Xcode から再ビルドする。
+`apps/` の中身が変わったら、iPhone を USB で繋いでロックを解除し、Mac で次を実行する。
+Xcode の画面操作は不要（組み立て → 署名付きビルド → 転送 → 起動まで自動）。
 
 ```bash
 cd mobile
 git pull
-npm run sync
-open ios/App/App.xcodeproj
+npm run iphone
 ```
+
+Xcode で開いて ▶︎ を押す方法でも同じ。その場合は `npm run sync` のあと
+`open ios/App/App.xcodeproj` し、**実行先が本物の iPhone（端末名）になっているか** を確かめる。
+「iPhone 17 Pro」のような機種名だけの行はシミュレータで、本物の端末には入らない。
 
 ### どの版が入っているか確かめる
 
