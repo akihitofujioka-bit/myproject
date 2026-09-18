@@ -39,7 +39,7 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
-VERSION=$(grep -o '<span id="version">[^<]*' "$APP/public/index.html" | sed 's/.*>//')
+VERSION=$(cat www/version.txt)   # build-www.mjs が書いた「日時（コミット番号）」
 echo "▶ iPhone へインストール中（版 $VERSION）…"
 xcrun devicectl device install app --device "$DEVICE" "$APP" | grep -E "App installed|bundleID"
 
