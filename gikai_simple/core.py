@@ -54,16 +54,40 @@ import doc97
 
 # ---------------------------------------------------------------- 決まりごと
 
-# 紙面の順。番号がファイル名の頭に付く。
-KUBUN = [
-    ("01", "表紙"),
-    ("02", "行政報告"),
-    ("03", "審議したこと・決まったこと"),
-    ("04", "閉会中の委員会活動報告"),
-    ("05", "一般質問"),
-    ("06", "特集"),
-    ("07", "裏表紙"),
-]
+# 区分（紙面の順）は号フォルダの中の「01_表紙.txt」のような番号付きファイルで表す。
+# どの区分があるかは固定せず、フォルダにあるファイルがそのまま紙面の順になる。
+# 号を作るときは、定例会ごとの雛形（第198〜201号の 1 年分から確認）で区分をそろえる。
+COVER = "表紙"          # この名前の区分だけ横書き。数字の変換もしない
+KUBUN_FILE = re.compile(r"^(\d{2})_(.+)\.txt$")
+
+# 毎号あるもの
+KUBUN_COMMON_HEAD = ["表紙", "行政報告", "審議したこと・決まったこと"]
+KUBUN_COMMON_TAIL = ["閉会中の委員会活動報告", "一般質問", "特集", "裏表紙"]
+
+# 号の種類 → 区分の並び。定例会ごとに加わるものを共通部分の間に入れる
+TEMPLATES = {
+    "3月号": KUBUN_COMMON_HEAD + ["当初予算の概要"] + KUBUN_COMMON_TAIL,
+    "6月号": KUBUN_COMMON_HEAD + KUBUN_COMMON_TAIL + ["お知らせ"],
+    "9月号": KUBUN_COMMON_HEAD + ["決算の概要"] + KUBUN_COMMON_TAIL + ["議員行政視察研修報告", "お知らせ"],
+    "12月号": KUBUN_COMMON_HEAD + KUBUN_COMMON_TAIL + ["行政視察・研修報告", "お知らせ"],
+}
+DEFAULT_TEMPLATE = "6月号"
+
+# 各区分に載せるものの目安（前年の号から）。画面のヒントに出す
+HINTS = {
+    "表紙": "号数・発行日・表紙写真の説明・特集の予告（例: 特集　新年の抱負を聞きました …………14Ｐ）・発行元",
+    "行政報告": "村長の行政報告（要旨）。見出し＋本文を項目ごとに。村長の顔写真は【写真】行で",
+    "審議したこと・決まったこと": "「○月議会では、報告○件、同意○件…合計○件が決まった」→ ◎議案名と質疑（問／答）。賛否一覧表は Excel を「別添」フォルダへ",
+    "当初予算の概要": "（3月号）令和○年度各会計予算の額、注目する事業と金額、前年度からの繰越事業",
+    "決算の概要": "（9月号）前年度決算の認定：歳入・歳出の額、主な事業の決算、質疑",
+    "閉会中の委員会活動報告": "総務常任・経済建設厚生常任・治水対策特別・少子化対策特別 の順。開催日と協議内容",
+    "一般質問": "「一般質問に○氏が立つ」→ 議員ごとに 見出し／質問／答弁 ○○課長。議員の顔写真は【写真】…｜顔",
+    "特集": "その号の企画（3月: 新成人アンケート・入学おめでとう、6月: よさこい、9月: 金婚、12月: 新年の抱負 など）",
+    "議員行政視察研修報告": "（9月号）視察先・日程・学んだこと",
+    "行政視察・研修報告": "（12月号）受け入れた視察や参加した研修の報告",
+    "お知らせ": "議会放送の視聴の仕方、視聴者の声、傍聴の案内など",
+    "裏表紙": "編集後記（署名）、発行責任者、次の定例会の日程と傍聴の案内、再生紙の表示",
+}
 
 # 写真の大きさ → 幅（mm）。紙面は 5 段組で 1 段が約 30mm。
 SIZES = {
@@ -79,6 +103,7 @@ PRINT_DPI = 350   # 印刷所が求める解像度
 
 INFO_NAME = "号情報.json"
 PHOTO_DIR = "写真"
+ATTACH_DIR = "別添"
 OUT_DIR = "出力"
 
 FONT_MINCHO = "ＭＳ 明朝"
@@ -98,7 +123,7 @@ DAN_HEIGHT_MM = (297 - MARGIN_MM[0] - MARGIN_MM[1] - DAN_SPACE_MM * (DANSU - 1))
 #   1 桁 → 全角（４人・３月）、2 桁以上 → 半角（第46回・国道33号）
 #   「－」でつないだ郵便番号・電話番号・番地 → そのまま、表紙 → そのまま、【写真】行 → そのまま
 NUMBERS_TATEGAKI = True
-NUMBERS_SKIP_KUBUN = ("表紙",)
+NUMBERS_SKIP_KUBUN = (COVER,)
 
 # 【写真】ファイル名｜大きさ｜説明
 PHOTO_LINE = re.compile(
@@ -120,8 +145,10 @@ COVER_TEMPLATE = """第{gou}号
 
 READ_ME = """このフォルダの使い方
 
-・01_表紙.txt 〜 07_裏表紙.txt に、区分ごとの原稿を書きます（紙面の順です）
+・01_表紙.txt、02_行政報告.txt … に、区分ごとの原稿を書きます（番号の順が紙面の順です）
+  区分を足す・順番を変えるのはツールの「区分を追加」「▲▼」でできます
 ・写真 フォルダに写真の原本を入れます（ファイル名はそのまま印刷所に伝わります）
+・別添 フォルダには賛否一覧表（Excel）など、原稿以外で印刷所に渡すものを入れます
 ・写真を入れたい場所に、次の 1 行を書きます
 
     【写真】ファイル名.jpg｜中｜説明文
@@ -241,24 +268,29 @@ class Issue:
     folder: Path
     gou: str = ""
     hakkoubi: str = ""
+    template: str = ""
 
     # ---- 作る・開く
 
     @classmethod
-    def create(cls, root: Path | str, gou: str, hakkoubi: str) -> "Issue":
-        """root の下に「第○号」フォルダを作り、空の原稿ファイルをそろえる。"""
+    def create(cls, root: Path | str, gou: str, hakkoubi: str,
+               template: str = DEFAULT_TEMPLATE) -> "Issue":
+        """root の下に「第○号」フォルダを作り、号の種類に合った区分ファイルをそろえる。"""
         gou = str(gou).strip().translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+        if template not in TEMPLATES:
+            raise KeyError(f"号の種類が不明です: {template}")
         folder = Path(root) / f"第{gou}号"
         if folder.exists():
             raise FileExistsError(f"{folder} は既にあります")
         folder.mkdir(parents=True)
         (folder / PHOTO_DIR).mkdir()
+        (folder / ATTACH_DIR).mkdir()
         (folder / OUT_DIR).mkdir()
-        issue = cls(folder=folder, gou=gou, hakkoubi=hakkoubi)
+        issue = cls(folder=folder, gou=gou, hakkoubi=hakkoubi, template=template)
         issue.save_info()
-        for code, name in KUBUN:
-            body = COVER_TEMPLATE.format(gou=to_zenkaku_digits(gou), hakkoubi=hakkoubi) if name == "表紙" else ""
-            issue.write_text(name, body)
+        for i, name in enumerate(TEMPLATES[template], 1):
+            body = COVER_TEMPLATE.format(gou=to_zenkaku_digits(gou), hakkoubi=hakkoubi) if name == COVER else ""
+            (folder / f"{i:02d}_{name}.txt").write_text(body, encoding="utf-8-sig")
         (folder / "はじめにお読みください.txt").write_text(READ_ME, encoding="utf-8-sig")
         return issue
 
@@ -273,26 +305,87 @@ class Issue:
             info = json.loads(p.read_text(encoding="utf-8-sig"))
             issue.gou = str(info.get("gou", ""))
             issue.hakkoubi = str(info.get("hakkoubi", ""))
+            issue.template = str(info.get("template", ""))
         else:
             m = re.search(r"(\d+)", folder.name)
             issue.gou = m.group(1) if m else ""
         (folder / PHOTO_DIR).mkdir(exist_ok=True)
+        (folder / ATTACH_DIR).mkdir(exist_ok=True)
         (folder / OUT_DIR).mkdir(exist_ok=True)
         return issue
 
     def save_info(self) -> None:
         (self.folder / INFO_NAME).write_text(
-            json.dumps({"gou": self.gou, "hakkoubi": self.hakkoubi}, ensure_ascii=False, indent=2),
+            json.dumps({"gou": self.gou, "hakkoubi": self.hakkoubi, "template": self.template},
+                       ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
     # ---- 原稿
 
+    def _kubun_files(self) -> list[tuple[int, str, Path]]:
+        """フォルダにある区分ファイルを (番号, 区分名, パス) で番号順に返す。"""
+        found = []
+        for p in self.folder.iterdir():
+            m = KUBUN_FILE.match(p.name)
+            if m and p.is_file():
+                found.append((int(m.group(1)), m.group(2), p))
+        return sorted(found, key=lambda t: (t[0], t[1]))
+
+    def kubun_list(self) -> list[str]:
+        """区分名を紙面の順に返す。"""
+        return [name for _, name, _ in self._kubun_files()]
+
     def text_path(self, kubun: str) -> Path:
-        for code, name in KUBUN:
+        for _, name, p in self._kubun_files():
             if name == kubun:
-                return self.folder / f"{code}_{name}.txt"
-        raise KeyError(kubun)
+                return p
+        raise KeyError(f"区分がありません: {kubun}")
+
+    def _renumber(self, names: list[str]) -> None:
+        """区分ファイルを names の順に 01_, 02_ … と付け直す（中身は触らない）。"""
+        paths = {name: p for _, name, p in self._kubun_files()}
+        tmp = []
+        for i, name in enumerate(names, 1):
+            src = paths[name]
+            t = src.with_name(f"~{i:02d}_{name}.txt")   # いったん退避して番号の衝突を避ける
+            src.rename(t)
+            tmp.append((t, src.with_name(f"{i:02d}_{name}.txt")))
+        for t, dst in tmp:
+            t.rename(dst)
+
+    def add_kubun(self, name: str, after: str | None = None) -> None:
+        """区分を足す。after を指定するとその次に入る。省略すると末尾。"""
+        name = name.strip().replace("/", "／").replace("\\", "＼")
+        if not name:
+            raise ValueError("区分の名前を入れてください")
+        names = self.kubun_list()
+        if name in names:
+            raise FileExistsError(f"区分「{name}」は既にあります")
+        n = len(names) + 1
+        (self.folder / f"{n:02d}_{name}.txt").write_text("", encoding="utf-8-sig")
+        names.append(name)
+        if after in names:
+            names.remove(name)
+            names.insert(names.index(after) + 1, name)
+        self._renumber(names)
+
+    def move_kubun(self, name: str, delta: int) -> None:
+        """区分の順番を delta（-1 で上、+1 で下）だけ動かす。"""
+        names = self.kubun_list()
+        i = names.index(name)
+        j = max(0, min(len(names) - 1, i + delta))
+        if i != j:
+            names.insert(j, names.pop(i))
+            self._renumber(names)
+
+    def remove_kubun(self, name: str) -> None:
+        """空の区分だけ外せる（原稿が入っているものは消さない）。ファイルは削除する。"""
+        p = self.text_path(name)
+        if read_text_file(p).strip():
+            raise ValueError(f"「{name}」には原稿が入っているので外せません。中身を空にしてからにしてください")
+        p.unlink()
+        self._renumber(self.kubun_list())
 
     def read_text(self, kubun: str) -> str:
         p = self.text_path(kubun)
@@ -303,7 +396,7 @@ class Issue:
         self.text_path(kubun).write_text(text.replace("\r\n", "\n"), encoding="utf-8-sig")
 
     def all_texts(self) -> list[tuple[str, str]]:
-        return [(name, self.read_text(name)) for _, name in KUBUN]
+        return [(name, read_text_file(p)) for _, name, p in self._kubun_files()]
 
     # ---- 写真
 
@@ -312,8 +405,19 @@ class Issue:
         return self.folder / PHOTO_DIR
 
     @property
+    def attach_dir(self) -> Path:
+        return self.folder / ATTACH_DIR
+
+    @property
     def out_dir(self) -> Path:
         return self.folder / OUT_DIR
+
+    def attach_files(self) -> list[Path]:
+        """別添フォルダの中身（賛否一覧表の Excel など）。"""
+        if not self.attach_dir.is_dir():
+            return []
+        return sorted((p for p in self.attach_dir.iterdir() if p.is_file() and not p.name.startswith(".")),
+                      key=lambda p: natural_key(p.name))
 
     def photo_files(self) -> list[Path]:
         if not self.photo_dir.is_dir():
@@ -620,11 +724,13 @@ def build_manuscript(issue: Issue, out: Path | str | None = None) -> tuple[Path,
           name=FONT_GOTHIC, size=9, color=(0xC0, 0, 0), after=12)
 
     number = 0
-    for idx, (kubun, text) in enumerate(issue.all_texts()):
-        is_cover = idx == 0
-        if idx == 1:
-            _add_body_section(doc)   # ここから縦書き 5 段
-        elif idx > 1:
+    body_started = False
+    for kubun, text in issue.all_texts():
+        is_cover = kubun == COVER
+        if not is_cover and not body_started:
+            _add_body_section(doc)   # 表紙のあと、ここから縦書き 5 段
+            body_started = True
+        elif body_started:
             doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
         _para(doc, f"■ {kubun}", name=FONT_GOTHIC, size=14, bold=True, after=8)
         if NUMBERS_TATEGAKI and kubun not in NUMBERS_SKIP_KUBUN:
@@ -705,6 +811,13 @@ def build_photo_sheet(issue: Issue, out: Path | str | None = None) -> tuple[Path
         _para(doc, "写真フォルダにあるが、原稿で使っていない写真:", name=FONT_GOTHIC, size=9, bold=True)
         for name in unused:
             _para(doc, "・" + name, name=FONT_GOTHIC, size=9, after=0)
+    # 別添（賛否一覧表の Excel など）
+    attach = issue.attach_files()
+    if attach:
+        _para(doc, "", after=8)
+        _para(doc, "別添（「別添」フォルダにあるファイル。原稿とは別に印刷所へ渡すもの）:", name=FONT_GOTHIC, size=9, bold=True)
+        for p in attach:
+            _para(doc, "・" + p.name, name=FONT_GOTHIC, size=9, after=0)
     doc.save(out)
     return out, warnings
 

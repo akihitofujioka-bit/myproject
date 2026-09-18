@@ -46,8 +46,13 @@ TEXT_FONT = ("Yu Gothic", 11) if sys.platform == "win32" else ("Hiragino Sans", 
 
 HELP = """使い方（5 つだけ）
 
-1. 「新しい号を作る」で号数と発行日を入れる
-   → デスクトップなど好きな場所に「第○号」フォルダができます
+1. 「新しい号を作る」で号数・発行日・号の種類（3月号／6月号／9月号／12月号）を入れる
+   → 好きな場所に「第○号」フォルダができ、その号に合った区分がそろいます
+   　3月号: 当初予算の概要　9月号: 決算の概要・議員行政視察研修報告
+   　12月号: 行政視察・研修報告　など（毎号あるものは共通）
+   区分は左の「区分を追加」「▲▼」「外す」で足したり順番を変えたりできます
+   （外せるのは空の区分だけです）
+   賛否一覧表の Excel など原稿以外のものは「別添フォルダ」に入れます
 
 2. 左の区分を選び、中央に原稿を書く（または「原稿ファイルを取り込む」）
    議員から届いた Word（.docx / .doc）やテキストを、文字だけ貼り付けます
@@ -102,6 +107,46 @@ def save_settings(d: dict) -> None:
         pass
 
 
+class NewIssueDialog(simpledialog.Dialog):
+    """号数・発行日・号の種類を 1 つの画面で聞く。"""
+
+    def __init__(self, parent):
+        self.result = None
+        super().__init__(parent, title="新しい号を作る")
+
+    def body(self, master):
+        ttk.Label(master, text="号数（例: 204）").grid(row=0, column=0, sticky="w", pady=2)
+        self.e_gou = ttk.Entry(master, width=24)
+        self.e_gou.grid(row=0, column=1, sticky="w", pady=2)
+        ttk.Label(master, text="発行日（例: 令和８年７月31日）").grid(row=1, column=0, sticky="w", pady=2)
+        self.e_date = ttk.Entry(master, width=24)
+        self.e_date.grid(row=1, column=1, sticky="w", pady=2)
+        ttk.Label(master, text="号の種類（定例会）").grid(row=2, column=0, sticky="nw", pady=2)
+        self.v_tmpl = tk.StringVar(value=core.DEFAULT_TEMPLATE)
+        box = ttk.Frame(master)
+        box.grid(row=2, column=1, sticky="w")
+        for name in core.TEMPLATES:
+            ttk.Radiobutton(box, text=name, value=name, variable=self.v_tmpl,
+                            command=self._show_kubun).pack(anchor="w")
+        self.lbl = ttk.Label(master, text="", foreground="#555555", wraplength=360, justify="left")
+        self.lbl.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self._show_kubun()
+        return self.e_gou
+
+    def _show_kubun(self):
+        names = core.TEMPLATES[self.v_tmpl.get()]
+        self.lbl.config(text="区分: " + " → ".join(names) + "\n（あとから足したり順番を変えたりできます）")
+
+    def validate(self):
+        if not self.e_gou.get().strip():
+            messagebox.showwarning(APP_NAME, "号数を入れてください", parent=self)
+            return False
+        return True
+
+    def apply(self):
+        self.result = (self.e_gou.get().strip(), self.e_date.get().strip(), self.v_tmpl.get())
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -110,6 +155,7 @@ class App(tk.Tk):
         self.minsize(900, 560)
         self.issue: core.Issue | None = None
         self.current_kubun: str | None = None
+        self.kubun_names: list[str] = []
         self.selected_photo: Path | None = None
         self._thumbs: list = []          # ImageTk を GC から守る
         self._photo_buttons: dict[str, tk.Button] = {}
@@ -143,12 +189,16 @@ class App(tk.Tk):
         # 左: 区分
         left = ttk.Frame(body, padding=(0, 0, 6, 0))
         ttk.Label(left, text="区分（紙面の順）").pack(anchor="w")
-        self.lst_kubun = tk.Listbox(left, height=len(core.KUBUN), exportselection=False,
+        self.lst_kubun = tk.Listbox(left, height=12, exportselection=False,
                                     font=UI_FONT, activestyle="none")
         self.lst_kubun.pack(fill="both", expand=True)
         self.lst_kubun.bind("<<ListboxSelect>>", self.on_select_kubun)
-        for _, name in core.KUBUN:
-            self.lst_kubun.insert("end", name)
+        kb = ttk.Frame(left)
+        kb.pack(fill="x", pady=(4, 0))
+        ttk.Button(kb, text="▲", width=3, command=lambda: self.move_kubun(-1)).pack(side="left")
+        ttk.Button(kb, text="▼", width=3, command=lambda: self.move_kubun(+1)).pack(side="left", padx=2)
+        ttk.Button(kb, text="区分を追加", command=self.add_kubun).pack(side="left", padx=(6, 2))
+        ttk.Button(kb, text="外す", command=self.remove_kubun).pack(side="left")
         body.add(left, weight=0)
 
         # 中央: 原稿
@@ -157,6 +207,8 @@ class App(tk.Tk):
         bar.pack(fill="x")
         self.lbl_kubun = ttk.Label(bar, text="区分を選んでください", font=(UI_FONT[0], UI_FONT[1], "bold"))
         self.lbl_kubun.pack(side="left")
+        self.lbl_hint = ttk.Label(mid, text="", foreground="#555555", wraplength=560, justify="left")
+        self.lbl_hint.pack(fill="x", pady=(2, 2))
         ttk.Button(bar, text="保存", command=self.save_current).pack(side="right")
         ttk.Button(bar, text="数字をそろえる", command=self.fix_numbers).pack(side="right", padx=6)
         ttk.Button(bar, text="原稿ファイルを取り込む", command=self.import_files).pack(side="right")
@@ -210,28 +262,30 @@ class App(tk.Tk):
         bottom.pack(fill="x")
         ttk.Button(bottom, text="Word を作る（原稿＋写真配置指示書）", command=self.build).pack(side="left")
         ttk.Button(bottom, text="出力フォルダを開く", command=self.open_out_dir).pack(side="left", padx=6)
+        ttk.Button(bottom, text="別添フォルダを開く", command=self.open_attach_dir).pack(side="left")
         self.lbl_status = ttk.Label(bottom, text="")
         self.lbl_status.pack(side="left", padx=12)
 
     # ------------------------------------------------------------ 号
 
     def new_issue(self):
-        gou = simpledialog.askstring(APP_NAME, "号数を入れてください（例: 204）", parent=self)
-        if not gou:
+        ans = NewIssueDialog(self).result
+        if not ans:
             return
-        hakkoubi = simpledialog.askstring(APP_NAME, "発行日を入れてください（例: 令和８年７月31日）", parent=self) or ""
+        gou, hakkoubi, template = ans
         root = filedialog.askdirectory(parent=self, title="「第○号」フォルダを作る場所を選んでください",
                                        initialdir=self.settings.get("last_root") or str(Path.home()))
         if not root:
             return
         try:
-            issue = core.Issue.create(root, gou, hakkoubi)
-        except FileExistsError as e:
+            issue = core.Issue.create(root, gou, hakkoubi, template=template)
+        except (FileExistsError, KeyError) as e:
             messagebox.showerror(APP_NAME, str(e))
             return
         self.settings["last_root"] = root
         self.open_issue(issue.folder)
-        messagebox.showinfo(APP_NAME, f"{issue.folder}\nを作りました。\n\n写真は「写真」フォルダに入れてください。")
+        messagebox.showinfo(APP_NAME, f"{issue.folder}\nを {template} の構成で作りました。\n\n"
+                            "区分は左の一覧で足したり順番を変えたりできます。\n写真は「写真」フォルダに入れてください。")
 
     def choose_issue(self):
         folder = filedialog.askdirectory(parent=self, title="号フォルダ（第○号）を選んでください",
@@ -249,7 +303,8 @@ class App(tk.Tk):
         self.settings["last_issue"] = str(folder)
         self.settings.setdefault("last_root", str(folder.parent))
         save_settings(self.settings)
-        self.lbl_issue.config(text=f"{self.issue.title()}　発行日 {self.issue.hakkoubi or '（未入力）'}　— {folder}")
+        kind = f"（{self.issue.template}）" if self.issue.template else ""
+        self.lbl_issue.config(text=f"{self.issue.title()}{kind}　発行日 {self.issue.hakkoubi or '（未入力）'}　— {folder}")
         self.current_kubun = None
         self.txt.delete("1.0", "end")
         self.refresh_kubun_list()
@@ -265,14 +320,69 @@ class App(tk.Tk):
             return
         sel = self.lst_kubun.curselection()
         self.lst_kubun.delete(0, "end")
-        for _, name in core.KUBUN:
-            text = self.issue.read_text(name)
+        self.kubun_names = self.issue.kubun_list()
+        for name, text in self.issue.all_texts():
             n = core.count_chars(text)
             p = len(core.photo_refs(text))
             mark = "" if n else "　（空）"
             self.lst_kubun.insert("end", f"{name}{mark}　{n}字・写真{p}")
-        if sel:
+        if sel and sel[0] < len(self.kubun_names):
             self.lst_kubun.selection_set(sel[0])
+
+    def _select_kubun_by_name(self, name: str):
+        if name in self.kubun_names:
+            i = self.kubun_names.index(name)
+            self.lst_kubun.selection_clear(0, "end")
+            self.lst_kubun.selection_set(i)
+            self.lst_kubun.see(i)
+
+    def add_kubun(self):
+        if not self.issue:
+            return
+        name = simpledialog.askstring(APP_NAME, "足す区分の名前（例: 視聴者の声）\n選んでいる区分の次に入ります", parent=self)
+        if not name:
+            return
+        self.save_current()
+        try:
+            self.issue.add_kubun(name, after=self.current_kubun)
+        except (FileExistsError, ValueError) as e:
+            messagebox.showerror(APP_NAME, str(e))
+            return
+        self.refresh_kubun_list()
+        self._select_kubun_by_name(name.strip())
+        self.on_select_kubun()
+
+    def move_kubun(self, delta: int):
+        if not self.issue or not self.current_kubun:
+            return
+        self.save_current()
+        name = self.current_kubun
+        self.issue.move_kubun(name, delta)
+        self.refresh_kubun_list()
+        self._select_kubun_by_name(name)
+
+    def remove_kubun(self):
+        if not self.issue or not self.current_kubun:
+            return
+        name = self.current_kubun
+        self.save_current()
+        if self.issue.read_text(name).strip():
+            messagebox.showinfo(APP_NAME, f"「{name}」には原稿が入っているので外せません。\n中身を空にしてからにしてください。")
+            return
+        if not messagebox.askyesno(APP_NAME, f"区分「{name}」（空）を外しますか？\nファイル {self.issue.text_path(name).name} は削除されます。"):
+            return
+        try:
+            self.issue.remove_kubun(name)
+        except ValueError as e:
+            messagebox.showerror(APP_NAME, str(e))
+            return
+        self.current_kubun = None
+        self.txt.delete("1.0", "end")
+        self.txt.edit_modified(False)
+        self.refresh_kubun_list()
+        if self.kubun_names:
+            self.lst_kubun.selection_set(0)
+            self.on_select_kubun()
 
     def on_select_kubun(self, _ev=None):
         if not self.issue:
@@ -280,7 +390,9 @@ class App(tk.Tk):
         sel = self.lst_kubun.curselection()
         if not sel:
             return
-        name = core.KUBUN[sel[0]][1]
+        if sel[0] >= len(self.kubun_names):
+            return
+        name = self.kubun_names[sel[0]]
         if name == self.current_kubun:
             return
         self.save_current()
@@ -290,6 +402,8 @@ class App(tk.Tk):
         self.txt.edit_reset()
         self.txt.edit_modified(False)
         self.lbl_kubun.config(text=name)
+        hint = core.HINTS.get(name, "")
+        self.lbl_hint.config(text=("載せるもの: " + hint) if hint else "")
         self.txt.focus_set()
 
     def on_modified(self, _ev=None):
@@ -355,6 +469,10 @@ class App(tk.Tk):
     def open_out_dir(self):
         if self.issue:
             open_in_explorer(self.issue.out_dir)
+
+    def open_attach_dir(self):
+        if self.issue:
+            open_in_explorer(self.issue.attach_dir)
 
     def refresh_photos(self):
         for w in self.photo_inner.winfo_children():
