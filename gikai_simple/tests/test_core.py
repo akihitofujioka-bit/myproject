@@ -55,6 +55,23 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(core.PhotoRef("p.jpg", "小", "説明").to_line(), "【写真】p.jpg｜小｜説明")
 
 
+class NumberTest(unittest.TestCase):
+    def test_rules(self):
+        self.assertEqual(core.normalize_numbers("4人が11月3日に第４６回"), "４人が11月３日に第46回")
+        self.assertEqual(core.normalize_numbers("国道３３号、２０２５年"), "国道33号、2025年")
+        self.assertEqual(core.normalize_numbers("〒７８１－２１９４　℡０８８９－２４－７７７７　本郷６１－１"),
+                         "〒７８１－２１９４　℡０８８９－２４－７７７７　本郷６１－１")
+        self.assertEqual(core.normalize_numbers("局 24-7777"), "局 24-7777")
+        self.assertEqual(core.normalize_numbers("92・７％、１千400人"), "92・７％、１千400人")
+
+    def test_photo_line_untouched(self):
+        text = "5人\n【写真】写真1.jpg｜小｜第46回\n"
+        self.assertEqual(core.normalize_numbers(text), "５人\n【写真】写真1.jpg｜小｜第46回\n")
+
+    def test_zenkaku(self):
+        self.assertEqual(core.to_zenkaku_digits("204"), "２０４")
+
+
 class IssueTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -68,7 +85,7 @@ class IssueTest(unittest.TestCase):
         self.assertEqual(issue.folder.name, "第204号")
         self.assertTrue((issue.folder / "01_表紙.txt").exists())
         self.assertTrue((issue.folder / "07_裏表紙.txt").exists())
-        self.assertIn("第204号", issue.read_text("表紙"))
+        self.assertIn("第２０４号", issue.read_text("表紙"))
         again = core.Issue.open(issue.folder)
         self.assertEqual((again.gou, again.hakkoubi), ("204", "令和８年７月31日"))
         with self.assertRaises(FileExistsError):
@@ -98,6 +115,10 @@ class IssueTest(unittest.TestCase):
         with zipfile.ZipFile(p, "w") as z:
             z.writestr("word/document.xml", xml)
         self.assertEqual(core.import_manuscript(p), "本文１\n本文２\n枠の中")
+        # 取り込み時に数字がそろう（1 桁は全角、2 桁以上は半角）
+        q = self.root / "n.txt"
+        q.write_text("4月と１２日", encoding="utf-8")
+        self.assertEqual(core.import_manuscript(q), "４月と12日")
 
     def test_import_docx_rejects_doctype(self):
         p = self.root / "bad.docx"
@@ -121,7 +142,7 @@ class BuildTest(unittest.TestCase):
         make_photo(self.issue.photo_dir / "村長.jpg", 1600, 1200)
         make_photo(self.issue.photo_dir / "小さい.jpg", 300, 200)   # 解像度不足
         make_photo(self.issue.photo_dir / "余り.jpg", 800, 600)    # 使わない
-        self.issue.write_text("行政報告", "行政報告（要旨）\n【写真】村長.jpg｜顔｜松岡村長\n本文です。")
+        self.issue.write_text("行政報告", "行政報告（要旨）\n【写真】村長.jpg｜顔｜松岡村長\n本文です。4人が第４６回に。")
         self.issue.write_text("特集", "特集の本文\n【写真】小さい.jpg｜大｜広い写真\n【写真】ない.jpg｜中")
 
     def tearDown(self):
@@ -154,6 +175,8 @@ class BuildTest(unittest.TestCase):
         doc = Document(outs[0])
         texts = [p.text for p in doc.paragraphs]
         self.assertTrue(any(t.startswith("■ 行政報告") for t in texts))
+        self.assertIn("本文です。４人が第46回に。", texts)
+        self.assertIn("第２０４号", texts)   # 表紙は変換しない
         self.assertTrue(any(t.startswith("【写真1】村長.jpg（顔・幅26mm）") and "松岡村長" in t for t in texts))
         self.assertTrue(any(t.startswith("【写真3】ない.jpg") for t in texts))
         self.assertEqual(len(doc.inline_shapes), 2)   # 見つかった写真 2 枚だけ貼られる

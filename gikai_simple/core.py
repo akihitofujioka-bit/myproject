@@ -87,6 +87,12 @@ FONT_GOTHIC = "ＭＳ ゴシック"
 # 写真配置指示書（一覧表）は表なので、この設定に関係なく横書き。
 TATEGAKI = True
 
+# 縦書きの慣行に合わせて数字の全角／半角をそろえるか（従来の .doc 4 号分から確認した規則）。
+#   1 桁 → 全角（４人・３月）、2 桁以上 → 半角（第46回・国道33号）
+#   「－」でつないだ郵便番号・電話番号・番地 → そのまま、表紙 → そのまま、【写真】行 → そのまま
+NUMBERS_TATEGAKI = True
+NUMBERS_SKIP_KUBUN = ("表紙",)
+
 # 【写真】ファイル名｜大きさ｜説明
 PHOTO_LINE = re.compile(
     r"^\s*【写真】\s*(?P<file>[^｜|]+?)"
@@ -188,6 +194,38 @@ def count_chars(text: str) -> int:
     return n
 
 
+# ---------------------------------------------------------------- 数字の表記
+
+_Z2H = str.maketrans("０１２３４５６７８９", "0123456789")
+_H2Z = str.maketrans("0123456789", "０１２３４５６７８９")
+# 「７８１－２１９４」「0889-24-7777」のような区切り付きの番号はひとまとまりで拾う
+_NUM_GROUP = re.compile(r"[0-9０-９]+(?:[－\-‐][0-9０-９]+)+|[0-9０-９]+")
+
+
+def to_zenkaku_digits(s: str) -> str:
+    return s.translate(_H2Z)
+
+
+def normalize_numbers(text: str) -> str:
+    """縦書きの慣行に合わせて数字の全角／半角をそろえる。
+
+    1 桁は全角、2 桁以上は半角。「－」でつないだ郵便番号・電話番号・番地は
+    書いてあるとおり残す。【写真】行はファイル名なので触らない。
+    """
+
+    def repl(m: re.Match) -> str:
+        s = m.group(0)
+        if any(ch in s for ch in "－-‐"):
+            return s
+        h = s.translate(_Z2H)
+        return h.translate(_H2Z) if len(h) == 1 else h
+
+    out = []
+    for line in text.split("\n"):
+        out.append(line if parse_photo_line(line) else _NUM_GROUP.sub(repl, line))
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------- 号フォルダ
 
 @dataclass
@@ -212,7 +250,7 @@ class Issue:
         issue = cls(folder=folder, gou=gou, hakkoubi=hakkoubi)
         issue.save_info()
         for code, name in KUBUN:
-            body = COVER_TEMPLATE.format(gou=gou, hakkoubi=hakkoubi) if name == "表紙" else ""
+            body = COVER_TEMPLATE.format(gou=to_zenkaku_digits(gou), hakkoubi=hakkoubi) if name == "表紙" else ""
             issue.write_text(name, body)
         (folder / "はじめにお読みください.txt").write_text(READ_ME, encoding="utf-8-sig")
         return issue
@@ -323,12 +361,14 @@ def import_manuscript(path: Path | str) -> str:
     path = Path(path)
     ext = path.suffix.lower()
     if ext == ".docx":
-        return docx_to_text(path)
-    if ext == ".doc":
-        return doc97.extract_text(path)
-    if ext in (".txt", ".text", ".md"):
-        return read_text_file(path)
-    raise ValueError(f"この形式は取り込めません: {path.name}（.docx / .doc / .txt に対応）")
+        text = docx_to_text(path)
+    elif ext == ".doc":
+        text = doc97.extract_text(path)
+    elif ext in (".txt", ".text", ".md"):
+        text = read_text_file(path)
+    else:
+        raise ValueError(f"この形式は取り込めません: {path.name}（.docx / .doc / .txt に対応）")
+    return normalize_numbers(text) if NUMBERS_TATEGAKI else text
 
 
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -533,6 +573,8 @@ def build_manuscript(issue: Issue, out: Path | str | None = None) -> tuple[Path,
         if idx > 0:
             doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
         _para(doc, f"■ {kubun}", name=FONT_GOTHIC, size=14, bold=True, after=8)
+        if NUMBERS_TATEGAKI and kubun not in NUMBERS_SKIP_KUBUN:
+            text = normalize_numbers(text)
         if not text.strip():
             _para(doc, "（原稿なし）", name=FONT_GOTHIC, size=9, color=(0x80, 0x80, 0x80))
             warnings.append(f"{kubun}: 原稿が空です")
