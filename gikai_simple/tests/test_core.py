@@ -81,15 +81,57 @@ class IssueTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_create_and_open(self):
-        issue = core.Issue.create(self.root, "２０４", "令和８年７月31日")
+        issue = core.Issue.create(self.root, "２０４", "令和８年７月31日")   # 既定は 6月号
         self.assertEqual(issue.folder.name, "第204号")
         self.assertTrue((issue.folder / "01_表紙.txt").exists())
         self.assertTrue((issue.folder / "07_裏表紙.txt").exists())
+        self.assertTrue((issue.folder / "08_お知らせ.txt").exists())
+        self.assertTrue((issue.folder / "別添").is_dir())
+        self.assertEqual(issue.kubun_list(), core.TEMPLATES["6月号"])
         self.assertIn("第２０４号", issue.read_text("表紙"))
         again = core.Issue.open(issue.folder)
-        self.assertEqual((again.gou, again.hakkoubi), ("204", "令和８年７月31日"))
+        self.assertEqual((again.gou, again.hakkoubi, again.template), ("204", "令和８年７月31日", "6月号"))
         with self.assertRaises(FileExistsError):
             core.Issue.create(self.root, "204", "")
+
+    def test_templates_by_month(self):
+        for name, extra in [("3月号", "当初予算の概要"), ("9月号", "決算の概要"), ("12月号", "行政視察・研修報告")]:
+            issue = core.Issue.create(self.root, name, "", template=name)
+            self.assertIn(extra, issue.kubun_list(), name)
+            self.assertEqual(issue.kubun_list()[0], "表紙")
+        self.assertIn("議員行政視察研修報告", core.Issue.open(self.root / "第9月号号").kubun_list())
+        with self.assertRaises(KeyError):
+            core.Issue.create(self.root, "x", "", template="13月号")
+        for k in core.TEMPLATES.values():
+            for name in k:
+                self.assertIn(name, core.HINTS)   # 雛形の区分にはヒントがある
+
+    def test_add_move_remove_kubun(self):
+        issue = core.Issue.create(self.root, "1", "", template="6月号")
+        issue.add_kubun("視聴者の声", after="特集")
+        self.assertEqual(issue.kubun_list()[5:8], ["特集", "視聴者の声", "裏表紙"])
+        self.assertTrue((issue.folder / "07_視聴者の声.txt").exists())
+        self.assertTrue((issue.folder / "08_裏表紙.txt").exists())
+        issue.move_kubun("視聴者の声", +1)
+        self.assertEqual(issue.kubun_list()[6:8], ["裏表紙", "視聴者の声"])
+        issue.move_kubun("表紙", -1)   # 端では動かない
+        self.assertEqual(issue.kubun_list()[0], "表紙")
+        issue.write_text("視聴者の声", "中身")
+        with self.assertRaises(ValueError):
+            issue.remove_kubun("視聴者の声")
+        issue.write_text("視聴者の声", "")
+        issue.remove_kubun("視聴者の声")
+        self.assertNotIn("視聴者の声", issue.kubun_list())
+        self.assertEqual([p.name for p in sorted(issue.folder.glob("0*_*.txt"))][:2], ["01_表紙.txt", "02_行政報告.txt"])
+        with self.assertRaises(FileExistsError):
+            issue.add_kubun("特集")
+        with self.assertRaises(ValueError):
+            issue.add_kubun("  ")
+        # 中身は番号を付け直しても消えない
+        issue.write_text("特集", "特集の本文")
+        issue.add_kubun("追加", after="表紙")
+        self.assertEqual(issue.read_text("特集"), "特集の本文")
+        self.assertEqual(issue.kubun_list()[1], "追加")
 
     def test_text_roundtrip_bom(self):
         issue = core.Issue.create(self.root, "1", "")
@@ -142,6 +184,7 @@ class BuildTest(unittest.TestCase):
         make_photo(self.issue.photo_dir / "村長.jpg", 1600, 1200)
         make_photo(self.issue.photo_dir / "小さい.jpg", 300, 200)   # 解像度不足
         make_photo(self.issue.photo_dir / "余り.jpg", 800, 600)    # 使わない
+        (self.issue.attach_dir / "賛否一覧.xlsx").write_bytes(b"dummy")
         self.issue.write_text("行政報告", "行政報告（要旨）\n【写真】村長.jpg｜顔｜松岡村長\n本文です。4人が第４６回に。")
         self.issue.write_text("特集", "特集の本文\n【写真】小さい.jpg｜大｜広い写真\n【写真】ない.jpg｜中")
 
@@ -210,6 +253,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(len(table.rows), 1 + 3)
         self.assertEqual(table.rows[1].cells[2].paragraphs[0].text, "村長.jpg")
         self.assertIn("余り.jpg", "\n".join(p.text for p in sheet.paragraphs))
+        self.assertIn("・賛否一覧.xlsx", [p.text for p in sheet.paragraphs])   # 別添の一覧
 
 
 if __name__ == "__main__":
