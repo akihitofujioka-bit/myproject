@@ -83,6 +83,10 @@ OUT_DIR = "出力"
 FONT_MINCHO = "ＭＳ 明朝"
 FONT_GOTHIC = "ＭＳ ゴシック"
 
+# 原稿 Word を縦書きにするか。印刷所に渡してきた従来の .doc が縦書きなので既定は縦書き。
+# 写真配置指示書（一覧表）は表なので、この設定に関係なく横書き。
+TATEGAKI = True
+
 # 【写真】ファイル名｜大きさ｜説明
 PHOTO_LINE = re.compile(
     r"^\s*【写真】\s*(?P<file>[^｜|]+?)"
@@ -456,7 +460,8 @@ def _para(doc, text="", *, name=FONT_MINCHO, size=10.5, bold=False,
     return p
 
 
-def _setup_page(doc):
+def _setup_page(doc, *, vertical: bool = False):
+    """A4 縦・余白 20mm。vertical が真なら縦書き（右から左へ行が進む）。"""
     sec = doc.sections[0]
     sec.page_width, sec.page_height = Mm(210), Mm(297)
     sec.top_margin = sec.bottom_margin = Mm(20)
@@ -465,6 +470,17 @@ def _setup_page(doc):
     style.font.name = FONT_MINCHO
     style.font.size = Pt(10.5)
     style.element.rPr.rFonts.set(qn("w:eastAsia"), FONT_MINCHO)
+    if vertical:
+        # <w:textDirection w:val="tbRl"/> を sectPr に入れると Word は縦書きになる。
+        # 要素の順番に決まりがあり、docGrid より前に置く
+        sect = sec._sectPr
+        td = OxmlElement("w:textDirection")
+        td.set(qn("w:val"), "tbRl")
+        grid = sect.find(qn("w:docGrid"))
+        if grid is not None:
+            grid.addprevious(td)
+        else:
+            sect.append(td)
 
 
 def _add_photo(doc, issue: Issue, number: int, kubun: str, ref: PhotoRef,
@@ -503,7 +519,7 @@ def build_manuscript(issue: Issue, out: Path | str | None = None) -> tuple[Path,
         raise RuntimeError("python-docx が入っていません（pip install python-docx）")
     out = Path(out) if out else issue.out_dir / f"{issue.title()}_原稿.docx"
     doc = Document()
-    _setup_page(doc)
+    _setup_page(doc, vertical=TATEGAKI)
     warnings: list[str] = []
 
     _para(doc, f"ひだか議会だより {issue.title()}　原稿", name=FONT_GOTHIC, size=16, bold=True, align="center")
