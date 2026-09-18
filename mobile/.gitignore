@@ -1,2 +1,4 @@
 node_modules/
 www/
+# npm run iphone のビルド中間ファイル
+.build/
