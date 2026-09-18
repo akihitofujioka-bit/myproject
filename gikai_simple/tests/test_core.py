@@ -157,8 +157,16 @@ class BuildTest(unittest.TestCase):
         self.assertTrue(any(t.startswith("【写真1】村長.jpg（顔・幅26mm）") and "松岡村長" in t for t in texts))
         self.assertTrue(any(t.startswith("【写真3】ない.jpg") for t in texts))
         self.assertEqual(len(doc.inline_shapes), 2)   # 見つかった写真 2 枚だけ貼られる
+        # 原稿は縦書き、指示書は横書き
+        from docx.oxml.ns import qn
+        td = doc.sections[0]._sectPr.find(qn("w:textDirection"))
+        self.assertIsNotNone(td)
+        self.assertEqual(td.get(qn("w:val")), "tbRl")
+        self.assertEqual(list(doc.sections[0]._sectPr).index(td) + 1,
+                         list(doc.sections[0]._sectPr).index(doc.sections[0]._sectPr.find(qn("w:docGrid"))))
 
         sheet = Document(outs[1])
+        self.assertIsNone(sheet.sections[0]._sectPr.find(qn("w:textDirection")))
         table = sheet.tables[0]
         self.assertEqual(len(table.rows), 1 + 3)
         self.assertEqual(table.rows[1].cells[2].paragraphs[0].text, "村長.jpg")
