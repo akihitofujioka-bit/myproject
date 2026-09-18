@@ -37,3 +37,45 @@
 - **プログラマーとして** — 読みやすく保守しやすいコードを書く。既存コードの書き方・命名・粒度に合わせる。動作確認できないものを「できた」と言わない。
 - **エンジニアとして** — 目先の実装だけでなく、設計・運用・障害時の挙動まで見通す。トレードオフがある場合は理由とともに提示する。
 - **行政職員として** — 正確性・公平性・説明責任を重んじる。個人情報や機微情報の取り扱いは慎重に行い、外部送信や公開を伴う操作は必ず事前に確認する。専門用語は避け、誰が読んでも分かる日本語で説明する。根拠（出典・該当箇所）を示す。
+
+## iPhone アプリ（`mobile/`）の開発ルール — 別セッションでも同じ手順で
+
+`apps/` の Web アプリを Capacitor で iPhone アプリに包んでいる。`apps/` や `mobile/` を変えたら、**利用者に Xcode の操作を頼まず、Claude がこの Mac から iPhone へ入れるところまで行う**（利用者の指示: 2026-09-18）。
+
+### 更新の流れ（Mac で作業しているとき）
+
+1. 変更をコミットする（版表記にコミット番号が入るため。未コミットだと番号に `+` が付く）
+2. iPhone を USB で繋いでロックを解除してもらう
+3. `cd mobile && npm run iphone` を実行する（`mobile/scripts/install-iphone.sh`）
+   - `www` の組み立て → `cap sync` → 署名付き `xcodebuild` → `devicectl` で転送 → 起動、まで自動
+   - **サンドボックスの中では失敗する**（Swift Package のキャッシュ書き込み、Mach ポート、キーチェーン）。そのコマンドに限りサンドボックスを外して実行する
+   - iPhone がロック中だと起動だけ失敗するが、インストールは済んでいる
+4. 報告には必ず **版** を書く。例: 「版 2026-09-18 09:34（8fd6240）」。アプリのトップ画面の一番下に同じ表記が出るので、利用者はこれで新しい版が入ったか確かめる
+
+### 端末の見分け方
+
+- 本物の iPhone は `xcrun devicectl list devices` で `physical` と出る行（端末名「壱師」、UDID `00008150-000E058C0240401C`）
+- 「iPhone 17 Pro」のように機種名だけの行は **シミュレータ**。Xcode の実行先がこれになっていると本物には入らない
+- 複数台あるときは `IPHONE_UDID=… npm run iphone` で指定する
+
+### Swift を変えたとき
+
+- この Mac には Xcode があるので、`xcodebuild … -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` で **必ずコンパイルを通してから** 「できた」と言う
+- Linux 側のセッション（Xcode なし）で書いた Swift は「未検証」と明記し、Mac 側で上の手順で確かめる
+
+### テストの実行（Mac）
+
+- ブラウザ不要のもの: `node apps/tests/<名前>.test.mjs`（`ean`／`ics`／`receipt`／`meeting`／`kakeibo`／`cards`／`build` など）
+- Playwright を使うもの（`smoke.mjs`／`pwa`／`nativebridge`）: リポジトリに `node_modules` を作らず、一時領域に `npm i playwright` して `NODE_PATH` で渡す。ブラウザは `~/Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-mac/headless_shell` を `CHROMIUM_PATH` で指定。Chromium の起動もサンドボックス内では失敗するので、その実行だけ外す
+- `gikai_editor` のテストは `gikai_editor/仕様書.md` の日付行を書き換えることがある。実行後に差分が出ていたら `git checkout -- gikai_editor/仕様書.md` で戻す
+
+### 取り込み（PR）
+
+- 作業ブランチで作業し、`gh pr create` → `gh pr merge --merge` で `main` へ入れる。`gh` もサンドボックス内では証明書検証で失敗するので、その実行だけ外す
+- マージ後は作業ブランチを `origin/main` に fast-forward して push し、次の作業を同じブランチで続ける
+- ローカルだけにあるブランチ（例: 別セッションが作った `fix/…`）に取り込み忘れがないか、`git branch --no-merged origin/main` で時々確かめる
+
+### 変えてはいけないこと
+
+- アプリは外部にデータを送らない（画面の文言にも書いてある設計方針）。通信を伴う機能を足す前に必ず利用者に相談する
+- リポジトリは非公開。公開設定や GitHub Pages の有効化は利用者の判断
