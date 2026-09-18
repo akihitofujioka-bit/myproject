@@ -180,13 +180,29 @@ class BuildTest(unittest.TestCase):
         self.assertTrue(any(t.startswith("【写真1】村長.jpg（顔・幅26mm）") and "松岡村長" in t for t in texts))
         self.assertTrue(any(t.startswith("【写真3】ない.jpg") for t in texts))
         self.assertEqual(len(doc.inline_shapes), 2)   # 見つかった写真 2 枚だけ貼られる
-        # 原稿は縦書き、指示書は横書き
+        for shp in doc.inline_shapes:
+            self.assertLessEqual(shp.height.mm, core.DAN_HEIGHT_MM)   # 1 段の高さに収まる
+        # 表紙のセクションは横書き 1 段、本文のセクションは縦書き 5 段。指示書は横書き
         from docx.oxml.ns import qn
-        td = doc.sections[0]._sectPr.find(qn("w:textDirection"))
+        self.assertEqual(len(doc.sections), 2)
+        cover, body = doc.sections
+        self.assertIsNone(cover._sectPr.find(qn("w:textDirection")))
+        td = body._sectPr.find(qn("w:textDirection"))
         self.assertIsNotNone(td)
         self.assertEqual(td.get(qn("w:val")), "tbRl")
-        self.assertEqual(list(doc.sections[0]._sectPr).index(td) + 1,
-                         list(doc.sections[0]._sectPr).index(doc.sections[0]._sectPr.find(qn("w:docGrid"))))
+        self.assertEqual(list(body._sectPr).index(td) + 1,
+                         list(body._sectPr).index(body._sectPr.find(qn("w:docGrid"))))
+        cols = body._sectPr.find(qn("w:cols"))
+        self.assertEqual(cols.get(qn("w:num")), "5")
+        self.assertEqual(cols.get(qn("w:space")), "340")
+        self.assertEqual(round(body.top_margin.mm), 15)
+        # 2 桁の数字には縦中横が掛かる
+        para = next(p for p in doc.paragraphs if p.text == "本文です。４人が第46回に。")
+        runs = [(r.text, r._element.find(".//" + qn("w:eastAsianLayout")) is not None) for r in para.runs]
+        self.assertEqual(runs, [("本文です。４人が第", False), ("46", True), ("回に。", False)])
+        # 表紙には掛からない
+        cpara = next(p for p in doc.paragraphs if p.text.startswith("令和"))
+        self.assertTrue(all(r._element.find(".//" + qn("w:eastAsianLayout")) is None for r in cpara.runs))
 
         sheet = Document(outs[1])
         self.assertIsNone(sheet.sections[0]._sectPr.find(qn("w:textDirection")))

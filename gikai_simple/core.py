@@ -41,6 +41,7 @@ except ImportError:  # 写真の縮小・向き補正ができないだけで、
 
 try:
     from docx import Document
+    from docx.enum.section import WD_SECTION
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
@@ -83,9 +84,15 @@ OUT_DIR = "出力"
 FONT_MINCHO = "ＭＳ 明朝"
 FONT_GOTHIC = "ＭＳ ゴシック"
 
-# 原稿 Word を縦書きにするか。印刷所に渡してきた従来の .doc が縦書きなので既定は縦書き。
+# 原稿 Word の紙面。印刷所に渡してきた従来の .doc に合わせる:
+#   表紙は横書き 1 段、本文は縦書き 5 段（余白・段間は第203号の実測値）。
 # 写真配置指示書（一覧表）は表なので、この設定に関係なく横書き。
 TATEGAKI = True
+DANSU = 5                      # 本文の段数
+MARGIN_MM = (15, 12, 15, 15)   # 上・下・左・右
+DAN_SPACE_MM = 6               # 段の間隔
+LINE_SPACING = 1.45            # 本文の行送り（倍）
+DAN_HEIGHT_MM = (297 - MARGIN_MM[0] - MARGIN_MM[1] - DAN_SPACE_MM * (DANSU - 1)) / DANSU   # 1 段の高さ
 
 # 縦書きの慣行に合わせて数字の全角／半角をそろえるか（従来の .doc 4 号分から確認した規則）。
 #   1 桁 → 全角（４人・３月）、2 桁以上 → 半角（第46回・国道33号）
@@ -489,19 +496,41 @@ def _set_font(run, name=FONT_MINCHO, size=10.5, bold=False, color=None):
     rfonts.set(qn("w:eastAsia"), name)
 
 
+# 縦書きで立てて入れる（縦中横）半角数字: 2〜3 桁。1 桁は全角にしてあり、4 桁以上はそのまま
+_TATECHUYOKO = re.compile(r"(?<![0-9])[0-9]{2,3}(?![0-9])")
+
+
 def _para(doc, text="", *, name=FONT_MINCHO, size=10.5, bold=False,
-          color=None, align=None, after=4):
+          color=None, align=None, after=4, tatechuyoko=False, line=None):
     p = doc.add_paragraph()
     if align == "center":
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.space_after = Pt(after)
-    if text:
+    if line:
+        p.paragraph_format.line_spacing = line
+    if not text:
+        return p
+    if not tatechuyoko:
         _set_font(p.add_run(text), name, size, bold, color)
+        return p
+    # 2〜3 桁の半角数字だけ別の run にして「縦中横」を掛ける
+    pos = 0
+    for m in _TATECHUYOKO.finditer(text):
+        if m.start() > pos:
+            _set_font(p.add_run(text[pos:m.start()]), name, size, bold, color)
+        run = p.add_run(m.group(0))
+        _set_font(run, name, size, bold, color)
+        layout = OxmlElement("w:eastAsianLayout")
+        layout.set(qn("w:combine"), "1")
+        run._element.get_or_add_rPr().append(layout)
+        pos = m.end()
+    if pos < len(text):
+        _set_font(p.add_run(text[pos:]), name, size, bold, color)
     return p
 
 
-def _setup_page(doc, *, vertical: bool = False):
-    """A4 縦・余白 20mm。vertical が真なら縦書き（右から左へ行が進む）。"""
+def _setup_page(doc):
+    """A4 縦・余白 20mm・横書き（表紙と指示書用）。既定フォントも決める。"""
     sec = doc.sections[0]
     sec.page_width, sec.page_height = Mm(210), Mm(297)
     sec.top_margin = sec.bottom_margin = Mm(20)
@@ -510,10 +539,23 @@ def _setup_page(doc, *, vertical: bool = False):
     style.font.name = FONT_MINCHO
     style.font.size = Pt(10.5)
     style.element.rPr.rFonts.set(qn("w:eastAsia"), FONT_MINCHO)
-    if vertical:
-        # <w:textDirection w:val="tbRl"/> を sectPr に入れると Word は縦書きになる。
-        # 要素の順番に決まりがあり、docGrid より前に置く
-        sect = sec._sectPr
+
+
+def _add_body_section(doc):
+    """本文用のセクションを足す: 縦書き（右から左）5 段、余白と段間は従来の紙面に合わせる。"""
+    sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    sec.top_margin, sec.bottom_margin = Mm(MARGIN_MM[0]), Mm(MARGIN_MM[1])
+    sec.left_margin, sec.right_margin = Mm(MARGIN_MM[2]), Mm(MARGIN_MM[3])
+    sect = sec._sectPr
+    # 段組: <w:cols w:num="5" w:space="340"/>（space は twip。1mm = 56.7twip）
+    cols = sect.find(qn("w:cols"))
+    if cols is None:
+        cols = OxmlElement("w:cols")
+        sect.append(cols)
+    cols.set(qn("w:num"), str(DANSU))
+    cols.set(qn("w:space"), str(round(DAN_SPACE_MM * 56.7)))
+    if TATEGAKI:
+        # <w:textDirection w:val="tbRl"/> で縦書き。要素の順番に決まりがあり docGrid の前に置く
         td = OxmlElement("w:textDirection")
         td.set(qn("w:val"), "tbRl")
         grid = sect.find(qn("w:docGrid"))
@@ -521,6 +563,7 @@ def _setup_page(doc, *, vertical: bool = False):
             grid.addprevious(td)
         else:
             sect.append(td)
+    return sec
 
 
 def _add_photo(doc, issue: Issue, number: int, kubun: str, ref: PhotoRef,
@@ -544,8 +587,16 @@ def _add_photo(doc, issue: Issue, number: int, kubun: str, ref: PhotoRef,
     buf = reduced_jpeg(src)
     p = doc.add_paragraph()
     p.paragraph_format.space_after = Pt(2)
+    # 縦書き 5 段の中では、写真の高さが 1 段の高さを超えると段からはみ出すので、
+    # 貼るときは高さを 1 段に収まるまで縮める（印刷所への大きさの指示は赤字のとおり）
+    width_mm = ref.width_mm
+    max_h = DAN_HEIGHT_MM - 4
+    if TATEGAKI and info.width_px and info.height_px:
+        h = width_mm * info.height_px / info.width_px
+        if h > max_h:
+            width_mm = max_h * info.width_px / info.height_px
     try:
-        p.add_run().add_picture(buf if buf else str(src), width=Mm(ref.width_mm))
+        p.add_run().add_picture(buf if buf else str(src), width=Mm(width_mm))
     except Exception as e:
         warnings.append(f"{kubun}: {ref.file} — Word に貼れませんでした（{e}）")
         _set_font(p.add_run("（写真を貼れませんでした）"), FONT_GOTHIC, 9, color=(0xC0, 0, 0))
@@ -559,7 +610,7 @@ def build_manuscript(issue: Issue, out: Path | str | None = None) -> tuple[Path,
         raise RuntimeError("python-docx が入っていません（pip install python-docx）")
     out = Path(out) if out else issue.out_dir / f"{issue.title()}_原稿.docx"
     doc = Document()
-    _setup_page(doc, vertical=TATEGAKI)
+    _setup_page(doc)   # 1 つ目のセクション = 表紙（横書き 1 段）
     warnings: list[str] = []
 
     _para(doc, f"ひだか議会だより {issue.title()}　原稿", name=FONT_GOTHIC, size=16, bold=True, align="center")
@@ -570,7 +621,10 @@ def build_manuscript(issue: Issue, out: Path | str | None = None) -> tuple[Path,
 
     number = 0
     for idx, (kubun, text) in enumerate(issue.all_texts()):
-        if idx > 0:
+        is_cover = idx == 0
+        if idx == 1:
+            _add_body_section(doc)   # ここから縦書き 5 段
+        elif idx > 1:
             doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
         _para(doc, f"■ {kubun}", name=FONT_GOTHIC, size=14, bold=True, after=8)
         if NUMBERS_TATEGAKI and kubun not in NUMBERS_SKIP_KUBUN:
@@ -584,7 +638,9 @@ def build_manuscript(issue: Issue, out: Path | str | None = None) -> tuple[Path,
                 _add_photo(doc, issue, number, kubun, block, warnings)
             else:
                 for line in block.split("\n"):
-                    _para(doc, line, after=0)
+                    _para(doc, line, after=0,
+                          tatechuyoko=TATEGAKI and not is_cover,
+                          line=None if is_cover else LINE_SPACING)
     doc.save(out)
     return out, warnings
 
