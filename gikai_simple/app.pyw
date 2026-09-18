@@ -63,6 +63,10 @@ HELP = """使い方（5 つだけ）
    出力フォルダに「原稿（写真入り）」と「写真配置指示書」ができます
    印刷所には、この Word 2 つと「写真」フォルダの中身を渡します
 
+数字は縦書きの慣行に合わせて自動でそろえます（Word を作るとき・取り込むとき）
+   1 桁は全角「４人」、2 桁以上は半角「第46回」。〒・℡・番地はそのまま
+   手で書いた文章は「数字をそろえる」ボタンでもそろえられます（表紙は対象外）
+
 大きさの目安（紙面は 5 段組・1 段 約 30mm）
    大 = 幅 80mm   中 = 幅 55mm   小 = 幅 38mm   顔 = 幅 26mm（顔写真）
 
@@ -154,7 +158,8 @@ class App(tk.Tk):
         self.lbl_kubun = ttk.Label(bar, text="区分を選んでください", font=(UI_FONT[0], UI_FONT[1], "bold"))
         self.lbl_kubun.pack(side="left")
         ttk.Button(bar, text="保存", command=self.save_current).pack(side="right")
-        ttk.Button(bar, text="原稿ファイルを取り込む", command=self.import_files).pack(side="right", padx=6)
+        ttk.Button(bar, text="数字をそろえる", command=self.fix_numbers).pack(side="right", padx=6)
+        ttk.Button(bar, text="原稿ファイルを取り込む", command=self.import_files).pack(side="right")
         self.txt = tk.Text(mid, wrap="char", undo=True, font=TEXT_FONT, padx=8, pady=6)
         scroll = ttk.Scrollbar(mid, command=self.txt.yview)
         self.txt.configure(yscrollcommand=scroll.set)
@@ -323,6 +328,23 @@ class App(tk.Tk):
             self.txt.insert("end", text)
         self.txt.edit_modified(True)
         self.save_current()
+
+    def fix_numbers(self):
+        """いま開いている区分の数字を縦書きの慣行にそろえる（1 桁全角・2 桁以上半角）。"""
+        if not self.issue or not self.current_kubun:
+            return
+        before = self.txt.get("1.0", "end-1c")
+        after = core.normalize_numbers(before)
+        if before == after:
+            self.lbl_status.config(text="数字はそろっています")
+            return
+        pos = self.txt.index("insert")
+        self.txt.delete("1.0", "end")
+        self.txt.insert("1.0", after)
+        self.txt.mark_set("insert", pos)
+        self.txt.edit_modified(True)
+        self.save_current()
+        self.lbl_status.config(text=f"{self.current_kubun} の数字をそろえました")
 
     # ------------------------------------------------------------ 写真
 
