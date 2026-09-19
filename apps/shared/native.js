@@ -44,6 +44,59 @@
     return !!notifications();
   }
 
+  /* ---------- 通知の文面 ---------- */
+
+  /*
+   * Apple Watch は通知の1行目（太字）と2行目しか見えない場面が多い。
+   * そこで1行目に「いつまでか＋件名」、2行目に場所・状態を入れ、
+   * 手首を見ただけで判断できるようにする。
+   */
+
+  // 通知が鳴る時点から見て、期限までどれだけあるかを表す言葉
+  function whenLabel(minutesBefore) {
+    var m = Number(minutesBefore) || 0;
+    if (m <= 0) return "本日";
+    if (m < 60) return m + "分後";
+    if (m < 1440) return Math.round(m / 60) + "時間後";
+    var days = Math.round(m / 1440);
+    if (days === 1) return "明日";
+    if (days % 30 === 0) return (days / 30) + "か月後";
+    return days + "日後";
+  }
+
+  // 「（○○から登録）」のような出どころの断り書きは、手首では読む価値がないため省く
+  function firstDetail(description) {
+    var lines = String(description || "").split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (line && !/^（.*）$/.test(line)) return line;
+    }
+    return "";
+  }
+
+  function clip(text, max) {
+    var t = String(text || "");
+    return t.length > max ? t.slice(0, max - 1) + "…" : t;
+  }
+
+  /**
+   * 1件ぶんの通知の文面を作る。
+   * ev.summaryLine があればそれを2行目に使い、無ければ場所と説明から組み立てる。
+   */
+  function notice(ev, minutesBefore) {
+    var parts = [];
+    if (ev.summaryLine) parts.push(ev.summaryLine);
+    else {
+      if (ev.location) parts.push(ev.location);
+      var detail = firstDetail(ev.description);
+      if (detail) parts.push(detail);
+    }
+    return {
+      title: clip(whenLabel(minutesBefore) + "：" + (ev.title || ""), 60),
+      body: clip(parts.join(" ／ "), 60)
+    };
+  }
+
   /**
    * 期限の通知を端末に登録する。
    * events は ics.js と同じ形（uid / title / date / time / description / alarms）。
@@ -63,10 +116,11 @@
         (ev.alarms || [1440, 0]).forEach(function (minutesBefore, index) {
           var at = atLocal(ev.date, ev.time, minutesBefore);
           if (at.getTime() <= now) return; // 過ぎた時刻には登録しない
+          var text = notice(ev, minutesBefore);
           list.push({
             id: (idFrom(ev.uid) + index) % 2000000000,
-            title: minutesBefore ? "明日が期限です" : "本日が期限です",
-            body: ev.title,
+            title: text.title,
+            body: text.body,
             schedule: { at: at, allowWhileIdle: true }
           });
         });
@@ -90,6 +144,8 @@
   global.Native = {
     available: available,
     scheduleDeadlines: scheduleDeadlines,
+    notice: notice,
+    whenLabel: whenLabel,
     idFrom: idFrom
   };
 })(typeof window !== "undefined" ? window : this);

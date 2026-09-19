@@ -788,6 +788,29 @@ document.getElementById("statusFilter").addEventListener("click", function (e) {
 
 /* ---------- カレンダーへの登録 ---------- */
 
+/*
+ * 通知の2行目。Apple Watch では1行目と2行目しか見えない場面が多いため、
+ * 手首を見ただけで動けるだけの情報（提出先と状態、会議なら時刻・場所・懇親会）を入れる。
+ */
+function noticeLine(item) {
+  var parts = [];
+  if (item.kind === "会議") {
+    var time = "", social = "";
+    String(item.note || "").split("\n").forEach(function (line) {
+      var t = line.trim();
+      if (/^\d{1,2}:\d{2}/.test(t)) time = t.replace(/\s*開始$/, "");
+      else if (/懇親会/.test(t)) social = t;
+    });
+    if (time) parts.push(time);
+    if (item.dest) parts.push(item.dest);
+    if (social) parts.push(social);
+    return parts.join(" ／ ");
+  }
+  if (item.dest) parts.push("提出先：" + item.dest);
+  parts.push("状態：" + item.status);
+  return parts.join(" ／ ");
+}
+
 // 端末の標準カレンダーに読み込ませる予定を1件ぶん作る
 function toCalendarEvent(item) {
   var parts = [];
@@ -801,6 +824,7 @@ function toCalendarEvent(item) {
     time: "09:00",
     location: item.dest,
     description: parts.join("\n"),
+    summaryLine: noticeLine(item),
     alarms: [1440, 0], // 前日の同時刻と、当日9時
     sequence: item.icsSeq
   };
@@ -1440,6 +1464,7 @@ if (window.ReceiptScan && window.ReceiptScan.available()) {
 
 // テストから読み取り結果を差し込むための入口
 window.docsApp = {
+  noticeLine: noticeLine,
   applyMeetingScan: applyMeetingScan,
   renderMeetings: renderMeetings,
   collectMeetings: collectMeetings,

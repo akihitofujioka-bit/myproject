@@ -300,12 +300,13 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
     <div class="chips">
       <button type="button" id="calendarSoon">期限が近い食材をカレンダーに登録</button>
       <button type="button" id="copyExpiring">期限が近い食材をコピー</button>
+      <button type="button" id="shopList">使い切ったものを買い物リストへ</button>
       <button type="button" id="exportBtn">JSONで保存</button>
       <button type="button" id="importBtn">JSONから読み込み</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
     <p class="footnote" style="margin:10px 0 0">
-      「カレンダーに登録」を押すと、期限が7日以内の食材が端末の標準カレンダーに入り、<strong>前日と当日の18時に通知</strong>が届きます。「期限が近い食材をコピー」は献立を相談するときに貼り付けて使えます。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
+      「カレンダーに登録」を押すと、期限が7日以内の食材が端末の標準カレンダーに入り、<strong>前日と当日の18時に通知</strong>が届きます。「期限が近い食材をコピー」は献立を相談するときに貼り付けて使えます。「使い切ったものを買い物リストへ」は、直近2週間で使い切って在庫が無くなったものを iPhone の「リマインダー」に送ります（Apple Watch でも消し込めます。初回だけショートカットの用意が必要です）。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
     </p>
     <p class="footnote" id="codeCount" style="margin:6px 0 0"></p>
   </section>
@@ -349,6 +350,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
+<script src="../shared/reminders.js"></script>
 <script src="ean.js"></script>
 <script src="../shared/nativescan.js"></script>
 <script>
@@ -801,6 +803,8 @@ document.getElementById("calendarSoon").addEventListener("click", function () {
       time: "18:00", // 夕食の支度前に知らせる
       location: it.place,
       description: (it.note ? it.note + "\n" : "") + "（冷蔵庫の在庫管理から登録）",
+      // 通知の2行目。Apple Watch で手首を見ただけで分かるようにする
+      summaryLine: [it.place ? "置き場所：" + it.place : "", it.note || ""].filter(Boolean).join(" ／ "),
       alarms: [1440, 0],
       sequence: it.icsSeq || 0
     };
@@ -839,6 +843,39 @@ document.getElementById("copyExpiring").addEventListener("click", function () {
     return "- " + it.name + (it.qty ? " " + it.qty + (it.unit || "") : "") + "：" + dueText(it.expiresOn);
   }).join("\n");
   copyText(text);
+});
+
+/* ---------- 買い物リスト（リマインダー経由で Apple Watch へ） ---------- */
+
+var SHOPPING_DAYS = 14;
+
+/*
+ * 買い足すものを選ぶ。
+ * 「直近2週間で使い切り、いま在庫に無いもの」を対象にする。
+ * 廃棄は買い直すとは限らないため入れない。
+ */
+function shoppingNames(now) {
+  var since = (now || Date.now()) - SHOPPING_DAYS * 24 * 60 * 60 * 1000;
+  var inStock = {};
+  state.items.forEach(function (it) { inStock[it.name] = true; });
+  var names = [];
+  state.log.slice().reverse().forEach(function (l) {
+    if (l.action !== "consume") return;
+    if (new Date(l.at).getTime() < since) return;
+    if (inStock[l.name]) return;
+    names.push(l.name);
+  });
+  return window.Reminders.clean(names);
+}
+
+document.getElementById("shopList").addEventListener("click", function () {
+  var names = shoppingNames();
+  if (!names.length) { toast("買い足すものはありません（直近2週間に使い切ったものがありません）"); return; }
+  window.Reminders.send(names).then(function (res) {
+    if (res.how === "shortcut") { toast("リマインダーに送りました（" + res.count + "件）"); return; }
+    if (res.how === "copied") { toast("コピーしました（" + res.count + "件）。リマインダーに貼り付けてください"); return; }
+    toast("コピーできませんでした");
+  });
 });
 
 function copyText(text) {
