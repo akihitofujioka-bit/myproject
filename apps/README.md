@@ -112,6 +112,16 @@ iPhone アプリとして動いているときは、カレンダーではなく*
 2行目は各アプリが渡す `summaryLine`（書類は提出先と状態、会議は時刻・場所・懇親会、
 食材と備蓄は残数と置き場所）。設定手順は `docs/apple-watch-event-haptics.md` にまとめてある。
 
+## Apple Watch へ送る一覧
+
+`apps/shared/watch.js` が、どのアプリを開いていても全体の一覧を組み立て、iPhone アプリの
+WatchBridge プラグイン経由で Apple Watch に渡す（ブラウザで開いているときは何もしない）。
+
+- 送るのは**今日から1週間先の会議**・**2週間先までの期限**（過ぎたものも残す）・**買い物リスト**で、それぞれ最大20件
+- 送る先は Apple Watch だけで、外部のサーバーには送らない（iPhone と Watch の直接通信）
+- 送る時機は「画面を開いたとき」「画面を閉じるとき」「各アプリの `save()`」
+- Watch 側のアプリ（SwiftUI）は `mobile/ios/App/WatchAppSources/`。導入手順は `docs/apple-watch-app.md`
+
 ## 買い物リスト（リマインダー経由）
 
 冷蔵庫の「使い切ったものを買い物リストへ」と、備蓄の「補充が必要なものを買い物リストへ」は、

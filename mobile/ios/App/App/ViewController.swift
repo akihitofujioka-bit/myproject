@@ -10,7 +10,8 @@ import Capacitor
 class ViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(ReceiptScannerPlugin())
+        bridge?.registerPluginInstance(WatchBridgePlugin())
         // 登録が実際に行われたことを起動ログで確認できるようにする
-        CAPLog.print("⚡️  ReceiptScanner plugin registered")
+        CAPLog.print("⚡️  ReceiptScanner / WatchBridge plugins registered")
     }
 }

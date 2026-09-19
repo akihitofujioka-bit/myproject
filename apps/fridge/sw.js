@@ -3,8 +3,8 @@
  * 方針は stale-while-revalidate（まずキャッシュを返し、裏で最新版を取りに行く）。
  * そのためアプリを更新したときは、次に開いたときに反映される。
  */
-var CACHE = "fridge-v6";
-var ASSETS = ["./", "./index.html", "../shared/deeplink.js", "../shared/nativescan.js", "./ean.js", "../shared/ics.js", "../shared/native.js", "../shared/reminders.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
+var CACHE = "fridge-v7";
+var ASSETS = ["./", "./index.html", "../shared/deeplink.js", "../shared/nativescan.js", "./ean.js", "../shared/ics.js", "../shared/native.js", "../shared/watch.js", "../shared/reminders.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }).then(function () {
