@@ -30,7 +30,7 @@ ToolSearch("gmail search threads")
 
 ## 2. 期限データ（書類・回覧）
 
-`data/deadlines.json` があれば読む。これは `apps/docs-tracker/index.html`（書類・回覧の期限トラッカー）から「JSONで保存」で書き出したファイル。
+`data/deadlines.json` があれば読む。これは `apps/docs-tracker/index.html`（書類・回覧・会議の期限トラッカー）から「JSONで保存」で書き出したファイル。
 
 ```json
 { "v": 1, "items": [
