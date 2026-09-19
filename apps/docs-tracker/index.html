@@ -132,6 +132,11 @@ button.link { border: none; background: none; color: var(--accent); padding: 4px
   border: 1px solid var(--border); background: var(--surface); cursor: pointer;
 }
 .chip[aria-pressed="true"] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
+ul.picklist { list-style: none; margin: 0; padding: 0; }
+ul.picklist li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+ul.picklist input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
+ul.picklist .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.picklist .pr { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 ul.items { list-style: none; margin: 0; padding: 0; }
 li.item {
   border: 1px solid var(--border);
@@ -356,7 +361,33 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       通知の書き方は文書ごとに違うため、<strong>必ず内容を確認してから登録してください</strong>。
       1枚に複数の会議が載っている場合は分けて読み取ります。
     </p>
-    <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
+    <div class="chips">
+      <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
+      <button type="button" id="meetingManualBtn">＋ 手入力で追加</button>
+      <button type="button" id="calendarFindBtn" hidden>📅 カレンダーから探す</button>
+    </div>
+  </section>
+
+  <section class="card" id="calendarPickCard" hidden>
+    <h2>カレンダーから探す</h2>
+    <p class="footnote" style="margin:0 0 10px">
+      使うカレンダーを選んでください。個人の予定と混ざらないよう、会議を入れているカレンダーだけを選ぶことをおすすめします。今日から60日以内の予定が対象です。
+    </p>
+    <div id="calendarList"></div>
+    <div class="chips" style="margin-top:10px">
+      <button type="button" class="primary" id="calendarSearchBtn">この中から探す</button>
+      <button type="button" class="link" id="calendarPickCancel">やめる</button>
+    </div>
+  </section>
+
+  <section class="card" id="calendarCandidates" hidden>
+    <h2>カレンダーの予定（会議として登録するものを選ぶ）</h2>
+    <p class="footnote" id="calendarCandidatesSummary" style="margin:0 0 10px"></p>
+    <ul class="picklist" id="calendarCandidatesList"></ul>
+    <div class="chips" style="margin-top:10px">
+      <button type="button" class="primary" id="calendarRegisterBtn">選んだものを会議として登録</button>
+      <button type="button" class="link" id="calendarCandidatesCancel">やめる</button>
+    </div>
   </section>
 
   <section class="card" id="meetingConfirm" hidden>
@@ -436,6 +467,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/receipt.js"></script>
 <script src="../shared/meeting.js"></script>
 <script src="../shared/scanrouter.js"></script>
+<script src="../shared/calendarread.js"></script>
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
 <script src="../shared/watch.js"></script>
@@ -1387,7 +1419,8 @@ function collectMeetings() {
       startTime: get("m-start"),
       endTime: get("m-end"),
       place: get("m-place"),
-      social: { has: social, fee: fee === "" ? null : Number(fee) }
+      social: { has: social, fee: fee === "" ? null : Number(fee) },
+      source: (scannedMeetings[i] && scannedMeetings[i].source) || ""
     });
   });
   return out;
@@ -1398,7 +1431,7 @@ function meetingNote(m) {
   if (m.startTime) parts.push(m.startTime + (m.endTime ? "〜" + m.endTime : "") + " 開始");
   if (m.social.has) parts.push("懇親会あり" + (m.social.fee ? "（会費 " + m.social.fee.toLocaleString("ja-JP") + "円）" : ""));
   else parts.push("懇親会なし");
-  parts.push("（会議の通知から登録）");
+  parts.push(m.source === "calendar" ? "（カレンダーから登録）" : m.source === "manual" ? "（手入力で登録）" : "（会議の通知から登録）");
   return parts.join("\n");
 }
 
@@ -1493,6 +1526,130 @@ if (window.ReceiptScan && window.ReceiptScan.available()) {
   var handed = window.ScanRouter && window.ScanRouter.takeHandoff("meeting");
   if (handed && handed.length) applyMeetingScan(handed);
 })();
+
+/* ---------- 会議を手入力で追加する ---------- */
+
+document.getElementById("meetingManualBtn").addEventListener("click", function () {
+  renderMeetings(scannedMeetings.concat([{
+    title: "", date: "", startTime: "", endTime: "", place: "",
+    social: { has: false, fee: null }, source: "manual"
+  }]));
+  document.getElementById("meetingConfirm").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+/* ---------- カレンダーから会議を探す ---------- */
+
+var CALENDAR_IDS_KEY = "docsTracker.calendarIds";
+var calendarCandidates = [];
+
+function loadSavedCalendarIds() {
+  try { return JSON.parse(localStorage.getItem(CALENDAR_IDS_KEY) || "[]"); } catch (e) { return []; }
+}
+function saveCalendarIds(ids) {
+  try { localStorage.setItem(CALENDAR_IDS_KEY, JSON.stringify(ids)); } catch (e) { /* 保存できなくても致命的ではない */ }
+}
+
+if (window.CalendarRead && window.CalendarRead.available()) {
+  document.getElementById("calendarFindBtn").hidden = false;
+}
+
+document.getElementById("calendarFindBtn").addEventListener("click", function () {
+  var btn = this;
+  btn.disabled = true;
+  btn.textContent = "確認しています…";
+  function reset() { btn.disabled = false; btn.textContent = "📅 カレンダーから探す"; }
+  window.CalendarRead.isSupported().then(function (res) {
+    if (res && res.authorized) return { granted: true };
+    return window.CalendarRead.requestAccess();
+  }).then(function (res) {
+    reset();
+    if (!res || !res.granted) {
+      toast("カレンダーへのアクセスが許可されていません。設定アプリで許可してください");
+      return;
+    }
+    return window.CalendarRead.listCalendars().then(showCalendarPicker);
+  }).catch(function (err) {
+    reset();
+    toast("カレンダーを確認できませんでした：" + (err && err.message ? err.message : "原因不明"));
+  });
+});
+
+function showCalendarPicker(res) {
+  var calendars = (res && res.calendars) || [];
+  if (!calendars.length) { toast("使えるカレンダーが見つかりませんでした"); return; }
+  var saved = loadSavedCalendarIds();
+  document.getElementById("calendarList").innerHTML = calendars.map(function (c) {
+    var checked = saved.indexOf(c.id) !== -1 ? " checked" : "";
+    return '<label style="display:block;margin-bottom:6px">' +
+      '<input type="checkbox" class="cal-id" value="' + esc(c.id) + '"' + checked + '> ' +
+      esc(c.title) + (c.source ? '<span class="footnote"> ／ ' + esc(c.source) + '</span>' : "") +
+      "</label>";
+  }).join("");
+  document.getElementById("calendarPickCard").hidden = false;
+  document.getElementById("calendarPickCard").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.getElementById("calendarPickCancel").addEventListener("click", function () {
+  document.getElementById("calendarPickCard").hidden = true;
+});
+
+document.getElementById("calendarSearchBtn").addEventListener("click", function () {
+  var ids = Array.prototype.map.call(
+    document.querySelectorAll("#calendarList .cal-id:checked"), function (c) { return c.value; }
+  );
+  if (!ids.length) { toast("カレンダーを1つ以上選んでください"); return; }
+  saveCalendarIds(ids);
+  var btn = this;
+  btn.disabled = true;
+  btn.textContent = "探しています…";
+  window.CalendarRead.listEvents(ids, 60).then(function (res) {
+    btn.disabled = false;
+    btn.textContent = "この中から探す";
+    document.getElementById("calendarPickCard").hidden = true;
+    showCalendarCandidates((res && res.events) || []);
+  }).catch(function (err) {
+    btn.disabled = false;
+    btn.textContent = "この中から探す";
+    toast("予定を読み取れませんでした：" + (err && err.message ? err.message : "原因不明"));
+  });
+});
+
+function showCalendarCandidates(events) {
+  calendarCandidates = events;
+  if (!events.length) {
+    toast("選んだカレンダーに、今日から60日以内の予定は見つかりませんでした");
+    return;
+  }
+  document.getElementById("calendarCandidatesSummary").textContent =
+    events.length + "件見つかりました。会議として登録するものにチェックを付けてください。";
+  document.getElementById("calendarCandidatesList").innerHTML = events.map(function (ev, i) {
+    var when = [ev.date, ev.startTime].filter(Boolean).join(" ");
+    return '<li><input type="checkbox" id="cand' + i + '" data-idx="' + i + '" checked>' +
+      '<label class="nm" for="cand' + i + '">' + esc(ev.title || "（件名なし）") + "</label>" +
+      '<span class="pr">' + esc(when) + "</span></li>";
+  }).join("");
+  var box = document.getElementById("calendarCandidates");
+  box.hidden = false;
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.getElementById("calendarCandidatesCancel").addEventListener("click", function () {
+  document.getElementById("calendarCandidates").hidden = true;
+  calendarCandidates = [];
+});
+
+document.getElementById("calendarRegisterBtn").addEventListener("click", function () {
+  var boxes = document.querySelectorAll("#calendarCandidatesList input[type=checkbox]:checked");
+  var picked = Array.prototype.map.call(boxes, function (c) {
+    return calendarCandidates[Number(c.getAttribute("data-idx"))];
+  }).filter(Boolean);
+  if (!picked.length) { toast("登録するものにチェックを付けてください"); return; }
+  var meetings = picked.map(function (ev) { return window.CalendarRead.toMeeting(ev); });
+  registerMeetingsToApp(meetings);
+  toast(meetings.length + "件をアプリの一覧に登録しました（もともとカレンダーにあるため、カレンダーへの登録は行いません）");
+  document.getElementById("calendarCandidates").hidden = true;
+  calendarCandidates = [];
+});
 
 // テストから読み取り結果を差し込むための入口
 window.docsApp = {

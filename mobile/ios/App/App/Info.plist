@@ -35,6 +35,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>会議の予定をカレンダーから探して取り込むために使用します。読み取った内容は端末の中だけで処理され、どこにも送信しません。カレンダーへの書き込みはこの機能とは別に行います。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>会議の予定をカレンダーから探して取り込むために使用します。読み取った内容は端末の中だけで処理され、どこにも送信しません。カレンダーへの書き込みはこの機能とは別に行います。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>商品のバーコードを読み取るためにカメラを使用します。撮影した映像は端末の中だけで処理され、どこにも送信しません。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
