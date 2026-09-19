@@ -19,6 +19,7 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		689B9E964FC64B47BCD87A3C /* WatchBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */; };
+		05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */; };
 		8390EA21F5CF4B29C78B9553 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415B60332CAD09296F351F12 /* ContentView.swift */; };
 		83E05A527EA019FE6A32B013 /* WatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D00B639C754BBD25B2D1DE75 /* WatchApp.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
@@ -53,6 +54,7 @@
 
 /* Begin PBXFileReference section */
 		16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridgePlugin.swift; sourceTree = "<group>"; };
+		11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarReaderPlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		415B60332CAD09296F351F12 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
@@ -142,6 +144,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */,
 				16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */,
+				11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */,
 				54417C08DED3D9DAECF1E66F /* ViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -283,6 +286,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				17760D73051BA4D18EB031D0 /* ReceiptScannerPlugin.swift in Sources */,
 				689B9E964FC64B47BCD87A3C /* WatchBridgePlugin.swift in Sources */,
+				05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */,
 				0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 			);
