@@ -665,6 +665,35 @@ console.log("== 買い物リスト（リマインダーへ送る）==");
   await sctx.close();
 }
 
+/* ---------------- 期限の登録先（通知かカレンダーか） ---------------- */
+console.log("== 期限の登録先（apps/docs-tracker）==");
+{
+  const cctx = await browser.newContext();
+  const cp = await cctx.newPage();
+  const cerrs = [];
+  cp.on("pageerror", (e) => cerrs.push("pageerror: " + e.message));
+  await cp.goto("file://" + path.join(ROOT, "apps/docs-tracker/index.html"));
+
+  ok((await cp.locator("#calendarAll").textContent()) === "未処理の期限をカレンダーに登録",
+    "ブラウザでは1つめがカレンダー登録のまま");
+  ok(await cp.locator("#calendarOnly").isHidden(),
+    "ブラウザでは2つめのボタンを出さない（どちらも同じ動きになるため）");
+
+  // アプリとして動いているときの見せ方（Native が使える状態を作って確かめる）
+  await cp.evaluate(() => {
+    window.Native.available = () => true;
+    document.getElementById("calendarAll").textContent = "未処理の期限を通知に登録";
+    document.getElementById("calendarOnly").hidden = false;
+  });
+  ok((await cp.locator("#calendarAll").textContent()) === "未処理の期限を通知に登録",
+    "アプリでは1つめが通知登録になる");
+  ok(await cp.locator("#calendarOnly").isVisible(),
+    "アプリでは「カレンダーにも入れる」を選べる");
+
+  ok(cerrs.length === 0, "JSエラーなし" + (cerrs.length ? " → " + cerrs.join(" / ") : ""));
+  await cctx.close();
+}
+
 /* ---------------- 通知の文面（書類・会議） ---------------- */
 console.log("== 通知の文面（apps/docs-tracker）==");
 {
