@@ -312,12 +312,13 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
     <div class="chips">
       <button type="button" id="calendarSoon">期限が近いものをカレンダーに登録</button>
       <button type="button" id="copyRestock">補充が必要なものをコピー</button>
+      <button type="button" id="shopList">補充が必要なものを買い物リストへ</button>
       <button type="button" id="exportBtn">JSONで保存</button>
       <button type="button" id="importBtn">JSONから読み込み</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
     <p class="footnote" style="margin:10px 0 0">
-      「カレンダーに登録」を押すと、期限が30日以内の品目が端末の標準カレンダーに入り、<strong>1か月前・前日・当日の9時に通知</strong>が届きます。「補充が必要なものをコピー」は、発注や買い出しのメモに貼り付けて使えます。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
+      「カレンダーに登録」を押すと、期限が30日以内の品目が端末の標準カレンダーに入り、<strong>1か月前・前日・当日の9時に通知</strong>が届きます。「補充が必要なものをコピー」は、発注や買い出しのメモに貼り付けて使えます。「補充が必要なものを買い物リストへ」は、同じ品目を iPhone の「リマインダー」に送ります（Apple Watch でも消し込めます。初回だけショートカットの用意が必要です）。保存した JSON は別の端末やブラウザへ引き継ぐときに読み込んでください（読み込むと今のデータは置き換わります）。バーコードと品名の対応も一緒に保存されます。
     </p>
     <p class="footnote" id="codeCount" style="margin:6px 0 0"></p>
   </section>
@@ -376,6 +377,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
+<script src="../shared/reminders.js"></script>
+<script src="../shared/watch.js"></script>
 <script src="../fridge/ean.js"></script>
 <script src="../shared/nativescan.js"></script>
 <script>
@@ -422,6 +425,8 @@ function save() {
   } catch (e) {
     toast("保存できませんでした（ブラウザの設定を確認してください）");
   }
+  // Apple Watch へ送る（ブラウザで開いているときは何もしない）
+  if (window.Watch) window.Watch.push();
 }
 
 function uid() {
@@ -872,6 +877,11 @@ document.getElementById("calendarSoon").addEventListener("click", function () {
       time: "09:00", // 就業開始の時間に知らせる（入替の手配は勤務時間に行うため）
       location: it.place,
       description: (it.note ? it.note + "\n" : "") + "（備蓄・消耗品の管理から登録）",
+      // 通知の2行目。Apple Watch で手首を見ただけで分かるようにする
+      summaryLine: [
+        num(it.qty) === null ? "" : "残り " + numText(it.qty) + (it.unit || ""),
+        it.place ? "置き場所：" + it.place : ""
+      ].filter(Boolean).join(" ／ "),
       // 1か月前・前日・当日。1か月前が過ぎている場合、その通知は端末側で登録されない
       alarms: [43200, 1440, 0],
       sequence: it.icsSeq || 0
@@ -914,6 +924,27 @@ document.getElementById("copyRestock").addEventListener("click", function () {
       (it.place ? " ＠" + it.place : "");
   }).join("\n");
   copyText(text);
+});
+
+/* ---------- 買い物リスト（リマインダー経由で Apple Watch へ） ---------- */
+
+// 補充が必要な品目を「品名 あと○個」の形にする。手首でも読める短さにとどめる
+function shoppingNames() {
+  return state.items.filter(function (it) { return restockGap(it) > 0; })
+    .sort(function (a, b) { return restockGap(b) - restockGap(a); })
+    .map(function (it) {
+      return it.name + " あと" + numText(restockGap(it)) + (it.unit || "");
+    });
+}
+
+document.getElementById("shopList").addEventListener("click", function () {
+  var names = shoppingNames();
+  if (!names.length) { toast("補充が必要な品目はありません"); return; }
+  window.Reminders.send(names).then(function (res) {
+    if (res.how === "shortcut") { toast("リマインダーに送りました（" + res.count + "件）"); return; }
+    if (res.how === "copied") { toast("コピーしました（" + res.count + "件）。リマインダーに貼り付けてください"); return; }
+    toast("コピーできませんでした");
+  });
 });
 
 function copyText(text) {

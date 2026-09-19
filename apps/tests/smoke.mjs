@@ -603,6 +603,95 @@ console.log("== 会議の通知（apps/docs-tracker）==");
   await mctx.close();
 }
 
+/* ---------------- 買い物リスト（Apple Watch 向け） ---------------- */
+console.log("== 買い物リスト（リマインダーへ送る）==");
+{
+  const sctx = await browser.newContext();
+  const sp = await sctx.newPage();
+  const serrs = [];
+  sp.on("pageerror", (e) => serrs.push("pageerror: " + e.message));
+  sp.on("dialog", (dlg) => dlg.accept());
+
+  /* 冷蔵庫：使い切って在庫に無いものを選ぶ */
+  await sp.goto("file://" + path.join(ROOT, "apps/fridge/index.html"));
+  ok((await sp.locator("#shopList").count()) === 1, "冷蔵庫：買い物リストのボタンがある");
+  ok(await sp.evaluate(() => !!(window.Reminders && window.Reminders.send)), "冷蔵庫：送り先の部品が読み込まれている");
+
+  const addFridge = async (name, expires) => {
+    await sp.fill("#f-name", name);
+    await sp.fill("#f-qty", "1");
+    await sp.fill("#f-expires", expires);
+    await sp.click("#submitBtn");
+  };
+  await addFridge("牛乳", d(3));
+  await addFridge("たまご", d(5));
+  await addFridge("食パン", d(2));
+  await sp.locator("li.item", { hasText: "牛乳" }).locator('button[data-action="consume"]').click();
+  await sp.locator("li.item", { hasText: "食パン" }).locator('button[data-action="discard"]').click();
+
+  const names = await sp.evaluate(() => window.shoppingNames());
+  ok(names.join(",") === "牛乳", "冷蔵庫：使い切って在庫に無いものだけ選ぶ（" + names.join(",") + "）");
+  ok(!names.includes("食パン"), "冷蔵庫：廃棄したものは買い物リストに入れない");
+  ok(!names.includes("たまご"), "冷蔵庫：在庫があるものは入れない");
+
+  // 同じ品名を買い直したら、買い物リストから消える
+  await addFridge("牛乳", d(7));
+  ok((await sp.evaluate(() => window.shoppingNames())).length === 0, "冷蔵庫：買い直すと買い物リストから消える");
+
+  await sp.locator("li.item", { hasText: "牛乳" }).locator('button[data-action="consume"]').click();
+  await sp.click("#shopList");
+  ok((await sp.locator("#toast").textContent()).length > 0, "冷蔵庫：押すと結果が表示される");
+
+  /* 備蓄：最低在庫数を下回ったものを選ぶ */
+  await sp.goto("file://" + path.join(ROOT, "apps/stock/index.html"));
+  ok((await sp.locator("#shopList").count()) === 1, "備蓄：買い物リストのボタンがある");
+  await sp.fill("#f-name", "コピー用紙");
+  await sp.fill("#f-qty", "1");
+  await sp.fill("#f-unit", "箱");
+  await sp.fill("#f-min", "5");
+  await sp.click("#submitBtn");
+  await sp.fill("#f-name", "保存水 500ml");
+  await sp.fill("#f-qty", "24");
+  await sp.fill("#f-unit", "本");
+  await sp.fill("#f-min", "12");
+  await sp.click("#submitBtn");
+  const low = await sp.evaluate(() => window.shoppingNames());
+  ok(low.join(",") === "コピー用紙 あと4箱", "備蓄：不足分を添えて選ぶ（" + low.join(",") + "）");
+  ok(!low.join(",").includes("保存水"), "備蓄：足りているものは入れない");
+  await sp.click("#shopList");
+  ok((await sp.locator("#toast").textContent()).length > 0, "備蓄：押すと結果が表示される");
+
+  ok(serrs.length === 0, "JSエラーなし" + (serrs.length ? " → " + serrs.join(" / ") : ""));
+  await sctx.close();
+}
+
+/* ---------------- 通知の文面（書類・会議） ---------------- */
+console.log("== 通知の文面（apps/docs-tracker）==");
+{
+  const nctx = await browser.newContext();
+  const np = await nctx.newPage();
+  const nerrs = [];
+  np.on("pageerror", (e) => nerrs.push("pageerror: " + e.message));
+  await np.goto("file://" + path.join(ROOT, "apps/docs-tracker/index.html"));
+
+  const line = await np.evaluate(() => window.docsApp.noticeLine({
+    kind: "回覧", title: "○○協議会の回答", dest: "総務課", status: "未着手"
+  }));
+  ok(line === "提出先：総務課 ／ 状態：未着手", "書類：提出先と状態が2行目に入る（" + line + "）");
+
+  const mline = await np.evaluate(() => window.docsApp.noticeLine({
+    kind: "会議", title: "定例会", dest: "村民会館 2階",
+    status: "未着手",
+    note: "13:30〜15:00 開始\n懇親会あり（会費 5,000円）\n（会議の通知から登録）"
+  }));
+  ok(mline === "13:30〜15:00 ／ 村民会館 2階 ／ 懇親会あり（会費 5,000円）",
+    "会議：時刻・場所・懇親会が2行目に入る（" + mline + "）");
+  ok(!mline.includes("から登録"), "会議：出どころの断り書きは通知に出さない");
+
+  ok(nerrs.length === 0, "JSエラーなし" + (nerrs.length ? " → " + nerrs.join(" / ") : ""));
+  await nctx.close();
+}
+
 console.log("\nJSエラー: " + (errors.length ? "\n  " + errors.join("\n  ") : "なし"));
 if (errors.length) failures++;
 await browser.close();
