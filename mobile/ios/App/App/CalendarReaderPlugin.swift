@@ -38,8 +38,16 @@ public class CalendarReaderPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func requestAccess(_ call: CAPPluginCall) {
-        store.requestAccess(to: .event) { granted, error in
-            call.resolve(["granted": granted, "reason": error?.localizedDescription ?? ""])
+        // iOS 17 以降は旧 API（requestAccess(to:)）の完了ハンドラが呼ばれず、
+        // 「確認しています…」のまま固まって見えるため、新 API を使い分ける。
+        if #available(iOS 17.0, *) {
+            store.requestFullAccessToEvents { granted, error in
+                call.resolve(["granted": granted, "reason": error?.localizedDescription ?? ""])
+            }
+        } else {
+            store.requestAccess(to: .event) { granted, error in
+                call.resolve(["granted": granted, "reason": error?.localizedDescription ?? ""])
+            }
         }
     }
 
