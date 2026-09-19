@@ -45,12 +45,35 @@ li { margin-bottom: 4px; }
 .note { font-size: 13px; color: var(--muted); margin-top: 10px; }
 /* 版表記。アプリ版では mobile/scripts/build-www.mjs が組み立て時刻とコミット番号に置き換える */
 .version { font-size: 12px; color: var(--muted); text-align: center; margin: 24px 0 0; }
+
+/* 撮って振り分けるカード */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 20px; }
+button { font: inherit; color: var(--text); padding: 10px 16px; min-height: 44px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); cursor: pointer; }
+button:hover, button:focus { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
+.choice { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--text); color: var(--bg);
+  padding: 8px 16px; border-radius: 999px; font-size: 13px;
+  opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 40;
+  max-width: 90vw; text-align: center;
+}
+.toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>壱師</h1>
   <p class="lead">入力した内容はこの端末の中だけに保存され、どこにも送信されません。</p>
+
+  <section class="card" id="scanCard" hidden>
+    <h2>📷 撮って振り分ける</h2>
+    <p class="note">レシートや会議の通知などを撮ると、内容を見て家計簿か書類トラッカーに振り分けます。撮影も文字の読み取りも端末の中だけで行い、外部には送りません。</p>
+    <button type="button" class="primary" id="scanBtn">📷 撮る</button>
+    <div id="scanResult" hidden></div>
+  </section>
 
   <a class="app" href="fridge/index.html">
     <img src="fridge/icon-192.png" alt="">
@@ -115,6 +138,129 @@ li { margin-bottom: 4px; }
 
   <p class="version">版 <span id="version">開発版（apps/ を直接開いています）</span></p>
 </div>
+<div id="toast" class="toast" role="status"></div>
+<script src="shared/receipt.js"></script>
+<script src="shared/meeting.js"></script>
+<script src="shared/receiptscan.js"></script>
+<script src="shared/scanrouter.js"></script>
 <script src="shared/deeplink.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  if (!(window.ReceiptScan && window.ReceiptScan.available())) return;
+  document.getElementById("scanCard").hidden = false;
+
+  var btn = document.getElementById("scanBtn");
+  var resultBox = document.getElementById("scanResult");
+  var scanning = false;
+
+  function toast(msg) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.classList.remove("show"); }, 2600);
+  }
+
+  function setScanning(on) {
+    scanning = on;
+    btn.disabled = on;
+    btn.textContent = on ? "カメラを起動しています…" : "📷 撮る";
+  }
+
+  // 読み取れた文字の先頭だけを見せて、利用者が「違う」と気づけるようにする
+  function preview(lines) {
+    var text = (lines || []).slice(0, 3).map(function (l) { return l.text; }).filter(Boolean).join(" ／ ");
+    return text.length > 60 ? text.slice(0, 60) + "…" : text;
+  }
+
+  function addButton(parent, label, className, onClick) {
+    var b = document.createElement("button");
+    b.type = "button";
+    if (className) b.className = className;
+    b.textContent = label;
+    b.addEventListener("click", onClick);
+    parent.appendChild(b);
+    return b;
+  }
+
+  // 振り分け先のアプリを開く。利用者がこのボタンを押した結果としてだけ画面を移動する
+  // （起動直後に自動で移動すると操作を受け付けなくなることがあるため。shared/deeplink.js 参照）
+  function goTo(type, lines) {
+    window.ScanRouter.handoff(type, lines);
+    window.location.href = window.ScanRouter.destinationFor(type);
+  }
+
+  function renderResult(result) {
+    resultBox.hidden = false;
+    resultBox.innerHTML = "";
+
+    var p = document.createElement("p");
+    p.className = "note";
+    p.textContent = "読み取れた内容: " + (preview(result.lines) || "（文字を読み取れませんでした）");
+    resultBox.appendChild(p);
+
+    var status = document.createElement("p");
+    var choice = document.createElement("div");
+    choice.className = "choice";
+
+    if (result.type === "receipt") {
+      status.textContent = "レシートのようです。";
+      addButton(choice, "家計簿を開いて確認", "primary", function () { goTo("receipt", result.lines); });
+    } else if (result.type === "meeting") {
+      status.textContent = "会議の通知のようです。";
+      addButton(choice, "書類トラッカーを開いて確認", "primary", function () { goTo("meeting", result.lines); });
+    } else {
+      status.textContent = "レシートか会議の通知かを判断できませんでした。選んでください。";
+      addButton(choice, "レシートとして記録", "small", function () { goTo("receipt", result.lines); });
+      addButton(choice, "会議の通知として登録", "small", function () { goTo("meeting", result.lines); });
+    }
+    resultBox.appendChild(status);
+
+    addButton(choice, "書類として写真に保存", "small", function (ev) {
+      var b = ev.currentTarget;
+      b.disabled = true;
+      b.textContent = "カメラを起動しています…";
+      window.ReceiptScan.scanToPhotos().then(function (res) {
+        b.disabled = false;
+        b.textContent = "書類として写真に保存";
+        if (res.cancelled) return;
+        resultBox.hidden = true;
+        toast(res.saved + "枚を写真アプリに保存しました");
+      }).catch(function (err) {
+        b.disabled = false;
+        b.textContent = "書類として写真に保存";
+        toast("保存できませんでした：" + (err && err.message ? err.message : "原因不明"));
+      });
+    });
+    addButton(choice, "取り消す", "small", function () { resultBox.hidden = true; resultBox.innerHTML = ""; });
+
+    resultBox.appendChild(choice);
+  }
+
+  btn.addEventListener("click", function () {
+    if (scanning) return;
+    setScanning(true);
+    toast("カメラを起動しています…");
+    // 返ってこないときにボタンが固まらないようにする（他の撮影ボタンと同じ作り）
+    var stuck = setTimeout(function () {
+      if (!scanning) return;
+      setScanning(false);
+      toast("カメラが開かないときは、アプリを開き直してからもう一度お試しください");
+    }, 12000);
+    window.ReceiptScan.scan().then(function (res) {
+      clearTimeout(stuck);
+      setScanning(false);
+      if (res.cancelled) return;
+      renderResult(window.ScanRouter.classify(res.lines));
+    }).catch(function (err) {
+      clearTimeout(stuck);
+      setScanning(false);
+      toast("読み取れませんでした：" + (err && err.message ? err.message : "原因不明"));
+    });
+  });
+})();
+</script>
 </body>
 </html>
