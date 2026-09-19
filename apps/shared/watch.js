@@ -74,6 +74,7 @@
         if (days < 0 || days > MEETING_DAYS) return;
         var d = meetingDetail(it.note);
         meetings.push({
+          id: it.id,
           title: it.title,
           date: it.dueOn,
           days: days,
@@ -85,6 +86,7 @@
       }
       if (days > DEADLINE_DAYS) return;   // 期限切れ（マイナス）は残す。まだ終わっていないため
       deadlines.push({
+        id: it.id,
         title: it.title,
         date: it.dueOn,
         days: days,

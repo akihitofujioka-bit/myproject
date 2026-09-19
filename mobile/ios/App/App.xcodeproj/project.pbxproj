@@ -7,12 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		004DD6FF5311743F61CDFBC7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1AC8F45E959305C8A7517B99 /* Foundation.framework */; };
+		0534399A18A3BF11C165F2E4 /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */; };
 		05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */; };
 		0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54417C08DED3D9DAECF1E66F /* ViewController.swift */; };
 		17760D73051BA4D18EB031D0 /* ReceiptScannerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */; };
 		18116FD2CD499F7966E25B6B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 529B5B4D26CECC53B1B3D50D /* Foundation.framework */; };
+		235C5733D1550F19C53E8B4F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B73E718DBDCF55ADFF4A39C3 /* SwiftUI.framework */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		3C0810D2E030FE18B41C55D5 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 529B5B4D26CECC53B1B3D50D /* Foundation.framework */; };
+		4990489E7F0D76EB22CD8D30 /* AppWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4EF42E97F1B12C6CD46DE141 /* AppWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeaderOnCopy, ); }; };
 		4C291F79716CFC7B501B3ADC /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -21,22 +25,34 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		50FC7E58C344834599196380 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A6849C23B175D9948B1F121 /* WidgetKit.framework */; };
 		515E7EEAD3C44F2905016427 /* NextUpWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B22BFA83CC2B191D5EB3E7 /* NextUpWidget.swift */; };
 		610CD53EBC7926C29AC50A50 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E50E3F1A5E9EE006F58873DD /* SwiftUI.framework */; };
+		622E7380B58E3B11D25C652E /* NextUpWidgetIOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C582875351166C4940462F4 /* NextUpWidgetIOS.swift */; };
 		666C1654F588D74DB0993181 /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */; };
 		689B9E964FC64B47BCD87A3C /* WatchBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */; };
 		76AB76FDE32A9CB4FA83CB66 /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
 		8390EA21F5CF4B29C78B9553 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415B60332CAD09296F351F12 /* ContentView.swift */; };
 		83E05A527EA019FE6A32B013 /* WatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D00B639C754BBD25B2D1DE75 /* WatchApp.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		92AFFAB40C67383F99E2EF4B /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		B94C93F625E50D3B33F93159 /* DailyAppsWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607E95DE886257AE57E3296B /* DailyAppsWatchApp.swift */; };
 		CE2147F1B5E9F903940FE5FA /* WatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2F563FC6B160E963ECF379 /* WatchStore.swift */; };
 		D04BCA140C04704692BC01CF /* WatchWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FD600EE43BD985CD9DB1ABD5 /* WatchWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeaderOnCopy, ); }; };
+		DE0DE0CD036E49C0017E80EF /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
+		E7D0C38FE69626AABB82EDFC /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
 		F1E03E5B237860CA8CAE856B /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */; };
 		F2063FEF188FB641F664FA83 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7045F2DF81C04599D469D577 /* WidgetKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		1691327C437EF2B6442EE95B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9F49CD0E8AD8E9513EC5DA68;
+			remoteInfo = AppWidgetExtension;
+		};
 		44E9F8D66F1021060862D228 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
@@ -76,15 +92,31 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E742DDB38B1F2D1EAE72BFB6 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4990489E7F0D76EB22CD8D30 /* AppWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarReaderPlugin.swift; sourceTree = "<group>"; };
 		12B22BFA83CC2B191D5EB3E7 /* NextUpWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextUpWidget.swift; sourceTree = "<group>"; };
 		16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridgePlugin.swift; sourceTree = "<group>"; };
+		1AC8F45E959305C8A7517B99 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		1C582875351166C4940462F4 /* NextUpWidgetIOS.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextUpWidgetIOS.swift; sourceTree = "<group>"; };
+		2292E21A5FF394EDEC0587FA /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		2FFB402144413474A0F0F175 /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		36A65E078DFA7C4947AA2458 /* WatchApp.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = WatchApp.entitlements; sourceTree = "<group>"; };
 		415B60332CAD09296F351F12 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4EF42E97F1B12C6CD46DE141 /* AppWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AppWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -95,7 +127,9 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		529B5B4D26CECC53B1B3D50D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		54417C08DED3D9DAECF1E66F /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
+		5E1F590F04E8980B369C3AFF /* AppWidgetExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AppWidgetExtension.entitlements; sourceTree = "<group>"; };
 		607E95DE886257AE57E3296B /* DailyAppsWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DailyAppsWatchApp.swift; sourceTree = "<group>"; };
+		6A6849C23B175D9948B1F121 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
 		7045F2DF81C04599D469D577 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptScannerPlugin.swift; sourceTree = "<group>"; };
@@ -103,6 +137,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		A44AE15940A8D9ED379B0EA0 /* WatchWidgetExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = WatchWidgetExtension.entitlements; sourceTree = "<group>"; };
 		AC2F563FC6B160E963ECF379 /* WatchStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchStore.swift; sourceTree = "<group>"; };
+		B73E718DBDCF55ADFF4A39C3 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		D00B639C754BBD25B2D1DE75 /* WatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4B6CBD59DD11F3958745022 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E50E3F1A5E9EE006F58873DD /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -126,6 +161,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		927FBC39AB90240A4B0BB3EB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				004DD6FF5311743F61CDFBC7 /* Foundation.framework in Frameworks */,
+				50FC7E58C344834599196380 /* WidgetKit.framework in Frameworks */,
+				235C5733D1550F19C53E8B4F /* SwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -160,6 +205,9 @@
 				68E86C7FFF4BC76211EE78E1 /* watchOS */,
 				7045F2DF81C04599D469D577 /* WidgetKit.framework */,
 				E50E3F1A5E9EE006F58873DD /* SwiftUI.framework */,
+				8961948B966284ACCC2CADD4 /* iOS */,
+				6A6849C23B175D9948B1F121 /* WidgetKit.framework */,
+				B73E718DBDCF55ADFF4A39C3 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -173,6 +221,7 @@
 				40414677F33458B7FE84BC3D /* Frameworks */,
 				251C80D6C7EEE51937C5DE33 /* WatchAppSources */,
 				70889E08E025982851E025B5 /* WatchWidgetSources */,
+				AA0DE182A2B760A248C627BF /* AppWidgetSources */,
 			);
 			sourceTree = "<group>";
 		};
@@ -182,6 +231,7 @@
 				504EC3041FED79650016851F /* App.app */,
 				D00B639C754BBD25B2D1DE75 /* WatchApp.app */,
 				FD600EE43BD985CD9DB1ABD5 /* WatchWidgetExtension.appex */,
+				4EF42E97F1B12C6CD46DE141 /* AppWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -202,6 +252,7 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				2FFB402144413474A0F0F175 /* App.entitlements */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -223,6 +274,25 @@
 			);
 			name = WatchWidgetSources;
 			path = WatchWidgetSources;
+			sourceTree = "<group>";
+		};
+		8961948B966284ACCC2CADD4 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				1AC8F45E959305C8A7517B99 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		AA0DE182A2B760A248C627BF /* AppWidgetSources */ = {
+			isa = PBXGroup;
+			children = (
+				1C582875351166C4940462F4 /* NextUpWidgetIOS.swift */,
+				2292E21A5FF394EDEC0587FA /* Info.plist */,
+				5E1F590F04E8980B369C3AFF /* AppWidgetExtension.entitlements */,
+			);
+			name = AppWidgetSources;
+			path = AppWidgetSources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -255,11 +325,13 @@
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
 				3F8C513E7C25D415C9DB1646 /* Embed Watch Content */,
+				E742DDB38B1F2D1EAE72BFB6 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				568DC9BD54A5701D4C02DB74 /* PBXTargetDependency */,
+				76E142C7D352FA67608B7290 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -284,6 +356,23 @@
 			name = WatchWidgetExtension;
 			productName = WatchWidgetExtension;
 			productReference = FD600EE43BD985CD9DB1ABD5 /* WatchWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		9F49CD0E8AD8E9513EC5DA68 /* AppWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1EEAB8F1AFC911011CD68A01 /* Build configuration list for PBXNativeTarget "AppWidgetExtension" */;
+			buildPhases = (
+				246CD95F7DACE96F1EEDD65E /* Sources */,
+				927FBC39AB90240A4B0BB3EB /* Frameworks */,
+				608475ABF8B7F58547BA26B3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AppWidgetExtension;
+			productName = AppWidgetExtension;
+			productReference = 4EF42E97F1B12C6CD46DE141 /* AppWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -321,6 +410,7 @@
 				504EC3031FED79650016851F /* App */,
 				37BEF8E3DA7CAD5DED704827 /* WatchApp */,
 				601986AA4E43A527D000177B /* WatchWidgetExtension */,
+				9F49CD0E8AD8E9513EC5DA68 /* AppWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -346,6 +436,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		608475ABF8B7F58547BA26B3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7D373035F7571E388808BD7D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -368,6 +465,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		246CD95F7DACE96F1EEDD65E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				622E7380B58E3B11D25C652E /* NextUpWidgetIOS.swift in Sources */,
+				92AFFAB40C67383F99E2EF4B /* Snapshot.swift in Sources */,
+				DE0DE0CD036E49C0017E80EF /* SharedDefaults.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3001FED79650016851F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -378,6 +485,8 @@
 				05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */,
 				0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				0534399A18A3BF11C165F2E4 /* Snapshot.swift in Sources */,
+				E7D0C38FE69626AABB82EDFC /* SharedDefaults.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -399,6 +508,12 @@
 			name = WatchApp;
 			target = 37BEF8E3DA7CAD5DED704827 /* WatchApp */;
 			targetProxy = 44E9F8D66F1021060862D228 /* PBXContainerItemProxy */;
+		};
+		76E142C7D352FA67608B7290 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = AppWidgetExtension;
+			target = 9F49CD0E8AD8E9513EC5DA68 /* AppWidgetExtension */;
+			targetProxy = 1691327C437EF2B6442EE95B /* PBXContainerItemProxy */;
 		};
 		C8B01E5411AFBEBF6F8F7AD9 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -428,6 +543,28 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		32F0ADB48E4E5A6B61D7DB8A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = AppWidgetSources/AppWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LV58VCUHZD;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AppWidgetSources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = jp.myproject.dailyapps.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		504EC3141FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
@@ -542,6 +679,7 @@
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = LV58VCUHZD;
@@ -565,6 +703,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = LV58VCUHZD;
@@ -679,9 +818,41 @@
 			};
 			name = Debug;
 		};
+		EA848925060C23D7F45B89A6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = AppWidgetSources/AppWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LV58VCUHZD;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AppWidgetSources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = jp.myproject.dailyapps.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		1EEAB8F1AFC911011CD68A01 /* Build configuration list for PBXNativeTarget "AppWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EA848925060C23D7F45B89A6 /* Release */,
+				32F0ADB48E4E5A6B61D7DB8A /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		34BA278856FACE2B3F5B8ED4 /* Build configuration list for PBXNativeTarget "WatchWidgetExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
