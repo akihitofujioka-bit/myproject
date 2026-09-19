@@ -1,8 +1,9 @@
 /*
- * QRコードから起動されたときの受け口。
+ * myproject://docs?id=xxx で起動されたときの受け口。
  *
- * 書類トラッカーが発行する QR には myproject://docs?id=xxx が入っている。
- * iPhone の標準カメラでこれを読むとアプリが起動するので、ここで受け取る。
+ * この形式のURLは、書類トラッカーが発行するQRコードのほか、iPhoneのロック画面
+ * ウィジェット・Watchのコンプリケーションをタップしたときにも使われる。
+ * どこから来ても同じ画面（該当の書類）を開けるよう、ここで一括して受け取る。
  *
  * ＜プログラムから画面を移動させない理由＞
  * 起動直後に location を書き換えて移動すると、画面は表示されるのに
@@ -45,7 +46,7 @@
 
     var text = document.createElement("span");
     text.style.flex = "1";
-    text.textContent = "QRコードを読み取りました";
+    text.textContent = "書類が見つかりました";
 
     var open = document.createElement("button");
     open.type = "button";

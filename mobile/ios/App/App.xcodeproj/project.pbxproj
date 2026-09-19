@@ -106,6 +106,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		03CE4193F022CF0F7EA8A8CC /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarReaderPlugin.swift; sourceTree = "<group>"; };
 		12B22BFA83CC2B191D5EB3E7 /* NextUpWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextUpWidget.swift; sourceTree = "<group>"; };
 		16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridgePlugin.swift; sourceTree = "<group>"; };
@@ -194,6 +195,7 @@
 				6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */,
 				F07A62F74C8E035A000749C1 /* SharedDefaults.swift */,
 				36A65E078DFA7C4947AA2458 /* WatchApp.entitlements */,
+				03CE4193F022CF0F7EA8A8CC /* Info.plist */,
 			);
 			name = WatchAppSources;
 			path = WatchAppSources;
@@ -734,6 +736,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = LV58VCUHZD;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WatchAppSources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "日常";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = jp.myproject.dailyapps;
@@ -761,6 +764,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = LV58VCUHZD;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WatchAppSources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "日常";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = jp.myproject.dailyapps;
