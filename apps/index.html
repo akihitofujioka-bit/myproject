@@ -148,6 +148,14 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 (function () {
   "use strict";
 
+  // 以前タップしたアイコンにフォーカスが残ったまま（アプリを完全に閉じずに
+  // 再度開いた場合など）だと、そこだけ選択中のように色が付いて見える。
+  // 画面が表示されるたびにフォーカスを外し、真っさらな状態にする。
+  window.addEventListener("pageshow", function () {
+    var el = document.activeElement;
+    if (el && el !== document.body && typeof el.blur === "function") el.blur();
+  });
+
   if (!(window.ReceiptScan && window.ReceiptScan.available())) return;
   document.getElementById("scanCard").hidden = false;
 
