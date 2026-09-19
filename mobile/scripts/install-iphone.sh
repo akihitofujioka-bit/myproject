@@ -6,7 +6,7 @@
 # やること: www の組み立て → cap sync → 署名付きビルド → iPhone へ転送 → 起動。
 # Xcode の画面操作は不要。iPhone はロックを解除しておく。
 # 無料の Apple ID 署名は 7 日で切れるので、切れたらこれをもう一度実行すればよい。
-set -e
+set -eo pipefail
 cd "$(dirname "$0")/.."
 
 DEVICE="${IPHONE_UDID:-}"
@@ -31,7 +31,7 @@ echo "▶ ビルド中（署名は自動更新）…"
 xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
   -destination "id=${DEVICE}" -derivedDataPath "$BUILD_DIR" \
   -allowProvisioningUpdates -allowProvisioningDeviceRegistration build \
-  | grep -E "^\*\* BUILD|error:" || true
+  | grep -E "^\*\* BUILD|error:"
 
 APP="$BUILD_DIR/Build/Products/Debug-iphoneos/App.app"
 if [ ! -d "$APP" ]; then
