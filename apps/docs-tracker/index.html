@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>書類・回覧の期限トラッカー</title>
+<title>書類・回覧・会議の期限トラッカー</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2f6fed">
 <meta name="mobile-web-app-capable" content="yes">
@@ -241,8 +241,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <div class="wrap">
   <p class="backlink"><a href="../index.html">← アプリ一覧にもどる</a></p>
   <header>
-    <h1>書類・回覧の期限トラッカー</h1>
-    <p class="lead">提出期限のある書類・回覧・申請をまとめて管理します。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
+    <h1>書類・回覧・会議の期限トラッカー</h1>
+    <p class="lead">提出期限のある書類・回覧・申請と、会議の予定をまとめて管理します。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
   </header>
 
   <div class="notice">
@@ -854,7 +854,7 @@ function toCalendarEvent(item) {
   var parts = [];
   if (item.note) parts.push(item.note);
   parts.push("状態：" + item.status);
-  parts.push("（書類・回覧の期限トラッカーから登録）");
+  parts.push("（書類・回覧・会議の期限トラッカーから登録）");
   return {
     uid: item.id + "@docs-tracker",
     title: "【" + item.kind + "】" + item.title,
