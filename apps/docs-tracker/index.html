@@ -385,13 +385,15 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
     <h2>データの持ち出し・引き継ぎ</h2>
     <div class="chips">
       <button type="button" id="calendarAll">未処理の期限をカレンダーに登録</button>
+      <button type="button" id="calendarOnly" hidden>期限をカレンダーにも入れる</button>
       <button type="button" id="copyDue">未処理の締切一覧をコピー</button>
       <button type="button" id="exportBtn">JSONで保存</button>
       <button type="button" id="importBtn">JSONから読み込み</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
     <p class="footnote" style="margin:10px 0 0">
-      「カレンダーに登録」を押すと、端末の標準カレンダーに期限が予定として入り、<strong>前日と当日に通知</strong>が届きます。同じ書類を登録し直すと、カレンダー側の予定も更新されます（カレンダーアプリによっては新しい予定として追加されることがあります）。
+      「カレンダーに登録」を押すと、端末の標準カレンダーに期限が予定として入り、<strong>前日と当日に通知</strong>が届きます。同じ書類を登録し直すと、カレンダー側の予定も更新されます（カレンダーアプリによっては新しい予定として追加されることがあります）。<br>
+      iPhone アプリとして使っているときは、1つめのボタンが「<strong>期限を通知に登録</strong>」に変わり、カレンダーを使わずアプリから直接通知します。<strong>Apple Watch の文字盤に締切を出したい場合は、2つめの「期限をカレンダーにも入れる」を押してください</strong>（文字盤のコンプリケーションはカレンダーの予定を見るため）。
     </p>
     <p class="footnote" style="margin:6px 0 0">
       保存した JSON を <code>data/deadlines.json</code> に置くと、朝のブリーフ（<code>/brief</code>）が今日の締切として拾います。読み込むと今のデータは置き換わります。
@@ -833,13 +835,20 @@ function toCalendarEvent(item) {
   };
 }
 
-function registerToCalendar(items) {
+/*
+ * 期限を登録する。
+ * options.calendarOnly を true にすると、アプリとして動いていても通知ではなく
+ * カレンダーに入れる。Apple Watch の文字盤（コンプリケーション）はカレンダーの
+ * 予定を見ているため、手首に締切を出したいときはこちらを使う。
+ */
+function registerToCalendar(items, options) {
+  var opts = options || {};
   var target = items.filter(function (it) { return it.dueOn && isOpen(it); });
   if (!target.length) { toast("期限が入った未処理の書類がありません"); return; }
   var events = target.map(toCalendarEvent);
 
   // アプリとして動いている場合は端末の通知に登録する。ブラウザではここを素通りする
-  if (window.Native && window.Native.available()) {
+  if (!opts.calendarOnly && window.Native && window.Native.available()) {
     window.Native.scheduleDeadlines(events).then(function (res) {
       if (res.ok) { toast("通知を設定しました（" + res.count + "件）"); return; }
       if (res.reason === "denied") { toast("通知が許可されていません。設定アプリで許可してください"); return; }
@@ -866,6 +875,19 @@ function writeCalendarFile(events, target) {
 document.getElementById("calendarAll").addEventListener("click", function () {
   registerToCalendar(state.items);
 });
+
+document.getElementById("calendarOnly").addEventListener("click", function () {
+  registerToCalendar(state.items, { calendarOnly: true });
+});
+
+/*
+ * アプリとして動いているときだけ、登録先を選べるようにする。
+ * ブラウザではどちらを押してもカレンダーに入るため、2つ並べても迷うだけになる。
+ */
+if (window.Native && window.Native.available()) {
+  document.getElementById("calendarAll").textContent = "未処理の期限を通知に登録";
+  document.getElementById("calendarOnly").hidden = false;
+}
 
 document.getElementById("copyDue").addEventListener("click", function () {
   var open = state.items.filter(isOpen).sort(function (a, b) {
