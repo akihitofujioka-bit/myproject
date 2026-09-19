@@ -15,6 +15,8 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     @Published var snapshot: Snapshot = .empty
     @Published var receivedAt: Date?
     @Published var isRequesting = false
+    /// コンプリケーションをタップして開いたときに、その項目までスクロールするための印
+    @Published var focusedId: String?
 
     private var store: UserDefaults { SharedDefaults.suite }
     private let payloadKey = SharedDefaults.payloadKey

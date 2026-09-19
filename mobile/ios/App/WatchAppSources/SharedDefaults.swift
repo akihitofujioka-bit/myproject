@@ -22,3 +22,20 @@ enum SharedDefaults {
         return snap
     }
 }
+
+/// コンプリケーション／ウィジェットをタップしたときに開く先。
+/// 「書類・回覧・会議の期限トラッカー」がすでに対応している myproject://docs?id=xxx を
+/// iPhone 側では使い、Watch 側は Watch アプリ自身の中で該当項目までスクロールする。
+enum DeepLink {
+    static func watchItemURL(id: String?) -> URL? {
+        guard let id = id, !id.isEmpty else { return nil }
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
+        return URL(string: "watchapp://item?id=" + encoded)
+    }
+
+    static func docsURL(id: String?) -> URL? {
+        guard let id = id, !id.isEmpty else { return nil }
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
+        return URL(string: "myproject://docs?id=" + encoded)
+    }
+}

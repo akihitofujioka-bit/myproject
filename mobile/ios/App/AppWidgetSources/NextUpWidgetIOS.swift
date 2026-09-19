@@ -1,17 +1,18 @@
 //
-//  NextUpWidget.swift
+//  NextUpWidgetIOS.swift
 //
-//  Watch の文字盤（インフォグラフなど）に出すコンプリケーション。
-//  会議・書類の期限のうち、一番近いものをひとつだけ表示する。
-//  買い物リストは緊急性が低いためここには出さない（アプリ本体では見られる）。
+//  iPhoneのロック画面（および StandBy）に出すウィジェット。
+//  Watchのコンプリケーションと同じく、会議・書類の期限のうち一番近いものを
+//  ひとつだけ表示する。タップすると、書類・回覧・会議の期限トラッカーの
+//  該当項目を直接開く（既存の myproject://docs?id=xxx を使う）。
 //
-//  データは WatchStore が App Group に書き込んだものを読むだけで、
+//  データは WatchBridgePlugin が App Group に書き込んだものを読むだけで、
 //  ここから新たに何かを取得したり外部へ送ったりはしない。
 //
 import WidgetKit
 import SwiftUI
 
-struct NextUpEntry: TimelineEntry {
+struct NextUpEntryIOS: TimelineEntry {
     let date: Date
     let title: String
     let dayLabel: String
@@ -19,53 +20,52 @@ struct NextUpEntry: TimelineEntry {
     let docId: String?
 }
 
-struct NextUpProvider: TimelineProvider {
-    func placeholder(in context: Context) -> NextUpEntry {
-        NextUpEntry(date: Date(), title: "会議名など", dayLabel: "あと2日", hasItem: true, docId: nil)
+struct NextUpProviderIOS: TimelineProvider {
+    func placeholder(in context: Context) -> NextUpEntryIOS {
+        NextUpEntryIOS(date: Date(), title: "会議名など", dayLabel: "あと2日", hasItem: true, docId: nil)
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (NextUpEntry) -> Void) {
+    func getSnapshot(in context: Context, completion: @escaping (NextUpEntryIOS) -> Void) {
         completion(currentEntry())
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<NextUpEntry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<NextUpEntryIOS>) -> Void) {
         let next = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date().addingTimeInterval(3600)
         completion(Timeline(entries: [currentEntry()], policy: .after(next)))
     }
 
-    private func currentEntry() -> NextUpEntry {
+    private func currentEntry() -> NextUpEntryIOS {
         guard let item = nextItem(from: SharedDefaults.loadSnapshot()) else {
-            return NextUpEntry(date: Date(), title: "予定なし", dayLabel: "", hasItem: false, docId: nil)
+            return NextUpEntryIOS(date: Date(), title: "予定なし", dayLabel: "", hasItem: false, docId: nil)
         }
-        return NextUpEntry(date: Date(), title: item.title, dayLabel: dayLabel(item.days), hasItem: true, docId: item.docId)
+        return NextUpEntryIOS(date: Date(), title: item.title, dayLabel: dayLabel(item.days), hasItem: true, docId: item.docId)
     }
 }
 
-private struct NextItem {
+private struct NextItemIOS {
     let title: String
     let days: Int
     let docId: String?
 }
 
-/// 会議と期限をまとめて、一番近い（days が小さい）ものをひとつ選ぶ。
-private func nextItem(from snapshot: Snapshot) -> NextItem? {
-    var candidates: [NextItem] = []
+private func nextItem(from snapshot: Snapshot) -> NextItemIOS? {
+    var candidates: [NextItemIOS] = []
     for m in snapshot.meetings ?? [] {
         guard let days = m.days else { continue }
-        candidates.append(NextItem(title: m.title ?? "（会議）", days: days, docId: m.docId))
+        candidates.append(NextItemIOS(title: m.title ?? "（会議）", days: days, docId: m.docId))
     }
     for d in snapshot.deadlines ?? [] {
         guard let days = d.days else { continue }
-        candidates.append(NextItem(title: d.title ?? "（書類）", days: days, docId: d.docId))
+        candidates.append(NextItemIOS(title: d.title ?? "（書類）", days: days, docId: d.docId))
     }
     return candidates.min { $0.days < $1.days }
 }
 
 private extension View {
-    /// containerBackground は watchOS 10 以降専用。それより前は背景を付けなくても表示できる。
+    /// containerBackground は iOS 17 以降専用。それより前は背景を付けなくても表示できる。
     @ViewBuilder
     func widgetBackground() -> some View {
-        if #available(watchOS 10.0, *) {
+        if #available(iOS 17.0, *) {
             containerBackground(.fill.tertiary, for: .widget)
         } else {
             background(.clear)
@@ -73,15 +73,13 @@ private extension View {
     }
 }
 
-struct NextUpEntryView: View {
-    var entry: NextUpProvider.Entry
+struct NextUpEntryViewIOS: View {
+    var entry: NextUpProviderIOS.Entry
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
         Group {
             switch family {
-            case .accessoryCorner:
-                cornerView
             case .accessoryCircular:
                 circularView
             case .accessoryInline:
@@ -90,7 +88,7 @@ struct NextUpEntryView: View {
                 rectangularView
             }
         }
-        .widgetURL(DeepLink.watchItemURL(id: entry.docId))
+        .widgetURL(DeepLink.docsURL(id: entry.docId))
     }
 
     private var circularView: some View {
@@ -122,33 +120,24 @@ struct NextUpEntryView: View {
     private var inlineView: some View {
         Text(entry.hasItem ? "\(entry.title)・\(entry.dayLabel)" : "予定なし")
     }
-
-    private var cornerView: some View {
-        Text(entry.hasItem ? entry.dayLabel : "―")
-            .font(.system(size: 15, weight: .semibold))
-            .widgetLabel {
-                Text(entry.hasItem ? entry.title : "予定なし")
-            }
-            .widgetBackground()
-    }
 }
 
-struct NextUpWidget: Widget {
-    let kind = "NextUpWidget"
+struct NextUpWidgetIOS: Widget {
+    let kind = "NextUpWidgetIOS"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: NextUpProvider()) { entry in
-            NextUpEntryView(entry: entry)
+        StaticConfiguration(kind: kind, provider: NextUpProviderIOS()) { entry in
+            NextUpEntryViewIOS(entry: entry)
         }
         .configurationDisplayName("次の予定")
         .description("会議・書類の期限のうち、一番近いものを表示します。")
-        .supportedFamilies([.accessoryCorner, .accessoryCircular, .accessoryRectangular, .accessoryInline])
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }
 
 @main
-struct DailyAppsWidgetBundle: WidgetBundle {
+struct DailyAppsWidgetBundleIOS: WidgetBundle {
     var body: some Widget {
-        NextUpWidget()
+        NextUpWidgetIOS()
     }
 }

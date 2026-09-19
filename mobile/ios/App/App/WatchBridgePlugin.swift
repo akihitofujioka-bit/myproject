@@ -14,6 +14,7 @@
 import Foundation
 import Capacitor
 import WatchConnectivity
+import WidgetKit
 
 @objc(WatchBridgePlugin)
 public class WatchBridgePlugin: CAPPlugin, CAPBridgedPlugin {
@@ -84,6 +85,11 @@ final class WatchSessionHolder: NSObject, WCSessionDelegate {
     func send(payload: String) -> (ok: Bool, reason: String) {
         UserDefaults.standard.set(payload, forKey: WatchSessionHolder.payloadKey)
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: WatchSessionHolder.updatedKey)
+
+        // iPhoneのロック画面ウィジェット（次の予定）にも同じ内容を渡す
+        SharedDefaults.suite.set(payload, forKey: SharedDefaults.payloadKey)
+        SharedDefaults.suite.set(Date().timeIntervalSince1970, forKey: SharedDefaults.receivedKey)
+        WidgetCenter.shared.reloadAllTimelines()
 
         guard WCSession.isSupported() else { return (false, "not-supported") }
         activate()

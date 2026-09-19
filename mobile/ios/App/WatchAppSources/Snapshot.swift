@@ -7,6 +7,7 @@
 import Foundation
 
 struct Meeting: Codable, Identifiable {
+    var docId: String?
     var title: String?
     var date: String?
     var days: Int?
@@ -14,10 +15,17 @@ struct Meeting: Codable, Identifiable {
     var place: String?
     var social: String?
 
-    var id: String { (date ?? "") + "/" + (title ?? "") }
+    enum CodingKeys: String, CodingKey {
+        case docId = "id"
+        case title, date, days, time, place, social
+    }
+
+    /// 書類・回覧・会議の期限トラッカー側の本当のID（無ければ日付＋件名で代用）
+    var id: String { docId ?? ((date ?? "") + "/" + (title ?? "")) }
 }
 
 struct Deadline: Codable, Identifiable {
+    var docId: String?
     var title: String?
     var date: String?
     var days: Int?
@@ -25,7 +33,12 @@ struct Deadline: Codable, Identifiable {
     var dest: String?
     var status: String?
 
-    var id: String { (date ?? "") + "/" + (title ?? "") }
+    enum CodingKeys: String, CodingKey {
+        case docId = "id"
+        case title, date, days, kind, dest, status
+    }
+
+    var id: String { docId ?? ((date ?? "") + "/" + (title ?? "")) }
 }
 
 struct ShoppingItem: Codable, Identifiable {

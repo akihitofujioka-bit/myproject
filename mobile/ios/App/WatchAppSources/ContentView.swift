@@ -11,17 +11,25 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if store.snapshot.isEmpty {
-                    emptyView
-                } else {
-                    meetingSection
-                    deadlineSection
-                    shoppingSection
+            ScrollViewReader { proxy in
+                List {
+                    if store.snapshot.isEmpty {
+                        emptyView
+                    } else {
+                        meetingSection
+                        deadlineSection
+                        shoppingSection
+                    }
+                    footer
                 }
-                footer
+                .navigationTitle("日常")
+                .onChange(of: store.focusedId) { id in
+                    guard let id = id else { return }
+                    withAnimation {
+                        proxy.scrollTo(id, anchor: .center)
+                    }
+                }
             }
-            .navigationTitle("日常")
         }
     }
 
@@ -61,6 +69,8 @@ struct ContentView: View {
                         }
                     }
                     .padding(.vertical, 2)
+                    .id(m.id)
+                    .listRowBackground(store.focusedId == m.id ? Color.accentColor.opacity(0.25) : nil)
                 }
             }
         }
@@ -88,6 +98,8 @@ struct ContentView: View {
                         }
                     }
                     .padding(.vertical, 2)
+                    .id(d.id)
+                    .listRowBackground(store.focusedId == d.id ? Color.accentColor.opacity(0.25) : nil)
                 }
             }
         }
