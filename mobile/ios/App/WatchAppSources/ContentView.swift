@@ -68,9 +68,14 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(store.focusedId == m.id ? Color.yellow.opacity(0.35) : Color.clear)
+                    )
                     .id(m.id)
-                    .listRowBackground(store.focusedId == m.id ? Color.accentColor.opacity(0.25) : nil)
                 }
             }
         }
@@ -97,9 +102,14 @@ struct ContentView: View {
                                 .lineLimit(1)
                         }
                     }
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(store.focusedId == d.id ? Color.yellow.opacity(0.35) : Color.clear)
+                    )
                     .id(d.id)
-                    .listRowBackground(store.focusedId == d.id ? Color.accentColor.opacity(0.25) : nil)
                 }
             }
         }
