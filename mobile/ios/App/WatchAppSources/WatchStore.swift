@@ -9,14 +9,16 @@
 //
 import Foundation
 import WatchConnectivity
+import WidgetKit
 
 final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     @Published var snapshot: Snapshot = .empty
     @Published var receivedAt: Date?
     @Published var isRequesting = false
 
-    private let payloadKey = "watch.payload"
-    private let receivedKey = "watch.receivedAt"
+    private var store: UserDefaults { SharedDefaults.suite }
+    private let payloadKey = SharedDefaults.payloadKey
+    private let receivedKey = SharedDefaults.receivedKey
 
     override init() {
         super.init()
@@ -28,23 +30,25 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     private func loadCached() {
-        if let json = UserDefaults.standard.string(forKey: payloadKey),
+        if let json = store.string(forKey: payloadKey),
            let snap = Snapshot.decode(json) {
             snapshot = snap
         }
-        let t = UserDefaults.standard.double(forKey: receivedKey)
+        let t = store.double(forKey: receivedKey)
         if t > 0 { receivedAt = Date(timeIntervalSince1970: t) }
     }
 
     private func apply(_ json: String) {
         guard let snap = Snapshot.decode(json) else { return }
-        UserDefaults.standard.set(json, forKey: payloadKey)
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: receivedKey)
+        store.set(json, forKey: payloadKey)
+        store.set(Date().timeIntervalSince1970, forKey: receivedKey)
         DispatchQueue.main.async {
             self.snapshot = snap
             self.receivedAt = Date()
             self.isRequesting = false
         }
+        // 文字盤のコンプリケーション（次の予定）にも新しい内容を反映する
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// 手動の更新。iPhone 側が起動していれば最新を返してくれる
