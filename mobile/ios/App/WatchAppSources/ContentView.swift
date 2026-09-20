@@ -151,6 +151,10 @@ struct ContentView: View {
             Text(updatedText)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+
+            Text("版 " + buildLabel)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -160,5 +164,10 @@ struct ContentView: View {
         f.locale = Locale(identifier: "ja_JP")
         f.dateFormat = "M月d日 HH:mm 受信"
         return f.string(from: at)
+    }
+
+    /// iPhone側と同じ「日時（コミット番号）」形式。ビルド時にInfo.plistへ埋め込んでいる
+    private var buildLabel: String {
+        (Bundle.main.object(forInfoDictionaryKey: "AppBuildLabel") as? String) ?? "不明"
     }
 }
