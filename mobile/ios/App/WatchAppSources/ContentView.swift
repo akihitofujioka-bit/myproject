@@ -54,7 +54,7 @@ struct ContentView: View {
                         Text(m.title ?? "（件名なし）")
                             .font(.headline)
                             .lineLimit(2)
-                        Text([dayLabel(m.days), m.time ?? ""].filter { !$0.isEmpty }.joined(separator: " "))
+                        Text([dayLabel(m.remaining), m.time ?? ""].filter { !$0.isEmpty }.joined(separator: " "))
                             .font(.caption)
                         if let place = m.place, !place.isEmpty {
                             Text(place)
@@ -91,10 +91,10 @@ struct ContentView: View {
                         Text(d.title ?? "（件名なし）")
                             .font(.headline)
                             .lineLimit(2)
-                        Text([dayLabel(d.days), d.kind ?? "", d.status ?? ""]
+                        Text([dayLabel(d.remaining), d.kind ?? "", d.status ?? ""]
                             .filter { !$0.isEmpty }.joined(separator: " ／ "))
                             .font(.caption)
-                            .foregroundStyle((d.days ?? 99) <= 0 ? .red : .secondary)
+                            .foregroundStyle((d.remaining ?? 99) <= 0 ? .red : .secondary)
                         if let dest = d.dest, !dest.isEmpty {
                             Text(dest)
                                 .font(.caption2)
