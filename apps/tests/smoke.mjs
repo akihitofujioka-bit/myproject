@@ -118,7 +118,7 @@ ok((await page.locator("li.item[data-id]").count()) === 1, "再読込後もデ�
 /* ---------------- 書類トラッカー ---------------- */
 console.log("== apps/docs-tracker ==");
 await page.goto("file://" + path.join(ROOT, "apps/docs-tracker/index.html"));
-ok((await page.title()) === "書類・回覧の期限トラッカー", "タイトル");
+ok((await page.title()) === "書類・回覧・会議の期限トラッカー", "タイトル");
 
 const addDoc = async (title, due, kind = "提出", pri = "中") => {
   await page.fill("#f-title", title);

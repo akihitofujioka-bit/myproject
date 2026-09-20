@@ -29,7 +29,11 @@ struct NextUpProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<NextUpEntry>) -> Void) {
-        let next = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date().addingTimeInterval(3600)
+        // 残り日数は日付が変わると変わるため、次の正時と翌0時の早いほうで更新する
+        let hourLater = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date().addingTimeInterval(3600)
+        let midnight = Calendar.current.nextDate(after: Date(), matching: DateComponents(hour: 0, minute: 0),
+                                                 matchingPolicy: .nextTime) ?? hourLater
+        let next = min(hourLater, midnight)
         completion(Timeline(entries: [currentEntry()], policy: .after(next)))
     }
 
@@ -51,14 +55,20 @@ private struct NextItem {
 private func nextItem(from snapshot: Snapshot) -> NextItem? {
     var candidates: [NextItem] = []
     for m in snapshot.meetings ?? [] {
-        guard let days = m.days else { continue }
+        guard let days = m.remaining else { continue }
         candidates.append(NextItem(title: m.title ?? "（会議）", days: days, docId: m.docId))
     }
     for d in snapshot.deadlines ?? [] {
-        guard let days = d.days else { continue }
+        guard let days = d.remaining else { continue }
         candidates.append(NextItem(title: d.title ?? "（書類）", days: days, docId: d.docId))
     }
-    return candidates.min { $0.days < $1.days }
+    // これから来るもののうち一番近いものを選ぶ。
+    // 過ぎたものしか無いときだけ、その中で今日に近いものを出す
+    // （アプリをしばらく開いていないと、終わった会議がいつまでも残るため）。
+    if let soonest = candidates.filter({ $0.days >= 0 }).min(by: { $0.days < $1.days }) {
+        return soonest
+    }
+    return candidates.max { $0.days < $1.days }
 }
 
 private extension View {
