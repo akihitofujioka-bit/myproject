@@ -308,6 +308,7 @@
 				C780C65A11CF9D8D893947A9 /* Frameworks */,
 				7D373035F7571E388808BD7D /* Resources */,
 				C12FDCE6A8B39E9475643EC4 /* Embed Foundation Extensions */,
+				0FA72FC93716641FA9311DF5 /* 版表記を埋め込む */,
 			);
 			buildRules = (
 			);
@@ -453,6 +454,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		0FA72FC93716641FA9311DF5 /* 版表記を埋め込む */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "版表記を埋め込む";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# www/version.txt（npm run sync が組み立てる「日時（コミット番号）」）を\n# Watchアプリの Info.plist にも埋め込み、ContentView の一番下に表示できるようにする。\n# www/version.txt が無いとき（xcodebuild を単体で叩いたときなど）は git から直接作る。\nVERSION_FILE=\"${SRCROOT}/../../www/version.txt\"\nif [ -f \"$VERSION_FILE\" ]; then\n  LABEL=$(tr -d '\\n' < \"$VERSION_FILE\")\nelse\n  HASH=$(git -C \"${SRCROOT}\" rev-parse --short HEAD 2>/dev/null || echo \"不明\")\n  STAMP=$(date \"+%Y-%m-%d %H:%M\")\n  LABEL=\"${STAMP}（${HASH}）\"\nfi\nPLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n/usr/libexec/PlistBuddy -c \"Delete :AppBuildLabel\" \"$PLIST\" 2>/dev/null\n/usr/libexec/PlistBuddy -c \"Add :AppBuildLabel string ${LABEL}\" \"$PLIST\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		1B15CA9167D1D7D68250D89E /* Sources */ = {
