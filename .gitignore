@@ -6,3 +6,6 @@ node_modules/
 # Python（gikai_editor）
 __pycache__/
 *.pyc
+
+# 日報ツール（tools/nippo）の OCR 補助プログラム（swiftc で自動生成）
+tools/nippo/.build/

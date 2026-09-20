@@ -1,0 +1,46 @@
+{
+  "_comment": "日報ツール（tools/nippo）の設定。パスの ~ はホームフォルダに置き換わる。",
+
+  "workspace": "~/日報",
+  "folders": {
+    "inbox": "素材",
+    "daily": "日報",
+    "weekly": "週報",
+    "monthly": "月報",
+    "cache": ".cache",
+    "_note": "workspace の下に作るフォルダ名。素材フォルダにファイルを入れる。日付の判定は「ファイル名や親フォルダ名の日付 → 写真の撮影日時・録音の作成日時 → ファイルの作成日時」の順"
+  },
+
+  "whisper": {
+    "model": "medium",
+    "language": "ja",
+    "initialPrompt": "議会だより、議事録、委員会、総務課、校正、印刷。",
+    "_note_model": "tiny/base/small/medium/large-v3/turbo。medium は音声の長さと同程度の時間がかかる。base は速いが誤りが増える",
+    "_note_prompt": "文字起こしの前に読み込ませる語句。固有名詞や専門用語を書いておくと誤変換が減る"
+  },
+
+  "ocr": {
+    "lowConfidence": 0.45,
+    "_note": "OCR の確度がこの値未満なら「確認してほしい点」に注意書きを出す"
+  },
+
+  "classify": {
+    "meeting": ["会議", "打合せ", "打ち合わせ", "打合わせ", "協議", "面談", "ミーティング", "MTG", "委員会", "説明会", "来庁", "来客", "ヒアリング", "報告会", "全員協議会"],
+    "tomorrow": ["明日", "翌日", "来週", "来月", "予定", "締切", "締め切り", "〆切", "期限", "までに"],
+    "issue": ["課題", "懸念", "相談", "要確認", "未了", "未対応", "未完", "保留", "TODO", "ToDo", "問題", "要検討", "確認が必要", "対応が必要", "困って", "遅れ"],
+    "_note": "行にこれらの語句が含まれると、その節に振り分ける。優先順は issue → tomorrow → meeting → それ以外は「その他の業務」"
+  },
+
+  "longSourceLines": 20,
+  "maxHitsPerLongSource": 15,
+  "_note_long": "行数が longSourceLines を超える素材（録音の文字起こしなど）は、語句に一致した行だけを本文に載せ、全文は素材欄に置く。一致行は maxHitsPerLongSource 件まで",
+
+  "privacy": {
+    "excludeTopics": ["人事", "評価", "給与", "報酬", "契約条件"],
+    "_note": "これらの語句を含む行は報告書に転記せず「非公開の議題あり」とだけ書く（素材欄も省略）"
+  },
+
+  "openAfterGenerate": true,
+  "overwrite": "ask",
+  "_note_overwrite": "ask | replace | skip。同じ日付の報告書が既にあるときの扱い。ask は画面で確認（コマンド実行時は --force が要る）"
+}
