@@ -54,6 +54,7 @@ python3 tools/nippo/test_reporter.py                # 組み立て部分の確�
 - `classify` … 節に振り分ける語句。職場の言い回しに合わせて足す
 - `privacy.excludeTopics` … 含む行を転記しない話題（既定: 人事・評価・給与・報酬・契約条件）
 - `overwrite` … `ask`（確認）／`replace`／`skip`
+- `openWith` … 生成した報告書を開くアプリ（既定 `TextEdit`）。`Obsidian` や `Visual Studio Code` に変えられる。空なら `.md` の既定アプリ
 
 ## 必要なもの
 
