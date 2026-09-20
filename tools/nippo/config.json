@@ -41,6 +41,8 @@
   },
 
   "openAfterGenerate": true,
+  "openWith": "TextEdit",
+  "_note_openWith": "生成した報告書を開くアプリ。TextEdit（テキストエディット）/ Obsidian / Visual Studio Code など。空にすると .md の既定アプリで開く",
   "overwrite": "ask",
   "_note_overwrite": "ask | replace | skip。同じ日付の報告書が既にあるときの扱い。ask は画面で確認（コマンド実行時は --force が要る）"
 }

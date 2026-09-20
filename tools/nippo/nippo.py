@@ -198,8 +198,10 @@ def list_materials(first: date, last: date, ws: Workspace, log: Log):
                                          extractors.KIND_LABEL.get(extractors.kind_of(p), "?"), basis))
 
 
-def open_in_finder(path: Path):
-    subprocess.Popen(["open", str(path)])
+def open_in_finder(path: Path, app: Optional[str] = None):
+    """Finder / 既定アプリで開く。app を指定するとそのアプリで開く（.md に既定アプリが無い Mac 向け）。"""
+    cmd = ["open"] + (["-a", app] if app and path.is_file() else []) + [str(path)]
+    subprocess.Popen(cmd)
 
 
 # ---------------------------------------------------------------- 日付の読み取り
@@ -328,7 +330,7 @@ def run_gui(config: Dict):
                         b.state(["!disabled"])
                     status.set("完了: %s" % payload)
                     if payload and config.get("openAfterGenerate", True):
-                        open_in_finder(payload)
+                        open_in_finder(payload, config.get("openWith") or None)
                 elif kind == "error":
                     working["busy"] = False
                     for b in buttons:
