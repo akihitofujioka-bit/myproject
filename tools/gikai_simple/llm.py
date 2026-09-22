@@ -114,6 +114,20 @@ def models() -> list[str]:
     return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
 
 
+# 試した結果、同じ原稿で 7b は誤検出 0 件、3b は 3 件だった。大きいほうを優先する。
+PREFERRED = ("qwen2.5:7b", "qwen2.5:3b", "qwen2.5", "qwen", "llama3.1", "gemma2")
+
+
+def pick_model(found: list[str] | None = None) -> str:
+    """入っているモデルから、校正に向いたものを選ぶ。"""
+    found = found if found is not None else models()
+    for want in PREFERRED:
+        for m in found:
+            if m.startswith(want):
+                return m
+    return found[0] if found else ""
+
+
 def available() -> tuple[bool, str]:
     """使える状態か。使えないときは、何をすればよいかを日本語で返す。"""
     found = models()
@@ -154,6 +168,42 @@ def _parse(reply: str) -> list[dict]:
     return [g for g in got if isinstance(g, dict) and g.get("text")]
 
 
+# モデルが返しがちな、役に立たない指摘のふるい分け。
+# 第201号の実際の原稿で試して決めた値（下の「試した結果」を参照）。
+MAX_SPAN = 40          # これより長い指摘は文まるごとの書き直しとみなす
+MAX_DIFF_RATIO = 0.3   # 元の 3 割を超えて書き換える提案は「言い換え」なので捨てる
+
+
+def _diff_ratio(a: str, b: str) -> float:
+    """2 つの文字列がどれくらい違うか（0＝同じ、1＝まるで別物）。
+
+    誤字の直し（「説明ました」→「説明しました」）は少ししか変わらないが、
+    言い換えの提案は大きく変わる。この差で見分ける。
+    """
+    import difflib
+    return 1.0 - difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _is_noise(found: str, fix: str, nouns: set[str]) -> bool:
+    """採ってはいけない指摘か。
+
+    小さいモデルは、直っていない指摘・固有名詞の言い換え・文まるごとの
+    書き直しを返してくる。実際の原稿で試したところ指摘の大半がこれだったので、
+    ここで落とす。落としすぎると本当の誤りも消えるので、条件は控えめにしてある。
+    """
+    if not fix or fix == found:
+        return True                        # 「武政義幸様 → 武政義幸様」のたぐい
+    if len(found) > MAX_SPAN:
+        return True                        # 文まるごとの書き直し
+    if _diff_ratio(found, fix) > MAX_DIFF_RATIO:
+        return True                        # 直しではなく言い換えの提案
+    if found in nouns or fix in nouns:
+        return True                        # 固有名詞は辞書の担当（勝手に変えさせない）
+    if any(n in found for n in nouns if len(n) >= 3):
+        return True                        # 固有名詞を含む範囲も触らせない
+    return False
+
+
 def check(text: str, model: str, *, progress=None) -> list[LlmIssue]:
     """本文を見てもらい、指摘の一覧を返す。
 
@@ -162,6 +212,11 @@ def check(text: str, model: str, *, progress=None) -> list[LlmIssue]:
     """
     parts = list(_chunks(text))
     issues: list[LlmIssue] = []
+    try:
+        import proofread
+        nouns = set(proofread.Dictionaries().proper_nouns())
+    except Exception:
+        nouns = set()
     for n, (offset, chunk) in enumerate(parts, 1):
         if progress:
             progress(n, len(parts))
@@ -186,6 +241,8 @@ def check(text: str, model: str, *, progress=None) -> list[LlmIssue]:
                 continue
             fix = str(got.get("fix", "") or "").strip()
             why = str(got.get("why", "") or "").strip()
+            if _is_noise(found, fix, nouns):
+                continue
             issues.append(LlmIssue(
                 start=offset + i,
                 end=offset + i + len(found),

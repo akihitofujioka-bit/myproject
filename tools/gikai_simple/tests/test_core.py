@@ -346,6 +346,32 @@ class LlmTest(unittest.TestCase):
             self.assertEqual(text[off:off + len(c)], c)      # 位置がずれていない
             self.assertLessEqual(len(c), llm.CHUNK_CHARS + 20)
 
+    def test_pick_model_prefers_larger(self):
+        self.assertEqual(llm.pick_model(["qwen2.5:3b", "qwen2.5:7b"]), "qwen2.5:7b")
+        self.assertEqual(llm.pick_model(["qwen2.5:3b"]), "qwen2.5:3b")
+        self.assertEqual(llm.pick_model(["mystery:1b"]), "mystery:1b")   # 知らないものでも使う
+        self.assertEqual(llm.pick_model([]), "")
+
+    def test_is_noise(self):
+        nouns = {"武政義幸", "日高村", "山﨑副村長"}
+        # 直っていない指摘（実際に 3b が返してきた形）
+        self.assertTrue(llm._is_noise("武政義幸様", "武政義幸様", nouns))
+        self.assertTrue(llm._is_noise("大祭", "", nouns))
+        # 固有名詞には触らせない（辞書の担当）
+        self.assertTrue(llm._is_noise("日高村", "日高町", nouns))
+        self.assertTrue(llm._is_noise("山﨑副村長が述べた", "山崎副村長が述べた", nouns))
+        # 文まるごとの書き直し
+        self.assertTrue(llm._is_noise("あ" * 50, "い" * 50, nouns))
+        # まるで別物への言い換え
+        self.assertTrue(llm._is_noise("検討する", "前向きに善処してまいります", nouns))
+        # 本当の誤字の直しは通す
+        self.assertFalse(llm._is_noise("説明ました", "説明しました", nouns))
+        self.assertFalse(llm._is_noise("実施ます", "実施します", nouns))
+
+    def test_diff_ratio(self):
+        self.assertLess(llm._diff_ratio("説明ました", "説明しました"), 0.2)
+        self.assertGreater(llm._diff_ratio("検討する", "まったく別の文章です"), 0.5)
+
     def test_parse_loose_json(self):
         got = llm._parse('はい。\n[{"text":"実施ます","fix":"実施します","why":"脱字"}]\nご確認ください')
         self.assertEqual(got[0]["fix"], "実施します")
