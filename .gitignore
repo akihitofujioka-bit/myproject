@@ -9,3 +9,6 @@ __pycache__/
 
 # 日報ツール（tools/nippo）の OCR 補助プログラム（swiftc で自動生成）
 tools/nippo/.build/
+
+# 配布用に作る zip（中身は同じリポジトリのソースから作り直せる）
+tools/*.zip

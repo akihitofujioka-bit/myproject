@@ -247,7 +247,7 @@ class ProofWindow(tk.Toplevel):
         if not ok:
             messagebox.showinfo(APP_NAME, msg, parent=self)
             return
-        model = msg.split("／")[0]
+        model = llm.pick_model()
         if not messagebox.askyesno(
                 APP_NAME,
                 f"AI 校正（{model}）を使います。\n\n"
