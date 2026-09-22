@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -31,6 +32,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import core  # noqa: E402
+import llm  # noqa: E402
+import proofread  # noqa: E402
 
 try:
     from PIL import Image, ImageOps, ImageTk
@@ -147,6 +150,189 @@ class NewIssueDialog(simpledialog.Dialog):
         self.result = (self.e_gou.get().strip(), self.e_date.get().strip(), self.v_tmpl.get())
 
 
+SEVERITY_LABEL = {"error": ("要修正", "#C62828"), "warn": ("確認", "#EF6C00"), "info": ("参考", "#1565C0")}
+
+
+class ProofWindow(tk.Toplevel):
+    """校正の結果を出す窓。
+
+    指摘を押すと、元の原稿の その場所 が選ばれる。まとめて直せるものは
+    ボタン 1 つで直せる。AI 校正は、使えるパソコンでだけボタンが効く。
+    """
+
+    def __init__(self, app: "App", kubun: str, text: str):
+        super().__init__(app)
+        self.app = app
+        self.kubun = kubun
+        self.text = text
+        self.issues: list = []
+        self.title(f"校正 — {kubun}")
+        self.geometry("760x560")
+
+        top = ttk.Frame(self, padding=(8, 6))
+        top.pack(fill="x")
+        self.lbl = ttk.Label(top, text="校正しています…", font=(UI_FONT[0], UI_FONT[1], "bold"))
+        self.lbl.pack(side="left")
+        self.btn_fix = ttk.Button(top, text="自動で直せるものをまとめて直す", command=self.fix_all, state="disabled")
+        self.btn_fix.pack(side="right")
+        self.btn_ai = ttk.Button(top, text="AI 校正も使う", command=self.run_ai)
+        self.btn_ai.pack(side="right", padx=6)
+
+        cols = ("severity", "category", "text", "suggestion", "message")
+        self.tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse")
+        for c, t, w in (("severity", "重要度", 70), ("category", "種類", 110),
+                        ("text", "該当", 130), ("suggestion", "直し方", 130), ("message", "説明", 300)):
+            self.tree.heading(c, text=t)
+            self.tree.column(c, width=w, anchor="w")
+        sb = ttk.Scrollbar(self, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=(0, 8))
+        sb.pack(side="right", fill="y", pady=(0, 8))
+        self.tree.bind("<<TreeviewSelect>>", self.on_select)
+        for sev, (_, color) in SEVERITY_LABEL.items():
+            self.tree.tag_configure(sev, foreground=color)
+
+        self.after(50, self.run_rules)
+
+    # -- ルールベースの校正
+
+    def run_rules(self):
+        try:
+            self.issues = proofread.proofread(self.text)
+        except Exception as e:                       # 辞書が壊れているなど
+            self.lbl.config(text="校正できませんでした")
+            messagebox.showerror(APP_NAME, f"校正でつまずきました:\n{e}", parent=self)
+            return
+        self.refresh()
+
+    def refresh(self):
+        self.tree.delete(*self.tree.get_children())
+        for n, i in enumerate(self.issues):
+            label, _ = SEVERITY_LABEL.get(i.severity, ("参考", "#000000"))
+            self.tree.insert("", "end", iid=str(n), tags=(i.severity,), values=(
+                label, i.category, i.text, i.suggestion or "", i.message))
+        n_fix = sum(1 for i in self.issues if getattr(i, "auto_fixable", False) and i.suggestion)
+        counts = {}
+        for i in self.issues:
+            counts[i.severity] = counts.get(i.severity, 0) + 1
+        parts = [f"{SEVERITY_LABEL[s][0]} {counts[s]}件" for s in ("error", "warn", "info") if s in counts]
+        self.lbl.config(text=f"{self.kubun}: {'／'.join(parts) if parts else '指摘はありません'}")
+        self.btn_fix.config(state=("normal" if n_fix else "disabled"),
+                            text=f"自動で直せる{n_fix}件をまとめて直す" if n_fix else "自動で直せるものはありません")
+
+    def on_select(self, _ev=None):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        i = self.issues[int(sel[0])]
+        self.app.highlight(i.start, i.end)
+
+    def fix_all(self):
+        targets = [i for i in self.issues if getattr(i, "auto_fixable", False) and i.suggestion]
+        if not targets:
+            return
+        ex = "、".join(f"{i.text}→{i.suggestion}" for i in targets[:5])
+        if len(targets) > 5:
+            ex += f" ほか{len(targets) - 5}件"
+        if not messagebox.askyesno(APP_NAME, f"次の{len(targets)}件を直します。\n\n{ex}\n\nよろしいですか？", parent=self):
+            return
+        self.text = proofread.apply_fixes(self.text, self.issues)
+        self.app.replace_text(self.text, f"{self.kubun} の校正を{len(targets)}件反映しました")
+        self.run_rules()
+
+    # -- AI 校正（任意）
+
+    def run_ai(self):
+        ok, msg = llm.available()
+        if not ok:
+            messagebox.showinfo(APP_NAME, msg, parent=self)
+            return
+        model = msg.split("／")[0]
+        if not messagebox.askyesno(
+                APP_NAME,
+                f"AI 校正（{model}）を使います。\n\n"
+                "・このパソコンの中だけで動きます（原稿は外に出ません）\n"
+                "・画像処理装置のないパソコンでは数分かかることがあります\n"
+                "・AI の指摘は外れることがあります。必ず人の目で確かめてください\n\n"
+                "始めますか？", parent=self):
+            return
+        self.btn_ai.config(state="disabled")
+        self.lbl.config(text="AI 校正中…（時間がかかります）")
+        threading.Thread(target=self._ai_worker, args=(model,), daemon=True).start()
+
+    def _ai_worker(self, model: str):
+        """別の流れで動かす。画面が固まらないようにするため。"""
+        def progress(n, total):
+            self.after(0, lambda: self.lbl.config(text=f"AI 校正中… {n}/{total}"))
+        try:
+            found = llm.check(self.text, model, progress=progress)
+        except Exception as e:
+            self.after(0, lambda: self._ai_failed(str(e)))
+            return
+        self.after(0, lambda: self._ai_done(found))
+
+    def _ai_failed(self, msg: str):
+        self.btn_ai.config(state="normal")
+        self.refresh()
+        messagebox.showerror(APP_NAME, f"AI 校正でつまずきました:\n{msg}", parent=self)
+
+    def _ai_done(self, found: list):
+        self.btn_ai.config(state="normal", text="AI 校正をやり直す")
+        self.issues = sorted(self.issues + found, key=lambda i: i.start)
+        self.refresh()
+        if not found:
+            self.lbl.config(text=self.lbl.cget("text") + "（AI からの指摘はありませんでした）")
+
+
+class EstimateWindow(tk.Toplevel):
+    """区分ごとの分量と、全体で何ページになるかを出す窓。"""
+
+    def __init__(self, app: "App", issue: core.Issue):
+        super().__init__(app)
+        self.title(f"分量 — {issue.title()}")
+        self.geometry("680x460")
+        est = issue.estimate()
+        cap = est["capacity"]
+
+        head = ttk.Frame(self, padding=(10, 8))
+        head.pack(fill="x")
+        ttk.Label(head, font=(UI_FONT[0], UI_FONT[1], "bold"),
+                  text=f"{issue.title()}　全体で およそ {est['pages']} ページ"
+                       + ("（奇数）" if est["odd"] else "（偶数）")).pack(anchor="w")
+        ttk.Label(head, foreground="#555555", justify="left",
+                  text=f"紙面の決まり: 縦書き {core.DANSU} 段／1 行 {cap['chars_per_line']} 字"
+                       f"／1 段 {cap['lines_per_dan']} 行 ＝ 1 ページ {cap['chars_per_page']} 字"
+                       "　（表紙は横書きなので 1 ページとして数えています）").pack(anchor="w", pady=(2, 0))
+        if est["odd"]:
+            ttk.Label(head, foreground="#C62828", wraplength=640, justify="left",
+                      text="※ 奇数ページです。紙は表と裏があるので、このままだと最後の 1 ページが"
+                           "白紙になります。分量を足すか減らすかを検討してください。").pack(anchor="w", pady=(4, 0))
+
+        cols = ("kubun", "chars", "photos", "total", "pages")
+        tree = ttk.Treeview(self, columns=cols, show="headings")
+        for c, t, w, a in (("kubun", "区分", 220, "w"), ("chars", "本文", 90, "e"),
+                           ("photos", "写真", 110, "e"), ("total", "合計", 90, "e"),
+                           ("pages", "ページ", 90, "e")):
+            tree.heading(c, text=t)
+            tree.column(c, width=w, anchor=a)
+        for r in est["rows"]:
+            mark = "（横書き）" if r["cover"] else ""
+            tree.insert("", "end", values=(
+                r["kubun"] + mark,
+                f"{r['chars']:,} 字",
+                f"{r['photos']} 枚 / {r['photo_chars']:,} 字" if r["photos"] else "—",
+                f"{r['total']:,} 字",
+                "—" if r["cover"] else f"{r['pages']:.1f}",
+            ))
+        tree.pack(fill="both", expand=True, padx=10, pady=(6, 4))
+
+        ttk.Label(self, padding=(10, 0, 10, 10), foreground="#555555", wraplength=640, justify="left",
+                  text="「写真」の字数は、その写真が本文を押しのけるおおよその量です"
+                       "（赤字の指示文とキャプションのぶんを含みます）。\n"
+                       "実際のページ数は印刷所の組み方で前後します。目安としてお使いください。"
+                  ).pack(anchor="w")
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -210,7 +396,8 @@ class App(tk.Tk):
         self.lbl_hint = ttk.Label(mid, text="", foreground="#555555", wraplength=560, justify="left")
         self.lbl_hint.pack(fill="x", pady=(2, 2))
         ttk.Button(bar, text="保存", command=self.save_current).pack(side="right")
-        ttk.Button(bar, text="数字をそろえる", command=self.fix_numbers).pack(side="right", padx=6)
+        ttk.Button(bar, text="校正する", command=self.proofread_current).pack(side="right", padx=6)
+        ttk.Button(bar, text="数字をそろえる", command=self.fix_numbers).pack(side="right")
         ttk.Button(bar, text="原稿ファイルを取り込む", command=self.import_files).pack(side="right")
         self.txt = tk.Text(mid, wrap="char", undo=True, font=TEXT_FONT, padx=8, pady=6)
         scroll = ttk.Scrollbar(mid, command=self.txt.yview)
@@ -263,6 +450,7 @@ class App(tk.Tk):
         ttk.Button(bottom, text="Word を作る（原稿＋写真配置指示書）", command=self.build).pack(side="left")
         ttk.Button(bottom, text="出力フォルダを開く", command=self.open_out_dir).pack(side="left", padx=6)
         ttk.Button(bottom, text="別添フォルダを開く", command=self.open_attach_dir).pack(side="left")
+        ttk.Button(bottom, text="分量を見る", command=self.show_estimate).pack(side="left", padx=6)
         self.lbl_status = ttk.Label(bottom, text="")
         self.lbl_status.pack(side="left", padx=12)
 
@@ -459,6 +647,51 @@ class App(tk.Tk):
         self.txt.edit_modified(True)
         self.save_current()
         self.lbl_status.config(text=f"{self.current_kubun} の数字をそろえました")
+
+    # ------------------------------------------------------------ 校正・分量
+
+    def proofread_current(self):
+        """いま開いている区分を校正して、指摘の一覧を別の窓に出す。"""
+        if not self.issue or not self.current_kubun:
+            messagebox.showinfo(APP_NAME, "先に区分を選んでください。")
+            return
+        self.save_current()
+        text = self.txt.get("1.0", "end-1c")
+        if not text.strip():
+            messagebox.showinfo(APP_NAME, "この区分にはまだ原稿がありません。")
+            return
+        ProofWindow(self, self.current_kubun, text)
+
+    def show_estimate(self):
+        """区分ごとの分量と、全体で何ページになるかを出す。"""
+        if not self.issue:
+            messagebox.showinfo(APP_NAME, "先に号フォルダを開いてください。")
+            return
+        self.save_current()
+        EstimateWindow(self, self.issue)
+
+    def replace_text(self, new_text: str, status: str = ""):
+        """原稿欄の中身を入れ替えて保存する（校正の窓から呼ぶ）。"""
+        pos = self.txt.index("insert")
+        self.txt.delete("1.0", "end")
+        self.txt.insert("1.0", new_text)
+        try:
+            self.txt.mark_set("insert", pos)
+        except tk.TclError:
+            pass
+        self.txt.edit_modified(True)
+        self.save_current()
+        if status:
+            self.lbl_status.config(text=status)
+
+    def highlight(self, start: int, end: int):
+        """本文の該当箇所を選んで見せる（校正の窓から呼ぶ）。"""
+        self.txt.tag_remove("sel", "1.0", "end")
+        a, b = f"1.0+{start}c", f"1.0+{end}c"
+        self.txt.tag_add("sel", a, b)
+        self.txt.mark_set("insert", a)
+        self.txt.see(a)
+        self.txt.focus_set()
 
     # ------------------------------------------------------------ 写真
 
