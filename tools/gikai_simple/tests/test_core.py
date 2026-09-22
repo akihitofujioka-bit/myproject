@@ -16,6 +16,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 import core  # noqa: E402
+import llm  # noqa: E402
+import proofread  # noqa: E402
 
 try:
     from PIL import Image
@@ -254,6 +256,127 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(table.rows[1].cells[2].paragraphs[0].text, "村長.jpg")
         self.assertIn("余り.jpg", "\n".join(p.text for p in sheet.paragraphs))
         self.assertIn("・賛否一覧.xlsx", [p.text for p in sheet.paragraphs])   # 別添の一覧
+
+
+class WidthTest(unittest.TestCase):
+    """組版で何文字ぶんになるか（半角は 0.5）。"""
+
+    def test_count_width(self):
+        self.assertEqual(core.count_width("あいう"), 3)
+        self.assertEqual(core.count_width("12日"), 2)        # 0.5+0.5+1
+        self.assertEqual(core.count_width("１２日"), 3)
+        self.assertEqual(core.count_width("あ い\nう"), 3)    # 空白と改行は数えない
+        self.assertEqual(core.count_width("あ\n【写真】x.jpg｜大｜説明"), 1)   # 写真行は数えない
+
+    def test_page_capacity(self):
+        cap = core.page_capacity()
+        # 第203号の紙面（5段・10.5pt・行送り1.45）で 13字 × 33行 × 5段 = 2145字
+        self.assertEqual(cap["chars_per_line"], 13)
+        self.assertEqual(cap["lines_per_dan"], 33)
+        self.assertEqual(cap["chars_per_page"], 2145)
+        self.assertAlmostEqual(cap["char_area_mm2"], 19.9, delta=0.2)
+
+    def test_photo_chars(self):
+        small = core.photo_chars(core.PhotoRef("a.jpg", "顔"))
+        big = core.photo_chars(core.PhotoRef("a.jpg", "大"))
+        self.assertLess(small, big)                     # 大きい写真ほど多く押しのける
+        self.assertGreater(small, 0)
+        # キャプションがあるぶんだけ増える
+        self.assertGreater(core.photo_chars(core.PhotoRef("a.jpg", "中", "説明")),
+                           core.photo_chars(core.PhotoRef("a.jpg", "中")))
+
+
+class ProofreadTest(unittest.TestCase):
+    """ルールベースの校正。辞書は proof_data/ の JSON。"""
+
+    def find(self, text, category):
+        return [i for i in proofread.proofread(text) if i.category == category]
+
+    def test_style_and_typo(self):
+        self.assertTrue(self.find("出来るだけ早く", "kana"))
+        self.assertTrue(self.find("課題等について", "house"))
+        self.assertTrue(self.find("①番目", "symbols"))
+        self.assertTrue(self.find("まず最初に", "redundant"))
+
+    def test_grammar_and_punct(self):
+        self.assertTrue(self.find("これは見れると思う", "ら抜き言葉"))
+        self.assertTrue(self.find("（かっこが閉じない。", "括弧"))
+
+    def test_proper_noun(self):
+        got = self.find("山崎副村長から説明があった。", "固有名詞")
+        self.assertTrue(got)
+        self.assertEqual(got[0].suggestion, "山﨑副村長")
+
+    def test_no_false_positive_on_clean_text(self):
+        clean = "１月15日に第１回臨時会が開催され、議案１件が可決された。"
+        self.assertEqual([i for i in proofread.proofread(clean) if i.severity == "error"], [])
+
+    def test_apply_fixes(self):
+        text = "出来るだけ早く、山崎副村長が対応する。"
+        fixed = proofread.apply_fixes(text, proofread.proofread(text))
+        self.assertIn("できるだけ", fixed)
+        self.assertIn("山﨑副村長", fixed)
+
+    def test_ambiguous_fix_not_applied(self):
+        # 「まず／最初に」のようにどちらか選ぶものは、勝手に直さない
+        text = "まず最初に検討する。"
+        self.assertEqual(proofread.apply_fixes(text, proofread.proofread(text)), text)
+
+
+class LlmTest(unittest.TestCase):
+    """LLM の差し込み口。Ollama が無くても壊れないこと。"""
+
+    def test_host_is_locked_to_localhost(self):
+        for bad in ("example.com", "10.0.0.1", "api.openai.com"):
+            with self.assertRaises(ValueError):
+                llm._check_host(bad)
+        for good in llm.ALLOWED_HOSTS:
+            llm._check_host(good)      # 例外が出ないこと
+
+    def test_available_without_ollama(self):
+        ok, msg = llm.available()
+        if not ok:                      # Ollama が入っていない普通の環境
+            self.assertIn("AI 校正", msg)
+
+    def test_chunks_split_at_sentence_end(self):
+        text = "一文目です。" * 200
+        parts = list(llm._chunks(text))
+        self.assertGreater(len(parts), 1)
+        for off, c in parts:
+            self.assertEqual(text[off:off + len(c)], c)      # 位置がずれていない
+            self.assertLessEqual(len(c), llm.CHUNK_CHARS + 20)
+
+    def test_parse_loose_json(self):
+        got = llm._parse('はい。\n[{"text":"実施ます","fix":"実施します","why":"脱字"}]\nご確認ください')
+        self.assertEqual(got[0]["fix"], "実施します")
+        self.assertEqual(llm._parse("見つかりませんでした"), [])
+        self.assertEqual(llm._parse("[壊れたJSON"), [])
+
+
+class EstimateTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.issue = core.Issue.create(Path(self.tmp.name), "204", "", template="6月号")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_estimate(self):
+        self.issue.write_text("一般質問", "あ" * 2145)      # ちょうど 1 ページぶん
+        est = self.issue.estimate()
+        row = next(r for r in est["rows"] if r["kubun"] == "一般質問")
+        self.assertEqual(row["chars"], 2145)
+        self.assertAlmostEqual(row["pages"], 1.0, places=2)
+        self.assertTrue(next(r for r in est["rows"] if r["kubun"] == "表紙")["cover"])
+        # 表紙 1 ページ + 本文 1 ページ = 2 ページ（偶数）
+        self.assertEqual(est["pages"], 2)
+        self.assertFalse(est["odd"])
+
+    def test_odd_pages_flagged(self):
+        self.issue.write_text("一般質問", "あ" * 2145 * 2)
+        est = self.issue.estimate()
+        self.assertEqual(est["pages"], 3)
+        self.assertTrue(est["odd"])
 
 
 if __name__ == "__main__":

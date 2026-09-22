@@ -28,6 +28,7 @@ import datetime
 import io
 import json
 import re
+import unicodedata
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -117,7 +118,9 @@ DANSU = 5                      # 本文の段数
 MARGIN_MM = (15, 12, 15, 15)   # 上・下・左・右
 DAN_SPACE_MM = 6               # 段の間隔
 LINE_SPACING = 1.45            # 本文の行送り（倍）
+BODY_PT = 10.5                 # 本文の文字の大きさ
 DAN_HEIGHT_MM = (297 - MARGIN_MM[0] - MARGIN_MM[1] - DAN_SPACE_MM * (DANSU - 1)) / DANSU   # 1 段の高さ
+BODY_WIDTH_MM = 210 - MARGIN_MM[2] - MARGIN_MM[3]   # 本文が入る横幅（行が進む向き）
 
 # 縦書きの慣行に合わせて数字の全角／半角をそろえるか（従来の .doc 4 号分から確認した規則）。
 #   1 桁 → 全角（４人・３月）、2 桁以上 → 半角（第46回・国道33号）
@@ -219,13 +222,74 @@ def photo_refs(text: str) -> list[PhotoRef]:
 
 
 def count_chars(text: str) -> int:
-    """本文の字数（【写真】行と空白を除く）。枠に入るかの目安に使う。"""
+    """本文の字数（【写真】行と空白を除く）。画面の「○字」に出す素の字数。"""
     n = 0
     for line in text.splitlines():
         if parse_photo_line(line):
             continue
         n += len(re.sub(r"\s", "", line))
     return n
+
+
+# ------------------------------------------------------------ 紙面に入る量
+
+MM_PER_PT = 25.4 / 72
+
+
+def count_width(text: str) -> int:
+    """組版で何文字ぶんの幅になるか（半角は 0.5 文字として数え、切り上げ）。
+
+    枠に収まるかを見るときは、こちらを使う。「12日」は 2 文字ぶん、
+    「１２日」は 3 文字ぶんで、紙面の占める幅が実際に違うため。
+    """
+    n = 0.0
+    for line in text.splitlines():
+        if parse_photo_line(line):
+            continue
+        for ch in line:
+            if ch.isspace():
+                continue
+            n += 1.0 if unicodedata.east_asian_width(ch) in ("F", "W", "A") else 0.5
+    return int(n + 0.999)
+
+
+def page_capacity() -> dict:
+    """いまの紙面の設定で、1 ページに何字入るかを計算する。
+
+    縦書き 5 段では、文字は段の高さの向きに並び、行は紙の横幅の向きに進む。
+      1 行の字数 = 段の高さ ÷ 文字の大きさ
+      1 段の行数 = 本文の横幅 ÷ 行送り
+    既定値（5 段・10.5pt・行送り1.45）では 13 字 × 33 行 × 5 段 = 2145 字。
+    """
+    char_mm = BODY_PT * MM_PER_PT
+    line_mm = BODY_PT * LINE_SPACING * MM_PER_PT
+    per_line = int(DAN_HEIGHT_MM / char_mm)
+    per_dan = int(BODY_WIDTH_MM / line_mm)
+    return {
+        "chars_per_line": per_line,
+        "lines_per_dan": per_dan,
+        "chars_per_dan": per_line * per_dan,
+        "chars_per_page": per_line * per_dan * DANSU,
+        "char_area_mm2": char_mm * line_mm,
+    }
+
+
+def photo_chars(ref: "PhotoRef", info: "PhotoInfo | None" = None) -> int:
+    """写真が本文を何字ぶん押しのけるかの目安。
+
+    写真の面積を 1 文字の面積で割る。高さは元の写真の縦横比から出し、
+    1 段に収まらないときは Word に貼るときと同じように縮める。
+    """
+    cap = page_capacity()
+    w = ref.width_mm
+    h = w * 3 / 4   # 縦横比がわからないときは 4:3 とみなす
+    if info and info.width_px and info.height_px:
+        h = w * info.height_px / info.width_px
+    max_h = DAN_HEIGHT_MM - 4
+    if h > max_h:
+        w, h = max_h * w / h, max_h
+    caption = 2 if ref.caption else 1     # 赤字の指示文とキャプションのぶん
+    return int(w * h / cap["char_area_mm2"]) + caption * cap["chars_per_line"]
 
 
 # ---------------------------------------------------------------- 数字の表記
@@ -442,6 +506,43 @@ class Issue:
                 out.append((name, ref))
         return out
 
+    def estimate(self) -> dict:
+        """区分ごとの分量と、全体で何ページになるかの目安を出す。
+
+        表紙は横書き 1 段で組み方が違うので、ページ数の計算からは外して
+        1 ページとして数える。写真は本文を押しのけるぶんを字数に足す。
+        """
+        cap = page_capacity()
+        rows = []
+        body_chars = 0
+        for kubun, text in self.all_texts():
+            chars = count_width(text)
+            pchars = 0
+            for ref in photo_refs(text):
+                pchars += photo_chars(ref, photo_info(self.photo_dir / ref.file))
+            total = chars + pchars
+            rows.append({
+                "kubun": kubun,
+                "chars": chars,
+                "photo_chars": pchars,
+                "total": total,
+                "photos": len(photo_refs(text)),
+                "pages": total / cap["chars_per_page"],
+                "cover": kubun == COVER,
+            })
+            if kubun != COVER:
+                body_chars += total
+        body_pages = -(-body_chars // cap["chars_per_page"]) if body_chars else 0
+        has_cover = any(r["cover"] for r in rows)
+        pages = int(body_pages) + (1 if has_cover else 0)
+        return {
+            "capacity": cap,
+            "rows": rows,
+            "body_chars": body_chars,
+            "pages": pages,
+            "odd": pages % 2 == 1,
+        }
+
     def title(self) -> str:
         return f"第{self.gou}号" if self.gou else self.folder.name
 
@@ -586,7 +687,7 @@ def reduced_jpeg(path: Path | str, max_px: int = 1200) -> io.BytesIO | None:
 
 # ---------------------------------------------------------------- Word 生成
 
-def _set_font(run, name=FONT_MINCHO, size=10.5, bold=False, color=None):
+def _set_font(run, name=FONT_MINCHO, size=BODY_PT, bold=False, color=None):
     run.font.name = name
     run.font.size = Pt(size)
     run.font.bold = bold
@@ -604,7 +705,7 @@ def _set_font(run, name=FONT_MINCHO, size=10.5, bold=False, color=None):
 _TATECHUYOKO = re.compile(r"(?<![0-9])[0-9]{2,3}(?![0-9])")
 
 
-def _para(doc, text="", *, name=FONT_MINCHO, size=10.5, bold=False,
+def _para(doc, text="", *, name=FONT_MINCHO, size=BODY_PT, bold=False,
           color=None, align=None, after=4, tatechuyoko=False, line=None):
     p = doc.add_paragraph()
     if align == "center":
