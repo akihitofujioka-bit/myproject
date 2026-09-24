@@ -78,11 +78,16 @@ HELP = """使い方（5 つだけ）
    1 桁は全角「４人」、2 桁以上は半角「第46回」。〒・℡・番地はそのまま
    手で書いた文章は「数字をそろえる」ボタンでもそろえられます（表紙は対象外）
 
+直した内容は「↩ 一つ手前に戻す」で戻せます（Ctrl+Z／⌘Z でも同じ）
+   「まとめて直す」「数字をそろえる」のように一度にたくさん変わった操作も、1 回で戻ります
+   区分を切り替えると、それより前には戻せなくなります
+
 原稿欄で文字をドラッグして選ぶと、その部分が何字かが区分名の右に出ます
    「組版 ○字」は半角を 0.5 文字として数えたもの（紙面に入るかの目安）
    1 行 13 字なので、「＝ ○行」で何行分かが分かります
 
 大きさの目安（紙面は 5 段組・1 段 約 30mm）
+   表紙 = A4 一面（紙の端まで。表紙の区分でだけ使う）
    大 = 幅 80mm   中 = 幅 55mm   小 = 幅 38mm   顔 = 幅 26mm（顔写真）
 
 原稿は区分を切り替えたとき・Word を作るときに自動で保存されます。
@@ -374,6 +379,7 @@ class App(tk.Tk):
         self.issue: core.Issue | None = None
         self.current_kubun: str | None = None
         self.kubun_names: list[str] = []
+        self._edited_since_open = False      # 区分を開いてから何か編集したか（戻せるかの判断）
         self.selected_photo: Path | None = None
         self._thumbs: list = []          # ImageTk を GC から守る
         self._photo_buttons: dict[str, tk.Button] = {}
@@ -431,6 +437,8 @@ class App(tk.Tk):
         self.lbl_hint = ttk.Label(mid, text="", foreground="#555555", wraplength=560, justify="left")
         self.lbl_hint.pack(fill="x", pady=(2, 2))
         ttk.Button(bar, text="保存", command=self.save_current).pack(side="right")
+        self.btn_undo = ttk.Button(bar, text="↩ 一つ手前に戻す", command=self.undo, state="disabled")
+        self.btn_undo.pack(side="right", padx=6)
         ttk.Button(bar, text="校正する", command=self.proofread_current).pack(side="right", padx=6)
         ttk.Button(bar, text="数字をそろえる", command=self.fix_numbers).pack(side="right")
         ttk.Button(bar, text="原稿ファイルを取り込む", command=self.import_files).pack(side="right")
@@ -441,6 +449,8 @@ class App(tk.Tk):
         scroll.pack(side="right", fill="y")
         self.txt.bind("<<Modified>>", self.on_modified)
         # ドラッグで選ぶと、その部分が何字かを出す
+        self.txt.bind("<<Undo>>", lambda e: (self.undo(), "break")[1])
+        self.txt.bind("<<Redo>>", lambda e: (self.redo(), "break")[1])
         self.txt.bind("<<Selection>>", self.update_count)
         self.txt.bind("<KeyRelease>", self.update_count)
         self.txt.bind("<ButtonRelease-1>", self.update_count)
@@ -680,8 +690,10 @@ class App(tk.Tk):
         self.current_kubun = name
         self.txt.delete("1.0", "end")
         self.txt.insert("1.0", self.issue.read_text(name))
-        self.txt.edit_reset()
+        self.txt.edit_reset()                # 前の区分の履歴は引き継がない
         self.txt.edit_modified(False)
+        self._edited_since_open = False
+        self.update_undo_buttons()
         self.lbl_kubun.config(text=name)
         hint = core.HINTS.get(name, "")
         self.lbl_hint.config(text=("載せるもの: " + hint) if hint else "")
@@ -724,6 +736,8 @@ class App(tk.Tk):
     def on_modified(self, _ev=None):
         if self.txt.edit_modified():
             self.lbl_status.config(text="（未保存の変更があります）")
+            self._edited_since_open = True
+            self.update_undo_buttons()
 
     def save_current(self):
         """いま開いている区分をファイルに書く。変更がなければ何もしない。"""
@@ -767,13 +781,7 @@ class App(tk.Tk):
         if before == after:
             self.lbl_status.config(text="数字はそろっています")
             return
-        pos = self.txt.index("insert")
-        self.txt.delete("1.0", "end")
-        self.txt.insert("1.0", after)
-        self.txt.mark_set("insert", pos)
-        self.txt.edit_modified(True)
-        self.save_current()
-        self.lbl_status.config(text=f"{self.current_kubun} の数字をそろえました")
+        self.replace_text(after, f"{self.current_kubun} の数字をそろえました")
 
     # ------------------------------------------------------------ 校正・分量
 
@@ -798,18 +806,66 @@ class App(tk.Tk):
         EstimateWindow(self, self.issue)
 
     def replace_text(self, new_text: str, status: str = ""):
-        """原稿欄の中身を入れ替えて保存する（校正の窓から呼ぶ）。"""
+        """原稿欄の中身をそっくり入れ替えて保存する。
+
+        「まとめて直す」「数字をそろえる」など、たくさんの箇所がいっぺんに
+        変わる操作はここを通す。**「元に戻す」1 回でまとめて戻せる**ように、
+        消す・入れるの 2 つを 1 つの区切りにまとめている
+        （そうしないと 2 回押さないと戻らない）。
+        """
         pos = self.txt.index("insert")
+        self.txt.configure(autoseparators=False)
+        self.txt.edit_separator()          # ここまでを 1 つの区切りにする
         self.txt.delete("1.0", "end")
         self.txt.insert("1.0", new_text)
+        self.txt.edit_separator()          # ここからを次の区切りにする
+        self.txt.configure(autoseparators=True)
         try:
             self.txt.mark_set("insert", pos)
         except tk.TclError:
             pass
         self.txt.edit_modified(True)
         self.save_current()
+        self.update_count()
+        self.update_undo_buttons()
         if status:
             self.lbl_status.config(text=status)
+
+    def undo(self):
+        """一つ手前に戻す。"""
+        try:
+            self.txt.edit_undo()
+        except tk.TclError:
+            self.lbl_status.config(text="これ以上は戻せません")
+            return
+        self.txt.edit_modified(True)
+        self.save_current()
+        self.update_count()
+        self.update_undo_buttons()
+        self.lbl_status.config(text="一つ手前に戻しました")
+
+    def redo(self):
+        """戻したものをやり直す。"""
+        try:
+            self.txt.edit_redo()
+        except tk.TclError:
+            self.lbl_status.config(text="やり直せるものはありません")
+            return
+        self.txt.edit_modified(True)
+        self.save_current()
+        self.update_count()
+        self.update_undo_buttons()
+        self.lbl_status.config(text="やり直しました")
+
+    def update_undo_buttons(self, _ev=None):
+        """戻せる／やり直せるかでボタンの押せる押せないを切り替える。
+
+        tk には「戻せるか」を聞く方法が無いので、実際に戻して即やり直す、
+        という手は使えない（中身が動いてしまう）。代わりに、区分を開いてから
+        何か編集したかどうかで判断する。
+        """
+        state = "normal" if self._edited_since_open else "disabled"
+        self.btn_undo.config(state=state)
 
     def highlight(self, start: int, end: int):
         """本文の該当箇所を選んで見せる（校正の窓から呼ぶ）。"""
