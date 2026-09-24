@@ -36,9 +36,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>会議の予定をカレンダーから探して取り込むために使用します。読み取った内容は端末の中だけで処理され、どこにも送信しません。カレンダーへの書き込みはこの機能とは別に行います。</string>
+	<string>会議や書類の期限をカレンダーに登録し、カレンダーの予定を会議として取り込むために使用します。内容は端末の中だけで処理され、どこにも送信しません。書き込むのは、このアプリから登録した予定だけです。</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>会議の予定をカレンダーから探して取り込むために使用します。読み取った内容は端末の中だけで処理され、どこにも送信しません。カレンダーへの書き込みはこの機能とは別に行います。</string>
+	<string>会議や書類の期限をカレンダーに登録し、カレンダーの予定を会議として取り込むために使用します。内容は端末の中だけで処理され、どこにも送信しません。書き込むのは、このアプリから登録した予定だけです。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>商品のバーコードを読み取るためにカメラを使用します。撮影した映像は端末の中だけで処理され、どこにも送信しません。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

@@ -91,7 +91,9 @@ open ios/App/App.xcodeproj
 
 ## アプリ内で定義しているプラグイン
 
-- **ReceiptScanner**（`ios/App/App/ReceiptScannerPlugin.swift`）— 家計簿の「レシートを撮る」。VisionKit の書類カメラで撮影し、Vision で日本語の文字認識をして「行の断片と位置」を JS に返す。合計・日付・店名の取り出しは JS 側（`apps/shared/receipt.js`）
+- **ReceiptScanner**（`ios/App/App/ReceiptScannerPlugin.swift`）— 家計簿の「レシートを撮る」と書類トラッカーの「書類を撮る」。撮影は自前の**無音カメラ**（`ios/App/App/SilentCameraViewController.swift`）、文字認識は Vision。「行の断片と位置」を JS に返し、合計・日付・店名の取り出しは JS 側（`apps/shared/receipt.js`）
+  - **なぜ自前のカメラか**: VisionKit の書類カメラ（`VNDocumentCameraViewController`）は撮影時にシャッター音が鳴る（2026-09-24 に実機で確認）。写真を撮る仕組み（`AVCapturePhotoOutput`）を使うかぎり日本向け iPhone では音を消せないため、**映像の1コマを取り出す方式**（`AVCaptureVideoDataOutput`）に変えた。引き換えに、書類の四隅を自動で切り出す機能は無くなっている
+- **CalendarWriter**（`ios/App/App/CalendarWriterPlugin.swift`）— 会議と書類の期限をカレンダーへ**直接**書き込む。EventKit を使うため共有シートが出ず、前回の識別子（アプリ側が localStorage に保持）で同じ予定を書き換えるので、登録し直しても予定が増えない。ブラウザや許可されなかったときは、これまでどおり `.ics` ファイル経由に切り替わる（`apps/shared/calendarwrite.js`）
 - **WatchBridge**（`ios/App/App/WatchBridgePlugin.swift`）— Apple Watch へ「今日の会議・期限・買い物リスト」を渡す。WatchConnectivity の applicationContext を使い、最新の一覧だけを上書きで渡す。Watch 側のアプリは `ios/App/WatchAppSources/` にあり、Xcode でターゲットを足す手順は `docs/apple-watch-app.md`（**ビルド未検証**）
 - 登録は `ios/App/App/ViewController.swift`（`CAPBridgeViewController` を継承し `capacitorDidLoad` で登録）。`Main.storyboard` の画面クラスをこの `ViewController` にしてある
 - `npm run sync` は `Package.swift` を書き換えるが、これらのファイルは触らないので消えない
