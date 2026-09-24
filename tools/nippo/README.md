@@ -3,15 +3,18 @@
 フォルダに **手書きメモの写真・テキスト・Word・Excel・写真・音声** を入れておき、ボタンひとつで
 **日報 → 週報 → 月報** の下書き（Markdown）を作る Python ツール。
 
-- OCR（手書き・写真・PDF）は macOS 標準の Vision、音声の文字起こしはローカルの Whisper を使う。
-  **すべてこの Mac の中で処理し、外部には何も送らない**（個人情報を含むメモでも安心して使える設計）
+- **macOS と Windows 10/11 のどちらでも動く。** OCR はそれぞれの OS に最初から入っているものを使う
+  （macOS は Vision、Windows は Windows.Media.Ocr）。音声の文字起こし（Whisper）は macOS のみ
+- **すべてこのパソコンの中で処理し、外部には何も送らない**（個人情報を含むメモでも安心して使える設計）
 - 要約は LLM を使わず、語句の一致で「会議・打ち合わせ／その他の業務／明日の予定／課題・相談事項」に振り分ける。
   文章の言い換えはしないので、**出力は下書き**として手で整えて使う
 - 書式は `/report` スキルの日報（`reports/daily/`）に合わせてある。出力先は別（既定 `~/日報/`）なので混ざらない
 
 ## 使い方
 
-1. `tools/nippo/日報ツール.command` をダブルクリック（またはターミナルで `python3 tools/nippo/nippo.py`）
+1. 起動する
+   - macOS … `日報ツール.command` をダブルクリック（または `python3 tools/nippo/nippo.py`）
+   - Windows … `日報ツール.bat` をダブルクリック
 2. 画面の「素材フォルダを開く」で `~/日報/素材/` を開き、ファイルを入れる
    - 日付は **ファイル名 → 親フォルダ名 → 写真の撮影日時・録音の作成日時 → ファイル作成日時** の順に判定
    - 例: `2026-09-21_打合せメモ.jpg`、`20260921_進捗.xlsx`、`素材/2026-09-21/録音.m4a`
@@ -40,12 +43,13 @@ python3 tools/nippo/test_reporter.py                # 組み立て部分の確�
 |---|---|---|
 | テキスト | .txt .md .csv .tsv .json .log | そのまま（文字コードは UTF-8 / Shift_JIS / EUC を自動判定） |
 | Word | .docx | python-docx（段落と表） |
-| Word 旧形式ほか | .doc .rtf .odt | macOS 標準の `textutil` |
+| Word 旧形式 | .doc | macOS: `textutil` ／ Windows: `doc97`（追加ソフト不要） |
+| Word その他 | .rtf .odt | macOS のみ（Windows では .docx にして入れる） |
 | Excel | .xlsx .xlsm | openpyxl（全シート。1 行目は見出し扱い） |
 | Excel 旧形式 | .xls | 未対応（.xlsx で保存し直す） |
-| 画像・手書き | .jpg .png .heic .tif など | Vision で OCR（日本語・英語）。確度が低いと注意書きが付く |
+| 画像・手書き | .jpg .png .heic .tif など | macOS: Vision ／ Windows: 標準 OCR。確度が低いと注意書きが付く |
 | PDF | .pdf | 文字層があればそれを使い、なければページごとに OCR |
-| 音声・動画 | .m4a .mp3 .wav .aiff .mov .mp4 など | Whisper（既定 `medium`）。**音声の長さと同程度の時間がかかる** |
+| 音声・動画 | .m4a .mp3 .wav .aiff .mov .mp4 など | **macOS のみ** Whisper（既定 `medium`）。音声の長さと同程度の時間がかかる。Windows では文字起こし済みの .txt を入れる |
 
 ## 設定（config.json）
 
@@ -58,10 +62,27 @@ python3 tools/nippo/test_reporter.py                # 組み立て部分の確�
 
 ## 必要なもの
 
-- macOS（Vision・textutil・sips を使う）、`/usr/bin/python3`
-- `python-docx`・`openpyxl`・`openai-whisper`（入っていなければ `pip3 install python-docx openpyxl openai-whisper`）
+### macOS
+
+- `/usr/bin/python3`
+- `python-docx`・`openpyxl`・`openai-whisper`（`pip3 install python-docx openpyxl openai-whisper`）
 - `ffmpeg`（音声用。`~/bin` か Homebrew）
 - `swiftc`（Xcode か Command Line Tools）。OCR 補助プログラムを初回だけ自動で組み立て、`tools/nippo/.build/` に置く
+
+### Windows 10 / 11
+
+- **Python 3.9 以降**（python.org。インストール時に「Add Python to PATH」にチェック）
+- `pip install python-docx openpyxl pillow pymupdf`
+  - `pillow` … 写真の撮影日時を読む
+  - `pymupdf` … PDF を読む（文字層が無ければページを画像にして OCR にかける）
+- **OCR は追加インストール不要**（Windows に最初から入っているものを使う）
+- `.doc` を読むために `tools/gikai_simple/doc97.py` を使う。
+  nippo だけを配る場合は、`doc97.py` を `nippo` フォルダにコピーして一緒に渡す
+- 音声の文字起こしは使えない。ほかの方法で文字起こしした `.txt` を素材フォルダに入れる
+
+> ネットにつながらないパソコンへ入れるときは、つながるパソコンで
+> `pip download -d wheels python-docx openpyxl pillow pymupdf` として作った `wheels` フォルダを
+> USB で持ち込み、`pip install --no-index --find-links=wheels python-docx openpyxl pillow pymupdf` で入れる。
 
 ## 仕組み
 

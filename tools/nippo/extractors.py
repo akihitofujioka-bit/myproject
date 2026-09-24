@@ -4,11 +4,21 @@
     テキスト   .txt .md .csv .tsv .json .log
     Word       .docx（python-docx）、.doc .rtf .odt（macOS 標準の textutil）
     Excel      .xlsx .xlsm（openpyxl）。旧形式 .xls は未対応
-    画像       .jpg .png .heic など → Vision（macOS 標準）で OCR。手書きメモもここ
+    画像       .jpg .png .heic など → OCR。手書きメモもここ
     PDF        文字層があればそれを使い、なければページを画像にして OCR
-    音声・動画 .m4a .mp3 .wav .mov など → Whisper（ローカル）で文字起こし
+    音声・動画 .m4a .mp3 .wav .mov など → Whisper（ローカル）で文字起こし。**macOS のみ**
 
-すべてこの Mac の中だけで処理し、外部に送らない。
+macOS と Windows のどちらでも動く。OS によって使う道具が変わる:
+
+    | 処理        | macOS                  | Windows                        |
+    |-------------|------------------------|--------------------------------|
+    | 画像の OCR  | Vision（標準）         | Windows.Media.Ocr（標準）      |
+    | PDF の OCR  | PDFKit（標準）         | PyMuPDF でページを画像にして OCR |
+    | .doc 等     | textutil（標準）       | .doc は doc97 で読む（.rtf/.odt は未対応） |
+    | 撮影日時    | sips（標準）           | Pillow の EXIF                 |
+    | 音声        | Whisper                | 未対応（文字起こし済みのテキストを入れてください） |
+
+すべてこのパソコンの中だけで処理し、外部に送らない。
 取り出した結果は workspace/.cache に保存し、同じファイルを二度と処理しない。
 """
 
@@ -24,8 +34,12 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 
 HERE = Path(__file__).resolve().parent
-OCR_SOURCE = HERE / "ocr_helper.swift"
+OCR_SOURCE = HERE / "ocr_helper.swift"          # macOS 用（Vision）
 OCR_BINARY = HERE / ".build" / "nippo_ocr"
+OCR_PS1 = HERE / "ocr_windows.ps1"              # Windows 用（Windows.Media.Ocr）
+
+IS_MAC = sys.platform == "darwin"
+IS_WIN = sys.platform == "win32"
 
 # ffmpeg（Whisper が音声の読み込みに使う）が置かれがちな場所を PATH に足す。
 # Finder からダブルクリックで起動したときは PATH が最小限になるため。
@@ -90,18 +104,32 @@ def _date_from_name(name: str) -> Optional[datetime]:
 
 
 def _date_from_exif(path: Path) -> Optional[datetime]:
-    """写真の撮影日時（sips が EXIF から読む）。"""
+    """写真の撮影日時。macOS は sips、Windows は Pillow が EXIF から読む。"""
+    if IS_MAC:
+        try:
+            out = subprocess.run(["sips", "-g", "creation", str(path)],
+                                 capture_output=True, text=True, timeout=20).stdout
+        except Exception:
+            return None
+        m = re.search(r"creation:\s*(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})", out)
+        if not m:
+            return None
+        try:
+            return datetime(*map(int, m.groups()))
+        except ValueError:
+            return None
+    # Windows / その他
     try:
-        out = subprocess.run(["sips", "-g", "creation", str(path)], capture_output=True, text=True, timeout=20).stdout
+        from PIL import Image
+        with Image.open(path) as im:
+            exif = im.getexif()
+        for tag in (36867, 36868, 306):   # DateTimeOriginal, DateTimeDigitized, DateTime
+            v = exif.get(tag)
+            if v:
+                return datetime.strptime(str(v).strip(), "%Y:%m:%d %H:%M:%S")
     except Exception:
         return None
-    m = re.search(r"creation:\s*(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})", out)
-    if not m:
-        return None
-    try:
-        return datetime(*map(int, m.groups()))
-    except ValueError:
-        return None
+    return None
 
 
 def _date_from_media(path: Path) -> Optional[datetime]:
@@ -160,10 +188,54 @@ def _read_text(path: Path) -> str:
 
 
 def _textutil(path: Path) -> str:
-    r = subprocess.run(["textutil", "-convert", "txt", "-stdout", str(path)], capture_output=True, timeout=120)
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr.decode("utf-8", errors="replace").strip() or "textutil が失敗")
-    return r.stdout.decode("utf-8", errors="replace")
+    """.doc / .rtf / .odt から文字を取り出す。
+
+    macOS は標準の textutil が全部読める。Windows にはそれが無いので、
+    .doc だけは議会だよりツールの doc97（標準ライブラリだけで旧 Word を読む）を借りる。
+    .rtf / .odt は Windows では読めないので、その旨を伝えて終わる。
+    """
+    if IS_MAC:
+        r = subprocess.run(["textutil", "-convert", "txt", "-stdout", str(path)],
+                           capture_output=True, timeout=120)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.decode("utf-8", errors="replace").strip() or "textutil が失敗")
+        return r.stdout.decode("utf-8", errors="replace")
+
+    ext = path.suffix.lower()
+    if ext == ".doc":
+        doc97 = _load_doc97()
+        if doc97 is None:
+            raise RuntimeError(
+                "旧形式 .doc を読む部品が見つかりません。"
+                "tools/gikai_simple/doc97.py をこのフォルダにコピーしてください")
+        try:
+            return doc97.extract_text(path)
+        except Exception as e:
+            raise RuntimeError("この .doc は読めませんでした（%s）。"
+                               "Word で開いて .docx として保存し直してください" % e)
+    raise RuntimeError(
+        "%s は Windows では読めません。Word で開いて .docx として保存し直すか、"
+        "内容をテキストファイルに貼り付けてください" % ext)
+
+
+_doc97_module = None
+
+
+def _load_doc97():
+    """doc97.py を探して読み込む（同じフォルダ → tools/gikai_simple の順）。"""
+    global _doc97_module
+    if _doc97_module is not None:
+        return _doc97_module or None
+    import importlib.util
+    for cand in (HERE / "doc97.py", HERE.parent / "gikai_simple" / "doc97.py"):
+        if cand.exists():
+            spec = importlib.util.spec_from_file_location("nippo_doc97", cand)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _doc97_module = mod
+            return mod
+    _doc97_module = False
+    return None
 
 
 def _read_word(path: Path) -> str:
@@ -225,13 +297,68 @@ def ensure_ocr_helper(log: Log) -> Path:
 
 
 def _read_ocr(path: Path, log: Log) -> Dict:
-    binary = ensure_ocr_helper(log)
-    r = subprocess.run([str(binary), str(path)], capture_output=True, text=True, timeout=600)
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr.strip() or "OCR が失敗")
-    data = json.loads(r.stdout.strip().splitlines()[-1])
-    return {"text": data.get("text", ""), "confidence": float(data.get("confidence", 0)),
-            "pages": int(data.get("pages", 1)), "method": data.get("method", "ocr")}
+    """画像・PDF から文字を取り出す。使う道具は OS で変わる。"""
+    if IS_MAC:
+        binary = ensure_ocr_helper(log)
+        r = subprocess.run([str(binary), str(path)], capture_output=True, text=True, timeout=600)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or "OCR が失敗")
+        data = json.loads(r.stdout.strip().splitlines()[-1])
+        return {"text": data.get("text", ""), "confidence": float(data.get("confidence", 0)),
+                "pages": int(data.get("pages", 1)), "method": data.get("method", "ocr")}
+    if IS_WIN:
+        return _read_ocr_windows(path, log)
+    raise RuntimeError("この OS では OCR を使えません（macOS か Windows が要ります）")
+
+
+def _ocr_windows_image(path: Path) -> Dict:
+    """Windows 標準の OCR を PowerShell 経由で呼ぶ（画像 1 枚）。"""
+    if not OCR_PS1.exists():
+        raise RuntimeError("ocr_windows.ps1 が見つかりません")
+    r = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(OCR_PS1), str(path)],
+        capture_output=True, timeout=600)
+    out = r.stdout.decode("utf-8", errors="replace").strip()
+    if r.returncode != 0 or not out:
+        err = r.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(err or "Windows の OCR が失敗しました")
+    data = json.loads(out.splitlines()[-1])
+    return {"text": data.get("text", ""), "confidence": float(data.get("confidence", 0.8)),
+            "pages": 1, "method": data.get("method", "windows-ocr")}
+
+
+def _read_ocr_windows(path: Path, log: Log) -> Dict:
+    """Windows 版。画像はそのまま、PDF は文字層 → だめならページを画像にして OCR。"""
+    if path.suffix.lower() != ".pdf":
+        return _ocr_windows_image(path)
+
+    # PDF: まず文字層を試す（画像にするより速くて正確）
+    try:
+        import fitz            # PyMuPDF
+    except ImportError:
+        raise RuntimeError("PDF を読むには PyMuPDF が要ります: pip install pymupdf")
+    doc = fitz.open(str(path))
+    try:
+        pages = doc.page_count
+        text = "\n".join(doc[i].get_text() for i in range(pages)).strip()
+        if len(text) >= 20:      # 文字層があった
+            return {"text": text, "confidence": 1.0, "pages": pages, "method": "pdf-text"}
+
+        # 文字層が無い（スキャンした紙）→ ページを画像にして OCR
+        log("PDF に文字が入っていないので、ページを画像にして読み取ります（%d ページ）…" % pages)
+        import tempfile
+        parts = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for i in range(pages):
+                png = Path(tmp) / ("p%03d.png" % i)
+                doc[i].get_pixmap(dpi=200).save(str(png))
+                try:
+                    parts.append(_ocr_windows_image(png)["text"])
+                except Exception as e:
+                    log("  %d ページ目を読めませんでした: %s" % (i + 1, e))
+        return {"text": "\n".join(parts), "confidence": 0.8, "pages": pages, "method": "windows-ocr-pdf"}
+    finally:
+        doc.close()
 
 
 _whisper_model = None
@@ -239,6 +366,11 @@ _whisper_model_name = None
 
 
 def _read_audio(path: Path, cfg: Dict, log: Log) -> Dict:
+    if not IS_MAC:
+        raise RuntimeError(
+            "音声の文字起こしは macOS のみです。"
+            "ほかの方法で文字起こししたテキスト（.txt）を素材フォルダに入れてください")
+
     global _whisper_model, _whisper_model_name
     try:
         import whisper
@@ -290,7 +422,10 @@ def extract(path: Path, cache_dir: Path, config: Dict, log: Log) -> Dict:
             info["method"] = "text"
         elif kind == "word":
             info["text"] = _read_word(path)
-            info["method"] = "docx" if path.suffix.lower() == ".docx" else "textutil"
+            if path.suffix.lower() == ".docx":
+                info["method"] = "docx"
+            else:
+                info["method"] = "textutil" if IS_MAC else "doc97"
         elif kind == "excel":
             info["text"] = _read_excel(path)
             info["method"] = "openpyxl"
