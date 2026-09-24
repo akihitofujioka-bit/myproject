@@ -675,6 +675,42 @@ console.log("== 買い物リスト（リマインダーへ送る）==");
   await sctx.close();
 }
 
+/* ---------------- 撮り方の選択（無音／自動で切り出す） ---------------- */
+console.log("== 撮り方の選択 ==");
+{
+  const pctx = await browser.newContext();
+  const pp = await pctx.newPage();
+  const perrs = [];
+  pp.on("pageerror", (e) => perrs.push("pageerror: " + e.message));
+  await pp.goto("file://" + path.join(ROOT, "apps/index.html"));
+
+  // ブラウザではカメラが無いため撮影の欄ごと隠れている。表示して中身を確かめる
+  const mount = () => pp.evaluate(() => {
+    document.getElementById("scanCard").hidden = false;
+    const box = document.getElementById("cameraPref");
+    box.hidden = false;
+    window.CameraPref.mount(box);
+  });
+
+  ok(await pp.evaluate(() => !!(window.CameraPref && window.CameraPref.mount)), "撮り方の部品が読み込まれている");
+  await mount();
+  const pressed = (mode) => pp.locator('#cameraPref button[data-camera="' + mode + '"]').getAttribute("aria-pressed");
+  ok((await pp.locator("#cameraPref button[data-camera]").count()) === 2, "2種類のボタンが出る");
+  ok((await pressed("silent")) === "true", "初期は「無音で撮る」が選ばれている");
+
+  await pp.click('#cameraPref button[data-camera="document"]');
+  ok((await pressed("document")) === "true" && (await pressed("silent")) === "false", "押すと切り替わる");
+  ok((await pp.locator("#cameraPref .footnote").last().textContent()).includes("シャッター音"),
+    "選んだ撮り方の短所を画面に出す");
+
+  await pp.reload();
+  await mount();
+  ok((await pressed("document")) === "true", "選んだ撮り方は次に開いても残る");
+
+  ok(perrs.length === 0, "JSエラーなし" + (perrs.length ? " → " + perrs.join(" / ") : ""));
+  await pctx.close();
+}
+
 /* ---------------- 期限の登録先（通知かカレンダーか） ---------------- */
 console.log("== 期限の登録先（apps/docs-tracker）==");
 {
