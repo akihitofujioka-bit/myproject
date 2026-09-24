@@ -199,8 +199,21 @@ def list_materials(first: date, last: date, ws: Workspace, log: Log):
 
 
 def open_in_finder(path: Path, app: Optional[str] = None):
-    """Finder / 既定アプリで開く。app を指定するとそのアプリで開く（.md に既定アプリが無い Mac 向け）。"""
-    cmd = ["open"] + (["-a", app] if app and path.is_file() else []) + [str(path)]
+    """フォルダやファイルを OS 標準の方法で開く。
+
+    app を指定するとそのアプリで開く（.md に既定のアプリが無いことがあるため）。
+    Windows では既定のアプリで開く（アプリ名の指定は効かない）。
+    """
+    if sys.platform == "win32":
+        try:
+            os.startfile(str(path))          # type: ignore[attr-defined]
+        except OSError:
+            subprocess.Popen(["explorer", str(path)])
+        return
+    if sys.platform == "darwin":
+        cmd = ["open"] + (["-a", app] if app and path.is_file() else []) + [str(path)]
+    else:
+        cmd = ["xdg-open", str(path)]
     subprocess.Popen(cmd)
 
 
