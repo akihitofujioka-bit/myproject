@@ -98,6 +98,15 @@ iPhone の Safari には、アプリだけで「3日後に鳴らす」という�
 
 生成部分は `apps/shared/ics.js`（RFC 5545 準拠、外部通信なし）。
 
+### カレンダーへの書き込み（重複させない）
+
+iPhone アプリでは、会議も期限も **EventKit でカレンダーへ直接書き込む**（`apps/shared/calendarwrite.js`）。
+
+- 共有シート（「カレンダーに追加」を選ぶ画面）は出ない
+- 書き込んだ予定の識別子を `docs-tracker.v1` の `calIds` に覚えておき、次回は**同じ予定を書き換える**。登録し直しても予定が増えない
+- 会議の識別子は「開催日＋会議名」から作る。以前は登録するたびに変わる値を使っていたため、更新のたびにカレンダーに同じ予定が増えていた（2026-09-24 修正）
+- ブラウザで開いているとき、またはカレンダーの利用を断られたときは、これまでどおり `.ics` ファイルを渡す経路に切り替わる
+
 ### 期限の登録先（通知かカレンダーか）
 
 iPhone アプリのときは登録先を選べるようにしてある。
@@ -218,6 +227,7 @@ node apps/tests/kakeibo.test.mjs # 家計簿のCSV取り込みと費目の推定
 node apps/tests/receipt.test.mjs # レシートの認識結果から合計・日付・店名を取り出す（ブラウザ不要）
 node apps/tests/meeting.test.mjs # 会議の通知から日時・場所・懇親会を取り出す（ブラウザ不要）
 node apps/tests/watch.test.mjs   # 通知の文面と買い物リストの送り先（ブラウザ不要）
+node apps/tests/calendarwrite.test.mjs # カレンダーへの直接書き込み（ブラウザ不要）
 node apps/tests/smoke.mjs        # 画面操作ひととおり
 node apps/tests/pwa.test.mjs     # ホーム画面追加・オフライン起動
 ```

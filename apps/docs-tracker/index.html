@@ -468,6 +468,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/meeting.js"></script>
 <script src="../shared/scanrouter.js"></script>
 <script src="../shared/calendarread.js"></script>
+<script src="../shared/calendarwrite.js"></script>
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
 <script src="../shared/watch.js"></script>
@@ -486,18 +487,21 @@ var filters = { q: "", status: "未完了", kind: "すべて", sort: "due" };
 function load() {
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { v: 1, items: [] };
+    if (!raw) return { v: 1, items: [], calIds: {} };
     return normalize(JSON.parse(raw));
   } catch (e) {
-    return { v: 1, items: [] };
+    return { v: 1, items: [], calIds: {} };
   }
 }
 
 function normalize(data) {
-  if (!data || typeof data !== "object") return { v: 1, items: [] };
+  if (!data || typeof data !== "object") return { v: 1, items: [], calIds: {} };
   var items = Array.isArray(data.items) ? data.items : [];
   return {
     v: 1,
+    // カレンダーに入れた予定の識別子（鍵は下の calKey）。登録し直したときに
+    // 新しい予定を増やさず、同じ予定を書き換えるために覚えておく
+    calIds: (data.calIds && typeof data.calIds === "object") ? data.calIds : {},
     items: items.filter(function (it) { return it && it.title; }).map(function (it) {
       return {
         id: it.id || uid(),
@@ -892,14 +896,68 @@ function registerToCalendar(items, options) {
   writeCalendarFile(events, target);
 }
 
+/* ---------- カレンダーへの書き込み ---------- */
+
+// 予定の終わりの時刻を出す（既定は30分後）
+function endTimeOf(ev) {
+  var t = (ev.time || "09:00").split(":").map(Number);
+  var minutes = t[0] * 60 + (t[1] || 0) + (ev.durationMinutes || 30);
+  return pad(Math.floor(minutes / 60) % 24) + ":" + pad(minutes % 60);
+}
+
+/*
+ * カレンダーに入れる。
+ *
+ * iPhone アプリでは EventKit で直接書き込む。共有の画面を出さずに済み、
+ * 前回の識別子（state.calIds）で同じ予定を書き換えるため、登録し直しても増えない。
+ * ブラウザや、カレンダーの利用を断られたときは、これまでどおり .ics ファイルを渡す。
+ *
+ * 戻り値: { how: "direct" | "shared" | "downloaded" | "cancelled", count }
+ */
+function writeToCalendar(events, calendarName, filePrefix) {
+  if (window.CalendarWrite && window.CalendarWrite.available()) {
+    var payload = events.map(function (ev) {
+      return {
+        key: ev.uid,
+        eventId: state.calIds[ev.uid] || "",
+        title: ev.title,
+        date: ev.date,
+        startTime: ev.time || "09:00",
+        endTime: endTimeOf(ev),
+        location: ev.location || "",
+        notes: ev.description || "",
+        alarms: ev.alarms || [1440, 0]
+      };
+    });
+    return window.CalendarWrite.save(payload).then(function (res) {
+      var keys = Object.keys(res.ids || {});
+      if (!keys.length) return writeCalendarViaFile(events, calendarName, filePrefix);
+      keys.forEach(function (k) { state.calIds[k] = res.ids[k]; });
+      save();
+      return { how: "direct", count: keys.length };
+    });
+  }
+  return writeCalendarViaFile(events, calendarName, filePrefix);
+}
+
+function writeCalendarViaFile(events, calendarName, filePrefix) {
+  var text = window.ICS.build(events, { calendarName: calendarName });
+  return window.ICS.deliver(text, window.ICS.filename(filePrefix)).then(function (how) {
+    return { how: how, count: events.length };
+  });
+}
+
 function writeCalendarFile(events, target) {
-  var text = window.ICS.build(events, { calendarName: "書類の期限" });
-  window.ICS.deliver(text, window.ICS.filename("deadlines")).then(function (how) {
-    if (how === "cancelled") return;
+  writeToCalendar(events, "書類の期限", "deadlines").then(function (res) {
+    if (res.how === "cancelled") return;
+    if (res.how === "direct") {
+      toast("カレンダーに登録しました（" + res.count + "件）");
+      return;
+    }
     // 登録できたぶんだけ番号を進める（次回の登録が「更新」として扱われるように）
     target.forEach(function (it) { it.icsSeq = (it.icsSeq || 0) + 1; });
     save();
-    toast(how === "shared"
+    toast(res.how === "shared"
       ? "カレンダーアプリを選んでください（" + target.length + "件）"
       : "予定ファイルを保存しました（" + target.length + "件）。開くとカレンダーに登録できます");
   });
@@ -1459,7 +1517,7 @@ function registerMeetingsToApp(list) {
 
 // 端末のカレンダーに予定として渡す
 function registerMeetingsToCalendar(list) {
-  var events = list.map(function (m, i) {
+  var events = list.map(function (m) {
     var minutes = 60;
     if (m.startTime && m.endTime) {
       var sp = m.startTime.split(":").map(Number), ep = m.endTime.split(":").map(Number);
@@ -1467,7 +1525,9 @@ function registerMeetingsToCalendar(list) {
       if (diff > 0) minutes = diff;
     }
     return {
-      uid: "mtg-" + Date.now() + "-" + i + "@docs-tracker",
+      // 同じ会議と分かる識別子。以前は登録するたびに変わっていたため、
+      // 登録し直すとカレンダーに同じ予定が増えていた（2026-09-24 に修正）
+      uid: "mtg-" + window.Native.idFrom(m.date + "/" + m.title) + "@docs-tracker",
       title: m.title,
       date: m.date,
       time: m.startTime || "09:00",
@@ -1478,8 +1538,7 @@ function registerMeetingsToCalendar(list) {
       sequence: 0
     };
   });
-  var text = window.ICS.build(events, { calendarName: "会議" });
-  return window.ICS.deliver(text, window.ICS.filename("meetings"));
+  return writeToCalendar(events, "会議", "meetings");
 }
 
 function registerMeetings(mode) {
@@ -1495,11 +1554,13 @@ function registerMeetings(mode) {
     done.push("アプリに" + list.length + "件");
   }
   if (mode === "cal" || mode === "both") {
-    registerMeetingsToCalendar(list).then(function (how) {
-      if (how === "cancelled") return;
-      toast(how === "shared"
-        ? "カレンダーアプリを選んでください（" + list.length + "件）"
-        : "予定ファイルを保存しました（" + list.length + "件）。開くとカレンダーに登録できます");
+    registerMeetingsToCalendar(list).then(function (res) {
+      if (res.how === "cancelled") return;
+      toast(res.how === "direct"
+        ? "カレンダーに登録しました（" + res.count + "件）"
+        : res.how === "shared"
+          ? "カレンダーアプリを選んでください（" + list.length + "件）"
+          : "予定ファイルを保存しました（" + list.length + "件）。開くとカレンダーに登録できます");
     });
     done.push("カレンダーに" + list.length + "件");
   } else {

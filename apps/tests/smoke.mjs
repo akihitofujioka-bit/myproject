@@ -580,6 +580,16 @@ console.log("== 会議の通知（apps/docs-tracker）==");
   ok(unfolded.includes("懇親会あり"), "懇親会の有無を予定の説明に入れる");
   ok(unfolded.includes("TRIGGER:-P1D") && unfolded.includes("TRIGGER:-PT30M"), "前日と30分前に通知する");
 
+  // 同じ会議を登録し直しても、識別子が変わらない（カレンダーで予定が増えない）
+  const uidOf = (text) => (/UID:(.+)/.exec(text) || [])[1];
+  const firstUid = uidOf(unfolded);
+  await mp.evaluate((l) => window.docsApp.applyMeetingScan(l), asLines(notice("a_committee")));
+  const [again] = await Promise.all([mp.waitForEvent("download"), mp.click("#meetingRegisterCal")]);
+  let ics2 = "";
+  for await (const chunk of await again.createReadStream()) ics2 += chunk.toString("utf8");
+  ok(!!firstUid && uidOf(ics2.replace(/\r\n /g, "")) === firstUid,
+    "同じ会議を登録し直しても識別子が変わらない（" + firstUid + "）");
+
   // 日付が無いものは登録できない
   await mp.evaluate((l) => window.docsApp.applyMeetingScan(l), asLines(notice("a_committee")));
   await mp.fill(".m-date >> nth=0", "");

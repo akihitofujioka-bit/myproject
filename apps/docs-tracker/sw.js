@@ -3,8 +3,8 @@
  * 方針は stale-while-revalidate（まずキャッシュを返し、裏で最新版を取りに行く）。
  * そのためアプリを更新したときは、次に開いたときに反映される。
  */
-var CACHE = "docs-tracker-v9";
-var ASSETS = ["./", "./index.html", "../shared/qr.js", "../shared/deeplink.js", "../shared/nativescan.js", "../shared/receiptscan.js", "../shared/receipt.js", "../shared/meeting.js", "../shared/scanrouter.js", "../shared/calendarread.js", "../shared/ics.js", "../shared/native.js", "../shared/watch.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
+var CACHE = "docs-tracker-v10";
+var ASSETS = ["./", "./index.html", "../shared/qr.js", "../shared/deeplink.js", "../shared/nativescan.js", "../shared/receiptscan.js", "../shared/receipt.js", "../shared/meeting.js", "../shared/scanrouter.js", "../shared/calendarread.js", "../shared/calendarwrite.js", "../shared/ics.js", "../shared/native.js", "../shared/watch.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }).then(function () {
