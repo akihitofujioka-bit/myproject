@@ -69,7 +69,22 @@ python3 tools/nippo/test_reporter.py                # 組み立て部分の確�
 - `ffmpeg`（音声用。`~/bin` か Homebrew）
 - `swiftc`（Xcode か Command Line Tools）。OCR 補助プログラムを初回だけ自動で組み立て、`tools/nippo/.build/` に置く
 
-### Windows 10 / 11
+### Windows 10 / 11 — いちばん簡単な入れ方
+
+**配布用の zip には、必要な部品（Python 3.11・64 ビット Windows 用）が `wheels` フォルダに入っています。**
+インターネットにつながっていなくても入れられます。
+
+1. Python 3.11 を入れる（インストール時に「Add Python to PATH」にチェック）
+2. **`部品のインストール.bat` をダブルクリック**（`wheels` フォルダの中だけを見ます）
+3. **`日報ツール.bat` をダブルクリック**
+
+`wheels` フォルダがあるだけでは動きません。**2 を実行して、はじめて使えるようになります。**
+うまくいくと最後に「終わりました」と出ます。
+
+画像・PDF の文字読み取り（OCR）は Windows に最初から入っているものを使うので、追加は要りません。
+Python が 3.11 以外のときは `wheels` の中身が合わないので、下の手順で作り直してください。
+
+### Windows 10 / 11 — 中で何を使っているか
 
 - **Python 3.9 以降**（python.org。インストール時に「Add Python to PATH」にチェック）
 - `pip install python-docx openpyxl pillow pymupdf`

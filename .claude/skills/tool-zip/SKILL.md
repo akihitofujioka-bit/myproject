@@ -20,7 +20,12 @@ description: 渡すための zip を、ツールのフォルダから作る。to
    **`__MACOSX` という余計なフォルダ**が入って「フォルダが 2 つある」状態になる。
    必ず後述の Python で作る。
 5. **中のフォルダ名は半角英数にする。** 展開したときに文字化けや長いパスで困らないようにする。
-6. **ダブルクリックで起動するファイルの実行権限を保つ。** `日報ツール.command` のような
+6. **zip にしか無いファイルを作らない。** `部品のインストール.bat` や README の
+   「いちばん簡単な入れ方」を zip の中だけで直すと、次に zip を作り直したときに
+   **消える**（実際に一度消しかけた）。中身を直すときは**必ずリポジトリの側を直し**、
+   zip はそこから作る。例外は `wheels/` の `.whl` だけ（数MB のバイナリなので
+   `.gitignore` に入れてある。**zip を作り直すときは前の zip から引き継ぐ**）。
+7. **ダブルクリックで起動するファイルの実行権限を保つ。** `日報ツール.command` のような
    起動用ファイルは、権限が落ちるとダブルクリックしても動かない。
    Python の `zipfile` は権限をそのまま記録するので、手順どおりに作れば保たれる（手順 3 で確認）。
 
@@ -55,6 +60,28 @@ ls tools/<ツール名>/tests tools/<ツール名>/test_*.py 2>/dev/null
 ```bash
 python3 tools/verify_python_startup.py tools/<ツール名>
 ```
+
+### 1-2. `wheels/`（Windows 用の部品）を用意する
+
+`gikai_simple` と `nippo` の zip には、役場のパソコン（ネットにつながらない）で
+部品を入れるための `.whl` を同梱する。これは `.gitignore` に入れてあるので
+リポジトリには無い。**前に作った zip から引き継ぐ**のがいちばん確実。
+
+```bash
+cd "$TMPDIR" && rm -rf ziptmp && mkdir ziptmp && cd ziptmp \
+  && unzip -q /Users/ichishi/myproject/tools/<ツール名>.zip \
+  && ls <ツール名>/wheels/
+```
+
+前の zip が無いときは、ネットにつながるパソコンで作る（Python 3.11・64 ビット Windows 用）。
+
+```bash
+pip download --platform win_amd64 --only-binary=:all: --python-version 311 -d wheels python-docx Pillow
+```
+
+この展開したフォルダを土台にし、**リポジトリの最新ソースで上書きしてから** zip にする。
+`git ls-files` で一覧を取るときは **`-z` を付ける**（付けないと日本語のファイル名が
+`\350\250\255...` という形で返り、コピーに失敗する）。
 
 ### 2. zip を作る
 

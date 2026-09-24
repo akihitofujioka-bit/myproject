@@ -106,6 +106,27 @@
   `pip install --no-index --find-links=wheels python-docx Pillow` で入ります
   （Pillow だけなら `gikai_editor/wheels` にも Windows 用が同梱してあります）。
 
+### いちばん簡単な入れ方（役場のパソコン・Windows）
+
+**配布用の zip には、必要な部品（Python 3.11・64 ビット Windows 用）が `wheels` フォルダに入っています。**
+インターネットにつながっていなくても入れられます。
+
+1. Python 3.11 を入れる（インストール時に「Add Python to PATH」にチェック）
+2. **`部品のインストール.bat` をダブルクリック**（`wheels` フォルダの中だけを見ます）
+3. **`起動.bat` をダブルクリック**
+
+`wheels` フォルダがあるだけでは動きません。**2 を実行して、はじめて使えるようになります。**
+うまくいくと最後に「終わりました」と出ます。
+
+Python のバージョンが 3.11 以外のパソコンでは `wheels` の中身が合いません。
+その場合は、インターネットにつながるパソコンで作り直してください。
+
+```
+pip download --platform win_amd64 --only-binary=:all: --python-version 3XX python-docx Pillow
+```
+
+（`3XX` は `310` `312` のように、使うパソコンの Python のバージョン）
+
 ### 起動
 
 - Windows: `起動.bat` をダブルクリック（または `app.pyw` をダブルクリック）
