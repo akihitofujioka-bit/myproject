@@ -3,9 +3,12 @@
 //
 //  レシートや書類を撮影して文字を読み取る Capacitor プラグイン。
 //
-//  ・撮影は自前の無音カメラ（SilentCameraViewController）。
-//    VisionKit の書類カメラはシャッター音が鳴るため使うのをやめた（2026-09-24）。
-//    映像の1コマを取り出す方式にしており、写真を撮る仕組みを使わないので音が鳴らない
+//  ・撮り方は2種類あり、利用者が選べる（2026-09-24）。JS から camera で指定する
+//      "silent"   … 自前の無音カメラ（SilentCameraViewController）。
+//                   映像の1コマを取り出す方式のため、シャッター音が鳴らない。
+//                   ただし書類の四隅を自動で切り出す機能は無い
+//      "document" … VisionKit の書類カメラ。四隅を自動で切り出して歪みも直すが、
+//                   撮影時にシャッター音が鳴る（日本向け iPhone では消せない）
 //  ・文字認識は Vision（iOS 標準・端末内で完結。画像も文字も外部へ送らない）
 //  ・返すのは「行ごとの文字と位置」まで。合計・日付・店名の取り出しは JS 側
 //    （apps/shared/receipt.js）で行う。理由: 取り出しの規則はレシートの様式ごとに
@@ -15,11 +18,12 @@ import Foundation
 import UIKit
 import Capacitor
 import Vision
+import VisionKit
 import AVFoundation
 import Photos
 
 @objc(ReceiptScannerPlugin)
-public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin {
+public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCameraViewControllerDelegate {
     public let identifier = "ReceiptScannerPlugin"
     public let jsName = "ReceiptScanner"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -30,11 +34,18 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// 撮ったものの扱い方。"text" = 文字を読み取って返す / "photos" = 写真アプリに保存する
     private var mode: String = "text"
+    /// 書類カメラ（VisionKit）を使っているときの呼び出し元。無音カメラでは使わない
+    private var pendingCall: CAPPluginCall?
+    /// 撮り方。"silent" = 無音カメラ / "document" = VisionKit の書類カメラ
+    private var camera: String = "silent"
 
     @objc func isSupported(_ call: CAPPluginCall) {
-        // 背面カメラがあれば使える（VisionKit の対応可否には依存しなくなった）
         let hasCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) != nil
-        call.resolve(["supported": hasCamera])
+        call.resolve([
+            "supported": hasCamera,
+            "silent": hasCamera,
+            "document": VNDocumentCameraViewController.isSupported
+        ])
     }
 
     /// 無音カメラを開いて撮り、写した文字を行ごとに返す。
@@ -50,6 +61,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func startCamera(_ call: CAPPluginCall, mode: String) {
         self.mode = mode
+        self.camera = (call.getString("camera") == "document") ? "document" : "silent"
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         if status == .denied || status == .restricted {
             call.reject("カメラの使用が許可されていません。設定アプリで許可してください")
@@ -80,12 +92,23 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("ほかの画面が開いています。閉じてからもう一度お試しください")
                 return
             }
-            let camera = SilentCameraViewController()
-            camera.modalPresentationStyle = .fullScreen
-            camera.guidanceText = mode == "photos"
+            // 書類カメラ（音は鳴るが、四隅を自動で切り出す）
+            if self.camera == "document" && VNDocumentCameraViewController.isSupported {
+                let scanner = VNDocumentCameraViewController()
+                scanner.delegate = self
+                scanner.modalPresentationStyle = .fullScreen
+                self.pendingCall = call
+                host.present(scanner, animated: true)
+                return
+            }
+
+            // 無音カメラ（音は鳴らないが、切り出しはしない）
+            let silent = SilentCameraViewController()
+            silent.modalPresentationStyle = .fullScreen
+            silent.guidanceText = mode == "photos"
                 ? "書類全体が入るようにして「撮る」を押してください（音は鳴りません）"
                 : "レシート全体が入るようにして「撮る」を押してください（音は鳴りません）"
-            camera.onFinish = { [weak self] image in
+            silent.onFinish = { [weak self] image in
                 guard let self = self else { return }
                 guard let image = image else {
                     call.resolve(["cancelled": true])
@@ -109,7 +132,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                 }
             }
-            host.present(camera, animated: true)
+            host.present(silent, animated: true)
         }
     }
 
@@ -128,21 +151,74 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin {
         return top
     }
 
+    // MARK: - 書類カメラ（VisionKit）の受け口
+
+    public func documentCameraViewController(_ controller: VNDocumentCameraViewController,
+                                             didFinishWith scan: VNDocumentCameraScan) {
+        controller.dismiss(animated: true)
+        guard let call = pendingCall else { return }
+        pendingCall = nil
+        guard scan.pageCount > 0 else {
+            call.resolve(["cancelled": true])
+            return
+        }
+        if mode == "photos" {
+            var images: [UIImage] = []
+            for index in 0..<scan.pageCount { images.append(scan.imageOfPage(at: index)) }
+            savePages(images, call: call)
+            return
+        }
+        // 1枚目だけを使う（レシートは1枚で完結するため）
+        let image = scan.imageOfPage(at: 0)
+        recognize(image: image) { result in
+            switch result {
+            case .success(let lines):
+                call.resolve([
+                    "cancelled": false,
+                    "width": image.size.width,
+                    "height": image.size.height,
+                    "lines": lines
+                ])
+            case .failure(let error):
+                call.reject("文字を読み取れませんでした: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    public func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+        controller.dismiss(animated: true)
+        pendingCall?.resolve(["cancelled": true])
+        pendingCall = nil
+    }
+
+    public func documentCameraViewController(_ controller: VNDocumentCameraViewController,
+                                             didFailWithError error: Error) {
+        controller.dismiss(animated: true)
+        pendingCall?.reject("カメラでエラーが起きました: \(error.localizedDescription)")
+        pendingCall = nil
+    }
+
     // MARK: - 写真アプリへの保存
 
-    /// 撮った1枚を写真アプリに追加する。
-    /// 追加だけの許可（addOnly）を求めるため、既存の写真を読むことはない。
     private func savePage(_ image: UIImage, call: CAPPluginCall) {
+        savePages([image], call: call)
+    }
+
+    /// 撮ったページを写真アプリに追加する。
+    /// 追加だけの許可（addOnly）を求めるため、既存の写真を読むことはない。
+    private func savePages(_ images: [UIImage], call: CAPPluginCall) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
                 call.reject("写真への追加が許可されていません。設定アプリで許可してください")
                 return
             }
             PHPhotoLibrary.shared().performChanges({
-                _ = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                for image in images {
+                    _ = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
             }, completionHandler: { success, error in
                 if success {
-                    call.resolve(["cancelled": false, "saved": 1])
+                    call.resolve(["cancelled": false, "saved": images.count])
                 } else {
                     call.reject("写真に保存できませんでした: \(error?.localizedDescription ?? "原因不明")")
                 }

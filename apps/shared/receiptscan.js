@@ -5,8 +5,9 @@
  *   scan()          … 撮って文字を読み取る（家計簿のレシート読み取り）
  *   scanToPhotos()  … 撮って写真アプリに保存する（書類トラッカーの書類撮影）
  *
- * どちらも VisionKit の書類カメラを使う。書類カメラは映像から1コマを切り出す
- * 仕組みのため、シャッター音は鳴らない（Apple 純正の「メモ」の書類スキャンと同じ）。
+ * 撮り方は2種類あり、利用者が選べる（camerapref.js の設定を使う）。
+ *   無音カメラ   … シャッター音が鳴らない。四隅の自動切り出しはしない
+ *   書類カメラ   … 四隅を自動で切り出すが、シャッター音が鳴る
  *
  * アプリとして動いていて、かつプラグインが登録されているときだけ使える。
  * ブラウザで開いたときは available() が false を返し、呼び出し側はボタンを出さない。
@@ -40,9 +41,15 @@
    * 戻り値: { cancelled: boolean, lines: [{ text, x, y, width, height, confidence }] }
    * 利用者が閉じたときは cancelled: true（失敗ではない）。
    */
-  function scan() {
+  // 利用者が選んだ撮り方。設定が読み込まれていないときは無音カメラにする
+  function cameraMode(options) {
+    if (options && options.camera) return options.camera;
+    return (global.CameraPref && global.CameraPref.get()) || "silent";
+  }
+
+  function scan(options) {
     if (!available()) return Promise.resolve({ cancelled: true, lines: [] });
-    return global.Capacitor.nativePromise(PLUGIN, "scan", {}).then(function (res) {
+    return global.Capacitor.nativePromise(PLUGIN, "scan", { camera: cameraMode(options) }).then(function (res) {
       return { cancelled: !!(res && res.cancelled), lines: (res && res.lines) || [] };
     });
   }
@@ -52,12 +59,12 @@
    * 戻り値: { cancelled: boolean, saved: 保存した枚数 }
    * 利用者が閉じたときは cancelled: true（失敗ではない）。
    */
-  function scanToPhotos() {
+  function scanToPhotos(options) {
     if (!available()) return Promise.resolve({ cancelled: true, saved: 0 });
-    return global.Capacitor.nativePromise(PLUGIN, "scanToPhotos", {}).then(function (res) {
+    return global.Capacitor.nativePromise(PLUGIN, "scanToPhotos", { camera: cameraMode(options) }).then(function (res) {
       return { cancelled: !!(res && res.cancelled), saved: (res && res.saved) || 0 };
     });
   }
 
-  global.ReceiptScan = { available: available, scan: scan, scanToPhotos: scanToPhotos };
+  global.ReceiptScan = { available: available, scan: scan, scanToPhotos: scanToPhotos, cameraMode: cameraMode };
 })(typeof window !== "undefined" ? window : this);

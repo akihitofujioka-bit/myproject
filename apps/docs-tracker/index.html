@@ -405,11 +405,12 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   <section class="card" id="docPhotoCard" hidden>
     <h2>書類を撮って写真に保存</h2>
     <p class="footnote" style="margin:0 0 10px">
-      回覧や掲示物を撮って、iPhone の写真アプリに保存します。書類の四隅を自動で見つけて歪みを直します。
-      <strong>シャッター音は鳴りません</strong>（書類カメラは映像から1コマを切り出す仕組みのためで、Apple 純正の「メモ」の書類スキャンと同じです）。
-      撮った画像はこのアプリには残らず、写真アプリにだけ保存されます。
+      回覧や掲示物を撮って、iPhone の写真アプリに保存します。撮った画像はこのアプリには残らず、写真アプリにだけ保存されます。<br>
+      撮り方は下で選べます。<strong>「無音で撮る」はシャッター音が鳴りません</strong>が、書類の四隅は自分で枠に合わせてください。
+      <strong>「自動で切り出す」は四隅を見つけて歪みを直します</strong>が、シャッター音が鳴ります。
     </p>
     <button type="button" class="primary" id="docPhotoBtn">📄 書類を撮る</button>
+    <div id="cameraPref" style="margin-top:10px"></div>
   </section>
 
   <section class="card">
@@ -463,6 +464,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
 <script src="../shared/qr.js"></script>
 <script src="../shared/nativescan.js"></script>
+<script src="../shared/camerapref.js"></script>
 <script src="../shared/receiptscan.js"></script>
 <script src="../shared/receipt.js"></script>
 <script src="../shared/meeting.js"></script>
@@ -1379,9 +1381,11 @@ document.getElementById("docPhotoBtn").addEventListener("click", function () {
   });
 });
 
-// 端末側の書類カメラが使えるときだけ出す
+// 端末側のカメラが使えるときだけ出す
 if (window.ReceiptScan && window.ReceiptScan.available()) {
   document.getElementById("docPhotoCard").hidden = false;
+  // 撮り方（無音／自動で切り出す）の選択。どのアプリでも同じ設定が使われる
+  if (window.CameraPref) window.CameraPref.mount(document.getElementById("cameraPref"));
 }
 
 /* ---------- 会議の通知を読み取って登録する ---------- */
@@ -1438,8 +1442,14 @@ function renderMeetings(list) {
     scannedMeetings.length + "件を読み取りました。間違いがあればこの画面で直してから登録してください。";
 
   document.getElementById("meetingForms").innerHTML = scannedMeetings.map(function (m, i) {
-    var warn = m.dateConfidence === "medium"
-      ? '<div class="warn">※ 通知に年が書かれていなかったため、いちばん近い年を当てはめています。確認してください</div>' : "";
+    var warn = "";
+    if (m.dateConfidence === "medium") {
+      warn = '<div class="warn">※ 通知に年が書かれていなかったため、いちばん近い年を当てはめています。確認してください</div>';
+    } else if (m.dateConfidence === "low") {
+      warn = '<div class="warn">※ 「日時」の欄が見つからなかったため、通知の中の日付から推測しています。<strong>発信日を拾っている可能性があります。</strong>必ず確認してください</div>';
+    } else if (!m.date) {
+      warn = '<div class="warn">※ 開催日を読み取れませんでした。通知を見て入れてください</div>';
+    }
     return '<div class="meeting" data-idx="' + i + '">' +
       '<div class="head"><input type="checkbox" id="mtg' + i + '" checked>' +
         '<label class="no" for="mtg' + i + '">' + (i + 1) + "件目</label></div>" +

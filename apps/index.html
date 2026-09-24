@@ -72,6 +72,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
     <h2>📷 撮って振り分ける</h2>
     <p class="note">レシートや会議の通知などを撮ると、内容を見て家計簿か書類トラッカーに振り分けます。撮影も文字の読み取りも端末の中だけで行い、外部には送りません。</p>
     <button type="button" class="primary" id="scanBtn">📷 撮る</button>
+    <div id="cameraPref" style="margin-top:10px"></div>
     <div id="scanResult" hidden></div>
   </section>
 
@@ -141,6 +142,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 <div id="toast" class="toast" role="status"></div>
 <script src="shared/receipt.js"></script>
 <script src="shared/meeting.js"></script>
+<script src="shared/camerapref.js"></script>
 <script src="shared/receiptscan.js"></script>
 <script src="shared/scanrouter.js"></script>
 <script src="shared/deeplink.js"></script>
@@ -158,6 +160,8 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 
   if (!(window.ReceiptScan && window.ReceiptScan.available())) return;
   document.getElementById("scanCard").hidden = false;
+  // 撮り方（無音／自動で切り出す）の選択。どのアプリでも同じ設定が使われる
+  if (window.CameraPref) window.CameraPref.mount(document.getElementById("cameraPref"));
 
   var btn = document.getElementById("scanBtn");
   var resultBox = document.getElementById("scanResult");
