@@ -378,6 +378,75 @@ class Issue:
         (folder / OUT_DIR).mkdir(exist_ok=True)
         return issue
 
+    def set_info(self, gou: str = None, hakkoubi: str = None, template: str = None) -> None:
+        """号数・発行日・号の種類を、作ったあとから変える。
+
+        フォルダ名と原稿の中身は触らない（それぞれ rename_folder と
+        人の手で直す）。変えたいものだけ渡せばよい。
+        """
+        if gou is not None:
+            g = str(gou).strip().translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+            if not g:
+                raise ValueError("号数を入れてください")
+            self.gou = g
+        if hakkoubi is not None:
+            self.hakkoubi = str(hakkoubi).strip()
+        if template is not None:
+            if template not in TEMPLATES:
+                raise KeyError(f"号の種類が不明です: {template}")
+            self.template = template
+        self.save_info()
+
+    def folder_name(self) -> str:
+        return f"第{self.gou}号"
+
+    def rename_folder(self) -> Path:
+        """フォルダ名を今の号数に合わせる（第204号 → 第205号）。
+
+        中身はそのまま動く。同じ名前のフォルダが既にあるときは何もしない。
+        """
+        want = self.folder.parent / self.folder_name()
+        if want == self.folder:
+            return self.folder
+        if want.exists():
+            raise FileExistsError(f"{want} は既にあります")
+        self.folder.rename(want)
+        self.folder = want
+        return want
+
+    def template_diff(self, template: str = None) -> "tuple[list[str], list[str]]":
+        """いまの区分と、号の種類の雛形との差。
+
+        戻り値は (足りない区分, 雛形に無い区分)。号の種類を変えたときに、
+        何を足せばよいかを画面で示すために使う。
+        """
+        template = template or self.template
+        if template not in TEMPLATES:
+            return [], []
+        want = TEMPLATES[template]
+        have = self.kubun_list()
+        return [k for k in want if k not in have], [k for k in have if k not in want]
+
+    def add_missing_kubun(self, template: str = None) -> list[str]:
+        """号の種類の雛形にあって、まだ無い区分を足す。
+
+        足すだけで、余分なものは消さない（原稿が入っているかもしれないため）。
+        入れる場所は雛形の並びに合わせる。
+        """
+        template = template or self.template
+        missing, _ = self.template_diff(template)
+        want = TEMPLATES.get(template, [])
+        for name in missing:
+            # 雛形でひとつ前にある区分の、すぐ次に入れる
+            i = want.index(name)
+            after = None
+            for prev in reversed(want[:i]):
+                if prev in self.kubun_list():
+                    after = prev
+                    break
+            self.add_kubun(name, after=after)
+        return missing
+
     def save_info(self) -> None:
         (self.folder / INFO_NAME).write_text(
             json.dumps({"gou": self.gou, "hakkoubi": self.hakkoubi, "template": self.template},

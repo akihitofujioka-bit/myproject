@@ -57,6 +57,9 @@ HELP = """使い方（5 つだけ）
    （外せるのは空の区分だけです）
    賛否一覧表の Excel など原稿以外のものは「別添フォルダ」に入れます
 
+   号数・発行日・号の種類は、あとから「号の情報を変える」で直せます
+   （種類を変えると、足りない区分を足すか聞きます。原稿は消えません）
+
 2. 左の区分を選び、中央に原稿を書く（または「原稿ファイルを取り込む」）
    議員から届いた Word（.docx / .doc）やテキストを、文字だけ貼り付けます
 
@@ -110,12 +113,17 @@ def save_settings(d: dict) -> None:
         pass
 
 
-class NewIssueDialog(simpledialog.Dialog):
-    """号数・発行日・号の種類を 1 つの画面で聞く。"""
+class IssueDialog(simpledialog.Dialog):
+    """号数・発行日・号の種類を 1 つの画面で聞く。
 
-    def __init__(self, parent):
+    issue を渡すと「変える」画面になり、いまの値が入った状態で開く。
+    渡さなければ「新しく作る」画面。
+    """
+
+    def __init__(self, parent, issue: "core.Issue | None" = None):
+        self.issue = issue
         self.result = None
-        super().__init__(parent, title="新しい号を作る")
+        super().__init__(parent, title="号の情報を変える" if issue else "新しい号を作る")
 
     def body(self, master):
         ttk.Label(master, text="号数（例: 204）").grid(row=0, column=0, sticky="w", pady=2)
@@ -125,20 +133,37 @@ class NewIssueDialog(simpledialog.Dialog):
         self.e_date = ttk.Entry(master, width=24)
         self.e_date.grid(row=1, column=1, sticky="w", pady=2)
         ttk.Label(master, text="号の種類（定例会）").grid(row=2, column=0, sticky="nw", pady=2)
-        self.v_tmpl = tk.StringVar(value=core.DEFAULT_TEMPLATE)
+        self.v_tmpl = tk.StringVar(value=(self.issue.template if self.issue and self.issue.template
+                                          else core.DEFAULT_TEMPLATE))
         box = ttk.Frame(master)
         box.grid(row=2, column=1, sticky="w")
         for name in core.TEMPLATES:
             ttk.Radiobutton(box, text=name, value=name, variable=self.v_tmpl,
                             command=self._show_kubun).pack(anchor="w")
-        self.lbl = ttk.Label(master, text="", foreground="#555555", wraplength=360, justify="left")
+        self.lbl = ttk.Label(master, text="", foreground="#555555", wraplength=400, justify="left")
         self.lbl.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        if self.issue:                       # いまの値を入れておく
+            self.e_gou.insert(0, self.issue.gou)
+            self.e_date.insert(0, self.issue.hakkoubi)
         self._show_kubun()
         return self.e_gou
 
     def _show_kubun(self):
-        names = core.TEMPLATES[self.v_tmpl.get()]
-        self.lbl.config(text="区分: " + " → ".join(names) + "\n（あとから足したり順番を変えたりできます）")
+        tmpl = self.v_tmpl.get()
+        if not self.issue:
+            self.lbl.config(text="区分: " + " → ".join(core.TEMPLATES[tmpl])
+                            + "\n（あとから足したり順番を変えたりできます）")
+            return
+        missing, extra = self.issue.template_diff(tmpl)
+        lines = []
+        if missing:
+            lines.append("足りない区分: " + "、".join(missing) + "\n　→ このあと足すか聞きます")
+        if extra:
+            lines.append("この種類には無い区分: " + "、".join(extra) + "\n　→ そのまま残します（要らなければ「外す」で）")
+        if not lines:
+            lines.append("区分はこの種類の形と同じです。足し引きは要りません")
+        self.lbl.config(text="\n".join(lines))
 
     def validate(self):
         if not self.e_gou.get().strip():
@@ -148,6 +173,9 @@ class NewIssueDialog(simpledialog.Dialog):
 
     def apply(self):
         self.result = (self.e_gou.get().strip(), self.e_date.get().strip(), self.v_tmpl.get())
+
+
+NewIssueDialog = IssueDialog       # 前の名前でも呼べるようにしておく
 
 
 SEVERITY_LABEL = {"error": ("要修正", "#C62828"), "warn": ("確認", "#EF6C00"), "info": ("参考", "#1565C0")}
@@ -365,6 +393,7 @@ class App(tk.Tk):
         top.pack(fill="x")
         ttk.Button(top, text="新しい号を作る", command=self.new_issue).pack(side="left")
         ttk.Button(top, text="号フォルダを開く", command=self.choose_issue).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="号の情報を変える", command=self.edit_issue).pack(side="left", padx=(6, 0))
         self.lbl_issue = ttk.Label(top, text="（号フォルダが選ばれていません）")
         self.lbl_issue.pack(side="left", padx=12)
         ttk.Button(top, text="使い方", command=self.show_help).pack(side="right")
@@ -457,7 +486,7 @@ class App(tk.Tk):
     # ------------------------------------------------------------ 号
 
     def new_issue(self):
-        ans = NewIssueDialog(self).result
+        ans = IssueDialog(self).result
         if not ans:
             return
         gou, hakkoubi, template = ans
@@ -474,6 +503,60 @@ class App(tk.Tk):
         self.open_issue(issue.folder)
         messagebox.showinfo(APP_NAME, f"{issue.folder}\nを {template} の構成で作りました。\n\n"
                             "区分は左の一覧で足したり順番を変えたりできます。\n写真は「写真」フォルダに入れてください。")
+
+    def edit_issue(self):
+        """作ったあとから、号数・発行日・号の種類を変える。"""
+        if not self.issue:
+            messagebox.showinfo(APP_NAME, "先に号フォルダを開いてください。")
+            return
+        self.save_current()
+        before_gou = self.issue.gou
+        before_tmpl = self.issue.template
+        ans = IssueDialog(self, self.issue).result
+        if not ans:
+            return
+        gou, hakkoubi, template = ans
+        try:
+            self.issue.set_info(gou=gou, hakkoubi=hakkoubi, template=template)
+        except (ValueError, KeyError) as e:
+            messagebox.showerror(APP_NAME, str(e))
+            return
+        done = []
+
+        # 号の種類が変わったなら、足りない区分を足すか聞く
+        missing, _ = self.issue.template_diff()
+        if template != before_tmpl and missing:
+            if messagebox.askyesno(
+                    APP_NAME,
+                    f"{template} には次の区分があります。足しますか？\n\n"
+                    + "、".join(missing)
+                    + "\n\n（いまある区分と原稿はそのまま残ります）"):
+                self.issue.add_missing_kubun()
+                done.append("区分を %d 足しました" % len(missing))
+
+        # 号数が変わったなら、フォルダ名も合わせるか聞く
+        if gou != before_gou:
+            want = self.issue.folder_name()
+            if messagebox.askyesno(
+                    APP_NAME,
+                    f"フォルダの名前も「{want}」に変えますか？\n\n"
+                    f"いま: {self.issue.folder}\n"
+                    f"あと: {self.issue.folder.parent / want}\n\n"
+                    "中身はそのまま移ります。変えなくても作業は続けられます。"):
+                try:
+                    self.issue.rename_folder()
+                    self.settings["last_issue"] = str(self.issue.folder)
+                    save_settings(self.settings)
+                    done.append("フォルダ名を変えました")
+                except (FileExistsError, OSError) as e:
+                    messagebox.showerror(APP_NAME, f"フォルダ名を変えられませんでした:\n{e}")
+
+        self.open_issue(self.issue.folder)
+        msg = "号の情報を変えました。\n\n" + ("\n".join("・" + d for d in done) if done else "")
+        if gou != before_gou:
+            msg += "\n\n※ 表紙の原稿に書いてある号数は、自動では直していません。\n"\
+                   "　 表紙を開いて確かめてください。"
+        messagebox.showinfo(APP_NAME, msg)
 
     def choose_issue(self):
         folder = filedialog.askdirectory(parent=self, title="号フォルダ（第○号）を選んでください",
