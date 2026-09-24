@@ -178,6 +178,72 @@ class IssueTest(unittest.TestCase):
             core.import_manuscript(p)
 
 
+class ChangeIssueTest(unittest.TestCase):
+    """作ったあとから号数・発行日・号の種類を変える。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.issue = core.Issue.create(self.root, "204", "令和８年７月31日", template="6月号")
+        self.issue.write_text("一般質問", "質問　消えては困る原稿。")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_set_info(self):
+        self.issue.set_info(gou="２０５", hakkoubi="令和８年10月31日", template="9月号")
+        self.assertEqual((self.issue.gou, self.issue.template), ("205", "9月号"))
+        again = core.Issue.open(self.issue.folder)      # 保存されている
+        self.assertEqual((again.gou, again.hakkoubi, again.template),
+                         ("205", "令和８年10月31日", "9月号"))
+
+    def test_set_info_partial(self):
+        self.issue.set_info(hakkoubi="変えた日")          # 渡したものだけ変わる
+        self.assertEqual((self.issue.gou, self.issue.hakkoubi, self.issue.template),
+                         ("204", "変えた日", "6月号"))
+        with self.assertRaises(ValueError):
+            self.issue.set_info(gou="   ")
+        with self.assertRaises(KeyError):
+            self.issue.set_info(template="13月号")
+
+    def test_rename_folder(self):
+        self.issue.set_info(gou="205")
+        self.assertEqual(self.issue.folder.name, "第204号")   # まだ変わらない
+        self.issue.rename_folder()
+        self.assertEqual(self.issue.folder.name, "第205号")
+        self.assertEqual(self.issue.read_text("一般質問"), "質問　消えては困る原稿。")
+        self.assertEqual(self.issue.rename_folder(), self.issue.folder)   # 2 度目は何もしない
+
+    def test_rename_folder_conflict(self):
+        core.Issue.create(self.root, "205", "")
+        self.issue.set_info(gou="205")
+        with self.assertRaises(FileExistsError):
+            self.issue.rename_folder()
+        self.assertEqual(self.issue.folder.name, "第204号")   # 元のまま
+
+    def test_template_diff_and_add(self):
+        missing, extra = self.issue.template_diff("9月号")
+        self.assertEqual(missing, ["決算の概要", "議員行政視察研修報告"])
+        self.assertEqual(extra, [])
+        self.issue.set_info(template="9月号")
+        self.assertEqual(self.issue.add_missing_kubun(), missing)
+        # 雛形の並びのとおりの位置に入る
+        ks = self.issue.kubun_list()
+        self.assertEqual(ks.index("決算の概要"), ks.index("審議したこと・決まったこと") + 1)
+        self.assertEqual(ks.index("議員行政視察研修報告"), ks.index("裏表紙") + 1)
+        self.assertEqual(self.issue.read_text("一般質問"), "質問　消えては困る原稿。")
+        self.assertEqual(self.issue.template_diff()[0], [])   # もう足りないものは無い
+
+    def test_extra_kubun_is_kept(self):
+        # 3月号にすると「当初予算の概要」が足りず、「お知らせ」が余る
+        missing, extra = self.issue.template_diff("3月号")
+        self.assertIn("当初予算の概要", missing)
+        self.assertIn("お知らせ", extra)
+        self.issue.set_info(template="3月号")
+        self.issue.add_missing_kubun()
+        self.assertIn("お知らせ", self.issue.kubun_list())    # 勝手に消さない
+
+
 @unittest.skipUnless(PIL_OK and core.DOCX_OK, "Pillow と python-docx が必要")
 class BuildTest(unittest.TestCase):
     def setUp(self):
