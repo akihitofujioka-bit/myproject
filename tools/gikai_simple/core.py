@@ -15,7 +15,8 @@
 
     【写真】ファイル名.jpg｜中｜説明文
 
-区切りは全角「｜」でも半角「|」でもよい。大きさは 大・中・小・顔 の 4 つ。
+区切りは全角「｜」でも半角「|」でもよい。大きさは 表紙・大・中・小・顔 の 5 つ
+（「表紙」は A4 一面。表紙の区分でだけ使う）。
 大きさと説明は省略できる。ツールは、この行を Word 原稿ではその場所に
 縮小した写真として貼り、写真配置指示書では一覧にまとめる。
 
@@ -92,12 +93,16 @@ HINTS = {
 
 # 写真の大きさ → 幅（mm）。紙面は 5 段組で 1 段が約 30mm。
 SIZES = {
-    "大": 80,   # 3 段ぶん弱（段の見出し写真など）
-    "中": 55,   # 2 段ぶん
-    "小": 38,   # 1 段と少し
-    "顔": 26,   # 議員・委員長の顔写真
+    "表紙": 210,  # A4 一面（紙の端まで。表紙の大きな写真用）
+    "大": 80,     # 3 段ぶん弱（段の見出し写真など）
+    "中": 55,     # 2 段ぶん
+    "小": 38,     # 1 段と少し
+    "顔": 26,     # 議員・委員長の顔写真
 }
 DEFAULT_SIZE = "中"
+COVER_SIZE = "表紙"          # この大きさは「A4 一面」として指示する
+A4_WIDTH_MM = 210
+COVER_MARGIN_MM = 20         # 表紙と指示書（横書き 1 段）の余白
 
 PHOTO_EXT = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic"}
 PRINT_DPI = 350   # 印刷所が求める解像度
@@ -131,7 +136,7 @@ NUMBERS_SKIP_KUBUN = (COVER,)
 # 【写真】ファイル名｜大きさ｜説明
 PHOTO_LINE = re.compile(
     r"^\s*【写真】\s*(?P<file>[^｜|]+?)"
-    r"(?:\s*[｜|]\s*(?P<size>[大中小顔])?)?"
+    r"(?:\s*[｜|]\s*(?P<size>表紙|[大中小顔])?)?"
     r"(?:\s*[｜|]\s*(?P<caption>.*?))?\s*$"
 )
 
@@ -156,7 +161,8 @@ READ_ME = """このフォルダの使い方
 
     【写真】ファイル名.jpg｜中｜説明文
 
-  大きさは 大・中・小・顔 のどれか（省略すると 中）。説明文は省略できます。
+  大きさは 表紙・大・中・小・顔 のどれか（省略すると 中）。説明文は省略できます。
+  「表紙」は A4 一面（紙の端まで）で、表紙の区分でだけ使います。
 ・ツールで「Word を作る」を押すと、出力 フォルダに
     原稿（写真入り）と 写真配置指示書 の 2 つの Word ができます
 ・印刷所には「出力の Word 2 つ」と「写真フォルダの中身」を渡します
@@ -807,8 +813,8 @@ def _setup_page(doc):
     """A4 縦・余白 20mm・横書き（表紙と指示書用）。既定フォントも決める。"""
     sec = doc.sections[0]
     sec.page_width, sec.page_height = Mm(210), Mm(297)
-    sec.top_margin = sec.bottom_margin = Mm(20)
-    sec.left_margin = sec.right_margin = Mm(20)
+    sec.top_margin = sec.bottom_margin = Mm(COVER_MARGIN_MM)
+    sec.left_margin = sec.right_margin = Mm(COVER_MARGIN_MM)
     style = doc.styles["Normal"]
     style.font.name = FONT_MINCHO
     style.font.size = Pt(10.5)
@@ -841,11 +847,14 @@ def _add_body_section(doc):
 
 
 def _add_photo(doc, issue: Issue, number: int, kubun: str, ref: PhotoRef,
-               warnings: list[str]) -> None:
+               warnings: list[str], *, is_cover: bool = False) -> None:
     """原稿 Word の中に、写真（縮小版）と赤い指示文を入れる。"""
     src = issue.photo_dir / ref.file
     info = photo_info(src)
-    label = f"【写真{number}】{ref.file}（{ref.size}・幅{ref.width_mm}mm）"
+    if ref.size == COVER_SIZE:
+        label = f"【写真{number}】{ref.file}（A4 一面・紙の端まで／塗り足し 3mm を付けてください）"
+    else:
+        label = f"【写真{number}】{ref.file}（{ref.size}・幅{ref.width_mm}mm）"
     if ref.caption:
         label += f"　説明: {ref.caption}"
     _para(doc, label, name=FONT_GOTHIC, size=9, bold=True, color=(0xC0, 0x00, 0x00), after=1)
@@ -861,11 +870,18 @@ def _add_photo(doc, issue: Issue, number: int, kubun: str, ref: PhotoRef,
     buf = reduced_jpeg(src)
     p = doc.add_paragraph()
     p.paragraph_format.space_after = Pt(2)
-    # 縦書き 5 段の中では、写真の高さが 1 段の高さを超えると段からはみ出すので、
-    # 貼るときは高さを 1 段に収まるまで縮める（印刷所への大きさの指示は赤字のとおり）
+    # Word に貼る大きさを決める。印刷所への指示は上の赤字のとおりで、ここで縮めても変わらない
     width_mm = ref.width_mm
-    max_h = DAN_HEIGHT_MM - 4
-    if TATEGAKI and info.width_px and info.height_px:
+    if ref.size == COVER_SIZE and not is_cover:
+        warnings.append(
+            f"{kubun}: {ref.file} — 「表紙」の大きさ（A4 一面）を表紙以外で使っています。"
+            "本文は縦書き 5 段なので、段をはみ出します。大・中・小・顔 のどれかにしてください")
+    if is_cover:
+        # 表紙は横書き 1 段。紙の端までは Word に貼れないので、余白の内側いっぱいにする
+        width_mm = min(width_mm, A4_WIDTH_MM - COVER_MARGIN_MM * 2)
+    elif TATEGAKI and info.width_px and info.height_px:
+        # 縦書き 5 段では、写真の高さが 1 段を超えると段からはみ出すので縮める
+        max_h = DAN_HEIGHT_MM - 4
         h = width_mm * info.height_px / info.width_px
         if h > max_h:
             width_mm = max_h * info.width_px / info.height_px
@@ -911,7 +927,7 @@ def build_manuscript(issue: Issue, out: Path | str | None = None) -> tuple[Path,
         for kind, block in parse_blocks(text):
             if kind == "photo":
                 number += 1
-                _add_photo(doc, issue, number, kubun, block, warnings)
+                _add_photo(doc, issue, number, kubun, block, warnings, is_cover=is_cover)
             else:
                 for line in block.split("\n"):
                     _para(doc, line, after=0,
@@ -962,7 +978,9 @@ def build_photo_sheet(issue: Issue, out: Path | str | None = None) -> tuple[Path
             if info.width_px:
                 _set_font(row[2].add_paragraph().add_run(f"{info.width_px}×{info.height_px}px"), FONT_GOTHIC, 8)
             _set_font(row[3].paragraphs[0].add_run(kubun), FONT_GOTHIC, 9)
-            _set_font(row[4].paragraphs[0].add_run(f"{ref.size}（幅{ref.width_mm}mm）"), FONT_GOTHIC, 9)
+            size_text = ("A4 一面（紙の端まで）" if ref.size == COVER_SIZE
+                         else f"{ref.size}（幅{ref.width_mm}mm）")
+            _set_font(row[4].paragraphs[0].add_run(size_text), FONT_GOTHIC, 9)
             _set_font(row[5].paragraphs[0].add_run(ref.caption or "（説明なし）"), FONT_MINCHO, 9)
             warn = info.warning_for(ref.width_mm)
             if warn:
