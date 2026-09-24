@@ -78,6 +78,10 @@ HELP = """使い方（5 つだけ）
    1 桁は全角「４人」、2 桁以上は半角「第46回」。〒・℡・番地はそのまま
    手で書いた文章は「数字をそろえる」ボタンでもそろえられます（表紙は対象外）
 
+原稿欄で文字をドラッグして選ぶと、その部分が何字かが区分名の右に出ます
+   「組版 ○字」は半角を 0.5 文字として数えたもの（紙面に入るかの目安）
+   1 行 13 字なので、「＝ ○行」で何行分かが分かります
+
 大きさの目安（紙面は 5 段組・1 段 約 30mm）
    大 = 幅 80mm   中 = 幅 55mm   小 = 幅 38mm   顔 = 幅 26mm（顔写真）
 
@@ -422,6 +426,8 @@ class App(tk.Tk):
         bar.pack(fill="x")
         self.lbl_kubun = ttk.Label(bar, text="区分を選んでください", font=(UI_FONT[0], UI_FONT[1], "bold"))
         self.lbl_kubun.pack(side="left")
+        self.lbl_count = ttk.Label(bar, text="", foreground="#1565C0")
+        self.lbl_count.pack(side="left", padx=12)
         self.lbl_hint = ttk.Label(mid, text="", foreground="#555555", wraplength=560, justify="left")
         self.lbl_hint.pack(fill="x", pady=(2, 2))
         ttk.Button(bar, text="保存", command=self.save_current).pack(side="right")
@@ -434,6 +440,10 @@ class App(tk.Tk):
         self.txt.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
         self.txt.bind("<<Modified>>", self.on_modified)
+        # ドラッグで選ぶと、その部分が何字かを出す
+        self.txt.bind("<<Selection>>", self.update_count)
+        self.txt.bind("<KeyRelease>", self.update_count)
+        self.txt.bind("<ButtonRelease-1>", self.update_count)
         body.add(mid, weight=3)
 
         # 右: 写真
@@ -675,7 +685,41 @@ class App(tk.Tk):
         self.lbl_kubun.config(text=name)
         hint = core.HINTS.get(name, "")
         self.lbl_hint.config(text=("載せるもの: " + hint) if hint else "")
+        self.update_count()
         self.txt.focus_set()
+
+    def update_count(self, _ev=None):
+        """選んだ部分（無ければ区分ぜんぶ）が何字かを出す。
+
+        字数は 2 通り出す。見たままの文字数と、**組版での幅**（半角を 0.5 と数えたもの）。
+        紙面に入るかを見るのは後者なので、そちらに行数の目安を添える。
+        """
+        if not self.current_kubun:
+            self.lbl_count.config(text="")
+            return
+        try:
+            text = self.txt.get("sel.first", "sel.last")
+        except tk.TclError:
+            text = ""
+        selected = bool(text)
+        if not selected:
+            text = self.txt.get("1.0", "end-1c")
+
+        plain = core.count_chars(text)
+        width = core.count_width(text)
+        cap = core.page_capacity()
+        lines = width / cap["chars_per_line"]
+
+        head = ("選んだ範囲 " if selected else "この区分 ") + f"{plain:,} 字"
+
+        # 紙面の大きさに合わせて、いちばん分かりやすい単位で言う
+        if width < cap["chars_per_dan"]:            # 1 段に収まる → 行で
+            size = f"{lines:.1f} 行"
+        elif width < cap["chars_per_page"]:         # 1 ページに収まる → 段で
+            size = f"{width / cap['chars_per_dan']:.1f} 段（{lines:.0f} 行）"
+        else:                                       # それ以上 → ページで
+            size = f"{width / cap['chars_per_page']:.1f} ページ"
+        self.lbl_count.config(text=f"{head}（組版 {width:,} 字 ＝ {size}）")
 
     def on_modified(self, _ev=None):
         if self.txt.edit_modified():
