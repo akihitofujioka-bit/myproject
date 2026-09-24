@@ -60,7 +60,7 @@ HELP = """使い方（5 つだけ）
    号数・発行日・号の種類は、あとから「号の情報を変える」で直せます
    （種類を変えると、足りない区分を足すか聞きます。原稿は消えません）
 
-2. 左の区分を選び、中央に原稿を書く（または「原稿ファイルを取り込む」）
+2. 左の区分を選び、中央に原稿を書く（または「原稿を取り込む」。カーソルのある場所に入ります）
    議員から届いた Word（.docx / .doc）やテキストを、文字だけ貼り付けます
 
 3. 写真は「写真フォルダを開く」で開いたフォルダに入れる
@@ -441,7 +441,7 @@ class App(tk.Tk):
         self.btn_undo.pack(side="right", padx=6)
         ttk.Button(bar, text="校正する", command=self.proofread_current).pack(side="right", padx=6)
         ttk.Button(bar, text="数字をそろえる", command=self.fix_numbers).pack(side="right")
-        ttk.Button(bar, text="原稿ファイルを取り込む", command=self.import_files).pack(side="right")
+        ttk.Button(bar, text="原稿を取り込む（カーソル位置）", command=self.import_files).pack(side="right")
         self.txt = tk.Text(mid, wrap="char", undo=True, font=TEXT_FONT, padx=8, pady=6)
         scroll = ttk.Scrollbar(mid, command=self.txt.yview)
         self.txt.configure(yscrollcommand=scroll.set)
@@ -752,6 +752,12 @@ class App(tk.Tk):
         self.mark_photo_usage()
 
     def import_files(self):
+        """選んだ原稿ファイルの中身を、いまカーソルのある場所に入れる。
+
+        末尾に足すのではなくカーソル位置に入れるのは、見出しの下や書きかけの
+        段落のあいだへ差し込みたいことが多いため（利用者の要望）。
+        「↩ 一つ手前に戻す」で一度に戻せるよう、何ファイル入れても 1 回分にまとめる。
+        """
         if not self.issue or not self.current_kubun:
             messagebox.showinfo(APP_NAME, "先に号フォルダを開き、区分を選んでください。")
             return
@@ -760,17 +766,43 @@ class App(tk.Tk):
             filetypes=[("原稿", "*.docx *.doc *.txt"), ("すべて", "*.*")])
         if not paths:
             return
+
+        texts = []
         for p in paths:
             try:
-                text = core.import_manuscript(p)
+                texts.append(core.import_manuscript(p).strip("\n"))
             except Exception as e:
                 messagebox.showerror(APP_NAME, f"{Path(p).name} を取り込めませんでした。\n{e}")
-                continue
-            if self.txt.get("1.0", "end-1c").strip():
-                self.txt.insert("end", "\n\n")
-            self.txt.insert("end", text)
+        texts = [t for t in texts if t]
+        if not texts:
+            return
+        chunk = "\n\n".join(texts)
+
+        # 行の途中に差し込むと 1 行が混ざってしまうので、前後に改行を足して
+        # かならず独立した段落として入るようにする
+        at = self.txt.index("insert")
+        before = self.txt.get(f"{at} linestart", at)
+        after = self.txt.get(at, f"{at} lineend")
+        if before.strip():
+            chunk = "\n" + chunk
+        tail = "\n" if after.strip() else ""   # カーソルを戻すときに引く
+        chunk = chunk + tail
+
+        # 「まとめて直す」などと同じく、1 回分の取り消しにまとめる
+        self.txt.configure(autoseparators=False)
+        self.txt.edit_separator()
+        self.txt.insert(at, chunk)
+        self.txt.edit_separator()
+        self.txt.configure(autoseparators=True)
+
+        # 入れた文の終わり（足した改行の手前）にカーソルを置き、画面にも出す
+        self.txt.mark_set("insert", f"{at} + {len(chunk) - len(tail)} chars")
+        self.txt.see("insert")
         self.txt.edit_modified(True)
         self.save_current()
+        self.txt.focus_set()
+        self.update_count()
+        self.lbl_status.config(text=f"{len(texts)} 件の原稿をカーソル位置に入れました")
 
     def fix_numbers(self):
         """いま開いている区分の数字を縦書きの慣行にそろえる（1 桁全角・2 桁以上半角）。"""
