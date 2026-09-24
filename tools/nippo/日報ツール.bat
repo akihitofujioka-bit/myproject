@@ -1,7 +1,7 @@
 @echo off
+rem このファイルは Shift_JIS(CP932) で保存しています。
+rem chcp で文字コードを変えると、ここの日本語が化けるので変えないこと。
 rem 日報ツールを起動する（Windows 用）
-rem 文字化けを防ぐため、この画面の文字コードを UTF-8 にする
-chcp 65001 >nul
 cd /d "%~dp0"
 
 rem py ランチャー → python の順に、実際に動くものを探す
