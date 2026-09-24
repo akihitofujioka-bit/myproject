@@ -12,3 +12,8 @@ tools/nippo/.build/
 
 # 配布用に作る zip（中身は同じリポジトリのソースから作り直せる）
 tools/*.zip
+
+# 配布用 zip に同梱する Windows 用の部品（1 個 数MB のバイナリ）。
+# git には入れず、ネットにつながるパソコンで pip download して作る。
+# 作り方は各ツールの README「いちばん簡単な入れ方」を見ること。
+tools/*/wheels/
