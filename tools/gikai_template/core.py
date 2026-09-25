@@ -755,9 +755,10 @@ class Template:
     # -------------------------------------------------------------- 差し込み
 
     def fill(self, entries: dict[str, "Entry"], *, gou: str = "", hakkoubi: str = "",
-             vote: VoteTable | None = None, mark_keep: bool = True) -> "Report":
+             vote: VoteTable | None = None, mark_keep: bool = True,
+             rep: "Report | None" = None) -> "Report":
         """欄ごとの内容を差し込む。結果（あふれ・前年のまま）を返す。"""
-        rep = Report()
+        rep = rep or Report()
         for sid in list(self.order):
             ref = self.refs[sid]
             s = ref.slot
@@ -1318,11 +1319,15 @@ class Report:
     warnings: list[str] = field(default_factory=list)
     added_blank: int = 0
     out: Path | None = None
+    notes: list[str] = field(default_factory=list)      # 一般質問の組み直しの結果など
 
     def text(self) -> str:
         lines = []
         if self.out:
             lines.append(f"できあがり: {self.out}")
+            lines.append("")
+        if self.notes:
+            lines += self.notes
             lines.append("")
         if self.auto:
             lines.append(f"表紙の号数・発行日を直しました（{len(self.auto)} か所）")
@@ -1387,6 +1392,9 @@ class Issue:
     # 様式を開くたびに頭からやり直すので、順番が大事（分けた欄をさらに複製する、など）
     ops: list[dict] = field(default_factory=list)
     kinds: dict[str, str] = field(default_factory=dict)  # 人が選び直した種類
+    # 一般質問を原稿から組み直すとき（flow.py）の原稿ファイルと、人が直した行の種類
+    ippan_source: str = ""
+    ippan_kinds: dict[str, str] = field(default_factory=dict)
 
     @property
     def template_path(self) -> Path:
@@ -1430,6 +1438,9 @@ class Issue:
                               for c in data.get("copies", [])]
                              + [{"op": "remove", "id": i} for i in data.get("removed", [])])
             issue.kinds = data.get("kinds", {})
+            ippan = data.get("ippan", {})
+            issue.ippan_source = ippan.get("source", "")
+            issue.ippan_kinds = ippan.get("kinds", {})
         return issue
 
     def save(self) -> None:
@@ -1439,7 +1450,8 @@ class Issue:
         data = {"version": 1,
                 "slots": {k: asdict(v) for k, v in self.entries.items()
                           if v.mode != KEEP or v.text},
-                "ops": self.ops, "kinds": self.kinds}
+                "ops": self.ops, "kinds": self.kinds,
+                "ippan": {"source": self.ippan_source, "kinds": self.ippan_kinds}}
         _write_json(self.folder / DATA_NAME, data)
 
     # 様式を開いて、これまでの複製・削除をやり直した状態にする
@@ -1489,17 +1501,42 @@ class Issue:
             p = self.folder / p
         return read_vote_table(p)
 
+    def ippan_path(self) -> Path | None:
+        if not self.ippan_source:
+            return None
+        p = Path(self.ippan_source)
+        return p if p.is_absolute() else self.folder / p
+
+    def ippan_members(self):
+        """一般質問の原稿を読み、(行の一覧, 議員ごとのまとまり, 気になる点) を返す。"""
+        import flow
+        lines = flow.classify(import_manuscript(self.ippan_path()), self.ippan_kinds)
+        members, warns = flow.group(lines)
+        return lines, members, warns
+
     def build(self, *, mark_keep: bool = True) -> Report:
         tpl = self.load_template()
         vote = None
         warn = []
+        rep = Report()
+        if self.ippan_source:
+            # 一般質問は、前年の文字を入れ替えるのではなく部品で組み直す（flow.py）。
+            # 差し込みより先に行う（前年の長さは、手を加える前の様式で測るため）
+            import flow
+            try:
+                _, members, warns = self.ippan_members()
+                res = flow.apply_ippan(tpl, members)
+                rep.notes.append(res.text())
+                warn += [f"一般質問の原稿: {m}" for m in warns]
+            except (OSError, ValueError) as e:
+                warn.append(f"一般質問を組み直せませんでした（前年の形のまま残します）: {e}")
         if any(e.mode == TABLE for e in self.entries.values()):
             try:
                 vote = self.vote_table()
             except (OSError, ValueError) as e:
                 warn.append(str(e))
         rep = tpl.fill(self.entries, gou=self.gou, hakkoubi=self.hakkoubi, vote=vote,
-                       mark_keep=mark_keep)
+                       mark_keep=mark_keep, rep=rep)
         rep.warnings[:0] = warn
         out = self.folder / OUT_DIR / f"第{self.gou}号.docx"
         try:

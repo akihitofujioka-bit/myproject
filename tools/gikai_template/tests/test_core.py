@@ -24,6 +24,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 import core  # noqa: E402
+import flow  # noqa: E402
 import xlsx_vote  # noqa: E402
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -534,6 +535,242 @@ class IssueTest(unittest.TestCase):
             core.Issue.create(d, "205", "", "1月号", tpl)
             with self.assertRaises(ValueError):
                 core.Issue.create(d, "205", "", "1月号", tpl)
+
+
+# ---------------------------------------------------------------- 一般質問の組み直し（flow.py）
+
+
+def head_table(title: str) -> str:
+    """議員ごとの題の 1 升の表。様式と同じく本文の外に浮かせ、前年の題の長さで寸法を決めてある。"""
+    return ('<w:tbl><w:tblPr><w:tblpPr w:leftFromText="142" w:rightFromText="142" '
+            'w:vertAnchor="page" w:tblpX="2475" w:tblpY="1394"/><w:tblOverlap w:val="never"/>'
+            '<w:tblW w:w="1559" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="1559"/></w:tblGrid>'
+            '<w:tr><w:trPr><w:trHeight w:val="5968"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="1559" w:type="dxa"/></w:tcPr>'
+            + para(title, 36) + '</w:tc></w:tr></w:tbl>')
+
+
+def ippan_document(trailing: str = "") -> str:
+    """一般質問 2 人ぶん（前年）の見本。題の表・1 字ずつの名前・質問・答弁・2 問目の題。"""
+    member = lambda title, name, sub: [  # noqa: E731
+        head_table(title),
+        *[para(ch) for ch in reversed(list(name + "議員"))],
+        para(),
+        para("質問　前年の質問の文である。"),
+        '<w:p><w:pPr><w:rPr><w:sz w:val="22"/></w:rPr></w:pPr>'
+        '<w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>答弁</w:t></w:r>'
+        '<w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">　前年総務課長</w:t></w:r></w:p>',
+        para("前年の答弁の本文で、十字より長い文である。"),
+        para(),
+        para(sub, 28),
+        para(),
+        para("質問　前年の二つ目の質問。"),
+        para("答弁　前年村長"),
+        para("前年の二つ目の答弁の本文である。"),
+        *[para() for _ in range(6)],
+    ]
+    body = [
+        para("第２０１号", 40, ppr=SECT_COVER),
+        para("前の区分の記事である。"),
+        para(), para(),
+        para("", extra=vml_box("一般質問に２氏が立つ", vertical=True, sid=2101)),
+        para(), para(),
+        *member("前年の一つ目の題", "佐藤一郎", "前年の小見出し"),
+        *member("前年の二つ目の題", "鈴木和子", "前年の別の小見出し"),
+        trailing,
+        para(), para(),
+        para("", extra=vml_box("特集　新年の抱負", vertical=True, sid=2102).replace(
+            'w:val="22"', 'w:val="48"')),
+        para("特集の本文である。"),
+        SECT_BODY,
+    ]
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' + ROOT_OPEN
+            + "<w:body>" + "".join(body) + "</w:body></w:document>")
+
+
+def make_ippan_template(folder: Path, trailing: str = "") -> Path:
+    path = folder / "様式一般質問.docx"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.writestr("_rels/.rels", RELS)
+        z.writestr("word/document.xml", ippan_document(trailing))
+    return path
+
+
+IPPAN_TEXT = """一般質問に３氏が立つ
+
+防災対策について
+山田太郎議員
+【写真】yamada.jpg｜顔
+質問　避難所の備蓄は十分か。
+答弁　佐藤総務課長
+　備蓄品は毎年見直しており、水と毛布を120人分増やす。
+高齢者の見守り
+質問　一人暮らしの高齢者の見守りは。
+答弁　鈴木健康福祉課長
+　民生委員と連携して訪問を続けている。
+
+鈴木和子議員
+公共交通の
+今後について
+質問　周遊バスの利用者を増やす考えは。
+答弁　山田村長
+　ダイヤを見直す。
+【写真】bus.jpg｜中｜周遊バス
+
+高橋次郎議員
+空き家対策について
+質問　空き家の活用はどうか。
+答弁　佐藤企画課長
+　空き家バンクに15件を登録した。
+"""
+
+
+class FlowParseTest(unittest.TestCase):
+    def test_lines_are_classified(self):
+        kinds = {ln.text: ln.kind for ln in flow.classify(IPPAN_TEXT)}
+        self.assertEqual(kinds["一般質問に３氏が立つ"], flow.SKIP)
+        self.assertEqual(kinds["山田太郎議員"], flow.MEMBER)
+        self.assertEqual(kinds["防災対策について"], flow.TITLE)       # 名前より前に書いた題
+        self.assertEqual(kinds["公共交通の"], flow.TITLE)            # 2 行に分けた題
+        self.assertEqual(kinds["今後について"], flow.TITLE)
+        self.assertEqual(kinds["【写真】yamada.jpg｜顔"], flow.PHOTO)
+        self.assertEqual(kinds["答弁　佐藤総務課長"], flow.TEXT)
+        self.assertEqual(kinds["ダイヤを見直す。"], flow.TEXT)
+
+    def test_grouped_by_member_and_title(self):
+        members, warns = flow.group(flow.classify(IPPAN_TEXT))
+        self.assertEqual(warns, [])
+        self.assertEqual([m.name for m in members], ["山田太郎", "鈴木和子", "高橋次郎"])
+        self.assertEqual([t.title for t in members[0].topics],
+                         [["防災対策について"], ["高齢者の見守り"]])
+        self.assertEqual(members[0].head_photos, ["【写真】yamada.jpg｜顔"])
+        self.assertEqual(members[1].topics[0].title, ["公共交通の", "今後について"])
+        # 本文の行頭の字下げは残す
+        self.assertIn("　備蓄品は毎年見直しており、水と毛布を120人分増やす。",
+                      members[0].topics[0].lines)
+
+    def test_override_by_line_text(self):
+        lines = flow.classify(IPPAN_TEXT, {"高齢者の見守り": flow.TEXT})
+        members, _ = flow.group(lines)
+        self.assertEqual(len(members[0].topics), 1)
+        self.assertEqual(next(ln for ln in lines if ln.text == "高齢者の見守り").auto, flow.TITLE)
+
+    def test_question_before_any_name_is_warned(self):
+        _, warns = flow.group(flow.classify("題の行\n質問　名前が無い。\n答弁　村長"))
+        self.assertTrue(any("議員名" in w for w in warns))
+
+    def test_kanji_number(self):
+        self.assertEqual(flow._num("七"), 7)
+        self.assertEqual(flow._num("十二"), 12)
+        self.assertEqual(flow._num("１０"), 10)
+
+
+class FlowBuildTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.members, _ = flow.group(flow.classify(IPPAN_TEXT))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def build(self, trailing: str = "") -> tuple[core.Template, flow.FlowResult, str]:
+        tpl = core.Template(make_ippan_template(self.dir, trailing))
+        res = flow.apply_ippan(tpl, self.members)
+        xml = document_xml(tpl.save(self.dir / "out.docx"))
+        return tpl, res, xml
+
+    def test_parts_are_found_in_the_template(self):
+        tpl = core.Template(make_ippan_template(self.dir))
+        parts = flow.extract_parts(tpl)
+        self.assertEqual(parts.old_count, 2)
+        self.assertEqual(parts.head[0].tag, core.w("p"))           # 題の見本は囲みの段落
+        self.assertIsNotNone(parts.head[0].find(f"{core.w('pPr')}/{core.w('pBdr')}"))
+        self.assertIsNotNone(parts.name_at)
+        self.assertIn("小見出し", core.para_text(parts.subtitle))
+        # 終わりは最後の答弁の本文の次（後ろの空行と特集はそのまま残す）
+        kids = list(tpl.body)
+        self.assertEqual(core.para_text(kids[parts.end - 1]), "前年の二つ目の答弁の本文である。")
+
+    def test_members_are_rebuilt_from_parts(self):
+        _, res, xml = self.build()
+        self.assertEqual((res.members, res.topics, res.old_count), (3, 4, 2))
+        self.assertIn("一般質問に３氏が立つ", xml)
+        for old in ("前年の一つ目の題", "佐藤一郎", "前年の小見出し", "前年の答弁"):
+            self.assertNotIn(old, xml)
+        self.assertNotIn("<w:tbl>", xml)                            # 題は表でなく囲みの段落
+        self.assertEqual(xml.count("<w:pBdr>"), 4)                  # 3 人ぶん（1 人は 2 行の題）
+        for title in ("防災対策について", "空き家対策について"):
+            self.assertIn(title, xml)
+        self.assertIn("高齢者の見守り", xml)                         # 2 問目の題
+        # 名前は後ろの字から 1 字ずつの行
+        body = ET.fromstring(xml.encode("utf-8")).find(core.w("body"))
+        texts = [core.para_text(p) for p in body if p.tag == core.w("p")]
+        i = texts.index("員")
+        self.assertEqual(texts[i:i + 6], ["員", "議", "郎", "太", "田", "山"])
+        self.assertIn("特集の本文である。", xml)                     # 後ろの区分はそのまま
+        self.assertIn("前の区分の記事である。", xml)
+
+    def test_title_is_a_boxed_paragraph_fitted_to_its_length(self):
+        _, _, xml = self.build()
+        self.assertNotIn("tblpPr", xml)                    # 浮かせない（重ならない・切れない）
+        body = ET.fromstring(xml.encode("utf-8")).find(core.w("body"))
+        heads = [p for p in body if p.find(f"{core.w('pPr')}/{core.w('pBdr')}") is not None]
+        self.assertEqual([core.para_text(p) for p in heads],
+                         ["防災対策について", "公共交通の", "今後について", "空き家対策について"])
+        # 囲みは題の長さに縮める（段の残りを字下げ）。1 段（18pt で 7 字）を超える題は
+        # 字下げせずに折り返す。2 行の題は同じ字下げで 1 つの囲みになる
+        ind = [int(p.find(f"{core.w('pPr')}/{core.w('ind')}").get(core.w("right"))) for p in heads]
+        self.assertEqual(ind[0], 0)
+        self.assertGreater(ind[1], 0)
+        self.assertEqual(ind[1], ind[2])
+
+    def test_titles_keep_with_next_and_photo_is_marked(self):
+        _, _, xml = self.build()
+        self.assertIn("keepNext", xml)
+        self.assertIn("【写真】bus.jpg（中・幅55mm）", xml)
+        self.assertIn('w:val="FF0000"', xml)
+        self.assertIn('<w:eastAsianLayout', xml)                 # 120 は縦中横
+
+    def test_length_is_padded_to_keep_later_positions(self):
+        tpl, res, _ = self.build()
+        # 前年との差は、空行でページ単位（1 ページ = 5 段 × 36 行）にそろえる
+        diff = res.new_lines + res.pad - res.old_lines
+        self.assertAlmostEqual(diff, res.pages_added * flow.PAGE_LINES, delta=1)
+        self.assertIn("一般質問を組み直しました", res.text())
+
+    def test_content_after_last_answer_without_big_heading_is_kept(self):
+        # 第199号のように、最後の議員のあとに大きな見出しの無い記事が続く
+        _, _, xml = self.build(para("", extra=vml_box("写真の説明の枠", sid=2103)) + para("お知らせの本文"))
+        self.assertIn("お知らせの本文", xml)
+        self.assertIn("写真の説明の枠", xml)
+
+    def test_slots_inside_are_left_out_of_fill(self):
+        tpl, res, _ = self.build()
+        self.assertTrue(res.skipped_slots)
+        self.assertFalse(set(tpl.refs) & res.skipped_slots)
+        tpl.fill({})                                    # 外した欄に触らずに差し込める
+        self.assertTrue(any("前の区分" in s.old_text for s in tpl.slots()))
+
+    def test_issue_build_uses_the_manuscript(self):
+        issue = core.Issue.create(self.dir, "205", "", "1月号", make_ippan_template(self.dir))
+        src = self.dir / "05_一般質問.txt"
+        src.write_text(IPPAN_TEXT, encoding="utf-8")
+        issue.ippan_source = str(src)
+        issue.ippan_kinds = {"高齢者の見守り": flow.TEXT}
+        issue.save()
+        again = core.Issue.open(issue.folder)
+        self.assertEqual(again.ippan_kinds, {"高齢者の見守り": flow.TEXT})
+        rep = again.build()
+        self.assertIn("議員 3 人・質問の題 3 件", rep.text())
+        self.assertIn("空き家対策について", document_xml(rep.out))
+
+    def test_broken_manuscript_leaves_template_as_is(self):
+        issue = core.Issue.create(self.dir, "205", "", "1月号", make_ippan_template(self.dir))
+        issue.ippan_source = str(self.dir / "無い.txt")
+        rep = issue.build()
+        self.assertIn("組み直せませんでした", rep.text())
+        self.assertIn("前年の一つ目の題", document_xml(rep.out))
 
 
 class TextTest(unittest.TestCase):
