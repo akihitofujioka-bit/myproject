@@ -580,18 +580,21 @@ def _keep_next(el: ET.Element) -> None:
 
 @dataclass
 class FlowResult:
-    members: int
-    topics: int
-    old_count: int
+    members: int                # 議員の人数（行政報告・委員会報告では記事の数）
+    topics: int                 # 質問の題の数（同じく記事の数）
+    old_count: int              # 前年の人数（一般質問だけ）
     old_lines: float
     new_lines: float
     pad: int
     pages_added: int
     skipped_slots: set[str]
+    label: str = "一般質問"
+    summary: str = ""
 
     def text(self) -> str:
-        lines = [f"一般質問を組み直しました（議員 {self.members} 人・質問の題 {self.topics} 件。"
-                 f"前年は {self.old_count} 人）"]
+        what = self.summary or (f"議員 {self.members} 人・質問の題 {self.topics} 件。"
+                                f"前年は {self.old_count} 人")
+        lines = [f"{self.label}を組み直しました（{what}）"]
         diff = self.new_lines - self.old_lines
         if self.pages_added > 0:
             lines.append(f"  → 前年より約 {diff:.0f} 行長いので、空行 {self.pad} 行を足して、"
@@ -607,9 +610,98 @@ class FlowResult:
         if self.pages_added:
             lines.append("  → 印刷は 4 ページ単位のことが多いので、ページ数が合わないときは"
                          "原稿の長さか、ほかの記事で調整してください")
-        lines.append("  → 行数は見積もりです。Word で、議員の題が段の途中で切れていないか、"
+        lines.append("  → 行数は見積もりです。Word で、見出しが段の途中で切れていないか、"
                      "次の区分の頭がずれていないかを確かめてください")
         return "\n".join(lines)
+
+
+def _slots_in(tpl: Template, region: list[ET.Element], keep: set[int] = frozenset()) -> set[str]:
+    """region の中にある欄。keep（残して移す枠の run）の欄は除く。"""
+    kept = set()
+    for el in region:
+        for x in el.iter():
+            if id(x) in keep:
+                kept |= {id(y) for y in x.iter()}
+    inside = {id(x) for el in region for x in el.iter()} - kept
+    out = set()
+    for sid, ref in tpl.refs.items():
+        if ref.anchor_run is not None and id(ref.anchor_run) in keep:
+            continue
+        probes = list(ref.paras[:1]) + [x for x in (ref.anchor_para, ref.parent) if x is not None]
+        if any(id(x) in inside for x in probes):
+            out.add(sid)
+    return out
+
+
+def _section_heads(region: list[ET.Element]) -> list[tuple[ET.Element, ET.Element, bool]]:
+    """region の中にある、ほかの区分の見出しの枠。(段落, run, 終わりへ移すか) を返す。
+
+    組み直すときに前年の写真の説明の枠は消すが、次のものは消さずに移す。
+      * 18pt 以上の大見出しの枠や「○月議会では」の枠 → 組み直した部分の頭へ
+        （第201号の「閉会中の委員会活動報告」は最初の委員会の名前の行につなぎ留めてある）
+      * 最後の本文より後ろにつなぎ留めた 14pt 以上の枠 → 組み直した部分の終わりへ
+        （第200号の「一般会計決算額」は、次の区分の見出しの一部）
+    """
+    last = max((k for k, el in enumerate(region)
+                if el.tag == w("p") and para_text(el).strip()), default=-1)
+    out = []
+    for k, el in enumerate(region):
+        if el.tag != w("p"):
+            continue
+        for r in _anchor_runs(el):
+            text = "".join(_all_text(tb) for tb in r.iter(w("txbxContent"))).replace("　", "")
+            if _big_text(r, HEAD_PT).strip() or NEXT_BOX.search(text):
+                out.append((el, r, False))
+            elif k >= last and text.strip() and core._max_pt(r, 11) >= SUBTITLE_PT:
+                out.append((el, r, True))
+    return out
+
+
+def _replace_region(tpl: Template, start: int, end: int, new: list[ET.Element],
+                    blank: ET.Element) -> tuple[float, float, int, int, set[str]]:
+    """body の [start, end) を new に入れ替え、後ろの記事がずれないよう空行で埋める。
+
+    前年との長さの差を「ちょうど何ページ分」にそろえる（短くて 1 ページ以上余るなら
+    ページごと詰める）。(前年の行数, 新しい行数, 足した空行, 増えたページ, 外した欄) を返す。
+    """
+    cpl = tpl.geometry(1).chars_per_line
+    base = tpl.base_pt
+    kids = list(tpl.body)
+    pos = _positions(tpl, cpl)
+    region = kids[start:end]
+    old_lines = pos[end] - pos[start] if end < len(pos) else \
+        sum(element_lines(el, cpl, base) for el in region)
+    heads = _section_heads(region)
+    skipped = _slots_in(tpl, region, {id(r) for _, r, _ in heads})
+
+    new_lines = sum(element_lines(el, cpl, base) for el in new)
+    pages = math.ceil((new_lines - old_lines) / PAGE_LINES)
+    pad = round(old_lines + pages * PAGE_LINES - new_lines)
+    new = new + [copy.deepcopy(blank) for _ in range(pad)]
+    if heads and not new:
+        new = [copy.deepcopy(blank)]
+    for p, r, to_end in heads:
+        p.remove(r)
+        target = new[-1] if to_end else new[0]
+        if target.tag != w("p"):
+            target = copy.deepcopy(blank)
+            if to_end:
+                new.append(target)
+            else:
+                new.insert(0, target)
+        ppr = target.find(w("pPr"))
+        target.insert(1 if ppr is not None else 0, r)
+        for ref in tpl.refs.values():
+            if ref.anchor_run is r:
+                ref.anchor_para = target
+    for el in region:
+        tpl.body.remove(el)
+    for k, el in enumerate(new):
+        tpl.body.insert(start + k, el)
+    for sid in skipped:
+        tpl.order.remove(sid)
+        del tpl.refs[sid]
+    return old_lines, new_lines, pad, pages, skipped
 
 
 def apply_ippan(tpl: Template, members: list[Member]) -> FlowResult:
@@ -617,63 +709,358 @@ def apply_ippan(tpl: Template, members: list[Member]) -> FlowResult:
     if not members:
         raise ValueError("一般質問の原稿に議員が 1 人も見つかりません。")
     parts = extract_parts(tpl)
-    geo = tpl.geometry(1)
-    cpl = geo.chars_per_line
-    base = tpl.base_pt
-    kids = list(tpl.body)
-    pos = _positions(tpl, cpl)
-    region = kids[parts.start + 1:parts.end]
-    old_lines = pos[parts.end] - pos[parts.start + 1] if parts.end < len(pos) else \
-        sum(element_lines(el, cpl, base) for el in region)
-
-    # 組み直す部分にあった欄は、差し込み（fill）で触らない
-    inside = {id(x) for el in region for x in el.iter()}
-    skipped = set()
-    for sid, ref in tpl.refs.items():
-        probes = list(ref.paras[:1]) + [x for x in (ref.anchor_para, ref.parent) if x is not None]
-        if any(id(x) in inside for x in probes):
-            skipped.add(sid)
-
+    intro = list(tpl.body)[parts.start]
     b = _Builder(tpl, parts)
     new: list[ET.Element] = [b.blank() for _ in range(MEMBER_GAP)]
     for k, m in enumerate(members):
         if k:
             new += [b.blank() for _ in range(MEMBER_GAP)]
         new += b.member(m)
-    new_lines = sum(element_lines(el, cpl, base) for el in new)
-    # 後ろの記事が前年と同じページ内の位置に来るよう、差をページ単位にそろえる。
-    # 短くなって 1 ページ以上余るときは、空白のページを作らずページごと詰める
-    pages = math.ceil((new_lines - old_lines) / PAGE_LINES)
-    pad = round(old_lines + pages * PAGE_LINES - new_lines)
-    new += [b.blank() for _ in range(pad)]
-
-    for el in region:
-        tpl.body.remove(el)
-    for k, el in enumerate(new):
-        tpl.body.insert(parts.start + 1 + k, el)
+    old, lines, pad, pages, skipped = _replace_region(
+        tpl, parts.start + 1, parts.end, new, parts.blank)
     count = str(len(members))
     count = count.translate(core._H2Z) if len(count) == 1 else count
-    for p in kids[parts.start].iter(w("p")):
+    for p in intro.iter(w("p")):
         if INTRO.search(_all_text(p)):
             _replace_in_para(p, _INTRO_NUM, count)
-    for sid in skipped:
-        tpl.order.remove(sid)
-        del tpl.refs[sid]
     return FlowResult(len(members), sum(len(m.topics) for m in members), parts.old_count,
-                      old_lines, new_lines, pad, pages, skipped)
+                      old, lines, pad, pages, skipped)
 
 
-def region_slot_ids(tpl: Template) -> set[str]:
-    """様式のうち、一般質問として組み直される欄（画面で「流し込み」と出すため）。"""
+# ================================================================ 行政報告・委員会報告
+#
+# どちらも「14pt の小見出し → 本文」の記事が並ぶ区分（第198〜201号で同じ作り）。
+#   行政報告:   小見出し・空行・本文（写真の説明の枠は本文の段落につなぎ留めてある）
+#   委員会報告: 委員会名（14pt。「経済建設厚生／常任委員会」のように 2 行のことがある）・
+#               委員長の名前を 1 字ずつ・空行・「委員長」を 1 字ずつ・日時・説明した課長・本文
+# 区分の頭（「行政報告（要旨）」の表と村長の名前）は組み直さず、前年の欄のまま差し込む。
+
+
+@dataclass
+class SectionSpec:
+    key: str             # 画面・記録での名前
+    marker: str          # 様式の大見出しに含まれる文字
+    chair: bool          # 委員長の名前を組むか
+    example: str         # 確認画面に出す原稿の書き方
+
+
+SECTIONS = {
+    "行政報告": SectionSpec("行政報告", "行政報告", False,
+                            "見出し（短い行）のあとに本文。写真は【写真】行"),
+    "委員会報告": SectionSpec("委員会報告", "委員会活動報告", True,
+                              "委員会名 → 委員長　山田太郎 → 日時 → 課長名 → 本文"),
+}
+IPPAN = "一般質問"
+FLOW_KEYS = ("行政報告", "委員会報告", IPPAN)     # 紙面の順
+
+_NAME = r"[^\s　。、，,「」（）()]{1,6}(?:[\s　]+[^\s　。、，,「」（）()]{1,6})?"
+CHAIR_LINE = re.compile(rf"^(?:(?P<role1>副?委員長)[\s　]*(?P<name1>{_NAME})|"
+                        rf"(?P<name2>{_NAME})[\s　]*(?P<role2>副?委員長))$")
+# 説明した人の行（「高橋建設課長」）と日時の行は、短くても見出しにしない
+SPEAKER = re.compile(r"(村長|副村長|教育長|課長|室長|次長|局長|所長|参事|理事|主幹|係長|園長|校長)$")
+DATE_LINE = re.compile(r"^[0-9０-９]{1,2}月[0-9０-９]{1,2}日")
+TITLE_MARK = re.compile(r"^[■◆●◎]\s*")
+
+
+def _heading_like(t: str) -> bool:
+    return (len(t) <= TITLE_MAX and not t.endswith(("。", "、", "より"))
+            and not LABELED.match(t) and not PHOTO_LINE.match(t)
+            and not SPEAKER.search(t) and not DATE_LINE.match(t))
+
+
+def classify_section(text: str, spec: SectionSpec,
+                     overrides: dict[str, str] | None = None) -> list[Line]:
+    """行政報告・委員会報告の原稿の行を見分ける。
+
+    手がかり:
+      * 「■」で始まる行、または短く句点で終わらず、次に長い本文が続く行 → 見出し
+      * 委員会報告: 「○○委員会」で終わる行、その直前の短い行（2 行の委員会名） → 見出し
+      * 「委員長　山田太郎」「山田太郎委員長」 → 名前（委員長）
+      * 課長名・日時の行は短くても本文
+    """
+    overrides = overrides or {}
+    raws = text.replace("\r\n", "\n").split("\n")
+    items = [(i + 1, s.strip("　 \t")) for i, s in enumerate(raws)]
+    items = [(n, s) for n, s in items if s]
+    kinds = []
+    for k, (_, s) in enumerate(items):
+        nxt = items[k + 1][1] if k + 1 < len(items) else None
+        if spec.marker in s and len(s) <= 20:
+            kinds.append(SKIP)
+        elif PHOTO_LINE.match(s):
+            kinds.append(PHOTO)
+        elif spec.chair and CHAIR_LINE.match(s):
+            kinds.append(MEMBER)
+        elif TITLE_MARK.match(s):
+            kinds.append(TITLE)
+        elif spec.chair and s.endswith("委員会") and len(s) <= TITLE_MAX:
+            kinds.append(TITLE)
+        elif (_heading_like(s) and nxt is not None and not _heading_like(nxt)
+              and len(nxt) > len(s)):
+            kinds.append(TITLE)
+        else:
+            kinds.append(TEXT)
+    # 2 行に分けた見出し（「経済建設厚生」「常任委員会」）: 見出しの直前の短い行も見出し
+    for k in range(len(items) - 2, -1, -1):
+        if kinds[k] == TEXT and kinds[k + 1] == TITLE and _heading_like(items[k][1]) \
+                and (k == 0 or kinds[k - 1] != TITLE) and len(items[k][1]) <= 12:
+            kinds[k] = TITLE
+    return [Line(n, s, overrides.get(s, k) if overrides.get(s) in FLOW_KINDS else k, k,
+                 raws[n - 1].rstrip())
+            for (n, s), k in zip(items, kinds)]
+
+
+@dataclass
+class Article:
+    title: list[str]
+    chair: tuple[str, str] | None = None             # (名前, 委員長 / 副委員長)
+    lines: list[str] = field(default_factory=list)   # 本文・【写真】行
+
+
+def group_section(lines: list[Line]) -> tuple[list[Article], list[str]]:
+    arts: list[Article] = []
+    warns: list[str] = []
+    cur: Article | None = None
+    in_title = False
+    for ln in lines:
+        if ln.kind == SKIP:
+            continue
+        if ln.kind == TITLE:
+            t = TITLE_MARK.sub("", ln.text)
+            if cur is not None and in_title:
+                cur.title.append(t)                  # 続けて書いた見出しは 1 つの見出し
+            else:
+                cur = Article([t])
+                arts.append(cur)
+            in_title = True
+            continue
+        in_title = False
+        if cur is None:
+            cur = Article([])
+            arts.append(cur)
+            warns.append(f"{ln.no} 行目: 見出しより前に本文があります（見出しなしの記事にします）。")
+        if ln.kind == MEMBER:
+            m = CHAIR_LINE.match(ln.text)
+            if m:
+                name = m.group("name1") or m.group("name2")
+                role = m.group("role1") or m.group("role2")
+            else:
+                name, role = ln.text, "委員長"
+            cur.chair = (re.sub(r"[\s　]+", "", name), role)
+            continue
+        cur.lines.append(ln.text if ln.kind == PHOTO else (ln.raw or ln.text))
+    for a in arts:
+        if not a.lines:
+            warns.append(f"見出し「{''.join(a.title)}」のあとに本文がありません。")
+    return arts, warns
+
+
+def section_summary(arts: list[Article]) -> str:
+    return f"記事 {len(arts)} 件"
+
+
+@dataclass
+class SectionParts:
+    start: int
+    end: int
+    subtitle: ET.Element
+    body: ET.Element
+    blank: ET.Element
+    name: list[ET.Element]          # 委員長の名前（1 字ずつの行）の見本
+    role: list[ET.Element]          # 「委員長」（1 字ずつの行）の見本
+
+
+NEXT_BOX = re.compile(r"月議会では|定例会では|一般質問に|別添|審議したこと")
+# 審議の議案の行。委員会報告の中にも「問／答」はあるので、それは目印にしない
+NEXT_PARA = re.compile(r"^◎")
+
+
+def _starts_next(el: ET.Element, spec: SectionSpec) -> bool:
+    """el が次の区分の頭か。この手前までの空行・写真の説明の枠は、この区分のものとして扱う。"""
+    big = _big_text(el, HEAD_PT).replace("　", "")
+    if big.strip() and spec.marker not in big:
+        return True
+    if el.tag == w("p"):
+        if NEXT_PARA.match(para_text(el).strip("　 ")):
+            return True
+        for tb in el.iter(w("txbxContent")):
+            if NEXT_BOX.search(_all_text(tb).replace("　", "")):
+                return True
+    return False
+
+
+def _is_sub(p: ET.Element, base: float) -> bool:
+    return (p.tag == w("p") and bool(para_text(p).strip())
+            and SUBTITLE_PT <= _own_pt(p, base) < HEAD_PT)
+
+
+def extract_section(tpl: Template, spec: SectionSpec) -> SectionParts:
+    kids = list(tpl.body)
+    base = tpl.base_pt
+    h = next((i for i, el in enumerate(kids)
+              if spec.marker in _big_text(el, HEAD_PT).replace("　", "")), None)
+    if h is None:
+        raise ValueError(f"様式に「{spec.marker}」の大見出しが見つからないので、{spec.key}を組み直せません。")
+    # 大見出しの枠が、最初の記事の途中の行につなぎ留めてあることがある（第201号の委員会報告）。
+    # そのときは、直前の見出し・名前の行・空行までさかのぼって記事の頭を探す
+    j = h
+    if spec.marker not in para_text(kids[h]).replace("　", ""):
+        while j - 1 >= 0 and h - j < 30:
+            el = kids[j - 1]
+            if el.tag != w("p") or el.find(f"{w('pPr')}/{w('sectPr')}") is not None:
+                break
+            t = para_text(el).strip("　 ")
+            if t and not _is_sub(el, base) and len(t) > 2:
+                break
+            j -= 1
+    start = next((i for i in range(j, len(kids)) if _is_sub(kids[i], base)), None)
+    if start is None:
+        raise ValueError(f"様式の{spec.key}に、14pt の見出しが見つかりません。")
+    # 終わりは次の区分の頭。区分の頭は大見出し（18pt 以上）とは限らない。第199号の
+    # 「審議したこと」は「６月議会では…」の枠から始まり、大きな字の見出しが無い
+    end = len(kids) - 1 if kids[-1].tag == w("sectPr") else len(kids)
+    for i in range(start + 1, len(kids)):
+        if _starts_next(kids[i], spec):
+            end = i
+            break
+    region = kids[start:end]
+    subtitle = next(p for p in region if _is_sub(p, base))
+    body = _first_para(region, lambda p: (
+        len(para_text(p).strip()) >= 10 and _own_pt(p, base) < SUBTITLE_PT
+        and not LABELED.match(para_text(p).strip("　 ")))) or subtitle
+    blank = _first_para(region, lambda p: (
+        _is_blank(p) and not _has_anchor(p) and abs(_own_pt(p, base) - base) < 0.6)) or \
+        _first_para(region, lambda p: _is_blank(p) and not _has_anchor(p)) or ET.Element(w("p"))
+    name: list[ET.Element] = []
+    role: list[ET.Element] = []
+    if spec.chair:
+        paras = list(region)
+        # 最初の名前のまとまりと、その後ろの「長・員・委」
+        i = 0
+        groups = []
+        while i < len(paras):
+            sub = _name_group(paras[i:])
+            if not sub:
+                break
+            groups.append((i + sub[0], i + sub[1]))
+            i += sub[1]
+        for a, b in groups:
+            chars = {para_text(p).strip("　 ") for p in paras[a:b]}
+            if chars == {"長", "員", "委"} and name:
+                role = [copy.deepcopy(p) for p in paras[a:b]]
+                break
+            if not name and not chars <= {"長", "員", "委", "副"}:
+                name = [copy.deepcopy(p) for p in paras[a:b]]
+        for p in name + role:
+            for r in _anchor_runs(p):
+                p.remove(r)
+    return SectionParts(start, end, subtitle, body, blank, name, role)
+
+
+class _SectionBuilder(_Builder):
+    def __init__(self, tpl: Template, parts: SectionParts):
+        self.tpl = tpl
+        self.parts = parts
+        self.shape_no = 9700
+
+    def lines_of(self, protos: list[ET.Element], text: str) -> list[ET.Element]:
+        old = "\n".join(para_text(p) for p in protos)
+        return [self.para(protos[min(k, len(protos) - 1)] if protos else self.parts.blank, s)
+                for k, s in enumerate(_name_to_lines(text, old))]
+
+    def article(self, a: Article) -> list[ET.Element]:
+        pr = self.parts
+        head = [self.para(pr.subtitle, t) for t in (a.title or ["（見出し）"])]
+        head.append(self.blank())
+        if a.chair:
+            name, role = a.chair
+            head += self.lines_of(pr.name, name) + [self.blank()]
+            head += self.lines_of(pr.role, role) + [self.blank()]
+        for el in head:
+            _keep_next(el)
+        out = head
+        for line in a.lines:
+            out += self.photo(line) if PHOTO_LINE.match(line) else [self.para(pr.body, line)]
+        return out
+
+
+def apply_section(tpl: Template, spec: SectionSpec, arts: list[Article]) -> FlowResult:
+    """様式の行政報告・委員会報告の記事を、arts で組み直す（tpl をその場で書き換える）。"""
+    if not arts:
+        raise ValueError(f"{spec.key}の原稿に記事が 1 つも見つかりません。")
+    parts = extract_section(tpl, spec)
+    b = _SectionBuilder(tpl, parts)
+    new: list[ET.Element] = []
+    for k, a in enumerate(arts):
+        if k:
+            new += [b.blank() for _ in range(MEMBER_GAP)]
+        new += b.article(a)
+    old, lines, pad, pages, skipped = _replace_region(
+        tpl, parts.start, parts.end, new, parts.blank)
+    return FlowResult(len(arts), len(arts), 0, old, lines, pad, pages, skipped,
+                      label=spec.key, summary=section_summary(arts))
+
+
+# ================================================================ 区分をまとめて扱う
+
+
+# 確認画面での種類の呼び名（中の値は区分によらず同じ。記録にはこの値を使う）
+KIND_NAMES = {
+    IPPAN: {MEMBER: "議員名", TITLE: "質問の題", TEXT: "質問・答弁・本文", PHOTO: "写真", SKIP: "使わない"},
+    "行政報告": {TITLE: "見出し", TEXT: "本文", PHOTO: "写真", SKIP: "使わない"},
+    "委員会報告": {TITLE: "見出し（委員会名）", MEMBER: "委員長の名前", TEXT: "本文", PHOTO: "写真",
+                   SKIP: "使わない"},
+}
+HELP = {
+    IPPAN: ("・議員名 … 「山田太郎議員」の行。ここから次の議員名までが 1 人ぶん\n"
+            "・質問の題 … 議員の最初の題は囲みの題に、2 問目からは 14pt の見出しになる"),
+    "行政報告": ("・見出し … 「■防災訓練」のように ■ を付けるか、本文より短い行。14pt の見出しになる\n"
+                 "・本文 … 見出しの次の見出しまで。区分の頭（村長の名前）は前年の欄のまま差し込む"),
+    "委員会報告": ("・見出し … 「総務常任委員会」。2 行に分けてもよい\n"
+                   "・委員長の名前 … 「委員長　山田太郎」または「山田太郎委員長」。1 字ずつの行で組む\n"
+                   "・本文 … 日時・説明した課長の名前・説明の中身"),
+}
+
+
+def kind_name(key: str, kind: str) -> str:
+    return KIND_NAMES[key].get(kind, kind)
+
+
+def read_flow(key: str, text: str, overrides: dict[str, str] | None = None):
+    """原稿を読み、(行の一覧, まとまり, 気になる点, 要約) を返す。"""
+    if key == IPPAN:
+        lines = classify(text, overrides)
+        groups, warns = group(lines)
+        return lines, groups, warns, summary(groups)
+    spec = SECTIONS[key]
+    lines = classify_section(text, spec, overrides)
+    groups, warns = group_section(lines)
+    return lines, groups, warns, section_summary(groups)
+
+
+def regroup(key: str, lines: list[Line]):
+    """確認画面で種類を直した行から、まとまりと気になる点を作り直す。"""
+    if key == IPPAN:
+        groups, warns = group(lines)
+        return groups, warns, summary(groups)
+    groups, warns = group_section(lines)
+    return groups, warns, section_summary(groups)
+
+
+def apply_flow(tpl: Template, key: str, groups) -> FlowResult:
+    return apply_ippan(tpl, groups) if key == IPPAN else apply_section(tpl, SECTIONS[key], groups)
+
+
+def region_slot_ids(tpl: Template, key: str = IPPAN) -> set[str]:
+    """様式のうち、原稿から組み直される欄（画面で「⇄」の印を付けるため）。"""
     try:
-        parts = extract_parts(tpl)
+        if key == IPPAN:
+            parts = extract_parts(tpl)
+            start, end = parts.start + 1, parts.end
+        else:
+            sp = extract_section(tpl, SECTIONS[key])
+            start, end = sp.start, sp.end
     except ValueError:
         return set()
-    kids = list(tpl.body)
-    inside = {id(x) for el in kids[parts.start + 1:parts.end] for x in el.iter()}
-    out = set()
-    for sid, ref in tpl.refs.items():
-        probes = list(ref.paras[:1]) + [x for x in (ref.anchor_para, ref.parent) if x is not None]
-        if any(id(x) in inside for x in probes):
-            out.add(sid)
-    return out
+    region = list(tpl.body)[start:end]
+    return _slots_in(tpl, region, {id(r) for _, r, _ in _section_heads(region)})

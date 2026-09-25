@@ -11,6 +11,7 @@ VML の文字枠・1 升の表の見出し・空行での位置合わせ）の�
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -756,21 +757,210 @@ class FlowBuildTest(unittest.TestCase):
         issue = core.Issue.create(self.dir, "205", "", "1月号", make_ippan_template(self.dir))
         src = self.dir / "05_一般質問.txt"
         src.write_text(IPPAN_TEXT, encoding="utf-8")
-        issue.ippan_source = str(src)
-        issue.ippan_kinds = {"高齢者の見守り": flow.TEXT}
+        issue.set_flow_source(flow.IPPAN, str(src))
+        issue.flow_kinds(flow.IPPAN)["高齢者の見守り"] = flow.TEXT
         issue.save()
         again = core.Issue.open(issue.folder)
-        self.assertEqual(again.ippan_kinds, {"高齢者の見守り": flow.TEXT})
+        self.assertEqual(again.flow_kinds(flow.IPPAN), {"高齢者の見守り": flow.TEXT})
         rep = again.build()
         self.assertIn("議員 3 人・質問の題 3 件", rep.text())
         self.assertIn("空き家対策について", document_xml(rep.out))
 
     def test_broken_manuscript_leaves_template_as_is(self):
         issue = core.Issue.create(self.dir, "205", "", "1月号", make_ippan_template(self.dir))
-        issue.ippan_source = str(self.dir / "無い.txt")
+        issue.set_flow_source(flow.IPPAN, str(self.dir / "無い.txt"))
         rep = issue.build()
         self.assertIn("組み直せませんでした", rep.text())
         self.assertIn("前年の一つ目の題", document_xml(rep.out))
+
+
+# ---------------------------------------------------------------- 行政報告・委員会報告の組み直し
+
+
+def big_box(text: str, sid: int, sz: int = 48) -> str:
+    return vml_box(text, vertical=True, sid=sid).replace('w:val="22"', f'w:val="{sz}"')
+
+
+def sections_document() -> str:
+    """行政報告と委員会報告（前年）の見本。第198〜201号と同じ作り。"""
+    body = [
+        para("第２０１号", 40, ppr=SECT_COVER),
+        # 行政報告: 区分の頭（表と村長の名前）は組み直さない
+        '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="800"/></w:tblGrid><w:tr><w:tc><w:tcPr/>'
+        + para("行政報告（要旨）", 56) + '</w:tc></w:tr></w:tbl>',
+        para("　長"), para("　村"), para("郎"), para("　太"), para("　田"), para("　山"),
+        para(), para(),
+        para("前年の表彰式", 28), para(),
+        para("前年の表彰式の本文で、十字より長い文である。", extra=vml_box("前年の写真の説明", sid=2201)),
+        para(), para(), para(),
+        para("前年の要望活動", 28), para(),
+        para("前年の要望活動の本文である。"),
+        # 次の区分（決算）の見出しの一部が、最後の本文につなぎ留めてある（第200号）
+        para("前年の最後の本文である。", extra=big_box("一般会計決算額", 2202, sz=32)),
+        para(), para(),
+        para("", extra=vml_box("１２月議会では、計10議案が決まった。", sid=2203)),
+        para("◎前年の議案の行。"),
+        para(), para(),
+        # 委員会報告: 大見出しの枠が、最初の委員会の名前の行につなぎ留めてある（第201号）
+        para("総務常任委員会", 28), para(), para(),
+        para("　　　　　　郎"), para("太"),
+        para("田", extra=big_box("閉会中の委員会活動報告", 2204, sz=40)),
+        para("　　　　　　佐"),
+        para(),
+        para("　　　　　　長"), para("　　　　　　員"), para("　　　　　　委"),
+        para(), para(),
+        para("11月26日（水）午後２時より"), para(),
+        para("前年総務課長"),
+        para("　前年の総務常任委員会の本文である。", extra=vml_box("前年の委員会の写真", sid=2205)),
+        para(), para(),
+        para("経済建設厚生", 28), para("常任委員会", 28), para(), para(),
+        para("花"), para("和"), para("中"), para("田"), para(), para("長"), para("員"), para("委"),
+        para(), para("前年の経済建設厚生常任委員会の本文である。"),
+        para(), para(),
+        para("", extra=vml_box("一般質問に２氏が立つ", vertical=True, sid=2206)),
+        para("質問　一般質問の本文。"),
+        SECT_BODY,
+    ]
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' + ROOT_OPEN
+            + "<w:body>" + "".join(body) + "</w:body></w:document>")
+
+
+def make_sections_template(folder: Path) -> Path:
+    path = folder / "様式行政委員会.docx"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.writestr("_rels/.rels", RELS)
+        z.writestr("word/document.xml", sections_document())
+    return path
+
+
+GYOSEI_TEXT = """行政報告（要旨）
+■防災訓練
+11月９日に防災訓練を行い、村民120人が参加した。
+【写真】kunren.jpg｜中｜段ボールベッドの組み立て
+要望活動
+10月に国と県へ、令和９年度の予算の確保を要望した。
+村の表彰式
+11月３日に表彰式を行い、３人の方に功労表彰を授与した。
+"""
+
+IINKAI_TEXT = """閉会中の委員会活動報告
+総務常任委員会
+委員長　山田太郎
+11月26日（水）午後２時より
+佐藤総務課長
+　職員の採用試験では、一般職２人に合格を通知した。
+経済建設厚生
+常任委員会
+鈴木和子委員長
+11月26日（水）午前10時より
+高橋建設課長
+　村道の改良工事は、年度内に終わる見込みである。
+"""
+
+
+class SectionParseTest(unittest.TestCase):
+    def test_gyosei_lines(self):
+        lines, arts, warns, summ = flow.read_flow("行政報告", GYOSEI_TEXT)
+        self.assertEqual(warns, [])
+        self.assertEqual([a.title for a in arts], [["防災訓練"], ["要望活動"], ["村の表彰式"]])
+        self.assertEqual(arts[0].lines[-1], "【写真】kunren.jpg｜中｜段ボールベッドの組み立て")
+        self.assertEqual(summ, "記事 3 件")
+        self.assertEqual(lines[0].kind, flow.SKIP)            # 区分の題は使わない
+
+    def test_iinkai_lines(self):
+        lines, arts, warns, _ = flow.read_flow("委員会報告", IINKAI_TEXT)
+        self.assertEqual(warns, [])
+        self.assertEqual([a.title for a in arts], [["総務常任委員会"], ["経済建設厚生", "常任委員会"]])
+        self.assertEqual([a.chair for a in arts], [("山田太郎", "委員長"), ("鈴木和子", "委員長")])
+        kinds = {ln.text: ln.kind for ln in lines}
+        # 課長名・日時は短くても見出しにしない
+        self.assertEqual(kinds["佐藤総務課長"], flow.TEXT)
+        self.assertEqual(kinds["11月26日（水）午後２時より"], flow.TEXT)
+
+    def test_kind_names_follow_the_section(self):
+        self.assertEqual(flow.kind_name("行政報告", flow.TITLE), "見出し")
+        self.assertEqual(flow.kind_name("委員会報告", flow.MEMBER), "委員長の名前")
+        self.assertEqual(flow.kind_name(flow.IPPAN, flow.MEMBER), "議員名")
+
+
+class SectionBuildTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.tpl = core.Template(make_sections_template(self.dir))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def apply(self, key: str, text: str) -> tuple[flow.FlowResult, str]:
+        _, arts, _, _ = flow.read_flow(key, text)
+        res = flow.apply_flow(self.tpl, key, arts)
+        return res, document_xml(self.tpl.save(self.dir / "out.docx"))
+
+    def test_ranges(self):
+        kids = list(self.tpl.body)
+        g = flow.extract_section(self.tpl, flow.SECTIONS["行政報告"])
+        self.assertEqual(core.para_text(kids[g.start]), "前年の表彰式")
+        self.assertIn("１２月議会では", flow._all_text(kids[g.end]))     # 次の区分の頭の枠
+        i = flow.extract_section(self.tpl, flow.SECTIONS["委員会報告"])
+        self.assertEqual(core.para_text(kids[i.start]), "総務常任委員会")  # 大見出しの枠より前から
+        self.assertIn("一般質問に", flow._all_text(kids[i.end]))
+        self.assertEqual(len(i.name), 4)                   # 佐田太郎（1 字ずつ）
+        self.assertEqual(len(i.role), 3)                   # 委員長
+
+    def test_gyosei_is_rebuilt_and_other_sections_kept(self):
+        res, xml = self.apply("行政報告", GYOSEI_TEXT)
+        self.assertEqual(res.label, "行政報告")
+        self.assertIn("行政報告を組み直しました（記事 3 件）", res.text())
+        for old in ("前年の表彰式", "前年の要望活動", "前年の写真の説明"):
+            self.assertNotIn(old, xml)
+        for new in ("防災訓練", "要望活動", "村の表彰式", "【写真】kunren.jpg（中・幅55mm）"):
+            self.assertIn(new, xml)
+        self.assertIn("行政報告（要旨）", xml)                  # 区分の頭は残す
+        self.assertIn("一般会計決算額", xml)                    # 次の区分の見出しの一部は残す
+        self.assertIn("１２月議会では", xml)
+        self.assertIn("前年の総務常任委員会の本文", xml)        # 委員会報告には触らない
+
+    def test_iinkai_chair_names_and_heading_box(self):
+        res, xml = self.apply("委員会報告", IINKAI_TEXT)
+        self.assertIn("閉会中の委員会活動報告", xml)            # 名前の行につないであった大見出し
+        self.assertNotIn("前年の委員会の写真", xml)
+        self.assertNotIn("前年総務課長", xml)
+        body = ET.fromstring(xml.encode("utf-8")).find(core.w("body"))
+        texts = [core.para_text(p).strip("　") for p in body if p.tag == core.w("p")]
+        i = texts.index("総務常任委員会")
+        # 見出し・空行・名前（後ろの字から）・空行・「委員長」（後ろの字から）
+        self.assertEqual(texts[i + 2:i + 6], ["郎", "太", "田", "山"])
+        self.assertEqual(texts[i + 7:i + 10], ["長", "員", "委"])
+        self.assertIn("経済建設厚生", texts)
+        self.assertEqual(texts[texts.index("経済建設厚生") + 1], "常任委員会")
+        self.assertIn("一般質問に２氏が立つ", xml)
+        self.assertEqual(sum(1 for s in self.tpl.slots() if "閉会中" in s.old_text), 1)
+
+    def test_all_three_through_issue(self):
+        issue = core.Issue.create(self.dir, "205", "", "1月号", make_sections_template(self.dir))
+        for key, text in (("行政報告", GYOSEI_TEXT), ("委員会報告", IINKAI_TEXT)):
+            src = self.dir / f"{key}.txt"
+            src.write_text(text, encoding="utf-8")
+            issue.set_flow_source(key, str(src))
+        issue.save()
+        again = core.Issue.open(issue.folder)
+        rep = again.build()
+        self.assertIn("行政報告を組み直しました", rep.text())
+        self.assertIn("委員会報告を組み直しました", rep.text())
+        xml = document_xml(rep.out)
+        self.assertIn("村の表彰式", xml)
+        self.assertIn("年度内に終わる見込み", xml)
+
+    def test_old_ippan_record_is_still_read(self):
+        issue = core.Issue.create(self.dir, "205", "", "1月号", make_sections_template(self.dir))
+        data = json.loads((issue.folder / core.DATA_NAME).read_text(encoding="utf-8"))
+        data["ippan"] = {"source": "05_一般質問.txt", "kinds": {"題": flow.TEXT}}
+        (issue.folder / core.DATA_NAME).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        again = core.Issue.open(issue.folder)
+        self.assertEqual(again.flow_source(flow.IPPAN), "05_一般質問.txt")
+        self.assertEqual(again.flow_kinds(flow.IPPAN), {"題": flow.TEXT})
 
 
 class TextTest(unittest.TestCase):

@@ -1392,9 +1392,9 @@ class Issue:
     # 様式を開くたびに頭からやり直すので、順番が大事（分けた欄をさらに複製する、など）
     ops: list[dict] = field(default_factory=list)
     kinds: dict[str, str] = field(default_factory=dict)  # 人が選び直した種類
-    # 一般質問を原稿から組み直すとき（flow.py）の原稿ファイルと、人が直した行の種類
-    ippan_source: str = ""
-    ippan_kinds: dict[str, str] = field(default_factory=dict)
+    # 原稿から組み直す区分（flow.py。行政報告・委員会報告・一般質問）ごとの
+    # 原稿ファイル（source）と、人が直した行の種類（kinds）
+    flows: dict[str, dict] = field(default_factory=dict)
 
     @property
     def template_path(self) -> Path:
@@ -1438,9 +1438,9 @@ class Issue:
                               for c in data.get("copies", [])]
                              + [{"op": "remove", "id": i} for i in data.get("removed", [])])
             issue.kinds = data.get("kinds", {})
-            ippan = data.get("ippan", {})
-            issue.ippan_source = ippan.get("source", "")
-            issue.ippan_kinds = ippan.get("kinds", {})
+            issue.flows = data.get("flows", {})
+            if data.get("ippan", {}).get("source") and "一般質問" not in issue.flows:
+                issue.flows["一般質問"] = data["ippan"]     # 一般質問だけだった版の記録
         return issue
 
     def save(self) -> None:
@@ -1451,7 +1451,7 @@ class Issue:
                 "slots": {k: asdict(v) for k, v in self.entries.items()
                           if v.mode != KEEP or v.text},
                 "ops": self.ops, "kinds": self.kinds,
-                "ippan": {"source": self.ippan_source, "kinds": self.ippan_kinds}}
+                "flows": {k: v for k, v in self.flows.items() if v.get("source") or v.get("kinds")}}
         _write_json(self.folder / DATA_NAME, data)
 
     # 様式を開いて、これまでの複製・削除をやり直した状態にする
@@ -1501,35 +1501,46 @@ class Issue:
             p = self.folder / p
         return read_vote_table(p)
 
-    def ippan_path(self) -> Path | None:
-        if not self.ippan_source:
+    def flow_source(self, key: str) -> str:
+        return self.flows.get(key, {}).get("source", "")
+
+    def flow_kinds(self, key: str) -> dict[str, str]:
+        return self.flows.setdefault(key, {}).setdefault("kinds", {})
+
+    def set_flow_source(self, key: str, path: str) -> None:
+        self.flows.setdefault(key, {})["source"] = path
+
+    def flow_path(self, key: str) -> Path | None:
+        src = self.flow_source(key)
+        if not src:
             return None
-        p = Path(self.ippan_source)
+        p = Path(src)
         return p if p.is_absolute() else self.folder / p
 
-    def ippan_members(self):
-        """一般質問の原稿を読み、(行の一覧, 議員ごとのまとまり, 気になる点) を返す。"""
+    def flow_read(self, key: str):
+        """区分の原稿を読み、(行の一覧, まとまり, 気になる点, 要約) を返す。"""
         import flow
-        lines = flow.classify(import_manuscript(self.ippan_path()), self.ippan_kinds)
-        members, warns = flow.group(lines)
-        return lines, members, warns
+        return flow.read_flow(key, import_manuscript(self.flow_path(key)), self.flow_kinds(key))
 
     def build(self, *, mark_keep: bool = True) -> Report:
         tpl = self.load_template()
         vote = None
         warn = []
         rep = Report()
-        if self.ippan_source:
-            # 一般質問は、前年の文字を入れ替えるのではなく部品で組み直す（flow.py）。
-            # 差し込みより先に行う（前年の長さは、手を加える前の様式で測るため）
-            import flow
+        # 行政報告・委員会報告・一般質問は、原稿が選んであれば、前年の文字を入れ替えるの
+        # ではなく部品で組み直す（flow.py）。差し込みより先に行う（前年の長さは、
+        # 手を加える前の様式で測るため）
+        import flow
+        for key in flow.FLOW_KEYS:
+            if not self.flow_source(key):
+                continue
             try:
-                _, members, warns = self.ippan_members()
-                res = flow.apply_ippan(tpl, members)
+                _, groups, warns, _ = self.flow_read(key)
+                res = flow.apply_flow(tpl, key, groups)
                 rep.notes.append(res.text())
-                warn += [f"一般質問の原稿: {m}" for m in warns]
+                warn += [f"{key}の原稿: {m}" for m in warns]
             except (OSError, ValueError) as e:
-                warn.append(f"一般質問を組み直せませんでした（前年の形のまま残します）: {e}")
+                warn.append(f"{key}を組み直せませんでした（前年の形のまま残します）: {e}")
         if any(e.mode == TABLE for e in self.entries.values()):
             try:
                 vote = self.vote_table()
