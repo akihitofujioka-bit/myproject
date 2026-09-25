@@ -385,7 +385,9 @@ def _title_proto(el: ET.Element, base: float) -> ET.Element:
     paras = [x for box in boxes[:1] for x in box if x.tag == w("p")]
     if not paras and el.tag == w("p"):
         paras = [el]
-    proto = copy.deepcopy(max(paras, key=lambda x: core._max_pt(x, base)))
+    # 字のある段落から選ぶ（枠の中の空の段落は、字の大きさだけ大きいことがある）
+    texty = [x for x in paras if para_text(x).strip()] or paras
+    proto = copy.deepcopy(max(texty, key=lambda x: core._max_pt(x, base)))
     for r in _anchor_runs(proto):
         proto.remove(r)
     ppr = proto.find(w("pPr"))
@@ -594,6 +596,8 @@ class FlowResult:
     def text(self) -> str:
         what = self.summary or (f"議員 {self.members} 人・質問の題 {self.topics} 件。"
                                 f"前年は {self.old_count} 人")
+        if self.label == TOKUSHU:
+            return "\n".join([f"特集の人ごとの枠に入れました（{what}）"] + self.extra)
         lines = [f"{self.label}を組み直しました（{what}）"]
         diff = self.new_lines - self.old_lines
         if self.pages_added > 0:
@@ -751,7 +755,9 @@ SECTIONS = {
                               "委員会名 → 委員長　山田太郎 → 日時 → 課長名 → 本文"),
 }
 IPPAN = "一般質問"
-FLOW_KEYS = ("行政報告", "委員会報告", IPPAN)     # 紙面の順
+SHINGI = "審議したこと"
+TOKUSHU = "特集"
+FLOW_KEYS = ("行政報告", SHINGI, "委員会報告", IPPAN, TOKUSHU)     # 紙面の順
 
 _NAME = r"[^\s　。、，,「」（）()]{1,6}(?:[\s　]+[^\s　。、，,「」（）()]{1,6})?"
 CHAIR_LINE = re.compile(rf"^(?:(?P<role1>副?委員長)[\s　]*(?P<name1>{_NAME})|"
@@ -1010,6 +1016,8 @@ KIND_NAMES = {
     "行政報告": {TITLE: "見出し", TEXT: "本文", PHOTO: "写真", SKIP: "使わない"},
     "委員会報告": {TITLE: "見出し（委員会名）", MEMBER: "委員長の名前", TEXT: "本文", PHOTO: "写真",
                    SKIP: "使わない"},
+    SHINGI: {TITLE: "区分（人事・条例など）", TEXT: "議案・質疑・本文", PHOTO: "写真", SKIP: "使わない"},
+    TOKUSHU: {MEMBER: "名前（1 人・1 組の始まり）", TEXT: "所属・本文", PHOTO: "写真", SKIP: "使わない"},
 }
 HELP = {
     IPPAN: ("・議員名 … 「山田太郎議員」の行。ここから次の議員名までが 1 人ぶん\n"
@@ -1019,6 +1027,11 @@ HELP = {
     "委員会報告": ("・見出し … 「総務常任委員会」。2 行に分けてもよい\n"
                    "・委員長の名前 … 「委員長　山田太郎」または「山田太郎委員長」。1 字ずつの行で組む\n"
                    "・本文 … 日時・説明した課長の名前・説明の中身"),
+    SHINGI: ("・区分 … 「人事」「条例」「予算」「報告」「その他」などの行。罫線で囲んだ見出しになる\n"
+             "・議案・質疑・本文 … 「◎議案名」「質疑」「問　…」「答　…」、候補者の名前など"),
+    TOKUSHU: ("・名前 … 「山田太郎さん・花子さん」のように「さん」で終わる行。ここから次の名前までが"
+              " 1 つの枠に入る（ふりがなは ｜山田《やまだ》）\n"
+              "・所属・本文 … 名前の直後の短い行は所属（「田中農園」）、あとはひとこと・抱負"),
 }
 
 
@@ -1030,12 +1043,14 @@ def read_flow(key: str, text: str, overrides: dict[str, str] | None = None):
     """原稿を読み、(行の一覧, まとまり, 気になる点, 要約) を返す。"""
     if key == IPPAN:
         lines = classify(text, overrides)
-        groups, warns = group(lines)
-        return lines, groups, warns, summary(groups)
-    spec = SECTIONS[key]
-    lines = classify_section(text, spec, overrides)
-    groups, warns = group_section(lines)
-    return lines, groups, warns, section_summary(groups)
+    elif key == SHINGI:
+        lines = classify_shingi(text, overrides)
+    elif key == TOKUSHU:
+        lines = classify_cards(text, overrides)
+    else:
+        lines = classify_section(text, SECTIONS[key], overrides)
+    groups, warns, summ = regroup(key, lines)
+    return lines, groups, warns, summ
 
 
 def regroup(key: str, lines: list[Line]):
@@ -1043,20 +1058,37 @@ def regroup(key: str, lines: list[Line]):
     if key == IPPAN:
         groups, warns = group(lines)
         return groups, warns, summary(groups)
+    if key == TOKUSHU:
+        groups, warns = group_cards(lines)
+        return groups, warns, f"{len(groups)} 人（組）"
     groups, warns = group_section(lines)
+    if key == SHINGI:
+        n = sum(1 for a in groups for x in a.lines if x.lstrip("　 ").startswith("◎"))
+        return groups, warns, f"区分 {len(groups)}・議案 {n} 件"
     return groups, warns, section_summary(groups)
 
 
 def apply_flow(tpl: Template, key: str, groups) -> FlowResult:
-    return apply_ippan(tpl, groups) if key == IPPAN else apply_section(tpl, SECTIONS[key], groups)
+    if key == IPPAN:
+        return apply_ippan(tpl, groups)
+    if key == SHINGI:
+        return apply_shingi(tpl, groups)
+    if key == TOKUSHU:
+        return apply_cards(tpl, groups)
+    return apply_section(tpl, SECTIONS[key], groups)
 
 
 def region_slot_ids(tpl: Template, key: str = IPPAN) -> set[str]:
     """様式のうち、原稿から組み直される欄（画面で「⇄」の印を付けるため）。"""
     try:
+        if key == TOKUSHU:
+            return {ref.slot.id for ref in find_cards(tpl)}
         if key == IPPAN:
             parts = extract_parts(tpl)
             start, end = parts.start + 1, parts.end
+        elif key == SHINGI:
+            sp = extract_shingi(tpl)
+            start, end = sp.start, sp.end
         else:
             sp = extract_section(tpl, SECTIONS[key])
             start, end = sp.start, sp.end
@@ -1064,3 +1096,327 @@ def region_slot_ids(tpl: Template, key: str = IPPAN) -> set[str]:
         return set()
     region = list(tpl.body)[start:end]
     return _slots_in(tpl, region, {id(r) for _, r, _ in _section_heads(region)})
+
+
+# ================================================================ 審議したこと
+#
+# 第198〜201号で同じ作り（第198・199号は大見出しの字が読み取れないので、
+# 「○月議会では」の枠を始まりの目印にする）:
+#   「○月議会では…計○議案が決まった」の枠 → 「審議したこと」の大見出しの枠 →
+#   区分の小さな枠（人　事・条　例・予　算・報　告・その他・議員提出議案。本文の外に浮かせてある）→
+#   「◎議案名」・「質疑」・「問　…」「答　…」・候補者の名前 → 「別添（賛否表）」の枠
+# 区分の枠は、題と同じく罫線で囲んだ段落にして本文の流れに置く。
+# 「○月議会では」の枠と大見出し、賛否表の枠は組み直さない（前年の欄のまま差し込む）。
+
+CATEGORY = re.compile(
+    r"^(人[\s　]*事|条[\s　]*例|予[\s　]*算|決[\s　]*算|認[\s　]*定|報[\s　]*告|承[\s　]*認|"
+    r"同[\s　]*意|そ[\s　]*の[\s　]*他|発[\s　]*議|請[\s　]*願|陳[\s　]*情|意[\s　]*見[\s　]*書|"
+    r"契[\s　]*約|補正予算|当初予算|議員提出議案|議員発議)(関係)?$")
+SHINGI_START = re.compile(r"審議したこと|月議会では|定例会では")
+SHINGI_STOP_BOX = re.compile(r"別添|一般質問に|委員会活動報告")
+
+
+def classify_shingi(text: str, overrides: dict[str, str] | None = None) -> list[Line]:
+    """審議したことの原稿: 「人事」「条例」などの区分の行が見出し、それ以外（◎・問・答）は本文。"""
+    overrides = overrides or {}
+    raws = text.replace("\r\n", "\n").split("\n")
+    out = []
+    for i, raw in enumerate(raws):
+        s = raw.strip("　 \t")
+        if not s:
+            continue
+        if "審議したこと" in s or "決まったこと" in s:
+            k = SKIP
+        elif PHOTO_LINE.match(s):
+            k = PHOTO
+        elif CATEGORY.match(TITLE_MARK.sub("", s)) or (TITLE_MARK.match(s) and not s.startswith("◎")):
+            k = TITLE
+        else:
+            k = TEXT
+        out.append(Line(i + 1, s, overrides.get(s, k) if overrides.get(s) in FLOW_KINDS else k, k,
+                        raw.rstrip()))
+    return out
+
+
+def _box_texts(el: ET.Element) -> list[tuple[ET.Element, str]]:
+    return [(tb, _all_text(tb)) for tb in el.iter(w("txbxContent"))]
+
+
+def _category_box(el: ET.Element) -> ET.Element | None:
+    """区分の小さな枠（「人　事」「そ の 他」）の中身。"""
+    for tb, t in _box_texts(el):
+        t = re.sub(r"[\s　]", "", t)
+        if 2 <= len(t) <= 8 and CATEGORY.match(t) and core._max_pt(tb, 11) >= 12:
+            return tb
+    return None
+
+
+@dataclass
+class ShingiParts:
+    start: int
+    end: int
+    category: ET.Element            # 区分（罫線で囲んだ段落）の見本
+    maru: ET.Element                # ◎議案名
+    q: ET.Element | None
+    a: ET.Element | None
+    body: ET.Element
+    blank: ET.Element
+
+
+def extract_shingi(tpl: Template) -> ShingiParts:
+    kids = list(tpl.body)
+    base = tpl.base_pt
+    h = next((i for i, el in enumerate(kids)
+              if any(SHINGI_START.search(t.replace("　", "")) for _, t in _box_texts(el))
+              or "審議したこと" in _big_text(el, HEAD_PT).replace("　", "")), None)
+    if h is None:
+        raise ValueError("様式に「審議したこと」（または「○月議会では」の枠）が見つからないので、"
+                         "組み直せません。")
+    start = next((i for i in range(h + 1, len(kids))
+                  if kids[i].tag == w("p") and (_category_box(kids[i]) is not None
+                                                or para_text(kids[i]).strip("　 ").startswith("◎"))),
+                 None)
+    if start is None:
+        raise ValueError("様式の審議したことに、区分の枠や「◎」の議案の行が見つかりません。")
+    end = len(kids) - 1 if kids[-1].tag == w("sectPr") else len(kids)
+    for i in range(start + 1, len(kids)):
+        el = kids[i]
+        big = _big_text(el, HEAD_PT).replace("　", "")
+        if (big.strip() and "審議" not in big) or any(
+                SHINGI_STOP_BOX.search(t.replace("　", "")) for _, t in _box_texts(el)):
+            end = i
+            break
+    region = kids[start:end]
+    cat_box = next((b for el in region for b in [_category_box(el)] if b is not None), None)
+    if cat_box is None:
+        raise ValueError("様式の審議したことに、区分の枠（人事・条例など）が見つかりません。")
+    maru = _first_para(region, lambda p: para_text(p).strip("　 ").startswith("◎"))
+    q = _first_para(region, lambda p: re.match(r"^(問|質問)", para_text(p).strip("　 ")) is not None)
+    a = _first_para(region, lambda p: re.match(r"^(答|答弁)", para_text(p).strip("　 ")) is not None)
+    body = _first_para(region, lambda p: (
+        len(para_text(p).strip()) >= 4 and _own_pt(p, base) < SUBTITLE_PT
+        and not re.match(r"^(◎|問|答)", para_text(p).strip("　 ")))) or maru
+    blank = _first_para(region, lambda p: (
+        _is_blank(p) and not _has_anchor(p) and abs(_own_pt(p, base) - base) < 0.6)) or \
+        _first_para(region, lambda p: _is_blank(p) and not _has_anchor(p)) or ET.Element(w("p"))
+    return ShingiParts(start, end, _title_proto(cat_box, base), maru or body, q, a, body, blank)
+
+
+class _ShingiBuilder(_Builder):
+    def __init__(self, tpl: Template, parts: ShingiParts):
+        self.tpl = tpl
+        self.parts = parts
+        self.shape_no = 9800
+
+    def category(self, title: list[str]) -> list[ET.Element]:
+        proto = self.parts.category
+        pt = core._max_pt(proto, self.tpl.base_pt)
+        tier = self.tpl.geometry(1).column_len_pt
+        width = max(text_width(s, True) for s in title) * pt + 12
+        indent = str(max(0, round((tier - width) * 20)))
+        out = []
+        for s in title:
+            p = self.para(proto, s)
+            _insert_ordered(p.find(w("pPr")), ET.Element(w("ind"), {
+                w("left"): "0", w("right"): indent, w("firstLine"): "0"}), PPR_ORDER)
+            _keep_next(p)
+            out.append(p)
+        blank = self.blank()
+        _keep_next(blank)
+        return out + [blank]
+
+    def line(self, text: str) -> list[ET.Element]:
+        if PHOTO_LINE.match(text):
+            return self.photo(text)
+        pr = self.parts
+        protos = [x for x in (pr.maru, pr.q, pr.a, pr.body) if x is not None]
+        if core.NUMBERS_TATEGAKI:
+            text = normalize_numbers(text)
+        p = self.tpl._make_para(protos, len(protos) - 1, text, True)
+        if text.lstrip("　 ").startswith(("◎", "質疑")):
+            _keep_next(p)                    # 議案名だけが段の最後に残らないように
+        return [p]
+
+
+def apply_shingi(tpl: Template, arts: list[Article]) -> FlowResult:
+    """様式の審議したことを、区分ごとの記事（arts）で組み直す。"""
+    if not arts:
+        raise ValueError("審議したことの原稿に、区分も議案も見つかりません。")
+    parts = extract_shingi(tpl)
+    b = _ShingiBuilder(tpl, parts)
+    new: list[ET.Element] = []
+    for k, a in enumerate(arts):
+        if k:
+            new.append(b.blank())
+        if a.title:
+            new += b.category(a.title)
+        for line in a.lines:
+            new += b.line(line)
+    old, lines, pad, pages, skipped = _replace_region(tpl, parts.start, parts.end, new, parts.blank)
+    n = sum(1 for a in arts for x in a.lines if x.lstrip("　 ").startswith("◎"))
+    return FlowResult(len(arts), n, 0, old, lines, pad, pages, skipped, label=SHINGI,
+                      summary=f"区分 {len(arts)}・議案 {n} 件")
+
+
+# ================================================================ 特集
+#
+# 特集はテーマも組み方も毎年違う（第198号: 二十歳のつどい・入学おめでとう、第200号: 金婚、
+# 第201号: 新年の抱負）。第200・201号は、1 人（1 組）ごとの縦書きの文字枠を
+# ページに並べて組んである。紙面を組み直すのではなく、前年の人ごとの枠に今年の人を
+# 紙面の順に入れていく。枠が余れば消し、足りなければ知らせる（Word で枠を複製する）。
+# 見出しの枠（「特集　新年の抱負を聞きました」）は、前年の欄に差し込む。
+
+CARD_NAME = re.compile(r"(さん|様|氏|くん|ちゃん)([・･、\s　].*)?$")
+
+
+def classify_cards(text: str, overrides: dict[str, str] | None = None) -> list[Line]:
+    """特集の原稿: 「さん」で終わる短い行（「山田太郎さん・花子さん」）で 1 人（1 組）ぶんが始まる。"""
+    overrides = overrides or {}
+    raws = text.replace("\r\n", "\n").split("\n")
+    out = []
+    for i, raw in enumerate(raws):
+        s = raw.strip("　 \t")
+        if not s:
+            continue
+        if s.startswith("特集"):
+            k = SKIP
+        elif PHOTO_LINE.match(s):
+            k = PHOTO
+        elif len(core.strip_ruby(s)) <= 30 and not s.endswith(("。", "」")) and CARD_NAME.search(
+                core.strip_ruby(s)):
+            k = MEMBER
+        else:
+            k = TEXT
+        out.append(Line(i + 1, s, overrides.get(s, k) if overrides.get(s) in FLOW_KINDS else k, k,
+                        raw.rstrip()))
+    return out
+
+
+@dataclass
+class Card:
+    name: str
+    lines: list[str] = field(default_factory=list)
+
+
+def group_cards(lines: list[Line]) -> tuple[list[Card], list[str]]:
+    cards: list[Card] = []
+    warns: list[str] = []
+    for ln in lines:
+        if ln.kind == SKIP:
+            continue
+        if ln.kind == MEMBER:
+            cards.append(Card(ln.text))
+            continue
+        if not cards:
+            cards.append(Card(""))
+            warns.append(f"{ln.no} 行目: 名前の行（「山田花子さん」）より前に文があります。")
+        cards[-1].lines.append(ln.text if ln.kind == PHOTO else (ln.raw or ln.text))
+    return cards, warns
+
+
+def find_cards(tpl: Template) -> list:
+    """特集の人ごとの枠（縦書きで、名前に「さん」などが付いた、2 段落以上の枠）を紙面の順に。
+
+    一般質問より後ろ・編集後記より前にあるものだけを数える。
+    """
+    kids = list(tpl.body)
+    index = {id(el): i for i, el in enumerate(kids)}
+    lo = 0
+    try:
+        parts = extract_parts(tpl)
+        lo = parts.end
+    except ValueError:
+        pass
+    hi = next((i for i, el in enumerate(kids) if i > lo
+               and "編集後記" in re.sub(r"[\s　]", "", _big_text(el, HEAD_PT))), len(kids))
+    out = []
+    for sid in tpl.order:
+        ref = tpl.refs[sid]
+        s = ref.slot
+        if s.kind != "box" or not s.vertical or ref.anchor_para is None:
+            continue
+        i = index.get(id(ref.anchor_para))
+        if i is None or not lo <= i < hi:
+            continue
+        paras = [core.strip_ruby(para_text(p)).strip("　 ") for p in ref.paras]
+        filled = [t for t in paras if t]
+        if len(filled) >= 2 and any(CARD_NAME.search(t) or "さん" in t for t in filled[:2]):
+            out.append(ref)
+    return out
+
+
+def _fill_card(tpl: Template, ref, card: Card) -> float:
+    """枠 1 つに 1 人ぶんを入れる。入りきらない行数の目安を返す。"""
+    paras = ref.paras
+    base = tpl.base_pt
+    name_p = next((p for p in paras if "さん" in para_text(p) or CARD_NAME.search(
+        core.strip_ruby(para_text(p)).strip())), paras[0])
+    texty = [p for p in paras if para_text(p).strip() and p is not name_p]
+    sub_p = next((p for p in texty if len(para_text(p).strip()) <= 15), None)
+    body_p = max(texty, key=lambda p: len(para_text(p)), default=name_p)
+    lead_blank = paras and not para_text(paras[0]).strip()
+    new = []
+    if lead_blank:
+        new.append(copy.deepcopy(paras[0]))
+    new.append(tpl._make_para([name_p], 0, card.name, True))
+    started = False
+    for line in card.lines:
+        t = normalize_numbers(line) if core.NUMBERS_TATEGAKI else line
+        short = len(t.strip("　 ")) <= 15 and not t.rstrip().endswith("。")
+        if PHOTO_LINE.match(line):
+            p = tpl._make_para([body_p], 0, line, True)
+            for r in _text_runs(p):
+                _set_rpr(_ensure_rpr(r), "color", {"val": "FF0000"})
+        elif short and not started and sub_p is not None:
+            p = tpl._make_para([sub_p], 0, t, True)          # 所属（「田中農園」）
+        else:
+            started = True
+            p = tpl._make_para([body_p], 0, t, True)
+        new.append(p)
+    for tb in ref.boxes:                          # mc:Choice と Fallback の両方に同じ内容
+        olds = [x for x in tb if x.tag == w("p")]
+        at = list(tb).index(olds[0]) if olds else 0
+        for x in olds:
+            tb.remove(x)
+        for k, x in enumerate(new):
+            tb.insert(at + k, copy.deepcopy(x))
+    ref.paras = [x for x in ref.boxes[0] if x.tag == w("p")] if ref.boxes else new
+    text = "\n".join([card.name] + card.lines)
+    return tpl._box_overflow(ref.slot, text)
+
+
+def apply_cards(tpl: Template, cards: list[Card]) -> FlowResult:
+    if not cards:
+        raise ValueError("特集の原稿に、人（「山田花子さん」の行）が見つかりません。")
+    refs = find_cards(tpl)
+    if not refs:
+        raise ValueError("この様式の特集は、人ごとの枠で組まれていないので、枠に入れられません"
+                         "（前年の欄に差し込んでください）。")
+    notes = []
+    over = []
+    for ref, card in zip(refs, cards):
+        n = _fill_card(tpl, ref, card)
+        if n:
+            over.append(f"{core.strip_ruby(card.name)}（約 {math.ceil(n)} 行）")
+    used = {ref.slot.id for ref in refs[:len(cards)]}
+    for ref in refs[len(cards):]:                 # 余った枠は消す
+        if ref.anchor_run is not None and ref.anchor_para is not None:
+            ref.anchor_para.remove(ref.anchor_run)
+        tpl.order.remove(ref.slot.id)
+        del tpl.refs[ref.slot.id]
+    for sid in used:                              # 入れた枠は、差し込み（fill）で触らない
+        tpl.order.remove(sid)
+        del tpl.refs[sid]
+    res = FlowResult(min(len(cards), len(refs)), len(cards), 0, 0, 0, 0, 0, used,
+                     label=TOKUSHU, summary=f"{len(cards)} 人（組）を、前年の {len(refs)} 枠に入れた")
+    if len(cards) > len(refs):
+        rest = "、".join(core.strip_ruby(c.name) for c in cards[len(refs):])
+        notes.append(f"  → 枠が {len(cards) - len(refs)} つ足りません。入らなかった人: {rest}。"
+                     "Word で枠を複製して入れてください")
+    elif len(cards) < len(refs):
+        notes.append(f"  → 前年の枠が {len(refs) - len(cards)} つ余ったので消しました。"
+                     "空いた場所は Word で整えてください")
+    if over:
+        notes.append("  → 枠に入りきらないかもしれない人（目安）: " + "、".join(over))
+    res.extra = notes
+    return res
