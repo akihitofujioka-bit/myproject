@@ -660,6 +660,15 @@ class FlowParseTest(unittest.TestCase):
         _, warns = flow.group(flow.classify("題の行\n質問　名前が無い。\n答弁　村長"))
         self.assertTrue(any("議員名" in w for w in warns))
 
+    def test_simple_heading_marks_are_titles(self):
+        # gikai_simple の【大見出し】【見出し】の行は、印を外して題として読む
+        text = ("【大見出し】防災対策について\n山田太郎議員\n質問　備蓄は。\n答弁　村長\n"
+                "【見出し】高齢者の見守り\n質問　体制は。\n答弁　課長")
+        members, _ = flow.group(flow.classify(text))
+        self.assertEqual([t.title for t in members[0].topics], [["防災対策について"], ["高齢者の見守り"]])
+        _, arts, _, _ = flow.read_flow("行政報告", "【見出し】防災訓練\n訓練を行った本文である。")
+        self.assertEqual(arts[0].title, ["防災訓練"])
+
     def test_kanji_number(self):
         self.assertEqual(flow._num("七"), 7)
         self.assertEqual(flow._num("十二"), 12)

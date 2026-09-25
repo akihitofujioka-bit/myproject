@@ -57,6 +57,16 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(core.PhotoRef("p.jpg", "小", "説明").to_line(), "【写真】p.jpg｜小｜説明")
 
 
+class HeadingTest(unittest.TestCase):
+    def test_parse(self):
+        self.assertEqual(core.parse_heading("【大見出し】防災対策について"), ("大見出し", "防災対策について"))
+        self.assertEqual(core.parse_heading("　【横見出し】 審議したこと "), ("横見出し", "審議したこと"))
+        self.assertEqual(core.parse_heading("【見出し】高齢者の見守り"), ("見出し", "高齢者の見守り"))
+        self.assertIsNone(core.parse_heading("見出しではない行"))
+        blocks = core.parse_blocks("前の本文\n【見出し】題\n後ろの本文")
+        self.assertEqual(blocks, [("text", "前の本文"), ("heading", ("見出し", "題")), ("text", "後ろの本文")])
+
+
 class NumberTest(unittest.TestCase):
     def test_rules(self):
         self.assertEqual(core.normalize_numbers("4人が11月3日に第４６回"), "４人が11月３日に第46回")
@@ -253,7 +263,9 @@ class BuildTest(unittest.TestCase):
         make_photo(self.issue.photo_dir / "小さい.jpg", 300, 200)   # 解像度不足
         make_photo(self.issue.photo_dir / "余り.jpg", 800, 600)    # 使わない
         (self.issue.attach_dir / "賛否一覧.xlsx").write_bytes(b"dummy")
-        self.issue.write_text("行政報告", "行政報告（要旨）\n【写真】村長.jpg｜顔｜松岡村長\n本文です。4人が第４６回に。")
+        self.issue.write_text("行政報告", "行政報告（要旨）\n【写真】村長.jpg｜顔｜山田村長\n本文です。4人が第４６回に。\n"
+                                          "【大見出し】防災対策について\n【横見出し】審議したこと\n"
+                                          "【見出し】高齢者の見守り\n問　見守りの体制は。")
         self.issue.write_text("特集", "特集の本文\n【写真】小さい.jpg｜大｜広い写真\n【写真】ない.jpg｜中")
 
     def tearDown(self):
@@ -288,7 +300,7 @@ class BuildTest(unittest.TestCase):
         self.assertTrue(any(t.startswith("■ 行政報告") for t in texts))
         self.assertIn("本文です。４人が第46回に。", texts)
         self.assertIn("第２０４号", texts)   # 表紙は変換しない
-        self.assertTrue(any(t.startswith("【写真1】村長.jpg（顔・幅26mm）") and "松岡村長" in t for t in texts))
+        self.assertTrue(any(t.startswith("【写真1】村長.jpg（顔・幅26mm）") and "山田村長" in t for t in texts))
         self.assertTrue(any(t.startswith("【写真3】ない.jpg") for t in texts))
         self.assertEqual(len(doc.inline_shapes), 2)   # 見つかった写真 2 枚だけ貼られる
         for shp in doc.inline_shapes:
@@ -315,6 +327,28 @@ class BuildTest(unittest.TestCase):
         cpara = next(p for p in doc.paragraphs if p.text.startswith("令和"))
         self.assertTrue(all(r._element.find(".//" + qn("w:eastAsianLayout")) is None for r in cpara.runs))
 
+        # 書式（利用者の指定）: 見出し 3 種と、通常の文字（ゴシック 11pt・ぶら下げ 1 字・行間 1 行）
+        def font(p):
+            r = p.runs[0]
+            return r._element.find(".//" + qn("w:rFonts")).get(qn("w:eastAsia")), r.font.size.pt
+        box = next(p for p in doc.paragraphs if p.text == "防災対策について")
+        self.assertEqual(font(box), ("ＭＳ ゴシック", 26))
+        self.assertIsNotNone(box._p.pPr.find(qn("w:pBdr")))          # 四角で囲む
+        self.assertTrue(box.paragraph_format.keep_with_next)
+        plain = next(p for p in doc.paragraphs if p.text == "高齢者の見守り")
+        self.assertEqual(font(plain), ("ＭＳ ゴシック", 16))
+        self.assertIsNone(plain._p.pPr.find(qn("w:pBdr")))
+        yoko = doc.tables[0]
+        self.assertEqual(yoko.cell(0, 0).text, "審議したこと")
+        self.assertEqual(font(yoko.cell(0, 0).paragraphs[0]), ("ＭＳ ゴシック", 18))
+        self.assertEqual(yoko.cell(0, 0)._tc.tcPr.find(qn("w:textDirection")).get(qn("w:val")), "lrTb")
+        body_p = next(p for p in doc.paragraphs if p.text == "問　見守りの体制は。")
+        self.assertEqual(font(body_p), ("ＭＳ ゴシック", 11))
+        ind = body_p._p.pPr.find(qn("w:ind"))
+        self.assertEqual(ind.get(qn("w:hangingChars")), "100")       # ぶら下げ 1 字
+        self.assertEqual(body_p.paragraph_format.line_spacing, 1.0)  # 行間 1 行
+        self.assertFalse(any(t.startswith("【") and "見出し】" in t for t in texts))   # 印は紙面に出さない
+
         sheet = Document(outs[1])
         self.assertIsNone(sheet.sections[0]._sectPr.find(qn("w:textDirection")))
         table = sheet.tables[0]
@@ -336,11 +370,16 @@ class WidthTest(unittest.TestCase):
 
     def test_page_capacity(self):
         cap = core.page_capacity()
-        # 第203号の紙面（5段・10.5pt・行送り1.45）で 13字 × 33行 × 5段 = 2145字
-        self.assertEqual(cap["chars_per_line"], 13)
-        self.assertEqual(cap["lines_per_dan"], 33)
-        self.assertEqual(cap["chars_per_page"], 2145)
-        self.assertAlmostEqual(cap["char_area_mm2"], 19.9, delta=0.2)
+        # 5段・ＭＳ ゴシック 11pt・行間 1 行で 12字 × 36行 × 5段 = 2160字
+        # （第198〜201号の紙面と同じ。1 段 36 行は Mac の Word で第201号を測った値）
+        self.assertEqual(cap["chars_per_line"], 12)
+        self.assertEqual(cap["lines_per_dan"], 36)
+        self.assertEqual(cap["chars_per_page"], 2160)
+        self.assertAlmostEqual(cap["char_area_mm2"], 19.1, delta=0.2)
+
+    def test_heading_marks_are_not_counted(self):
+        self.assertEqual(core.count_chars("【大見出し】防災対策"), 4)
+        self.assertEqual(core.count_width("【見出し】12日の会"), 4)     # 0.5+0.5+1+1+1
 
     def test_photo_chars(self):
         small = core.photo_chars(core.PhotoRef("a.jpg", "顔"))
@@ -454,10 +493,10 @@ class EstimateTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_estimate(self):
-        self.issue.write_text("一般質問", "あ" * 2145)      # ちょうど 1 ページぶん
+        self.issue.write_text("一般質問", "あ" * 2160)      # ちょうど 1 ページぶん
         est = self.issue.estimate()
         row = next(r for r in est["rows"] if r["kubun"] == "一般質問")
-        self.assertEqual(row["chars"], 2145)
+        self.assertEqual(row["chars"], 2160)
         self.assertAlmostEqual(row["pages"], 1.0, places=2)
         self.assertTrue(next(r for r in est["rows"] if r["kubun"] == "表紙")["cover"])
         # 表紙 1 ページ + 本文 1 ページ = 2 ページ（偶数）
