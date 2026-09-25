@@ -963,6 +963,176 @@ class SectionBuildTest(unittest.TestCase):
         self.assertEqual(again.flow_kinds(flow.IPPAN), {"題": flow.TEXT})
 
 
+# ---------------------------------------------------------------- 審議したこと・特集
+
+
+def category_box(text: str, sid: int) -> str:
+    return vml_box(text, vertical=True, sid=sid).replace('w:val="22"', 'w:val="28"')
+
+
+def card_box(name: str, org: str, body: str, sid: int) -> str:
+    """特集の 1 人ぶんの縦書きの枠（名前・所属・ひとこと）。"""
+    return (f'<w:r><w:pict><v:shape id="_x0000_s{sid}" type="#_x0000_t202" '
+            'style="position:absolute;margin-left:-300pt;margin-top:6pt;width:220pt;height:280pt">'
+            '<v:textbox style="layout-flow:vertical;mso-layout-flow-alt:top-to-bottom"><w:txbxContent>'
+            + para() + para(name) + para(org) + para(body)
+            + '</w:txbxContent></v:textbox></v:shape></w:pict></w:r>')
+
+
+def shingi_tokushu_document() -> str:
+    body = [
+        para("第２０１号", 40, ppr=SECT_COVER),
+        para("", extra=vml_box("１２月議会では、計３議案が決まった。", sid=2301)),
+        para(), para(),
+        para("", extra=category_box("人　事", 2302)),
+        para("◎前年の人事の議案に同意した。"),
+        para("前年候補者氏"),
+        para(),
+        para("◎前年の条例の議案", extra=category_box("条　例", 2303)),
+        para("質疑"),
+        para("問　前年の問いである。"),
+        para("答　前年の答えである。"),
+        para(), para(),
+        para("", extra=vml_box("別添１：第４回定例会議案・発議案と賛否", sid=2304)),
+        para(), para(),
+        para("", extra=vml_box("一般質問に１氏が立つ", vertical=True, sid=2305)),
+        head_table("前年の題"),
+        *[para(ch) for ch in reversed(list("前年一郎議員"))],
+        para("質問　前年の質問。"), para("答弁　前年村長"), para("前年の答弁の本文である。"),
+        para(), para(),
+        para("", extra=big_box("特集　新年の抱負を聞きました", 2306, sz=56)),
+        para("", extra=card_box("前年太郎さん・花子さん", "前年農園", "前年の抱負の文である。", 2307)
+             + card_box("前年次郎さん", "前年食堂", "前年の二人目の抱負である。", 2308)),
+        para(), para(),
+        para("", extra=card_box("前年三郎さん", "前年会", "前年の三人目の抱負である。", 2309)),
+        para(), para(),
+        '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="800"/></w:tblGrid><w:tr><w:tc><w:tcPr/>'
+        + para("編集後記", 36) + '</w:tc></w:tr></w:tbl>',
+        para("編集後記の本文。"),
+        SECT_BODY,
+    ]
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' + ROOT_OPEN
+            + "<w:body>" + "".join(body) + "</w:body></w:document>")
+
+
+def make_shingi_template(folder: Path) -> Path:
+    path = folder / "様式審議特集.docx"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.writestr("_rels/.rels", RELS)
+        z.writestr("word/document.xml", shingi_tokushu_document())
+    return path
+
+
+SHINGI_TEXT = """審議したこと　決まったこと
+人事
+◎教育委員の任命に同意した。
+候補者
+山田花子氏
+議員提出議案
+◎議会会議規則の一部を改正する規則
+予算
+◎令和９年度一般会計補正予算（第２号）
+質疑
+問　防災倉庫の整備費の内容は。
+答　備蓄品を置く倉庫を２か所に建てる。
+"""
+
+TOKUSHU_TEXT = """特集　新年の抱負を聞きました
+｜山田《やまだ》 太郎さん・花子さん
+山田農園
+新年あけましておめでとうございます。今年も元気に野菜を作ります。
+鈴木和子さん
+今年はお店を広げる予定です。
+"""
+
+
+class ShingiTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.tpl = core.Template(make_shingi_template(self.dir))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_lines(self):
+        lines, arts, warns, summ = flow.read_flow(flow.SHINGI, SHINGI_TEXT)
+        self.assertEqual(warns, [])
+        self.assertEqual([a.title for a in arts], [["人事"], ["議員提出議案"], ["予算"]])
+        self.assertEqual(summ, "区分 3・議案 3 件")
+        self.assertEqual(flow.kind_name(flow.SHINGI, flow.TITLE), "区分（人事・条例など）")
+
+    def test_range_and_rebuild(self):
+        kids = list(self.tpl.body)
+        sp = flow.extract_shingi(self.tpl)
+        self.assertIn("人", flow._all_text(kids[sp.start]))
+        self.assertIn("別添１", flow._all_text(kids[sp.end]))          # 賛否表の枠の手前まで
+        _, arts, _, _ = flow.read_flow(flow.SHINGI, SHINGI_TEXT)
+        res = flow.apply_flow(self.tpl, flow.SHINGI, arts)
+        xml = document_xml(self.tpl.save(self.dir / "out.docx"))
+        self.assertIn("審議したことを組み直しました（区分 3・議案 3 件）", res.text())
+        for old in ("前年の人事の議案", "前年の問い", "条　例"):
+            self.assertNotIn(old, xml)
+        for new in ("教育委員の任命", "議員提出議案", "防災倉庫", "山田花子氏"):
+            self.assertIn(new, xml)
+        self.assertIn("１２月議会では", xml)                              # 区分の頭は残す
+        self.assertIn("別添１：第４回定例会議案", xml)                    # 賛否表の枠も残す
+        body = ET.fromstring(xml.encode("utf-8")).find(core.w("body"))
+        boxed = [core.para_text(p) for p in body
+                 if p.find(f"{core.w('pPr')}/{core.w('pBdr')}") is not None]
+        self.assertEqual(boxed, ["人事", "議員提出議案", "予算"])          # 区分は囲みの段落
+
+
+class TokushuTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.tpl = core.Template(make_shingi_template(self.dir))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_lines(self):
+        lines, cards, warns, summ = flow.read_flow(flow.TOKUSHU, TOKUSHU_TEXT)
+        self.assertEqual(warns, [])
+        self.assertEqual([c.name for c in cards], ["｜山田《やまだ》 太郎さん・花子さん", "鈴木和子さん"])
+        self.assertEqual(cards[0].lines[0], "山田農園")
+        self.assertEqual(lines[0].kind, flow.SKIP)
+
+    def test_cards_are_found_in_paper_order(self):
+        cards = flow.find_cards(self.tpl)
+        self.assertEqual([c.slot.old_text.split("\n")[1] for c in cards],
+                         ["前年太郎さん・花子さん", "前年次郎さん", "前年三郎さん"])
+
+    def test_fill_and_remove_extra_cards(self):
+        _, cards, _, _ = flow.read_flow(flow.TOKUSHU, TOKUSHU_TEXT)
+        res = flow.apply_flow(self.tpl, flow.TOKUSHU, cards)
+        xml = document_xml(self.tpl.save(self.dir / "out.docx"))
+        self.assertIn("2 人（組）を、前年の 3 枠に入れた", res.text())
+        self.assertIn("1 つ余ったので消しました", res.text())
+        for old in ("前年太郎", "前年次郎", "前年三郎", "前年の抱負"):
+            self.assertNotIn(old, xml)
+        self.assertIn("<w:rubyBase>", xml)                             # ふりがな
+        self.assertIn("山田農園", xml)
+        self.assertIn("鈴木和子さん", xml)
+        self.assertIn("特集　新年の抱負を聞きました", xml)            # 見出しの枠は前年の欄のまま
+        self.assertIn("編集後記の本文。", xml)
+
+    def test_too_many_people_are_reported(self):
+        text = TOKUSHU_TEXT + "".join(f"佐藤{n}郎さん\nひとこと。\n" for n in "一二三")
+        _, cards, _, _ = flow.read_flow(flow.TOKUSHU, text)
+        res = flow.apply_flow(self.tpl, flow.TOKUSHU, cards)
+        self.assertIn("枠が 2 つ足りません", res.text())
+        self.assertIn("佐藤二郎さん、佐藤三郎さん", res.text())
+
+    def test_template_without_cards_is_refused(self):
+        tpl = core.Template(make_sections_template(self.dir))
+        _, cards, _, _ = flow.read_flow(flow.TOKUSHU, TOKUSHU_TEXT)
+        with self.assertRaises(ValueError):
+            flow.apply_flow(tpl, flow.TOKUSHU, cards)
+
+
 class TextTest(unittest.TestCase):
     def test_numbers(self):
         self.assertEqual(core.normalize_numbers("１２月3日　〒７８１－２１９４"),
