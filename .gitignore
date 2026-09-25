@@ -17,3 +17,8 @@ tools/*.zip
 # git には入れず、ネットにつながるパソコンで pip download して作る。
 # 作り方は各ツールの README「いちばん簡単な入れ方」を見ること。
 tools/*/wheels/
+
+# 議会だより 差し込みツール（tools/gikai_template）の様式と設定。
+# 様式は前年の議会だより（人の名前が入る）なので、リポジトリに入れない
+tools/gikai_template/様式/
+tools/gikai_template/設定.json
