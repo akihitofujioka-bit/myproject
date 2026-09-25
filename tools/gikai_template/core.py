@@ -342,9 +342,12 @@ class Slot:
     group: str = ""            # 画面で束ねる見出し
     box_mm: tuple[float, float] | None = None    # 文字枠の幅・高さ（mm）
     copy_of: str = ""          # 複製した欄なら元の欄の ID
+    kind_override: str = ""    # 人が選び直した種類（KIND_CHOICES のどれか）
 
     @property
     def kind_label(self) -> str:
+        if self.kind_override and self.kind in ("body", "cell"):
+            return self.kind_override
         if self.kind == "box":
             return "枠（縦）" if self.vertical else "枠（横）"
         if self.kind == "cell":
@@ -359,6 +362,11 @@ class Slot:
     def short(self) -> str:
         t = re.sub(r"\s+", " ", strip_ruby(self.old_text)).strip()
         return t[:24] + ("…" if len(t) > 24 else "")
+
+
+# 人が選び直せる種類。どれも本文の流れの中の段落なので、中身の作りは同じ。
+# 文字枠・表の升目・本文は Word の中で入れ物が違うので、互いには変えられない
+KIND_CHOICES = ("本文", "見出し", "名前（1字ずつ）")
 
 
 def _looks_like_name_lines(text: str) -> bool:
@@ -673,6 +681,68 @@ class Template:
         self.order.insert(self.order.index(slot_id) + 1, new_id)
         return new.slot
 
+    def split(self, slot_id: str, at: int, new_id: str) -> Slot:
+        """欄を、at 番目の段落の前で 2 つに分ける（読み取りで 1 つにまとまりすぎたとき）。
+
+        見出しと本文、2 つの記事が空行なしで続いていると 1 つの欄になる。
+        分けた後ろ側は、元の欄と同じ入れ物（本文・升目・文字枠）のまま別の欄になる。
+        """
+        ref = self.refs[slot_id]
+        if not 0 < at < len(ref.paras):
+            raise ValueError("分ける位置は、欄の 2 行目から最後の行までの間で選んでください。")
+        s = ref.slot
+        tail = ref.paras[at:]
+        ref.paras = ref.paras[:at]
+        s.old_text = "\n".join(para_text(p) for p in ref.paras)
+        s.size_pt = max(_max_pt(p, self.base_pt) for p in ref.paras)
+        new = _Ref(Slot(new_id, s.kind, "\n".join(para_text(p) for p in tail), s.section,
+                        s.vertical, max(_max_pt(p, self.base_pt) for p in tail), s.group,
+                        box_mm=s.box_mm),
+                   parent=ref.parent, paras=tail, boxes=ref.boxes, shapes=ref.shapes,
+                   anchor_run=ref.anchor_run, anchor_para=ref.anchor_para)
+        self.refs[new_id] = new
+        self.order.insert(self.order.index(slot_id) + 1, new_id)
+        return new.slot
+
+    def merge(self, slot_id: str, expect: str = "") -> str:
+        """欄を、すぐ後ろの同じ入れ物の欄とつなげる。つなげた相手の ID を返す。
+
+        写真の場所として空けた空行で 1 つの記事が 2 つに分かれたときに使う。
+        間にある空行や、そこにつなぎ留めた枠はそのまま残る（今年の原稿を入れると、
+        記事のすぐ後ろへ回り、空行での位置合わせに使われる）。
+        """
+        ref = self.refs[slot_id]
+        idx = self.order.index(slot_id)
+        nxt = next((self.refs[i] for i in self.order[idx + 1:]
+                    if self.refs[i].parent is ref.parent), None)
+        if nxt is not None and expect and nxt.slot.id != expect:
+            raise ValueError(f"つなげる相手が記録（{expect}）と違うので、つなげませんでした。")
+        if nxt is None:
+            raise ValueError("つなげられる欄が後ろにありません（本文どうし、または同じ枠の中どうしだけ"
+                             "つなげられます）。")
+        kids = list(ref.parent)
+        a, b = kids.index(ref.paras[-1]), kids.index(nxt.paras[0])
+        for k in kids[a + 1:b]:
+            if k.tag != w("p") or not _is_blank(k):
+                raise ValueError("間に本文や表があるので、つなげられません。")
+        if ref.paras[-1].find(f"{w('pPr')}/{w('sectPr')}") is not None:
+            raise ValueError("ページの区切り（区間の終わり）をまたいではつなげられません。")
+        ref.paras = ref.paras + nxt.paras
+        s = ref.slot
+        s.old_text = "\n".join(para_text(p) for p in ref.paras)
+        s.size_pt = max(s.size_pt, nxt.slot.size_pt)
+        self.order.remove(nxt.slot.id)
+        del self.refs[nxt.slot.id]
+        return nxt.slot.id
+
+    def set_kind(self, slot_id: str, label: str) -> None:
+        s = self.refs[slot_id].slot
+        if label and label not in KIND_CHOICES:
+            raise ValueError(f"種類は {'・'.join(KIND_CHOICES)} から選んでください。")
+        if label and s.kind == "box":
+            raise ValueError("文字枠の種類は変えられません（縦書き・横書きは Word の枠の設定で決まります）。")
+        s.kind_override = label
+
     def remove_box(self, slot_id: str) -> None:
         """文字枠そのものを消す（本文の記事は「空にする」で行を詰める）。"""
         ref = self.refs[slot_id]
@@ -759,9 +829,13 @@ class Template:
         s = ref.slot
         old = ref.paras
         lines = text.split("\n") if text else [""]
-        if s.kind == "body" and s.kind_label == "名前（1字ずつ）" and text and "\n" not in text:
+        if s.kind_label == "名前（1字ずつ）" and text and "\n" not in text:
             lines = _name_to_lines(text, s.old_text)
-        new = [self._make_para(old, i, line, s.vertical) for i, line in enumerate(lines)]
+        protos = old
+        if s.kind_label == "見出し":
+            # 見出しは、欄の中でいちばん大きい字の段落の書式でそろえる
+            protos = [max(old, key=lambda p: _max_pt(p, self.base_pt))]
+        new = [self._make_para(protos, i, line, s.vertical) for i, line in enumerate(lines)]
         if s.kind == "body" and not text:
             new = []            # 本文を空にするときは段落ごと消し、あとで空行で埋める
 
@@ -1309,8 +1383,10 @@ class Issue:
     season: str = ""
     vote_xlsx: str = ""
     entries: dict[str, Entry] = field(default_factory=dict)
-    copies: list[dict] = field(default_factory=list)     # [{"src": 欄, "id": 新しい欄}]
-    removed: list[str] = field(default_factory=list)     # 消した文字枠
+    # 欄の組み替え（複製・分ける・つなげる・枠を消す）を、やった順に記録する。
+    # 様式を開くたびに頭からやり直すので、順番が大事（分けた欄をさらに複製する、など）
+    ops: list[dict] = field(default_factory=list)
+    kinds: dict[str, str] = field(default_factory=dict)  # 人が選び直した種類
 
     @property
     def template_path(self) -> Path:
@@ -1348,8 +1424,12 @@ class Issue:
             data = json.loads(data_path.read_text(encoding="utf-8-sig"))
             issue.entries = {k: Entry(v.get("mode", KEEP), v.get("text", ""))
                              for k, v in data.get("slots", {}).items()}
-            issue.copies = data.get("copies", [])
-            issue.removed = data.get("removed", [])
+            issue.ops = data.get("ops", [])
+            # 最初の版の記録（copies / removed）も読めるようにしておく
+            issue.ops[:0] = ([{"op": "copy", "src": c["src"], "id": c["id"]}
+                              for c in data.get("copies", [])]
+                             + [{"op": "remove", "id": i} for i in data.get("removed", [])])
+            issue.kinds = data.get("kinds", {})
         return issue
 
     def save(self) -> None:
@@ -1359,26 +1439,44 @@ class Issue:
         data = {"version": 1,
                 "slots": {k: asdict(v) for k, v in self.entries.items()
                           if v.mode != KEEP or v.text},
-                "copies": self.copies, "removed": self.removed}
+                "ops": self.ops, "kinds": self.kinds}
         _write_json(self.folder / DATA_NAME, data)
 
     # 様式を開いて、これまでの複製・削除をやり直した状態にする
     def load_template(self) -> Template:
         tpl = Template(self.template_path)
-        for c in self.copies:
-            if c["src"] in tpl.refs and c["id"] not in tpl.refs:
-                tpl.duplicate(c["src"], c["id"])
-        for sid in self.removed:
+        for op in self.ops:
+            kind = op.get("op")
+            sid = op.get("src") if kind == "copy" else op.get("id")
+            if sid not in tpl.refs:
+                continue            # 元の欄が無い（様式が違う）ときは飛ばす
+            try:
+                if kind == "copy" and op["id"] not in tpl.refs:
+                    tpl.duplicate(op["src"], op["id"])
+                elif kind == "split" and op["new"] not in tpl.refs:
+                    tpl.split(sid, int(op["at"]), op["new"])
+                elif kind == "merge":
+                    tpl.merge(sid, expect=op.get("with", ""))
+                elif kind == "remove":
+                    tpl.remove_box(sid)
+            except ValueError:
+                continue
+        for sid, label in self.kinds.items():
             if sid in tpl.refs:
-                tpl.remove_box(sid)
+                try:
+                    tpl.set_kind(sid, label)
+                except ValueError:
+                    pass
         return tpl
 
-    def next_copy_id(self, src: str) -> str:
+    def new_id(self, src: str, mark: str, tpl: "Template") -> str:
+        """複製（+）・分けた後ろ側（/）の欄の ID。元の ID に番号を付ける。"""
         n = 1
-        used = {c["id"] for c in self.copies}
-        while f"{src}+{n}" in used:
+        while f"{src}{mark}{n}" in tpl.refs or any(
+                op.get("id") == f"{src}{mark}{n}" or op.get("new") == f"{src}{mark}{n}"
+                for op in self.ops):
             n += 1
-        return f"{src}+{n}"
+        return f"{src}{mark}{n}"
 
     def entry(self, sid: str) -> Entry:
         return self.entries.setdefault(sid, Entry())
@@ -1455,6 +1553,213 @@ def import_manuscript(path: Path | str) -> str:
     if ext in (".txt", ".text", ".md"):
         return read_text_file(path)
     raise ValueError(f"この形式は取り込めません: {path.name}（.docx / .doc / .txt に対応）")
+
+
+# ---------------------------------------------------------------- 原稿を欄へ振り分ける
+
+HEADING, BODY = "見出し", "本文"
+# 振り分けで、見出しのまとまりを入れてよい欄の種類
+HEADING_KINDS = ("見出し", "見出しの升")
+# この大きさ以上の字の文字枠（区分の大見出し・一般質問の質問題・「人事」「条例」の
+# 14pt の枠）も見出しを受け取る。写真の説明文の枠（10.5〜11pt）は原稿に書かれて
+# いないことが多いので飛ばす
+HEADING_BOX_PT = 13
+
+
+def accepts(slot: Slot, kind: str) -> bool:
+    """その欄に、見出し／本文のまとまりを入れてよいか（振り分け案で使う）。"""
+    if kind == HEADING:
+        return slot.kind_label in HEADING_KINDS or (slot.kind == "box" and slot.size_pt >= HEADING_BOX_PT)
+    return slot.kind_label == BODY
+
+
+@dataclass
+class Block:
+    """取り込んだ原稿の 1 まとまり（見出し 1 行、または次の見出しまでの本文）。"""
+    kind: str        # HEADING / BODY
+    text: str
+
+    @property
+    def short(self) -> str:
+        t = re.sub(r"\s+", " ", self.text).strip()
+        return t[:30] + ("…" if len(t) > 30 else "")
+
+
+def _looks_like_heading_text(line: str, next_line: str | None) -> bool:
+    """書式の分からない原稿（.doc / .txt）で、見出しらしい行か。
+
+    短く（25 字まで）、句点で終わらず、「質問」「答弁」などで始まらない行を見出しとみなす。
+    後ろに本文が続かない行（原稿の最後の署名など）は見出しにしない。
+    """
+    t = line.strip("　 \t")
+    if not t or len(t) > 25 or t.endswith(("。", "、", "）", ")")):
+        return False
+    if t.startswith(LABELS) or re.match(r"^[（(]?[0-9０-９一二三四五六七八九十]+[)）.．、]", t):
+        return False
+    return next_line is not None and len(next_line.strip()) > len(t)
+
+
+def _docx_paragraphs(path: Path) -> list[tuple[str, bool]]:
+    """.docx の段落を (文字, 書式から見て見出しか) で返す。
+
+    見出しの手がかり: 「見出し」スタイル（アウトラインのレベル付き）、
+    段落の文字がすべて太字、本文よりはっきり大きい字（2pt 以上）。
+    """
+    with zipfile.ZipFile(path) as z:
+        root = _safe_parse(z.read("word/document.xml"), path.name)
+        try:
+            styles = _safe_parse(z.read("word/styles.xml"), "styles.xml")
+        except KeyError:
+            styles = None
+    heading_styles = set()
+    if styles is not None:
+        for st in styles.iter(w("style")):
+            name = wval(st.find(w("name"))).lower()
+            if ("heading" in name or "見出し" in name or name in ("title", "表題")
+                    or st.find(f"{w('pPr')}/{w('outlineLvl')}") is not None):
+                heading_styles.add(st.get(w("styleId"), ""))
+    body = root.find(w("body"))
+    paras = [p for p in body.iter(w("p"))] if body is not None else []
+    sizes: dict[float, int] = {}
+    info = []
+    for p in paras:
+        t = para_text(p)
+        runs = [r for r in _text_runs(p) if "".join(x.text or "" for x in r.findall(w("t"))).strip()]
+        pts = [_run_pt(p, 10.5)]
+        for r in runs:
+            sz = r.find(f"{w('rPr')}/{w('sz')}")
+            if sz is not None and wval(sz).isdigit():
+                pts.append(int(wval(sz)) / 2)
+        pt = max(pts)
+        if t.strip():
+            sizes[pt] = sizes.get(pt, 0) + len(t)
+        bold = bool(runs) and all(
+            (b := r.find(f"{w('rPr')}/{w('b')}")) is not None and wval(b, "1") not in ("0", "false")
+            for r in runs)
+        style = wval(p.find(f"{w('pPr')}/{w('pStyle')}"))
+        outline = p.find(f"{w('pPr')}/{w('outlineLvl')}") is not None
+        info.append((t, pt, bold, style in heading_styles or outline))
+    base = max(sizes, key=sizes.get) if sizes else 10.5
+    out = []
+    for t, pt, bold, styled in info:
+        short = len(t.strip()) <= 40 and not t.strip().endswith("。")
+        out.append((t, bool(t.strip()) and (styled or (short and (bold or pt >= base + 2)))))
+    return out
+
+
+def split_manuscript(path: Path | str) -> list[Block]:
+    """原稿ファイルを、見出しと本文のまとまりに分ける。
+
+    議員から届く原稿は、見出しと本文が 1 つのファイルに続けて書かれている。
+    そのまま 1 つの欄に入れると、欄ごとに 1 つずつ写し直す手間がかかるので、
+    まとまりに分けてから欄へ振り分ける（assign_blocks）。
+    """
+    path = Path(path)
+    if path.suffix.lower() == ".docx":
+        paras = _docx_paragraphs(path)
+        styled = any(h for _, h in paras)
+    else:
+        text = import_manuscript(path)
+        paras = [(t, False) for t in text.split("\n")]
+        styled = False
+    lines = [t for t, _ in paras]
+    blocks: list[Block] = []
+    body: list[str] = []
+
+    def flush() -> None:
+        while body and not body[-1].strip():
+            body.pop()
+        if body:
+            blocks.append(Block(BODY, "\n".join(body)))
+        body.clear()
+
+    for i, (t, is_head) in enumerate(paras):
+        nxt = next((x for x in lines[i + 1:] if x.strip()), None)
+        # 書式に見出しの印が 1 つも無い原稿は、行の形から見分ける
+        if is_head or (not styled and _looks_like_heading_text(t, nxt)):
+            flush()
+            blocks.append(Block(HEADING, t.strip("　 \t")))
+        elif t.strip():
+            body.append(t)
+        elif body:
+            flush()           # 空行も本文の区切りにする
+    flush()
+    return blocks
+
+
+def _same_start(a: str, b: str) -> bool:
+    a = re.sub(r"[\s　]", "", strip_ruby(a))[:6]
+    b = re.sub(r"[\s　]", "", strip_ruby(b))[:6]
+    return len(a) >= 2 and a == b
+
+
+# 振り分けの手間（小さいほどよい）。前から順に詰めるだけだと、1 か所ずれると
+# 後ろがすべてずれた（第201号で確かめて 26 のうち 8 しか合わなかった）ので、
+# 全体でいちばん手間の少ない組み合わせを探す
+COST_SKIP_SLOT = 1.0       # 様式の欄を使わずに飛ばす（前年のまま残る）
+COST_SKIP_MINOR = 0.1      # 写真の説明文・名前など、原稿に無いのがふつうの欄を飛ばす
+COST_APPEND = 0.6          # 本文を、前の本文と同じ欄につなげる
+COST_DROP = 3.0            # まとまりをどの欄にも入れない
+BONUS_SAME = 0.8           # 前年と同じ言葉で始まる（毎年ある「防災訓練」など）
+
+
+def assign_blocks(blocks: list[Block], slots: list[Slot], start_id: str) -> list[str | None]:
+    """まとまりを、start_id の欄から紙面の順に欄へ当てはめる案を作る。
+
+    見出しは「見出し」「見出しの升」と大きい字の文字枠へ、本文は「本文」の欄へ入れる。
+    順番は入れ替えない。そのうえで次の手を組み合わせ、手間の合計が最小の案を選ぶ
+    （動的計画法）。
+      * 欄を飛ばす（写真の説明文の枠・名前の欄は安く、それ以外は高めに）
+      * 本文を前の本文と同じ欄につなげる（原稿の方が細かく分かれているとき）
+      * 合う欄が無いまとまりは入れない（後ろをずらさないため）
+    案なので、必ず画面で人が確かめてから反映する。
+    """
+    ids = [s.id for s in slots]
+    cand = slots[ids.index(start_id):] if start_id in ids else slots
+    n, m = len(blocks), len(cand)
+    INF = float("inf")
+    # best[i][j][f]: i 個のまとまりを入れ、次に使える欄が j。f=1 は「直前のまとまりを
+    # 欄 j-1 に入れた」（本文のつなげ足しができる）
+    best = [[[INF, INF] for _ in range(m + 1)] for _ in range(n + 1)]
+    back: dict[tuple[int, int, int], tuple[int, int, int, str | None]] = {}
+    best[0][0][0] = 0.0
+
+    def relax(i, j, f, cost, prev, choice):
+        if cost < best[i][j][f]:
+            best[i][j][f] = cost
+            back[(i, j, f)] = (*prev, choice)
+
+    for i in range(n + 1):
+        for j in range(m + 1):
+            for f in (0, 1):
+                c = best[i][j][f]
+                if c == INF:
+                    continue
+                if j < m:        # 欄を飛ばす
+                    minor = cand[j].kind == "box" and not accepts(cand[j], HEADING) \
+                        or cand[j].kind_label == "名前（1字ずつ）"
+                    relax(i, j + 1, 0, c + (COST_SKIP_MINOR if minor else COST_SKIP_SLOT),
+                          (i, j, f), "skip")
+                if i == n:
+                    continue
+                b = blocks[i]
+                if j < m and accepts(cand[j], b.kind):      # この欄に入れる
+                    bonus = BONUS_SAME if _same_start(b.text, cand[j].old_text) else 0
+                    relax(i + 1, j + 1, 1, c - bonus, (i, j, f), cand[j].id)
+                if f and b.kind == BODY and blocks[i - 1].kind == BODY:   # 前の欄につなげる
+                    relax(i + 1, j, 1, c + COST_APPEND, (i, j, f), cand[j - 1].id)
+                relax(i + 1, j, 0, c + COST_DROP, (i, j, f), None)     # 入れない
+
+    # まとまりをすべて処理した状態のうち、いちばん安いもの（残りの欄は前年のまま）
+    j, f = min(((j, f) for j in range(m + 1) for f in (0, 1)), key=lambda jf: best[n][jf[0]][jf[1]])
+    i = n
+    out: list[str | None] = [None] * n
+    while (i, j, f) != (0, 0, 0):
+        pi, pj, pf, choice = back[(i, j, f)]
+        if pi == i - 1:
+            out[pi] = choice
+        i, j, f = pi, pj, pf
+    return out
 
 
 # ---------------------------------------------------------------- .doc を .docx に
