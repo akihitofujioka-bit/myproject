@@ -47,6 +47,9 @@ NAME_LINE = re.compile(
 # gikai_simple の写真の指定行: 【写真】ファイル名｜大きさ｜説明
 PHOTO_LINE = re.compile(
     r"^【写真】\s*(?P<file>[^｜|]+?)\s*(?:[｜|]\s*(?P<size>[^｜|]*?)\s*)?(?:[｜|]\s*(?P<caption>.*))?$")
+# gikai_simple の見出しの印（【大見出し】縦の囲み・【横見出し】横の囲み・【見出し】縦書き）。
+# どれも「見出しの行」として読み、印は外す
+HEAD_TAG = re.compile(r"^【(?:大見出し|横見出し|見出し)】\s*")
 PHOTO_MM = {"表紙": 180, "大": 80, "中": 55, "小": 38, "顔": 26}   # gikai_simple と同じ幅
 QUESTION = re.compile(r"^(質問|問[\s　:：])")
 LABELED = re.compile(r"^(質問|答弁|問[\s　:：]|答[\s　:：])")
@@ -111,6 +114,8 @@ def classify(text: str, overrides: dict[str, str] | None = None) -> list[Line]:
             kinds.append(SKIP)
         elif PHOTO_LINE.match(s):
             kinds.append(PHOTO)
+        elif HEAD_TAG.match(s):
+            kinds.append(TITLE)          # gikai_simple の【大見出し】【見出し】の行
         elif NAME_LINE.match(s):
             kinds.append(MEMBER)
         else:
@@ -174,7 +179,7 @@ def group(lines: list[Line]) -> tuple[list[Member], list[str]]:
             topic = None          # 名前より前に書いた題（pending）は、この議員の最初の題
             continue
         if ln.kind == TITLE:
-            pending.append(ln.text)
+            pending.append(HEAD_TAG.sub("", ln.text))
             continue
         if ln.kind == PHOTO and topic is None:
             member_for(ln.no).head_photos.append(ln.text)
@@ -765,7 +770,7 @@ CHAIR_LINE = re.compile(rf"^(?:(?P<role1>副?委員長)[\s　]*(?P<name1>{_NAME}
 # 説明した人の行（「高橋建設課長」）と日時の行は、短くても見出しにしない
 SPEAKER = re.compile(r"(村長|副村長|教育長|課長|室長|次長|局長|所長|参事|理事|主幹|係長|園長|校長)$")
 DATE_LINE = re.compile(r"^[0-9０-９]{1,2}月[0-9０-９]{1,2}日")
-TITLE_MARK = re.compile(r"^[■◆●◎]\s*")
+TITLE_MARK = re.compile(r"^(?:[■◆●◎]|【(?:大見出し|横見出し|見出し)】)\s*")
 
 
 def _heading_like(t: str) -> bool:
@@ -1278,8 +1283,8 @@ def classify_cards(text: str, overrides: dict[str, str] | None = None) -> list[L
         s = raw.strip("　 \t")
         if not s:
             continue
-        if s.startswith("特集"):
-            k = SKIP
+        if s.startswith("特集") or HEAD_TAG.match(s):
+            k = SKIP                         # 特集の見出しは前年の欄に差し込む
         elif PHOTO_LINE.match(s):
             k = PHOTO
         elif len(core.strip_ruby(s)) <= 30 and not s.endswith(("。", "」")) and CARD_NAME.search(

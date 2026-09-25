@@ -28,6 +28,7 @@ from __future__ import annotations
 import datetime
 import io
 import json
+import math
 import re
 import unicodedata
 import zipfile
@@ -122,8 +123,17 @@ TATEGAKI = True
 DANSU = 5                      # 本文の段数
 MARGIN_MM = (15, 12, 15, 15)   # 上・下・左・右
 DAN_SPACE_MM = 6               # 段の間隔
-LINE_SPACING = 1.45            # 本文の行送り（倍）
-BODY_PT = 10.5                 # 本文の文字の大きさ
+# 文字と見出しの書式（従来の紙面に合わせる。利用者の指定: 2026-09-25）
+BODY_FONT = FONT_GOTHIC        # 通常の文字
+BODY_PT = 11                   #   ＭＳ ゴシック 11pt（1 段 12 字。第198〜201号と同じ）
+LINE_SPACING = 1.0             # 行間「1 行」
+HANGING_CHARS = 1              # 段落のぶら下げ（字）
+# Word の「行間 1 行」は、ＭＳ のフォントでは字の大きさの約 1.27 倍の行送りになる
+# （Mac の Word で第201号を測った値: 11pt の行が 14pt、14pt の行が 18pt）
+SINGLE_LINE_PITCH = 1.27
+BOX_TATE_PT = 26               # 【大見出し】縦書きを四角で囲む見出し
+BOX_YOKO_PT = 18               # 【横見出し】横書きを四角で囲む見出し
+HEADING_PT = 16                # 【見出し】  縦書きの見出し
 DAN_HEIGHT_MM = (297 - MARGIN_MM[0] - MARGIN_MM[1] - DAN_SPACE_MM * (DANSU - 1)) / DANSU   # 1 段の高さ
 BODY_WIDTH_MM = 210 - MARGIN_MM[2] - MARGIN_MM[3]   # 本文が入る横幅（行が進む向き）
 
@@ -139,6 +149,10 @@ PHOTO_LINE = re.compile(
     r"(?:\s*[｜|]\s*(?P<size>表紙|[大中小顔])?)?"
     r"(?:\s*[｜|]\s*(?P<caption>.*?))?\s*$"
 )
+
+# 見出しの行: 【大見出し】…／【横見出し】…／【見出し】…
+HEADING_LINE = re.compile(r"^\s*【(?P<kind>大見出し|横見出し|見出し)】\s*(?P<text>.*?)\s*$")
+HEADING_KINDS = ("大見出し", "横見出し", "見出し")
 
 # 表紙の原稿に最初から入れておく文面
 COVER_TEMPLATE = """第{gou}号
@@ -163,6 +177,13 @@ READ_ME = """このフォルダの使い方
 
   大きさは 表紙・大・中・小・顔 のどれか（省略すると 中）。説明文は省略できます。
   「表紙」は A4 一面（紙の端まで）で、表紙の区分でだけ使います。
+・見出しは、行の頭に印を付けます（ツールのボタンでも入れられます）
+
+    【大見出し】防災対策について　… 縦書きを四角で囲む（ＭＳ ゴシック 26pt）
+    【横見出し】審議したこと　　　… 横書きを四角で囲む（ＭＳ ゴシック 18pt）
+    【見出し】高齢者の見守り　　　… 縦書きの見出し（ＭＳ ゴシック 16pt）
+
+  印の無い行は通常の文字（ＭＳ ゴシック 11pt・ぶら下げ 1 字・行間 1 行）になります
 ・ツールで「Word を作る」を押すと、出力 フォルダに
     原稿（写真入り）と 写真配置指示書 の 2 つの Word ができます
 ・印刷所には「出力の Word 2 つ」と「写真フォルダの中身」を渡します
@@ -202,8 +223,14 @@ def parse_photo_line(line: str, line_no: int = 0) -> PhotoRef | None:
     )
 
 
+def parse_heading(line: str) -> tuple[str, str] | None:
+    """見出しの行なら (種類, 文字) を返す。種類は 大見出し／横見出し／見出し。"""
+    m = HEADING_LINE.match(line)
+    return (m.group("kind"), m.group("text")) if m else None
+
+
 def parse_blocks(text: str) -> list[tuple[str, object]]:
-    """原稿を、("text", 文字列) と ("photo", PhotoRef) の並びに分ける。
+    """原稿を、("text", 文字列)・("photo", PhotoRef)・("heading", (種類, 文字)) の並びに分ける。
 
     連続する本文行は 1 つの "text" にまとめる。空行はそのまま残す。
     """
@@ -211,11 +238,12 @@ def parse_blocks(text: str) -> list[tuple[str, object]]:
     buf: list[str] = []
     for i, line in enumerate(text.splitlines(), 1):
         ref = parse_photo_line(line, i)
-        if ref:
+        head = None if ref else parse_heading(line)
+        if ref or head:
             if buf:
                 blocks.append(("text", "\n".join(buf)))
                 buf = []
-            blocks.append(("photo", ref))
+            blocks.append(("photo", ref) if ref else ("heading", head))
         else:
             buf.append(line)
     if buf:
@@ -233,6 +261,9 @@ def count_chars(text: str) -> int:
     for line in text.splitlines():
         if parse_photo_line(line):
             continue
+        head = parse_heading(line)
+        if head:
+            line = head[1]              # 【見出し】の印は数えない
         n += len(re.sub(r"\s", "", line))
     return n
 
@@ -252,6 +283,9 @@ def count_width(text: str) -> int:
     for line in text.splitlines():
         if parse_photo_line(line):
             continue
+        head = parse_heading(line)
+        if head:
+            line = head[1]
         for ch in line:
             if ch.isspace():
                 continue
@@ -264,11 +298,11 @@ def page_capacity() -> dict:
 
     縦書き 5 段では、文字は段の高さの向きに並び、行は紙の横幅の向きに進む。
       1 行の字数 = 段の高さ ÷ 文字の大きさ
-      1 段の行数 = 本文の横幅 ÷ 行送り
-    既定値（5 段・10.5pt・行送り1.45）では 13 字 × 33 行 × 5 段 = 2145 字。
+      1 段の行数 = 本文の横幅 ÷ 行送り（行間 1 行 = 字の大きさの約 1.27 倍）
+    既定値（5 段・11pt・行間 1 行）では 12 字 × 36 行 × 5 段 = 2160 字。
     """
     char_mm = BODY_PT * MM_PER_PT
-    line_mm = BODY_PT * LINE_SPACING * MM_PER_PT
+    line_mm = BODY_PT * LINE_SPACING * SINGLE_LINE_PITCH * MM_PER_PT
     per_line = int(DAN_HEIGHT_MM / char_mm)
     per_dan = int(BODY_WIDTH_MM / line_mm)
     return {
@@ -809,6 +843,121 @@ def _para(doc, text="", *, name=FONT_MINCHO, size=BODY_PT, bold=False,
     return p
 
 
+def _hanging(p, chars: int = HANGING_CHARS, pt: float = BODY_PT) -> None:
+    """段落を「ぶら下げ chars 字」にする（2 行目から字下げ。「問　…」の 2 行目が問の下にそろう）。"""
+    ind = OxmlElement("w:ind")
+    tw = str(round(chars * pt * 20))
+    ind.set(qn("w:left"), tw)
+    ind.set(qn("w:hanging"), tw)
+    ind.set(qn("w:leftChars"), str(chars * 100))
+    ind.set(qn("w:hangingChars"), str(chars * 100))
+    p._p.get_or_add_pPr().append(ind)
+
+
+def _keep_next(p) -> None:
+    """見出しを次の段落と同じ段に置く（見出しだけが段の最後に取り残されないように）。"""
+    p.paragraph_format.keep_with_next = True
+
+
+def _box_border(p) -> None:
+    """段落を四角（罫線）で囲む。縦書きの紙面では縦長の囲みになる。"""
+    pbdr = OxmlElement("w:pBdr")
+    for side in ("top", "left", "bottom", "right"):
+        b = OxmlElement(f"w:{side}")
+        b.set(qn("w:val"), "single")
+        b.set(qn("w:sz"), "8")
+        b.set(qn("w:space"), "4")
+        b.set(qn("w:color"), "auto")
+        pbdr.append(b)
+    p._p.get_or_add_pPr().append(pbdr)
+
+
+def _heading(doc, kind: str, text: str, *, vertical: bool) -> None:
+    """見出し 1 つ。種類ごとの書式は利用者の指定（2026-09-25）による。
+
+      大見出し … 縦書きを四角で囲む  ＭＳ ゴシック 26pt
+      横見出し … 横書きを四角で囲む  ＭＳ ゴシック 18pt（縦書きの紙面の中では 1 升の表にして横に寝かせる）
+      見出し   … 縦書きの見出し      ＭＳ ゴシック 16pt
+    """
+    if kind == "横見出し" and vertical:
+        _yoko_box(doc, text)
+        return
+    size = {"大見出し": BOX_TATE_PT, "横見出し": BOX_YOKO_PT}.get(kind, HEADING_PT)
+    p = _para(doc, text, name=FONT_GOTHIC, size=size, after=0,
+              tatechuyoko=vertical, line=LINE_SPACING)
+    if kind != "見出し":
+        _box_border(p)
+        if vertical:
+            # 囲みを見出しの長さに縮める（段の残りを下側の字下げにする）
+            width_pt = _line_width(text) * size + 12
+            dan_pt = DAN_HEIGHT_MM / MM_PER_PT
+            if width_pt < dan_pt:
+                p.paragraph_format.right_indent = Pt(dan_pt - width_pt)
+    _keep_next(p)
+
+
+def _line_width(text: str) -> float:
+    """1 行の見た目の幅（字数）。count_width と違い、字と字の間の空白も数える（見出しの囲み用）。"""
+    return sum(0.5 if unicodedata.east_asian_width(ch) in ("Na", "H") else 1.0 for ch in text)
+
+
+def _yoko_box(doc, text: str) -> None:
+    """縦書きの紙面に、横書きの見出しを四角で囲んで置く。
+
+    縦書きの区間では段落の字は必ず縦に並ぶので、1 升の表を作り、その升だけ
+    横書き（lrTb）にする。縦書きの紙面の表は、表の幅が行の重なる向き（紙の横幅）、
+    行の高さが字の並ぶ向き（段の高さ）になる。
+    """
+    full_pt = BODY_WIDTH_MM / MM_PER_PT
+    width_pt = min(_line_width(text) * BOX_YOKO_PT + 20, full_pt)
+    lines = max(1, math.ceil(_line_width(text) * BOX_YOKO_PT / (full_pt - 20)))
+    height_pt = BOX_YOKO_PT * SINGLE_LINE_PITCH * lines + 10
+    table = doc.add_table(rows=1, cols=1)
+    tbl = table._tbl
+    tblpr = tbl.tblPr
+    tw = OxmlElement("w:tblW")
+    tw.set(qn("w:w"), str(round(width_pt * 20)))
+    tw.set(qn("w:type"), "dxa")
+    tblpr.append(tw)
+    borders = OxmlElement("w:tblBorders")
+    for side in ("top", "left", "bottom", "right"):
+        b = OxmlElement(f"w:{side}")
+        b.set(qn("w:val"), "single")
+        b.set(qn("w:sz"), "8")
+        b.set(qn("w:space"), "0")
+        b.set(qn("w:color"), "auto")
+        borders.append(b)
+    tblpr.append(borders)
+    layout = OxmlElement("w:tblLayout")
+    layout.set(qn("w:type"), "fixed")
+    tblpr.append(layout)
+    for gc in tbl.tblGrid.findall(qn("w:gridCol")):
+        gc.set(qn("w:w"), str(round(width_pt * 20)))
+    tr = tbl.tr_lst[0]
+    trpr = tr.get_or_add_trPr()
+    cant = OxmlElement("w:cantSplit")
+    trpr.append(cant)
+    th = OxmlElement("w:trHeight")
+    th.set(qn("w:val"), str(round(height_pt * 20)))
+    trpr.append(th)
+    cell = table.cell(0, 0)
+    tcpr = cell._tc.get_or_add_tcPr()
+    tcw = OxmlElement("w:tcW")
+    tcw.set(qn("w:w"), str(round(width_pt * 20)))
+    tcw.set(qn("w:type"), "dxa")
+    tcpr.append(tcw)
+    td = OxmlElement("w:textDirection")
+    td.set(qn("w:val"), "lrTb")
+    tcpr.append(td)
+    va = OxmlElement("w:vAlign")
+    va.set(qn("w:val"), "center")
+    tcpr.append(va)
+    p = cell.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_font(p.add_run(text), FONT_GOTHIC, BOX_YOKO_PT)
+    doc.add_paragraph().paragraph_format.space_after = Pt(0)     # 表のあとに 1 行空ける
+
+
 def _setup_page(doc):
     """A4 縦・余白 20mm・横書き（表紙と指示書用）。既定フォントも決める。"""
     sec = doc.sections[0]
@@ -816,9 +965,9 @@ def _setup_page(doc):
     sec.top_margin = sec.bottom_margin = Mm(COVER_MARGIN_MM)
     sec.left_margin = sec.right_margin = Mm(COVER_MARGIN_MM)
     style = doc.styles["Normal"]
-    style.font.name = FONT_MINCHO
-    style.font.size = Pt(10.5)
-    style.element.rPr.rFonts.set(qn("w:eastAsia"), FONT_MINCHO)
+    style.font.name = BODY_FONT
+    style.font.size = Pt(BODY_PT)
+    style.element.rPr.rFonts.set(qn("w:eastAsia"), BODY_FONT)
 
 
 def _add_body_section(doc):
@@ -928,11 +1077,15 @@ def build_manuscript(issue: Issue, out: Path | str | None = None) -> tuple[Path,
             if kind == "photo":
                 number += 1
                 _add_photo(doc, issue, number, kubun, block, warnings, is_cover=is_cover)
+            elif kind == "heading":
+                _heading(doc, block[0], block[1], vertical=TATEGAKI and not is_cover)
             else:
                 for line in block.split("\n"):
-                    _para(doc, line, after=0,
-                          tatechuyoko=TATEGAKI and not is_cover,
-                          line=None if is_cover else LINE_SPACING)
+                    p = _para(doc, line, name=BODY_FONT, after=0,
+                              tatechuyoko=TATEGAKI and not is_cover,
+                              line=None if is_cover else LINE_SPACING)
+                    if not is_cover:
+                        _hanging(p)
     doc.save(out)
     return out, warnings
 

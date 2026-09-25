@@ -84,7 +84,13 @@ HELP = """使い方（5 つだけ）
 
 原稿欄で文字をドラッグして選ぶと、その部分が何字かが区分名の右に出ます
    「組版 ○字」は半角を 0.5 文字として数えたもの（紙面に入るかの目安）
-   1 行 13 字なので、「＝ ○行」で何行分かが分かります
+   1 行 12 字なので、「＝ ○行」で何行分かが分かります
+
+見出しは、行の頭に印を付けます（原稿欄の上の「見出しを入れる」ボタンでも入ります）
+   【大見出し】… 縦書きを四角で囲む（ＭＳ ゴシック 26pt）
+   【横見出し】… 横書きを四角で囲む（ＭＳ ゴシック 18pt）
+   【見出し】　… 縦書きの見出し（ＭＳ ゴシック 16pt）
+   印の無い行は ＭＳ ゴシック 11pt・ぶら下げ 1 字・行間 1 行 になります
 
 大きさの目安（紙面は 5 段組・1 段 約 30mm）
    表紙 = A4 一面（紙の端まで。表紙の区分でだけ使う）
@@ -442,6 +448,13 @@ class App(tk.Tk):
         ttk.Button(bar, text="校正する", command=self.proofread_current).pack(side="right", padx=6)
         ttk.Button(bar, text="数字をそろえる", command=self.fix_numbers).pack(side="right")
         ttk.Button(bar, text="原稿を取り込む（カーソル位置）", command=self.import_files).pack(side="right")
+        hb = ttk.Frame(mid)
+        hb.pack(fill="x", pady=(0, 2))
+        ttk.Label(hb, text="見出しを入れる（カーソルの行）:").pack(side="left")
+        for kind, tip in (("大見出し", "縦・囲み 26pt"), ("横見出し", "横・囲み 18pt"), ("見出し", "縦 16pt")):
+            ttk.Button(hb, text=f"{kind}（{tip}）",
+                       command=lambda k=kind: self.insert_heading(k)).pack(side="left", padx=2)
+        ttk.Button(hb, text="見出しをやめる", command=lambda: self.insert_heading("")).pack(side="left", padx=2)
         self.txt = tk.Text(mid, wrap="char", undo=True, font=TEXT_FONT, padx=8, pady=6)
         scroll = ttk.Scrollbar(mid, command=self.txt.yview)
         self.txt.configure(yscrollcommand=scroll.set)
@@ -986,6 +999,28 @@ class App(tk.Tk):
         self.lbl_photo.config(text=note)
         self.mark_photo_usage()
         self.ent_caption.focus_set()
+
+    def insert_heading(self, kind: str):
+        """カーソルのある行の頭に【大見出し】などの印を付ける（付いていれば付け替える）。
+
+        kind が空なら印を外して、通常の文字の行に戻す。
+        """
+        if not self.issue or not self.current_kubun:
+            messagebox.showinfo(APP_NAME, "先に区分を選んでください。")
+            return
+        start = self.txt.index("insert linestart")
+        end = self.txt.index("insert lineend")
+        line = self.txt.get(start, end)
+        head = core.parse_heading(line)
+        text = head[1] if head else line.strip("　 ")
+        new = f"【{kind}】{text}" if kind else text
+        if new != line:
+            self.txt.delete(start, end)
+            self.txt.insert(start, new)
+            self.txt.edit_modified(True)
+        self.txt.mark_set("insert", f"{start} lineend")
+        self.save_current()
+        self.txt.focus_set()
 
     def insert_photo(self):
         if not self.issue or not self.current_kubun:
