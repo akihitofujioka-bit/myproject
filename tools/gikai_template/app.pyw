@@ -23,6 +23,7 @@ from tkinter import filedialog, messagebox, ttk
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import core  # noqa: E402
+import flow  # noqa: E402
 from core import EMPTY, KEEP, NEW, SAME, TABLE, MODE_LABEL  # noqa: E402
 
 APP_DIR = Path(__file__).resolve().parent
@@ -54,9 +55,16 @@ HELP = """議会だより 前年同月号 差し込みツール　使い方
 　4. 賛否一覧表は、「別添１：…賛否」の枠を選んで「Excel の賛否表を選ぶ」
 　5. 「Word を作る」― 出力フォルダに第○号.docx ができる
 
+■ 一般質問（人数・質問の数が毎回違う）
+　「一般質問の原稿を選ぶ」で原稿（gikai_simple の 05_一般質問.txt や Word）を選ぶと、
+　前年の一般質問の欄（⇄ の印）は使わず、前年の書式の部品で人数ぶん組み直します。
+　「読み取りを確かめる・直す」で、議員名・質問の題・本文・写真の見分けを確かめて直せます。
+　原稿は「山田太郎議員」だけの行で 1 人ぶんが始まり、「質問」の直前の短い行が題になります。
+
 ■ 欄の状態（一覧の左の印）
 　✎ 今年の原稿　　・ 前年のまま（Word では黄色の印が付く）
 　＝ 毎号同じ（発行元など。印を付けない）　✕ 空にする　▦ 賛否表
+　⇄ 一般質問として原稿から組み直す（この欄には差し込まない）
 
 ■ 紙面がずれないしくみ
 　記事が前年より長く（短く）なると、すぐ後ろの空行を減らして（足して）
@@ -124,6 +132,7 @@ class App(tk.Tk):
         self.mode = tk.StringVar(value=KEEP)
         self.only_todo = tk.BooleanVar(value=False)
         self.mark_keep = tk.BooleanVar(value=True)
+        self.flow_ids: set[str] = set()     # 一般質問として原稿から組み直す欄
         self._build()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         last = load_settings().get("last_issue")
@@ -143,6 +152,16 @@ class App(tk.Tk):
         self.title_lbl = ttk.Label(top, text="号を作るか、開いてください", font=(font[0], 12, "bold"))
         self.title_lbl.pack(side="left", padx=16)
         ttk.Button(top, text="使い方", command=self.show_help).pack(side="right")
+
+        ip = ttk.LabelFrame(self, text="一般質問（人数や質問の数が毎回違うので、原稿から組み直す）",
+                            padding=4)
+        ip.pack(fill="x", padx=6)
+        ttk.Button(ip, text="一般質問の原稿を選ぶ…", command=self.pick_ippan).pack(side="left")
+        ttk.Button(ip, text="読み取りを確かめる・直す", command=self.check_ippan).pack(side="left", padx=4)
+        ttk.Button(ip, text="組み直さない（前年の欄に差し込む）",
+                   command=self.clear_ippan).pack(side="left")
+        self.ippan_lbl = ttk.Label(ip, text="")
+        self.ippan_lbl.pack(side="left", padx=12)
 
         pane = ttk.Panedwindow(self, orient="horizontal")
         pane.pack(fill="both", expand=True, padx=6)
@@ -272,7 +291,68 @@ class App(tk.Tk):
         s["last_issue"] = str(folder)
         save_settings(s)
         self.current = None
+        self.refresh_ippan()
+
+    # ------------------------------------------------------------ 一般質問（組み直し）
+
+    def refresh_ippan(self) -> None:
+        """一般質問の原稿の状態を表示し、一覧で「組み直す」欄に印を付け直す。"""
+        i = self.issue
+        self.flow_ids = set()
+        if i and i.ippan_source:
+            self.flow_ids = flow.region_slot_ids(self.tpl)
+            try:
+                _, members, warns = i.ippan_members()
+                text = f"{Path(i.ippan_source).name}：{flow.summary(members)}"
+                if warns:
+                    text += f"　気になる点 {len(warns)} か所（「読み取りを確かめる」で見られます）"
+            except (OSError, ValueError) as e:
+                text = f"{Path(i.ippan_source).name} を読めません: {e}"
+            self.ippan_lbl.config(text=text)
+        else:
+            self.ippan_lbl.config(text="（原稿を選ぶと、前年の一般質問の欄は使わず、部品で組み直します）")
         self.refresh_tree()
+
+    def pick_ippan(self) -> None:
+        if not self.issue:
+            return
+        path = filedialog.askopenfilename(
+            title="一般質問の原稿（gikai_simple の 05_一般質問.txt や Word）",
+            filetypes=[("原稿", "*.txt *.docx *.doc"), ("すべて", "*.*")])
+        if not path:
+            return
+        self.save_current()
+        self.issue.ippan_source = path
+        self.issue.save()
+        self.refresh_ippan()
+        self.check_ippan()
+
+    def check_ippan(self) -> None:
+        i = self.issue
+        if not (i and i.ippan_source):
+            messagebox.showinfo("一般質問", "先に「一般質問の原稿を選ぶ」で原稿を選んでください。")
+            return
+        try:
+            lines, _, _ = i.ippan_members()
+        except (OSError, ValueError) as e:
+            messagebox.showerror("読めませんでした", str(e))
+            return
+        d = IppanDialog(self, Path(i.ippan_source).name, lines)
+        if d.result is not None:
+            i.ippan_kinds = d.result
+            i.save()
+            self.refresh_ippan()
+
+    def clear_ippan(self) -> None:
+        if not (self.issue and self.issue.ippan_source):
+            return
+        if not messagebox.askyesno(
+                "組み直さない", "一般質問を原稿から組み直すのをやめ、前年の欄に差し込む形に戻します。\n"
+                "（原稿のファイルと、直した行の種類の記録は消えません。もう一度選べば戻せます）"):
+            return
+        self.issue.ippan_source = ""
+        self.issue.save()
+        self.refresh_ippan()
 
     # ------------------------------------------------------------ 一覧
 
@@ -289,6 +369,8 @@ class App(tk.Tk):
             if s.group not in groups:
                 groups[s.group] = self.tree.insert("", "end", text=s.group, open=True)
             label = f"{STATUS_MARK[e.mode]} {s.id}" + ("（複製）" if s.copy_of else "")
+            if s.id in self.flow_ids:
+                label = f"⇄ {s.id}（組み直す）"
             self.tree.insert(groups[s.group], "end", iid=s.id, text=label,
                              values=(s.kind_label, s.short))
         if self.current and self.tree.exists(self.current):
@@ -310,7 +392,10 @@ class App(tk.Tk):
         if self.tree.exists(sid):
             s = self.tpl.refs[sid].slot
             e = self.issue.entries.get(sid) or core.Entry()
-            self.tree.item(sid, text=f"{STATUS_MARK[e.mode]} {sid}" + ("（複製）" if s.copy_of else ""))
+            text = f"{STATUS_MARK[e.mode]} {sid}" + ("（複製）" if s.copy_of else "")
+            if sid in self.flow_ids:
+                text = f"⇄ {sid}（組み直す）"
+            self.tree.item(sid, text=text)
         self.update_status()
 
     # ------------------------------------------------------------ 欄
@@ -832,6 +917,109 @@ class DistributeDialog(tk.Toplevel):
     def ok(self) -> None:
         self.result = [(core.Block(k.get(), b.text), self.by_label.get(t.get()))
                        for k, t, b in zip(self.kinds, self.targets, self.blocks)]
+        self.destroy()
+
+
+class IppanDialog(tk.Toplevel):
+    """一般質問の原稿の行ごとに、見分けた種類を確かめて直す画面。"""
+
+    def __init__(self, master: App, name: str, lines: list) -> None:
+        super().__init__(master)
+        self.title("一般質問の読み取りを確かめる")
+        self.geometry("980x640")
+        self.transient(master)
+        self.result = None
+        self.lines = lines
+        self.kinds = {ln.no: ln.kind for ln in lines}
+        ttk.Label(self, padding=8, justify="left", text=(
+            f"{name} の行ごとに、どう使うかを見分けました。違っていたら、行を選んで下で種類を"
+            "直してください。\n"
+            "・議員名 … 「山田太郎議員」の行。ここから次の議員名までが 1 人ぶん\n"
+            "・質問の題 … 議員の最初の題は大きな題の表に、2 問目からは 14pt の見出しになる\n"
+            "・写真 … 【写真】ファイル名｜大きさ｜説明　の行。紙面に赤字で場所を示し、幅ぶん空ける"
+        )).pack(anchor="w")
+        body = ttk.Frame(self)
+        body.pack(fill="both", expand=True, padx=8)
+        self.tree = ttk.Treeview(body, columns=("kind", "text"), show="tree headings",
+                                 selectmode="extended")
+        self.tree.heading("#0", text="行")
+        self.tree.heading("kind", text="種類")
+        self.tree.heading("text", text="原稿")
+        self.tree.column("#0", width=60, stretch=False)
+        self.tree.column("kind", width=130, stretch=False)
+        self.tree.column("text", width=700)
+        self.tree.tag_configure("member", background="#e6f0ff")
+        self.tree.tag_configure("title", background="#fff4d6")
+        self.tree.tag_configure("changed", foreground="#c00000")
+        sb = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="left", fill="y")
+        for ln in lines:
+            self.tree.insert("", "end", iid=str(ln.no), text=str(ln.no),
+                             values=(ln.kind, ln.text))
+        self.paint()
+
+        row = ttk.Frame(self, padding=8)
+        row.pack(fill="x")
+        ttk.Label(row, text="選んだ行の種類を").pack(side="left")
+        self.kind = tk.StringVar(value=flow.TEXT)
+        ttk.Combobox(row, textvariable=self.kind, values=flow.FLOW_KINDS, state="readonly",
+                     width=16).pack(side="left", padx=4)
+        ttk.Button(row, text="にする", command=self.set_kind).pack(side="left")
+        ttk.Button(row, text="自動の見分けに戻す", command=self.reset_kind).pack(side="left", padx=8)
+        self.summary = ttk.Label(row, text="")
+        self.summary.pack(side="left", padx=12)
+        self.warn = tk.Text(self, height=4, wrap="char", background="#fff8f0")
+        self.warn.pack(fill="x", padx=8)
+        bottom = ttk.Frame(self, padding=8)
+        bottom.pack(fill="x")
+        ttk.Button(bottom, text="これで決める", command=self.ok).pack(side="right")
+        ttk.Button(bottom, text="やめる", command=self.destroy).pack(side="right", padx=6)
+        self.update_summary()
+        self.grab_set()
+        self.wait_window()
+
+    def paint(self) -> None:
+        for ln in self.lines:
+            k = self.kinds[ln.no]
+            tags = []
+            if k == flow.MEMBER:
+                tags.append("member")
+            elif k == flow.TITLE:
+                tags.append("title")
+            if k != ln.auto:
+                tags.append("changed")
+            self.tree.item(str(ln.no), values=(k + ("（直した）" if k != ln.auto else ""), ln.text),
+                           tags=tags)
+
+    def _current_lines(self) -> list:
+        return [flow.Line(ln.no, ln.text, self.kinds[ln.no], ln.auto, ln.raw) for ln in self.lines]
+
+    def update_summary(self) -> None:
+        members, warns = flow.group(self._current_lines())
+        self.summary.config(text=flow.summary(members))
+        self.warn.configure(state="normal")
+        self.warn.delete("1.0", "end")
+        self.warn.insert("1.0", "\n".join(warns) if warns else "気になる点はありません。")
+        self.warn.configure(state="disabled")
+
+    def set_kind(self) -> None:
+        for iid in self.tree.selection():
+            self.kinds[int(iid)] = self.kind.get()
+        self.paint()
+        self.update_summary()
+
+    def reset_kind(self) -> None:
+        auto = {ln.no: ln.auto for ln in self.lines}
+        for iid in self.tree.selection():
+            self.kinds[int(iid)] = auto[int(iid)]
+        self.paint()
+        self.update_summary()
+
+    def ok(self) -> None:
+        # 自動の見分けと違う行だけを、行の文字をキーにして覚える（原稿を直しても行番号に左右されない）
+        self.result = {ln.text: self.kinds[ln.no] for ln in self.lines if self.kinds[ln.no] != ln.auto}
         self.destroy()
 
 
