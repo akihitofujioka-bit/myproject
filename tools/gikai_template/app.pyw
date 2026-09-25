@@ -29,6 +29,7 @@ APP_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = APP_DIR / "様式"          # 登録した前年の号（4月号.docx など）
 SETTINGS = APP_DIR / "設定.json"         # 最後に開いた号のフォルダだけを覚える
 
+AUTO_KIND = "（自動で見分ける）"
 STATUS_MARK = {NEW: "✎", KEEP: "・", SAME: "＝", EMPTY: "✕", TABLE: "▦"}
 
 HELP = """議会だより 前年同月号 差し込みツール　使い方
@@ -44,6 +45,9 @@ HELP = """議会だより 前年同月号 差し込みツール　使い方
 　2. 左の一覧から欄を選ぶ。右上に前年の文章が出る
 　3. 右下に今年の原稿を書く。議員から届いた Word は
 　　「Word・テキストを取り込む」でカーソルの位置に入る
+　　　・見出しと本文がいくつも入った原稿は、最初の見出しを入れる欄を選んで
+　　　　「Word を取り込んで、見出しと本文を欄に振り分ける」。確認の画面で
+　　　　見出し／本文と入れる欄を確かめて（直して）から入れる
 　　　・前年の文を少し直すだけなら「↓ 前年の文を写す」を押してから直す
 　　　・ふりがなは ｜山田《やまだ》 のように書く
 　　　・名前（1字ずつ）の欄は「高橋次郎　議員」のように 1 行で書けばよい
@@ -58,6 +62,20 @@ HELP = """議会だより 前年同月号 差し込みツール　使い方
 　記事が前年より長く（短く）なると、すぐ後ろの空行を減らして（足して）
 　以降の記事の位置を保ちます。空行が足りないときは、どれだけ
 　あふれたかを最後に知らせます。仕上げは Word で整えてください。
+
+■ 読み取りを直す（種類・分ける・つなげる）
+　ツールは空行を区切りにして欄に分け、字の大きさなどで種類を見分けます。
+　違っていたら「読み取りを直す・欄を組み替える」で直します。
+　・種類 … 本文／見出し／名前（1字ずつ）から選び直す。
+　　　見出し … 欄の中でいちばん大きい字の書式で今年の原稿を入れる
+　　　名前（1字ずつ） … 1 行で書いた名前を 1 字ずつの行に組み直す
+　　　（文字枠の縦・横は Word の枠で決まるので変えられません）
+　・分ける … 見出しと本文、2 つの記事が 1 つの欄になっていたら、
+　　前年の文章の「後ろの欄の 1 行目にしたい行」の行頭にカーソルを置いて
+　　「カーソルの行から後ろを別の欄に分ける」
+　・つなげる … 1 つの記事が 2 つの欄に分かれていたら、前の欄を選んで
+　　「次の欄とつなげる」（間の空行は記事のすぐ後ろへ回ります）
+　・どれも「組み替えを1つ戻す」で、新しいものから順に取り消せます
 
 ■ 前年に無い記事を足す
 　同じ形の欄を選んで「この欄を複製」。文字枠は 10mm 下にずらして
@@ -151,10 +169,15 @@ class App(tk.Tk):
         pane.add(right, weight=3)
         self.slot_lbl = ttk.Label(right, text="", font=(font[0], 11, "bold"))
         self.slot_lbl.pack(anchor="w")
-        ttk.Label(right, text="前年の文章（見本・書き換えられません）").pack(anchor="w", pady=(4, 0))
+        ttk.Label(right, text="前年の文章（見本・書き換えられません。分ける位置はここにカーソルを置く）"
+                  ).pack(anchor="w", pady=(4, 0))
         self.old = tk.Text(right, height=9, wrap="char", background="#f3f3f3")
         self.old.pack(fill="x")
-        self.old.configure(state="disabled")
+        # 書き換えはさせないが、分ける位置を選べるようにカーソルは置けるようにする
+        # （state="disabled" にするとクリックしてもカーソルが動かない）
+        self.old.bind("<Key>", self._readonly_key)
+        for ev in ("<<Paste>>", "<<Cut>>", "<<Clear>>", "<Button-2>"):
+            self.old.bind(ev, lambda e: "break")
 
         row = ttk.Frame(right)
         row.pack(fill="x", pady=4)
@@ -162,6 +185,10 @@ class App(tk.Tk):
         ttk.Button(row, text="Word・テキストを取り込む（カーソル位置）",
                    command=self.import_file).pack(side="left", padx=4)
         ttk.Button(row, text="Excel の賛否表を選ぶ", command=self.pick_vote).pack(side="left")
+        row_b = ttk.Frame(right)
+        row_b.pack(fill="x", pady=(0, 4))
+        ttk.Button(row_b, text="Word を取り込んで、見出しと本文を欄に振り分ける（この欄から後ろへ）",
+                   command=self.distribute).pack(side="left")
 
         ttk.Label(right, text="今年の原稿").pack(anchor="w")
         self.new = tk.Text(right, height=14, wrap="char", undo=True)
@@ -175,11 +202,25 @@ class App(tk.Tk):
         for m in (NEW, KEEP, SAME, EMPTY, TABLE):
             ttk.Radiobutton(modes, text=MODE_LABEL[m], value=m, variable=self.mode,
                             command=self.on_mode).pack(side="left", padx=4)
-        row2 = ttk.Frame(right)
+        fix = ttk.LabelFrame(right, text="読み取りを直す・欄を組み替える", padding=4)
+        fix.pack(fill="x")
+        row2 = ttk.Frame(fix)
         row2.pack(fill="x")
-        ttk.Button(row2, text="この欄を複製（前年に無い記事を足す）",
+        ttk.Label(row2, text="種類").pack(side="left")
+        self.kind = tk.StringVar()
+        self.kind_box = ttk.Combobox(row2, textvariable=self.kind, state="readonly", width=16,
+                                     values=(AUTO_KIND,) + core.KIND_CHOICES)
+        self.kind_box.pack(side="left", padx=(2, 12))
+        self.kind_box.bind("<<ComboboxSelected>>", self.on_kind)
+        ttk.Button(row2, text="カーソルの行から後ろを別の欄に分ける",
+                   command=self.split).pack(side="left")
+        ttk.Button(row2, text="次の欄とつなげる", command=self.merge).pack(side="left", padx=4)
+        row3 = ttk.Frame(fix)
+        row3.pack(fill="x", pady=(4, 0))
+        ttk.Button(row3, text="この欄を複製（前年に無い記事を足す）",
                    command=self.duplicate).pack(side="left")
-        ttk.Button(row2, text="この枠を消す", command=self.remove_box).pack(side="left", padx=4)
+        ttk.Button(row3, text="この枠を消す", command=self.remove_box).pack(side="left", padx=4)
+        ttk.Button(row3, text="組み替えを1つ戻す", command=self.undo_op).pack(side="left")
 
         bottom = ttk.Frame(self, padding=6)
         bottom.pack(fill="x")
@@ -286,10 +327,11 @@ class App(tk.Tk):
         self._loading = True
         size = f"　枠 {s.box_mm[0]:.0f}×{s.box_mm[1]:.0f}mm" if s.box_mm else ""
         self.slot_lbl.config(text=f"{s.group} ／ {s.kind_label}{size}")
-        self.old.configure(state="normal")
         self.old.delete("1.0", "end")
         self.old.insert("1.0", s.old_text)
-        self.old.configure(state="disabled")
+        self.old.mark_set("insert", "1.0")
+        self.kind.set(s.kind_override or AUTO_KIND)
+        self.kind_box.configure(state="disabled" if s.kind == "box" else "readonly")
         self.new.delete("1.0", "end")
         self.new.insert("1.0", e.text)
         self.new.edit_reset()
@@ -374,6 +416,56 @@ class App(tk.Tk):
         self.new.insert("insert", text)
         self.new.focus_set()
 
+    def distribute(self) -> None:
+        """原稿を見出しと本文のまとまりに分けて、選んだ欄から後ろの欄へ振り分ける。"""
+        if not self.current:
+            messagebox.showinfo("欄を選んでください",
+                                "左の一覧から、原稿の最初の見出し（または本文）を入れる欄を選んでください。")
+            return
+        path = filedialog.askopenfilename(
+            title="振り分ける原稿を選んでください",
+            filetypes=[("原稿", "*.docx *.doc *.txt"), ("すべて", "*.*")])
+        if not path:
+            return
+        try:
+            blocks = core.split_manuscript(path)
+        except (OSError, ValueError) as e:
+            messagebox.showerror("取り込めませんでした", str(e))
+            return
+        if not blocks:
+            messagebox.showinfo("取り込めませんでした", "原稿に文字が見つかりませんでした。")
+            return
+        self.save_current()
+        d = DistributeDialog(self, Path(path).name, blocks, self.tpl.slots(), self.current)
+        if not d.result:
+            return
+        plan: dict[str, list[str]] = {}
+        for block, sid in d.result:
+            if sid:
+                plan.setdefault(sid, []).append(block.text)
+        busy = [sid for sid in plan
+                if (e := self.issue.entries.get(sid)) and e.mode == NEW and e.text.strip()]
+        if busy:
+            names = "\n".join(f"・{self.tpl.refs[i].slot.short}" for i in busy[:15])
+            if not messagebox.askyesno(
+                    "上書きの確認",
+                    f"次の {len(busy)} 欄には、もう今年の原稿が書いてあります。\n{names}\n\n"
+                    "取り込んだ原稿で置き換えてよろしいですか？（「いいえ」なら何も変えません）"):
+                return
+        for sid, texts in plan.items():
+            e = self.issue.entry(sid)
+            e.text = "\n".join(texts)
+            e.mode = NEW
+        self.issue.save()
+        first = next(iter(plan), None)
+        self.current = None
+        self.refresh_tree()
+        if first:
+            self.tree.selection_set(first)
+            self.tree.see(first)
+            self.on_select()
+        messagebox.showinfo("振り分けました", f"{len(plan)} 欄に入れました。一覧の ✎ の欄を確かめてください。")
+
     def pick_vote(self) -> None:
         if not self.issue:
             return
@@ -406,22 +498,131 @@ class App(tk.Tk):
         self.issue.save()
         messagebox.showinfo("賛否表を読みました", msg)
 
+    # ------------------------------------------------------------ 欄の組み替え
+
+    def _readonly_key(self, event) -> str | None:
+        # 矢印・Home/End・ページ送り・コピー・すべて選択だけ通す
+        if event.keysym in ("Left", "Right", "Up", "Down", "Home", "End", "Prior", "Next"):
+            return None
+        if (event.state & 0x4 or event.state & 0x8) and event.keysym.lower() in ("c", "a"):
+            return None
+        return "break"
+
+    def _apply_op(self, op: dict, select: str, title: str) -> None:
+        """組み替えを記録し、様式を開き直して一覧に反映する。"""
+        self.issue.ops.append(op)
+        self._reload(select, title)
+
+    def _reload(self, select: str | None, title: str) -> None:
+        try:
+            self.tpl = self.issue.load_template()
+        except (OSError, ValueError) as e:
+            messagebox.showerror(title, str(e))
+            return
+        self.issue.save()
+        # 画面の欄を先に外しておく（選び直したときに、前の欄の文が新しい欄へ保存されないように）
+        self.current = None
+        self.refresh_tree()
+        if select and self.tree.exists(select):
+            self.tree.selection_set(select)
+            self.tree.see(select)
+            self.on_select()
+
+    def on_kind(self, _event=None) -> None:
+        if not self.current:
+            return
+        label = self.kind.get()
+        try:
+            self.tpl.set_kind(self.current, "" if label == AUTO_KIND else label)
+        except ValueError as e:
+            messagebox.showinfo("種類を変えられません", str(e))
+            return
+        if label == AUTO_KIND:
+            self.issue.kinds.pop(self.current, None)
+        else:
+            self.issue.kinds[self.current] = label
+        self.issue.save()
+        s = self.tpl.refs[self.current].slot
+        self.tree.item(self.current, values=(s.kind_label, s.short))
+        self.slot_lbl.config(text=f"{s.group} ／ {s.kind_label}")
+
+    def split(self) -> None:
+        if not self.current:
+            return
+        ref = self.tpl.refs[self.current]
+        line = int(self.old.index("insert").split(".")[0]) - 1
+        # 画面の行 → 段落の番号（段落の中の改行も 1 行と数える）
+        at, seen = None, 0
+        for k, p in enumerate(ref.paras):
+            if seen == line and k > 0:
+                at = k
+                break
+            seen += core.para_text(p).count("\n") + 1
+        if at is None:
+            messagebox.showinfo("分ける位置", "前年の文章の中で、分けたい行（後ろの欄の 1 行目になる行）の"
+                                "行頭にカーソルを置いてから押してください。\n"
+                                "1 行目や、段落の途中の行では分けられません。")
+            return
+        self.save_current()
+        sid = self.current
+        new_id = self.issue.new_id(sid, "/", self.tpl)
+        self._apply_op({"op": "split", "id": sid, "at": at, "new": new_id}, new_id,
+                       "分けられませんでした")
+
+    def merge(self) -> None:
+        if not self.current:
+            return
+        self.save_current()
+        sid = self.current
+        ref = self.tpl.refs[sid]
+        idx = self.tpl.order.index(sid)
+        nxt = next((i for i in self.tpl.order[idx + 1:] if self.tpl.refs[i].parent is ref.parent), None)
+        if nxt is None:
+            messagebox.showinfo("つなげられません", "後ろに、同じ入れ物（本文どうし・同じ枠の中どうし）の欄がありません。")
+            return
+        other = self.tpl.refs[nxt].slot
+        if not messagebox.askyesno(
+                "次の欄とつなげる",
+                f"「{ref.slot.short}」と、次の「{other.short}」を 1 つの欄にします。\n\n"
+                "・間の空行（写真の場所など）は、つなげた記事のすぐ後ろへ回ります\n"
+                "・次の欄に今年の原稿を書いていた場合は、この欄の原稿の後ろにつなげます\n"
+                "・「組み替えを1つ戻す」で元に戻せます（つなげた原稿は戻りません）\n\n"
+                "つなげてよろしいですか？"):
+            return
+        try:
+            self.tpl.merge(sid)
+        except ValueError as e:
+            messagebox.showerror("つなげられませんでした", str(e))
+            self._reload(sid, "つなげられませんでした")
+            return
+        e_other = self.issue.entries.get(nxt)
+        if e_other and e_other.text.strip():
+            e = self.issue.entry(sid)
+            e.text = (e.text.rstrip("\n") + "\n" + e_other.text) if e.text.strip() else e_other.text
+            e.mode = NEW
+        self._apply_op({"op": "merge", "id": sid, "with": nxt}, sid, "つなげられませんでした")
+
+    def undo_op(self) -> None:
+        if not self.issue or not self.issue.ops:
+            messagebox.showinfo("戻す", "戻せる組み替えはありません。")
+            return
+        op = self.issue.ops[-1]
+        what = {"copy": "複製", "split": "分けた", "merge": "つなげた", "remove": "枠を消した"}.get(
+            op.get("op"), op.get("op"))
+        if not messagebox.askyesno("組み替えを1つ戻す", f"最後の組み替え（{what}: {op.get('id')}）を"
+                                   "取り消します。よろしいですか？"):
+            return
+        self.save_current()
+        self.issue.ops.pop()
+        self._reload(op.get("id") if op.get("op") != "copy" else op.get("src"), "戻せませんでした")
+
     def duplicate(self) -> None:
         if not self.current:
             return
         self.save_current()
         src = self.current
-        new_id = self.issue.next_copy_id(src)
-        try:
-            self.tpl.duplicate(src, new_id)
-        except ValueError as e:
-            messagebox.showerror("複製できませんでした", str(e))
-            return
-        self.issue.copies.append({"src": src, "id": new_id})
-        self.issue.save()
-        self.current = new_id
-        self.refresh_tree()
-        self.on_select()
+        new_id = self.issue.new_id(src, "+", self.tpl)
+        self._apply_op({"op": "copy", "src": src, "id": new_id}, new_id, "複製できませんでした")
 
     def remove_box(self) -> None:
         if not self.current:
@@ -432,14 +633,11 @@ class App(tk.Tk):
                                 "（空いた行は空行で埋めて、以降の位置を保ちます）。")
             return
         if not messagebox.askyesno("枠を消す", f"「{s.short}」の枠を、できあがる Word から消します。\n"
-                                   "様式や前年の号は変わりません。あとで戻すには、号のフォルダの"
-                                   f"{core.DATA_NAME} から消した記録を外します。よろしいですか？"):
+                                   "様式や前年の号は変わりません。「組み替えを1つ戻す」で元に戻せます。"
+                                   "よろしいですか？"):
             return
-        self.tpl.remove_box(self.current)
-        self.issue.removed.append(self.current)
-        self.issue.save()
-        self.current = None
-        self.refresh_tree()
+        self.save_current()
+        self._apply_op({"op": "remove", "id": self.current}, None, "消せませんでした")
 
     # ------------------------------------------------------------ Word を作る
 
@@ -556,6 +754,85 @@ class RegisterDialog(tk.Toplevel):
         finally:
             self.config(cursor="")
         self.labels[season].config(text=f"{src.name}（{n} 欄）")
+
+
+class DistributeDialog(tk.Toplevel):
+    """取り込んだ原稿のまとまりと、入れる欄の対応を確かめて直す画面。"""
+
+    NONE = "（入れない）"
+
+    def __init__(self, master: App, name: str, blocks: list, slots: list, start: str) -> None:
+        super().__init__(master)
+        self.title("見出しと本文を欄に振り分ける")
+        self.geometry("1050x620")
+        self.transient(master)
+        self.result = None
+        self.blocks = blocks
+        self.slots = slots
+        ids = [s.id for s in slots]
+        self.start = start
+        # 選べる欄は、選んだ欄から後ろだけ（前へ入れることはまずない）
+        self.choices = [self.NONE] + [f"{s.id}　{s.kind_label}　{s.short}"
+                                      for s in slots[ids.index(start):]]
+        self.by_label = {c: c.split("　")[0] for c in self.choices[1:]}
+
+        top = ttk.Frame(self, padding=8)
+        top.pack(fill="x")
+        ttk.Label(top, text=f"{name} を {len(blocks)} のまとまりに分けました。"
+                            "見出しか本文か・入れる欄を確かめて、違っていたら直してください。\n"
+                            "同じ欄を 2 つ以上選ぶと、つなげて入れます。種類を直したら「振り分け直す」で"
+                            "欄の案を作り直せます。", justify="left").pack(anchor="w")
+
+        outer = ttk.Frame(self)
+        outer.pack(fill="both", expand=True, padx=8)
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        self.inner = ttk.Frame(canvas)
+        self.inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="left", fill="y")
+
+        for c, head in enumerate(("種類", "原稿のまとまり", "入れる欄")):
+            ttk.Label(self.inner, text=head, font=("", 10, "bold")).grid(row=0, column=c, sticky="w", padx=4)
+        self.kinds: list[tk.StringVar] = []
+        self.targets: list[tk.StringVar] = []
+        for i, b in enumerate(blocks, start=1):
+            kv = tk.StringVar(value=b.kind)
+            ttk.Combobox(self.inner, textvariable=kv, values=(core.HEADING, core.BODY),
+                         state="readonly", width=6).grid(row=i, column=0, padx=4, pady=2, sticky="n")
+            txt = tk.Text(self.inner, width=52, height=min(4, b.text.count("\n") + 1 + len(b.text) // 52),
+                          wrap="char", background="#f7f7f7")
+            txt.insert("1.0", b.text)
+            txt.bind("<Key>", lambda e: "break")
+            txt.grid(row=i, column=1, padx=4, pady=2, sticky="w")
+            tv = tk.StringVar(value=self.NONE)
+            ttk.Combobox(self.inner, textvariable=tv, values=self.choices, state="readonly",
+                         width=46).grid(row=i, column=2, padx=4, pady=2, sticky="n")
+            self.kinds.append(kv)
+            self.targets.append(tv)
+        self.reassign()
+
+        bottom = ttk.Frame(self, padding=8)
+        bottom.pack(fill="x")
+        ttk.Button(bottom, text="振り分け直す（種類を直したあと）", command=self.reassign).pack(side="left")
+        ttk.Button(bottom, text="この振り分けで入れる", command=self.ok).pack(side="right")
+        ttk.Button(bottom, text="やめる", command=self.destroy).pack(side="right", padx=6)
+        self.grab_set()
+        self.wait_window()
+
+    def reassign(self) -> None:
+        blocks = [core.Block(k.get(), b.text) for k, b in zip(self.kinds, self.blocks)]
+        plan = core.assign_blocks(blocks, self.slots, self.start)
+        label = {c.split("　")[0]: c for c in self.choices[1:]}
+        for tv, sid in zip(self.targets, plan):
+            tv.set(label.get(sid, self.NONE) if sid else self.NONE)
+
+    def ok(self) -> None:
+        self.result = [(core.Block(k.get(), b.text), self.by_label.get(t.get()))
+                       for k, t, b in zip(self.kinds, self.targets, self.blocks)]
+        self.destroy()
 
 
 class ReportWindow(tk.Toplevel):

@@ -318,6 +318,197 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(len(list(self.tpl.body)), before - 2 + 3)
 
 
+class RegroupTest(unittest.TestCase):
+    """読み取りを人が直す（分ける・つなげる・種類を変える）。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.tpl = core.Template(make_template(self.dir))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def slot(self, text: str) -> core.Slot:
+        return next(s for s in self.tpl.slots() if text in s.old_text)
+
+    def test_split_keeps_format_of_each_part(self):
+        s = self.slot("答弁")
+        self.assertIn("質問", s.old_text)
+        new = self.tpl.split(s.id, 1, s.id + "/1")
+        self.assertEqual(self.tpl.refs[s.id].slot.old_text, "質問　お米券配布はどうなるのか。")
+        self.assertTrue(new.old_text.startswith("答弁"))
+        self.assertEqual(self.tpl.order.index(new.id), self.tpl.order.index(s.id) + 1)
+        self.tpl.fill({s.id: core.Entry(core.NEW, "質問　新しい質問。"),
+                       new.id: core.Entry(core.NEW, "答弁　佐藤総務課長")})
+        xml = document_xml(self.tpl.save(self.dir / "out.docx"))
+        self.assertIn("新しい質問", xml)
+        self.assertRegex(xml, r"<w:b\s*/><w:sz w:val=\"22\"\s*/></w:rPr><w:t>答弁</w:t>")
+
+    def test_split_rejects_first_line(self):
+        s = self.slot("答弁")
+        with self.assertRaises(ValueError):
+            self.tpl.split(s.id, 0, "x")
+
+    def test_merge_joins_article_split_by_blank_lines(self):
+        a = self.slot("11月９日")
+        b = next(x for x in self.tpl.slots() if x.old_text == "要望活動")
+        # 間に空行が 5 つある記事と見出しをつなげる（本文どうしなのでつなげられる）
+        gone = self.tpl.merge(a.id)
+        self.assertEqual(gone, b.id)
+        self.assertNotIn(b.id, self.tpl.refs)
+        self.assertIn("要望活動", self.tpl.refs[a.id].slot.old_text)
+        before = len(list(self.tpl.body))
+        self.tpl.fill({a.id: core.Entry(core.NEW, "つなげた記事。")})
+        xml = document_xml(self.tpl.save(self.dir / "out.docx"))
+        self.assertNotIn("要望活動", xml)
+        self.assertIn("防災訓練の様子", xml)          # 枠は残る
+        self.assertLessEqual(abs(len(list(self.tpl.body)) - before), 12)
+
+    def test_merge_refuses_across_other_content(self):
+        cell = next(s for s in self.tpl.slots() if s.kind == "cell")
+        with self.assertRaises(ValueError):
+            self.tpl.merge(cell.id)             # 升目の後ろに同じ升目は無い
+
+    def test_kind_override_changes_processing(self):
+        s = self.slot("要望活動")
+        self.tpl.set_kind(s.id, "名前（1字ずつ）")
+        self.assertEqual(s.kind_label, "名前（1字ずつ）")
+        self.tpl.fill({s.id: core.Entry(core.NEW, "高橋次郎")})
+        lines = [core.para_text(p).strip() for p in self.tpl.refs[s.id].paras]
+        self.assertEqual(lines, list("郎次橋高"))
+
+    def test_heading_kind_uses_biggest_font(self):
+        s = self.slot("11月９日")
+        self.tpl.set_kind(s.id, "見出し")
+        self.tpl.fill({s.id: core.Entry(core.NEW, "新しい見出し")})
+        p = self.tpl.refs[s.id].paras[0]
+        self.assertIn('w:val="22"', ET.tostring(p, encoding="unicode"))
+
+    def test_box_kind_cannot_change(self):
+        box = self.slot("防災訓練の様子")
+        with self.assertRaises(ValueError):
+            self.tpl.set_kind(box.id, "本文")
+
+    def test_ops_are_replayed_in_order_and_undo_by_popping(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            issue = core.Issue.create(d, "205", "", "1月号", make_template(d))
+            tpl = issue.load_template()
+            s = next(x for x in tpl.slots() if "答弁" in x.old_text)
+            issue.ops.append({"op": "split", "id": s.id, "at": 1, "new": s.id + "/1"})
+            issue.ops.append({"op": "copy", "src": s.id + "/1", "id": s.id + "/1+1"})
+            issue.kinds[s.id] = "見出し"
+            issue.save()
+            again = core.Issue.open(issue.folder)
+            tpl = again.load_template()
+            self.assertIn(s.id + "/1+1", tpl.refs)
+            self.assertEqual(tpl.refs[s.id].slot.kind_label, "見出し")
+            again.ops.pop()
+            self.assertNotIn(s.id + "/1+1", again.load_template().refs)
+
+    def test_old_copies_record_is_still_read(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            issue = core.Issue.create(d, "205", "", "1月号", make_template(d))
+            sid = next(x.id for x in issue.load_template().slots() if "要望" in x.old_text)
+            (issue.folder / core.DATA_NAME).write_text(
+                '{"slots": {}, "copies": [{"src": "%s", "id": "%s+1"}], "removed": []}' % (sid, sid),
+                encoding="utf-8")
+            self.assertIn(sid + "+1", core.Issue.open(issue.folder).load_template().refs)
+
+
+def make_manuscript(folder: Path) -> Path:
+    """議員から届く原稿の見本。見出しの付け方を 3 通り混ぜてある。"""
+    def p(text, rpr="", ppr=""):
+        return (f'<w:p><w:pPr>{ppr}</w:pPr><w:r><w:rPr>{rpr}<w:sz w:val="21"/></w:rPr>'
+                f'<w:t>{text}</w:t></w:r></w:p>')
+    body = "".join([
+        p("防災訓練", ppr='<w:pStyle w:val="1"/>'),                        # 見出しスタイル
+        p("12月１日に防災訓練を行い、多くの住民が参加した。"),
+        p("来年も続けて取り組んでいく。"),
+        p("要望活動", rpr="<w:b/>"),                                        # 太字だけ
+        p("国や県に対して、予算の確保を要望した。"),
+        '<w:p><w:r><w:rPr><w:sz w:val="28"/></w:rPr><w:t>表彰式</w:t></w:r></w:p>',  # 大きい字
+        p("功労表彰を授与した。"),
+    ])
+    doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+           f'<w:document xmlns:w="{W_NS}"><w:body>{body}</w:body></w:document>')
+    styles = (f'<?xml version="1.0" encoding="UTF-8"?><w:styles xmlns:w="{W_NS}">'
+              '<w:style w:type="paragraph" w:styleId="1"><w:name w:val="heading 1"/>'
+              '<w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style></w:styles>')
+    path = folder / "原稿.docx"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.writestr("_rels/.rels", RELS)
+        z.writestr("word/document.xml", doc)
+        z.writestr("word/styles.xml", styles)
+    return path
+
+
+class DistributeTest(unittest.TestCase):
+    """原稿を見出しと本文に分けて、欄へ振り分ける。"""
+
+    def test_docx_headings_by_style_bold_and_size(self):
+        with tempfile.TemporaryDirectory() as d:
+            blocks = core.split_manuscript(make_manuscript(Path(d)))
+        self.assertEqual([(b.kind, b.text.split("\n")[0][:6]) for b in blocks], [
+            ("見出し", "防災訓練"), ("本文", "12月１日に"),
+            ("見出し", "要望活動"), ("本文", "国や県に対し"),
+            ("見出し", "表彰式"), ("本文", "功労表彰を授")])
+        self.assertEqual(blocks[1].text.count("\n"), 1)     # 本文の 2 段落は 1 まとまり
+
+    def test_plain_text_headings_by_line_shape(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "原稿.txt"
+            path.write_text("防災訓練\n12月１日に防災訓練を行った。\n\n質問　どうするのか。\n"
+                            "答弁　佐藤総務課長\n検討する。\n", encoding="cp932")
+            blocks = core.split_manuscript(path)
+        self.assertEqual(blocks[0].kind, "見出し")
+        # 「質問」「答弁」で始まる行は見出しにしない
+        self.assertFalse(any(b.kind == "見出し" and b.text.startswith(("質問", "答弁"))
+                             for b in blocks))
+
+    def test_assign_follows_paper_order_and_skips_captions(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            tpl = core.Template(make_template(d))
+            blocks = core.split_manuscript(make_manuscript(d))
+        slots = tpl.slots()
+        start = next(s.id for s in slots if s.old_text == "防災訓練")
+        plan = core.assign_blocks(blocks, slots, start)
+        got = [tpl.refs[i].slot.short if i else None for i in plan]
+        self.assertEqual(got[0], "防災訓練")                 # 見出し → 見出し
+        self.assertTrue(got[1].startswith("11月"))            # 本文 → 本文（写真の説明文の枠は飛ばす）
+        self.assertEqual(got[2], "要望活動")
+        self.assertTrue(got[3].startswith("質問"))
+        self.assertNotIn("防災訓練の様子", got)
+
+    def test_extra_body_paragraph_does_not_shift_later_articles(self):
+        # 原稿の本文が様式より細かく分かれていても、後ろの見出しがずれないこと
+        # （前から詰めるだけの作りでは、第201号で 26 のうち 8 しか合わなかった）
+        with tempfile.TemporaryDirectory() as d:
+            tpl = core.Template(make_template(Path(d)))
+        slots = tpl.slots()
+        start = next(s.id for s in slots if s.old_text == "防災訓練")
+        H, B = core.HEADING, core.BODY
+        blocks = [core.Block(H, "防災訓練"), core.Block(B, "一つ目。"), core.Block(B, "二つ目。"),
+                  core.Block(H, "要望活動"), core.Block(B, "質問　三つ目。")]
+        plan = core.assign_blocks(blocks, slots, start)
+        short = [tpl.refs[i].slot.short if i else None for i in plan]
+        self.assertEqual(short[0], "防災訓練")
+        self.assertEqual(plan[1], plan[2])                   # 本文 2 つは同じ欄へつなげる
+        self.assertEqual(short[3], "要望活動")
+        self.assertTrue(short[4].startswith("質問"))
+
+    def test_big_box_accepts_headings_but_caption_does_not(self):
+        big = core.Slot("T1", "box", "簡易水道の有収率向上を", 1, False, 24)
+        cap = core.Slot("T2", "box", "防災訓練の様子", 1, False, 11)
+        self.assertTrue(core.accepts(big, core.HEADING))
+        self.assertFalse(core.accepts(cap, core.HEADING))
+        self.assertFalse(core.accepts(big, core.BODY))
+
+
 class IssueTest(unittest.TestCase):
     def test_create_edit_reopen_and_build(self):
         with tempfile.TemporaryDirectory() as d:
@@ -327,7 +518,7 @@ class IssueTest(unittest.TestCase):
             self.assertEqual(issue.folder.name, "第205号")
             sid = next(s.id for s in issue.load_template().slots() if "要望" in s.old_text)
             issue.entries[sid] = core.Entry(core.NEW, "要望活動を行った")
-            issue.copies.append({"src": sid, "id": sid + "+1"})
+            issue.ops.append({"op": "copy", "src": sid, "id": sid + "+1"})
             issue.save()
             again = core.Issue.open(issue.folder)
             self.assertEqual(again.entries[sid].text, "要望活動を行った")
