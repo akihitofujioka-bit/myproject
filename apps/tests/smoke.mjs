@@ -613,6 +613,76 @@ console.log("== 会議の通知（apps/docs-tracker）==");
   await mctx.close();
 }
 
+/* ---------------- 手帳のページの読み取りとカレンダー登録 ---------------- */
+console.log("== 手帳（apps/docs-tracker）==");
+{
+  const pctx = await browser.newContext({ acceptDownloads: true });
+  const pp = await pctx.newPage();
+  const perrs = [];
+  pp.on("pageerror", (e) => perrs.push(String(e)));
+  const url = "file://" + path.join(ROOT, "apps/docs-tracker/index.html");
+  await pp.addInitScript(() => {
+    window.Capacitor = { isNativePlatform: () => true, nativePromise: () => Promise.resolve({ cancelled: true }) };
+  });
+  await pp.goto(url);
+  await pp.evaluate(() => localStorage.clear());
+  await pp.reload();
+  ok(await pp.locator("#plannerScanBtn").isVisible(), "アプリとして開くと「手帳を撮る」が出る");
+
+  // 2026年10月の月間ページ（日曜始まり・1日は木曜）。予定は架空のもの
+  const grid = (notes) => {
+    const f = [{ text: "2026年10月", x: 0.35, y: 0.03, width: 0.3, height: 0.05 }];
+    "日月火水木金土".split("").forEach((w, c) => f.push({ text: w, x: 0.08 + c * 0.137, y: 0.12, width: 0.02, height: 0.02 }));
+    for (let d = 1; d <= 31; d++) {
+      const i = d + 3, r = Math.floor(i / 7), c = i % 7;
+      f.push({ text: String(d), x: 0.026 + c * 0.137, y: 0.164 + r * 0.135, width: 0.012 * String(d).length, height: 0.018 });
+      (notes[d] || []).forEach((t, k) => f.push({ text: t, x: 0.03 + c * 0.137, y: 0.19 + r * 0.135 + k * 0.025, width: 0.12, height: 0.02 }));
+    }
+    return f;
+  };
+  const page1 = grid({ 5: ["10:00 歯医者"], 18: ["町内会の会議"], 24: ["飲み会 3,000円"] });
+
+  // 「会議の通知を撮る」で手帳を撮っても、手帳として読む
+  await pp.evaluate((l) => window.docsApp.applyMeetingScan(l), page1);
+  ok(await pp.locator("#plannerConfirm").isVisible() && !(await pp.locator("#meetingConfirm").isVisible()),
+    "会議の通知のつもりで手帳を撮っても、手帳の確認欄に出す");
+  ok((await pp.locator("#plannerForms .meeting").count()) === 3, "マスの書き込みを3件読み取る");
+  ok((await pp.locator(".p-title").first().inputValue()) === "歯医者" && (await pp.locator(".p-start").first().inputValue()) === "10:00", "件名と時刻が分かれて入る");
+  ok((await pp.locator("#plannerMonth").inputValue()) === "2026-10", "ページの年月が入る");
+
+  // 月を直すと日付が付け替わる
+  await pp.fill(".p-title >> nth=1", "町内会の会議（集会所）");
+  await pp.fill("#plannerMonth", "2026-11");
+  await pp.dispatchEvent("#plannerMonth", "change");
+  ok((await pp.locator(".p-date").first().inputValue()) === "2026-11-05", "月を直すと日付が付け替わる");
+  ok((await pp.locator(".p-title").nth(1).inputValue()) === "町内会の会議（集会所）", "月を直しても、直した件名は消えない");
+  await pp.fill("#plannerMonth", "2026-10");
+  await pp.dispatchEvent("#plannerMonth", "change");
+
+  // ブラウザ（CalendarWriter なし）では .ics で渡す。時刻なしは終日
+  await pp.uncheck("#plan2");
+  const [download] = await Promise.all([pp.waitForEvent("download"), pp.click("#plannerRegisterCal")]);
+  let ics = "";
+  for await (const chunk of await download.createReadStream()) ics += chunk.toString("utf8");
+  const unfolded = ics.replace(/\r\n /g, "");
+  ok(download.suggestedFilename().startsWith("planner-"), "手帳用のファイル名で書き出す");
+  ok(unfolded.includes("SUMMARY:歯医者") && unfolded.includes("DTSTART:20261005T100000"), "時刻のある予定はその時刻で入る");
+  ok(unfolded.includes("SUMMARY:町内会の会議（集会所）") && unfolded.includes("DTSTART;VALUE=DATE:20261018"), "時刻の無い予定は終日で入る");
+  ok(!unfolded.includes("飲み会"), "チェックを外した予定は入れない");
+  ok((unfolded.match(/BEGIN:VALARM/g) || []).length === 1, "通知は時刻のある予定だけ（30分前）");
+
+  // ホーム画面からの受け渡し
+  await pp.evaluate((l) => { window.ScanRouter.handoff("planner", l); }, page1);
+  await pp.reload();
+  ok(await pp.locator("#plannerConfirm").isVisible() && (await pp.locator("#plannerForms .meeting").count()) === 3,
+    "ホーム画面から手帳として渡されたら、開いた時点で確認欄を出す");
+  await pp.click("#plannerCancel");
+  ok(!(await pp.locator("#plannerConfirm").isVisible()), "「やめる」で確認欄が閉じる");
+
+  ok(perrs.length === 0, "JSエラーなし" + (perrs.length ? " → " + perrs.join(" / ") : ""));
+  await pctx.close();
+}
+
 /* ---------------- 買い物リスト（Apple Watch 向け） ---------------- */
 console.log("== 買い物リスト（リマインダーへ送る）==");
 {

@@ -38,6 +38,9 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
     private var pendingCall: CAPPluginCall?
     /// 撮り方。"silent" = 無音カメラ / "document" = VisionKit の書類カメラ
     private var camera: String = "silent"
+    /// 何を撮るか。"receipt"（既定）/ "planner"（手帳）/ "document"（書類）/ "any"（振り分け前で不明）。
+    /// 案内文と、文字認識で拾う文字の小ささを変える
+    private var purpose: String = "receipt"
 
     @objc func isSupported(_ call: CAPPluginCall) {
         let hasCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) != nil
@@ -62,6 +65,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
     private func startCamera(_ call: CAPPluginCall, mode: String) {
         self.mode = mode
         self.camera = (call.getString("camera") == "document") ? "document" : "silent"
+        self.purpose = call.getString("purpose") ?? (mode == "photos" ? "document" : "receipt")
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         if status == .denied || status == .restricted {
             call.reject("カメラの使用が許可されていません。設定アプリで許可してください")
@@ -102,12 +106,19 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
                 return
             }
 
-            // 無音カメラ（音は鳴らないが、切り出しはしない）
+            // 無音カメラ（音は鳴らない。撮ったあと紙の四隅を探して傾きを直す）
             let silent = SilentCameraViewController()
             silent.modalPresentationStyle = .fullScreen
-            silent.guidanceText = mode == "photos"
-                ? "書類全体が入るようにして「撮る」を押してください（音は鳴りません）"
-                : "レシート全体が入るようにして「撮る」を押してください（音は鳴りません）"
+            switch self.purpose {
+            case "planner":
+                silent.guidanceText = "手帳のページ全体（上の「◯月」の見出しも）が入るようにし、真上から「撮る」を押してください。暗いときは「ライト」を使ってください（音は鳴りません）"
+            case "document":
+                silent.guidanceText = "書類全体が入るようにして「撮る」を押してください（音は鳴りません）"
+            case "any":
+                silent.guidanceText = "レシート・通知・手帳のページの全体が入るようにし、真上から「撮る」を押してください（音は鳴りません）"
+            default:
+                silent.guidanceText = "レシート全体が入るようにして「撮る」を押してください（音は鳴りません）"
+            }
             silent.onFinish = { [weak self] image in
                 guard let self = self else { return }
                 guard let image = image else {
@@ -118,7 +129,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
                     self.savePage(image, call: call)
                     return
                 }
-                self.recognize(image: image) { result in
+                self.recognize(image: image, purpose: self.purpose) { result in
                     switch result {
                     case .success(let lines):
                         call.resolve([
@@ -170,7 +181,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         }
         // 1枚目だけを使う（レシートは1枚で完結するため）
         let image = scan.imageOfPage(at: 0)
-        recognize(image: image) { result in
+        recognize(image: image, purpose: purpose) { result in
             switch result {
             case .success(let lines):
                 call.resolve([
@@ -229,7 +240,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
     // MARK: - 文字認識
 
     /// 画像内の文字を行ごとに認識し、文字列と位置（画像の左上を原点とした 0〜1 の割合）を返す。
-    private func recognize(image: UIImage, completion: @escaping (Result<[[String: Any]], Error>) -> Void) {
+    private func recognize(image: UIImage, purpose: String, completion: @escaping (Result<[[String: Any]], Error>) -> Void) {
         guard let cgImage = image.cgImage else {
             completion(.failure(NSError(domain: "ReceiptScanner", code: 1,
                                         userInfo: [NSLocalizedDescriptionKey: "画像を扱えません"])))
@@ -259,6 +270,11 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["ja-JP", "en-US"]
         request.usesLanguageCorrection = true
+        // 手帳の月間ページは、マスの隅の日付の数字や手書きが小さい。
+        // 既定のままだと小さな文字を読み飛ばすため、拾う文字の下限を下げる（そのぶん少し時間がかかる）
+        if purpose == "planner" || purpose == "any" {
+            request.minimumTextHeight = 0.006
+        }
 
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: cgOrientation(from: image.imageOrientation), options: [:])
         DispatchQueue.global(qos: .userInitiated).async {

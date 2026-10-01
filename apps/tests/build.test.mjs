@@ -27,7 +27,7 @@ ok(m && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}（[0-9a-f]{7,}\+?）$/.test(m[1]), "版�
 ok(!/開発版/.test(index), "「開発版」の仮表示が残っていない");
 ok(fs.readFileSync(path.join(WWW, "version.txt"), "utf8").trim() === (m && m[1]), "version.txt にも同じ版が書かれる");
 ok(!/data-web-only/.test(index), "ブラウザ専用の案内が取り除かれている");
-for (const f of ["shared/meeting.js", "shared/inbox.js", "shared/receipt.js", "cards/icon-192.png"]) {
+for (const f of ["shared/meeting.js", "shared/planner.js", "shared/inbox.js", "shared/receipt.js", "cards/icon-192.png"]) {
   ok(fs.existsSync(path.join(WWW, f)), f + " が含まれる");
 }
 ok(!fs.existsSync(path.join(WWW, "fridge/sw.js")), "Service Worker は含まれない");

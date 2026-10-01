@@ -411,6 +411,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="../shared/receipt.js"></script>
+<script src="../shared/meeting.js"></script>
+<script src="../shared/planner.js"></script>
 <script src="../shared/inbox.js"></script>
 <script src="../shared/camerapref.js"></script>
 <script src="../shared/receiptscan.js"></script>
@@ -1294,6 +1296,23 @@ document.getElementById("toggleAll").addEventListener("click", function () {
   this.textContent = turnOn ? "全部外す" : "全部選ぶ";
 });
 
+/*
+ * 撮ったものがレシートではなく手帳のページや会議の通知に見えるときは、
+ * 家計簿に入れる前に、書類トラッカーで読むかを尋ねる。
+ * 以前は何を撮っても合計・日付を拾おうとし、手帳の「3,000円」を合計として入れていた。
+ * 戻り値: true = 書類トラッカーへ移る（ここでは何もしない）
+ */
+function offerOtherApp(lines) {
+  if (!window.ScanRouter) return false;
+  var kind = window.ScanRouter.classify(lines).type;
+  var label = kind === "planner" ? "手帳のページ" : kind === "meeting" ? "会議の通知" : "";
+  if (!label) return false;
+  if (!window.confirm("レシートではなく" + label + "のようです。\n書類トラッカーで読み取りますか？\n（「キャンセル」でこのままレシートとして読みます）")) return false;
+  window.ScanRouter.handoff(kind, lines);
+  window.location.href = "../" + window.ScanRouter.destinationFor(kind);
+  return true;
+}
+
 function scanReceipt() {
   if (scanning) return;
   if (!window.ReceiptScan || !window.ReceiptScan.available()) { toast("この環境ではレシート撮影を使えません"); return; }
@@ -1310,6 +1329,7 @@ function scanReceipt() {
     clearTimeout(stuck);
     setScanningState(false);
     if (res.cancelled) return;
+    if (offerOtherApp(res.lines)) return;
     applyReceipt(res.lines);
   }).catch(function (err) {
     clearTimeout(stuck);

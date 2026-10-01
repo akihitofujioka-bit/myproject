@@ -183,3 +183,15 @@ pbxproj は次の4箇所に「同じファイルへの参照」を書く必要�
   端末を機種変更する、あるいはアプリを再インストールして localStorage が
   消えると、次回保存時に「前回の予定」を見失い、同じ会議が重複して
   新規作成される可能性がある（許容している設計上のトレードオフ）。
+
+## 8. 2026-10-01 の追加（取り込み・無音カメラの改善・手帳の読み取り）
+
+- このブランチ（`claude/daily-life-app-ideas-67bori`）の4コミットは `main` に入っていなかった。
+  `feat/planner-scan` に取り込み、Mac で `xcodebuild`（iOS 向け・署名なし）が通ることを確かめた
+- `SilentCameraViewController` を改善した（複数レンズのカメラでマクロへ自動切替、ピント待ち、
+  4コマから最もくっきりしたものを選ぶ、紙の四隅を探して傾き補正、ライト、タップでピント、点滅と振動）
+- `ReceiptScannerPlugin.scan` に `purpose`（`receipt` / `planner` / `any`）を足した。
+  案内文と、文字認識の `minimumTextHeight`（手帳・振り分け前は 0.006）を切り替える
+- 手帳の読み取りは JS 側（`apps/shared/planner.js`）。詳しくは `apps/README.md` の「手帳のページを読み取って…」
+- 書類トラッカーの `writeToCalendar` が終日の予定（`allDay`）を扱えるようにした。`CalendarWriterPlugin` は
+  `startTime` が空なら終日として入れる（既存の動き）。`.ics` 経由でも `DTSTART;VALUE=DATE` で終日になる

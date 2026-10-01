@@ -203,7 +203,10 @@ li.item.done { opacity: .62; }
 .meeting .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .meeting .head input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
 .meeting .head .no { font-weight: 700; }
-.meeting .warn { color: var(--warn); font-size: 12px; }
+.meeting .warn, .warn-text { color: var(--warn); font-size: 12px; }
+/* 手帳から読んだ予定は件数が多いので、1件を1〜2行に収める */
+.meeting.plan { border-left-color: var(--warn); padding: 8px 10px; margin-bottom: 8px; }
+.meeting.plan .row { gap: 8px; }
 /* 共通の input 指定（width:100%）がチェックボックスにも効いてしまうため戻す */
 .meeting label.check { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text); margin: 0; min-height: 40px; }
 .meeting label.check input[type="checkbox"] { width: 22px; height: 22px; flex: none; margin: 0; }
@@ -355,14 +358,16 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
   <!-- 端末側の書類カメラを使うため、アプリとして開いたときだけ出す -->
   <section class="card" id="meetingCard" hidden>
-    <h2>会議の通知を読み取る</h2>
+    <h2>会議の通知・手帳を読み取る</h2>
     <p class="footnote" style="margin:0 0 10px">
       開催通知を撮ると、<strong>会議名・日付・時刻・場所・懇親会の有無</strong>を読み取ります。
       通知の書き方は文書ごとに違うため、<strong>必ず内容を確認してから登録してください</strong>。
-      1枚に複数の会議が載っている場合は分けて読み取ります。
+      1枚に複数の会議が載っている場合は分けて読み取ります。<br>
+      <strong>手帳</strong>は、月間スケジュールのマス目と、日付ごとのメモ（「10/3(金)」のような日付の下に書いたもの）を読み取り、日付ごとの予定として iPhone のカレンダーに登録できます。手書きは読み違いが多いので、確認欄で直してから登録してください。
     </p>
     <div class="chips">
       <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
+      <button type="button" class="primary" id="plannerScanBtn">📒 手帳を撮る</button>
       <button type="button" id="meetingManualBtn">＋ 手入力で追加</button>
       <button type="button" id="calendarFindBtn" hidden>📅 カレンダーから探す</button>
     </div>
@@ -400,6 +405,29 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <button type="button" id="meetingRegisterApp">アプリだけ</button>
       <button type="button" class="link" id="meetingCancel">やめる</button>
     </div>
+  </section>
+
+  <section class="card" id="plannerConfirm" hidden>
+    <h2>手帳から読み取った予定（確認してカレンダーに登録）</h2>
+    <p class="footnote" id="plannerSummary" style="margin:0 0 6px"></p>
+    <p class="footnote warn-text" id="plannerWarn" hidden style="margin:0 0 6px"></p>
+    <div class="row" id="plannerMonthRow" hidden style="align-items:flex-end;margin-bottom:8px">
+      <div class="field"><label for="plannerMonth">何年何月のページか</label><input type="month" id="plannerMonth"></div>
+      <p class="footnote" style="margin:0 0 8px">違っていたら直すと、すべての予定の日付が付け替わります（日はそのまま）。</p>
+    </div>
+    <div class="chips" style="margin-bottom:8px">
+      <button type="button" class="small" id="plannerToggleAll">全部外す</button>
+    </div>
+    <div id="plannerForms"></div>
+    <div class="chips" style="margin-top:10px">
+      <button type="button" class="primary" id="plannerRegisterCal">チェックした予定をカレンダーに登録</button>
+      <button type="button" id="plannerAddRow">＋ 1件足す</button>
+      <button type="button" class="link" id="plannerCancel">やめる</button>
+    </div>
+    <p class="footnote" style="margin:10px 0 0">
+      時刻が書かれていない予定は「終日」として入ります。時刻のある予定は開始30分前に通知します。
+      同じページを撮り直して登録しても、件名と日付が同じ予定は上書きされ、増えません。
+    </p>
   </section>
 
   <section class="card" id="docPhotoCard" hidden>
@@ -468,6 +496,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/receiptscan.js"></script>
 <script src="../shared/receipt.js"></script>
 <script src="../shared/meeting.js"></script>
+<script src="../shared/planner.js"></script>
 <script src="../shared/scanrouter.js"></script>
 <script src="../shared/calendarread.js"></script>
 <script src="../shared/calendarwrite.js"></script>
@@ -924,8 +953,9 @@ function writeToCalendar(events, calendarName, filePrefix) {
         eventId: state.calIds[ev.uid] || "",
         title: ev.title,
         date: ev.date,
-        startTime: ev.time || "09:00",
-        endTime: endTimeOf(ev),
+        // 終日の予定は時刻を空で渡す（CalendarWriterPlugin が終日として入れる）
+        startTime: ev.allDay ? "" : (ev.time || "09:00"),
+        endTime: ev.allDay ? "" : endTimeOf(ev),
         location: ev.location || "",
         notes: ev.description || "",
         alarms: ev.alarms || [1440, 0]
@@ -1424,6 +1454,11 @@ document.getElementById("meetingScanBtn").addEventListener("click", function () 
 
 // 認識結果から会議を取り出して確認欄に出す（テストからも呼べるよう関数に分ける）
 function applyMeetingScan(lines) {
+  // 手帳のページを「会議の通知を撮る」で撮った場合は、手帳として読む
+  if (window.ScanRouter && window.Planner) {
+    var kind = window.ScanRouter.classify(lines).type;
+    if (kind === "planner") return applyPlannerScan(lines);
+  }
   var rows = window.Receipt.rowsFromLines(lines).map(function (r) { return r.text; });
   var found = window.Meeting.parse(rows, {});
   renderMeetings(found);
@@ -1598,6 +1633,213 @@ if (window.ReceiptScan && window.ReceiptScan.available()) {
   if (handed && handed.length) applyMeetingScan(handed);
 })();
 
+/* ---------- 手帳のページを読み取ってカレンダーに登録する ---------- */
+
+var plannerResult = null;
+var plannerBusy = false;
+
+function setPlannerBusy(on) {
+  plannerBusy = on;
+  var el = document.getElementById("plannerScanBtn");
+  el.disabled = on;
+  el.textContent = on ? "カメラを起動しています…" : "📒 手帳を撮る";
+}
+
+document.getElementById("plannerScanBtn").addEventListener("click", function () {
+  if (plannerBusy) return;
+  if (!window.ReceiptScan || !window.ReceiptScan.available()) { toast("この環境では読み取りを使えません"); return; }
+  setPlannerBusy(true);
+  toast("カメラを起動しています…");
+  var stuck = setTimeout(function () {
+    if (!plannerBusy) return;
+    setPlannerBusy(false);
+    toast("カメラが開かないときは、アプリを開き直してからもう一度お試しください");
+  }, 12000);
+  // 手帳は見開きで横長になることが多く、手書きは小さいので、案内を手帳向けにする
+  window.ReceiptScan.scan({ purpose: "planner" }).then(function (res) {
+    clearTimeout(stuck);
+    setPlannerBusy(false);
+    if (res.cancelled) return;
+    applyPlannerScan(res.lines);
+  }).catch(function (err) {
+    clearTimeout(stuck);
+    setPlannerBusy(false);
+    toast("読み取れませんでした：" + (err && err.message ? err.message : "原因不明"));
+  });
+});
+
+// 認識結果から手帳の予定を取り出して確認欄に出す（テストからも呼べるよう関数に分ける）
+function applyPlannerScan(lines) {
+  var result = window.Planner.parse(lines);
+  renderPlanner(result);
+  if (!result.kind) toast("手帳の日付を見つけられませんでした。日付が写るように撮り直してください");
+  else if (!result.entries.length) toast("日付は読めましたが、書き込みを見つけられませんでした");
+  else toast("手帳から" + result.entries.length + "件の予定を読み取りました。内容を確認してください");
+  if (result.kind) document.getElementById("plannerConfirm").scrollIntoView({ behavior: "smooth", block: "start" });
+  return result;
+}
+
+function renderPlanner(result) {
+  plannerResult = result && result.kind ? result : null;
+  var box = document.getElementById("plannerConfirm");
+  box.hidden = !plannerResult;
+  if (!plannerResult) { document.getElementById("plannerForms").innerHTML = ""; return; }
+
+  var r = plannerResult;
+  var what = r.kind === "month" ? r.year + "年" + r.month + "月の月間ページ" : "日付ごとのメモ";
+  document.getElementById("plannerSummary").textContent =
+    what + "として " + r.entries.length + "件を読み取りました。手書きは読み違いが多いので、件名・日付・時刻を確かめてから登録してください。";
+
+  var warn = document.getElementById("plannerWarn");
+  warn.hidden = true;
+  if (r.monthConfidence === "low") {
+    warn.hidden = false;
+    warn.textContent = r.kind === "month"
+      ? "※ ページの年月を読めなかったため、日付の並び（1日の曜日）から " + r.year + "年" + r.month + "月 と推測しました。違う場合は下で直してください。"
+      : "※ 月が書かれていなかったため、曜日からいちばん近い月を当てはめています。日付を確かめてください。";
+  } else if (r.monthConfidence === "medium") {
+    warn.hidden = false;
+    warn.textContent = "※ 年が書かれていなかったため、いちばん近い年を当てはめています。";
+  }
+  // 月間ページは「何年何月か」をまとめて直せるようにする
+  document.getElementById("plannerMonthRow").hidden = r.kind !== "month";
+  if (r.kind === "month") document.getElementById("plannerMonth").value = r.year + "-" + pad(r.month);
+
+  drawPlannerRows(r.entries);
+}
+
+function drawPlannerRows(entries) {
+  document.getElementById("plannerForms").innerHTML = entries.map(function (e, i) {
+    return '<div class="meeting plan" data-idx="' + i + '">' +
+      '<div class="head"><input type="checkbox" id="plan' + i + '" checked>' +
+        '<label class="no" for="plan' + i + '">' + (i + 1) + "</label>" +
+        '<input class="p-title" aria-label="件名" value="' + esc(e.title) + '" style="flex:1"></div>' +
+      '<div class="row">' +
+        '<div class="field date"><label>日付</label><input type="date" class="p-date" value="' + esc(e.date) + '"></div>' +
+        '<div class="field"><label>開始（空なら終日）</label><input type="time" class="p-start" value="' + esc(e.startTime) + '"></div>' +
+        '<div class="field"><label>終了（任意）</label><input type="time" class="p-end" value="' + esc(e.endTime) + '"></div>' +
+      "</div></div>";
+  }).join("") || '<p class="empty">書き込みは見つかりませんでした。「＋ 1件足す」で入れられます。</p>';
+  document.getElementById("plannerToggleAll").textContent = "全部外す";
+}
+
+// 画面で直された内容を読み取る（チェックの付いたものだけ）
+function collectPlanner() {
+  var out = [];
+  Array.prototype.forEach.call(document.querySelectorAll("#plannerForms .meeting"), function (el) {
+    var i = Number(el.getAttribute("data-idx"));
+    if (!document.getElementById("plan" + i).checked) return;
+    var get = function (cls) { var n = el.querySelector("." + cls); return n ? n.value.trim() : ""; };
+    out.push({ title: get("p-title"), date: get("p-date"), startTime: get("p-start"), endTime: get("p-end") });
+  });
+  return out;
+}
+
+// 画面の入力を plannerResult に書き戻す（行を足す・月を直すときに、直した内容を失わないため）
+function syncPlannerFromForm() {
+  if (!plannerResult) return;
+  plannerResult.entries = Array.prototype.map.call(document.querySelectorAll("#plannerForms .meeting"), function (el) {
+    var get = function (cls) { var n = el.querySelector("." + cls); return n ? n.value.trim() : ""; };
+    return { title: get("p-title"), date: get("p-date"), startTime: get("p-start"), endTime: get("p-end") };
+  });
+}
+
+function plannerEvents(list) {
+  return list.map(function (e) {
+    var minutes = 60;
+    if (e.startTime && e.endTime) {
+      var sp = e.startTime.split(":").map(Number), ep = e.endTime.split(":").map(Number);
+      var diff = (ep[0] * 60 + ep[1]) - (sp[0] * 60 + sp[1]);
+      if (diff > 0) minutes = diff;
+    }
+    return {
+      // 同じ日・同じ件名なら同じ識別子。撮り直して登録しても予定が増えない
+      uid: "plan-" + window.Native.idFrom(e.date + "/" + e.title) + "@docs-tracker",
+      title: e.title,
+      date: e.date,
+      time: e.startTime || "",
+      allDay: !e.startTime,
+      durationMinutes: minutes,
+      description: "手帳から登録",
+      alarms: e.startTime ? [30] : [],
+      sequence: 0
+    };
+  });
+}
+
+document.getElementById("plannerRegisterCal").addEventListener("click", function () {
+  var picked = collectPlanner();
+  var list = picked.filter(function (e) { return e.date && e.title; });
+  if (!list.length) {
+    toast(picked.length ? "件名か日付が空です。入れてから登録してください" : "登録する予定にチェックを付けてください");
+    return;
+  }
+  var skipped = picked.length - list.length;
+  var btn = this;
+  btn.disabled = true;
+  writeToCalendar(plannerEvents(list), "手帳", "planner").then(function (res) {
+    btn.disabled = false;
+    if (res.how === "cancelled") return;
+    var note = skipped ? "（件名か日付が空の" + skipped + "件は除く）" : "";
+    if (res.how === "direct") {
+      toast("カレンダーに登録しました（" + res.count + "件）" + note);
+      renderPlanner(null);
+    } else {
+      toast((res.how === "shared" ? "カレンダーアプリを選んでください（" : "予定ファイルを保存しました（") + list.length + "件）" + note);
+    }
+  }, function (err) {
+    btn.disabled = false;
+    toast("登録できませんでした：" + (err && err.message ? err.message : "原因不明"));
+  });
+});
+
+document.getElementById("plannerMonth").addEventListener("change", function () {
+  var v = this.value.split("-").map(Number);
+  if (!plannerResult || v.length !== 2 || !v[0] || !v[1]) return;
+  syncPlannerFromForm();
+  var dim = new Date(v[0], v[1], 0).getDate();
+  var moved = 0;
+  plannerResult.entries.forEach(function (e) {
+    var d = Number((e.date || "").split("-")[2]);
+    if (!d) return;
+    // その月に無い日（2月30日など）は空にして、手で入れてもらう
+    e.date = d <= dim ? v[0] + "-" + pad(v[1]) + "-" + pad(d) : "";
+    moved++;
+  });
+  plannerResult.year = v[0];
+  plannerResult.month = v[1];
+  drawPlannerRows(plannerResult.entries);
+  toast(moved + "件の日付を " + v[0] + "年" + v[1] + "月 に付け替えました");
+});
+
+document.getElementById("plannerAddRow").addEventListener("click", function () {
+  if (!plannerResult) return;
+  syncPlannerFromForm();
+  var last = plannerResult.entries[plannerResult.entries.length - 1];
+  plannerResult.entries.push({ title: "", date: last ? last.date : "", startTime: "", endTime: "" });
+  drawPlannerRows(plannerResult.entries);
+  var inputs = document.querySelectorAll("#plannerForms .p-title");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+});
+
+document.getElementById("plannerToggleAll").addEventListener("click", function () {
+  var boxes = document.querySelectorAll("#plannerForms .head input[type=checkbox]");
+  var turnOn = this.textContent === "全部選ぶ";
+  Array.prototype.forEach.call(boxes, function (c) { c.checked = turnOn; });
+  this.textContent = turnOn ? "全部外す" : "全部選ぶ";
+});
+
+document.getElementById("plannerCancel").addEventListener("click", function () {
+  renderPlanner(null);
+  toast("読み取った内容を取り消しました");
+});
+
+// ホーム画面の「撮って振り分ける」から手帳として送られてきた場合、続けて読み取る
+(function () {
+  var handed = window.ScanRouter && window.ScanRouter.takeHandoff("planner");
+  if (handed && handed.length) applyPlannerScan(handed);
+})();
+
 /* ---------- 会議を手入力で追加する ---------- */
 
 document.getElementById("meetingManualBtn").addEventListener("click", function () {
@@ -1728,7 +1970,9 @@ window.docsApp = {
   applyMeetingScan: applyMeetingScan,
   renderMeetings: renderMeetings,
   collectMeetings: collectMeetings,
-  registerMeetings: registerMeetings
+  registerMeetings: registerMeetings,
+  applyPlannerScan: applyPlannerScan,
+  collectPlanner: collectPlanner
 };
 
 </script>
