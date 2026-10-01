@@ -1,13 +1,18 @@
 //
 //  ReceiptScannerPlugin.swift
 //
-//  レシートを撮影して文字を読み取る Capacitor プラグイン。
+//  レシートや書類を撮影して文字を読み取る Capacitor プラグイン。
 //
-//  ・撮影は VisionKit の書類カメラ（レシートの四隅を自動で見つけて切り出す）
+//  ・撮り方は2種類あり、利用者が選べる（2026-09-24）。JS から camera で指定する
+//      "silent"   … 自前の無音カメラ（SilentCameraViewController）。
+//                   映像の1コマを取り出す方式のため、シャッター音が鳴らない。
+//                   ただし書類の四隅を自動で切り出す機能は無い
+//      "document" … VisionKit の書類カメラ。四隅を自動で切り出して歪みも直すが、
+//                   撮影時にシャッター音が鳴る（日本向け iPhone では消せない）
 //  ・文字認識は Vision（iOS 標準・端末内で完結。画像も文字も外部へ送らない）
 //  ・返すのは「行ごとの文字と位置」まで。合計・日付・店名の取り出しは JS 側
 //    （apps/shared/receipt.js）で行う。理由: 取り出しの規則はレシートの様式ごとに
-//    直す機会が多く、JS ならアプリを作り直さずにテストして直せるため。
+//    直す機会が多く、JS ならアプリを作り直さずにテストして直せるため
 //
 import Foundation
 import UIKit
@@ -27,56 +32,119 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise)
     ]
 
-    private var pendingCall: CAPPluginCall?
     /// 撮ったものの扱い方。"text" = 文字を読み取って返す / "photos" = 写真アプリに保存する
     private var mode: String = "text"
+    /// 書類カメラ（VisionKit）を使っているときの呼び出し元。無音カメラでは使わない
+    private var pendingCall: CAPPluginCall?
+    /// 撮り方。"silent" = 無音カメラ / "document" = VisionKit の書類カメラ
+    private var camera: String = "silent"
+    /// 何を撮るか。"receipt"（既定）/ "planner"（手帳）/ "document"（書類）/ "any"（振り分け前で不明）。
+    /// 案内文と、文字認識で拾う文字の小ささを変える
+    private var purpose: String = "receipt"
 
     @objc func isSupported(_ call: CAPPluginCall) {
-        call.resolve(["supported": VNDocumentCameraViewController.isSupported])
+        let hasCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) != nil
+        call.resolve([
+            "supported": hasCamera,
+            "silent": hasCamera,
+            "document": VNDocumentCameraViewController.isSupported
+        ])
     }
 
-    /// 書類カメラを開き、撮影された最初のページを文字認識して返す。
+    /// 無音カメラを開いて撮り、写した文字を行ごとに返す。
     /// 利用者が閉じた場合は { cancelled: true } を返す（失敗ではない）。
     @objc func scan(_ call: CAPPluginCall) {
         startCamera(call, mode: "text")
     }
 
-    /// 書類カメラを開き、撮ったページを写真アプリに保存する。
-    /// 書類カメラは映像から1コマを切り出す仕組みのため、シャッター音は鳴らない
-    /// （Apple 純正の「メモ」の書類スキャンと同じ）。
+    /// 無音カメラを開いて撮り、そのまま写真アプリに保存する。
     @objc func scanToPhotos(_ call: CAPPluginCall) {
         startCamera(call, mode: "photos")
     }
 
     private func startCamera(_ call: CAPPluginCall, mode: String) {
         self.mode = mode
-        guard VNDocumentCameraViewController.isSupported else {
-            call.reject("この端末では書類カメラを使えません")
-            return
-        }
+        self.camera = (call.getString("camera") == "document") ? "document" : "silent"
+        self.purpose = call.getString("purpose") ?? (mode == "photos" ? "document" : "receipt")
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         if status == .denied || status == .restricted {
             call.reject("カメラの使用が許可されていません。設定アプリで許可してください")
             return
         }
-        pendingCall = call
+        if status == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                if granted {
+                    self.present(call, mode: mode)
+                } else {
+                    call.reject("カメラの使用が許可されていません。設定アプリで許可してください")
+                }
+            }
+            return
+        }
+        present(call, mode: mode)
+    }
+
+    private func present(_ call: CAPPluginCall, mode: String) {
         DispatchQueue.main.async {
             // 表示先が見つからない・ふさがっている場合に黙って終わらないようにする。
             // 以前は present の結果を確かめておらず、失敗しても画面に何も出なかった。
             guard let host = self.hostViewController() else {
-                self.pendingCall = nil
                 call.reject("カメラ画面を開けませんでした（表示先の画面が見つかりません）")
                 return
             }
             if host.presentedViewController != nil {
-                self.pendingCall = nil
                 call.reject("ほかの画面が開いています。閉じてからもう一度お試しください")
                 return
             }
-            let camera = VNDocumentCameraViewController()
-            camera.delegate = self
-            camera.modalPresentationStyle = .fullScreen
-            host.present(camera, animated: true)
+            // 書類カメラ（音は鳴るが、四隅を自動で切り出す）
+            if self.camera == "document" && VNDocumentCameraViewController.isSupported {
+                let scanner = VNDocumentCameraViewController()
+                scanner.delegate = self
+                scanner.modalPresentationStyle = .fullScreen
+                self.pendingCall = call
+                host.present(scanner, animated: true)
+                return
+            }
+
+            // 無音カメラ（音は鳴らない。撮ったあと紙の四隅を探して傾きを直す）
+            let silent = SilentCameraViewController()
+            silent.modalPresentationStyle = .fullScreen
+            switch self.purpose {
+            case "planner":
+                silent.guidanceText = "手帳のページ全体（上の「◯月」の見出しも）が入るようにし、真上から「撮る」を押してください。暗いときは「ライト」を使ってください（音は鳴りません）"
+            case "document":
+                silent.guidanceText = "書類全体が入るようにして「撮る」を押してください（音は鳴りません）"
+            case "any":
+                silent.guidanceText = "レシート・通知・手帳のページの全体が入るようにし、真上から「撮る」を押してください（音は鳴りません）"
+            default:
+                silent.guidanceText = "レシート全体が入るようにして「撮る」を押してください（音は鳴りません）"
+            }
+            silent.onFinish = { [weak self] image in
+                guard let self = self else { return }
+                guard let image = image else {
+                    call.resolve(["cancelled": true])
+                    return
+                }
+                if mode == "photos" {
+                    self.savePage(image, call: call)
+                    return
+                }
+                self.recognize(image: image, purpose: self.purpose) { result in
+                    switch result {
+                    case .success(let sets):
+                        call.resolve([
+                            "cancelled": false,
+                            "width": image.size.width,
+                            "height": image.size.height,
+                            "lines": sets.first ?? [],
+                            "alternates": Array(sets.dropFirst())
+                        ])
+                    case .failure(let error):
+                        call.reject("文字を読み取れませんでした: \(error.localizedDescription)")
+                    }
+                }
+            }
+            host.present(silent, animated: true)
         }
     }
 
@@ -95,7 +163,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         return top
     }
 
-    // MARK: - VNDocumentCameraViewControllerDelegate
+    // MARK: - 書類カメラ（VisionKit）の受け口
 
     public func documentCameraViewController(_ controller: VNDocumentCameraViewController,
                                              didFinishWith scan: VNDocumentCameraScan) {
@@ -107,19 +175,22 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
             return
         }
         if mode == "photos" {
-            savePages(scan, call: call)
+            var images: [UIImage] = []
+            for index in 0..<scan.pageCount { images.append(scan.imageOfPage(at: index)) }
+            savePages(images, call: call)
             return
         }
         // 1枚目だけを使う（レシートは1枚で完結するため）
         let image = scan.imageOfPage(at: 0)
-        recognize(image: image) { result in
+        recognize(image: image, purpose: purpose) { result in
             switch result {
-            case .success(let lines):
+            case .success(let sets):
                 call.resolve([
                     "cancelled": false,
                     "width": image.size.width,
                     "height": image.size.height,
-                    "lines": lines
+                    "lines": sets.first ?? [],
+                    "alternates": Array(sets.dropFirst())
                 ])
             case .failure(let error):
                 call.reject("文字を読み取れませんでした: \(error.localizedDescription)")
@@ -142,13 +213,13 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
 
     // MARK: - 写真アプリへの保存
 
-    /// 撮ったページをすべて写真アプリに追加する。
+    private func savePage(_ image: UIImage, call: CAPPluginCall) {
+        savePages([image], call: call)
+    }
+
+    /// 撮ったページを写真アプリに追加する。
     /// 追加だけの許可（addOnly）を求めるため、既存の写真を読むことはない。
-    private func savePages(_ scan: VNDocumentCameraScan, call: CAPPluginCall) {
-        var images: [UIImage] = []
-        for index in 0..<scan.pageCount {
-            images.append(scan.imageOfPage(at: index))
-        }
+    private func savePages(_ images: [UIImage], call: CAPPluginCall) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
                 call.reject("写真への追加が許可されていません。設定アプリで許可してください")
@@ -171,45 +242,103 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
     // MARK: - 文字認識
 
     /// 画像内の文字を行ごとに認識し、文字列と位置（画像の左上を原点とした 0〜1 の割合）を返す。
-    private func recognize(image: UIImage, completion: @escaping (Result<[[String: Any]], Error>) -> Void) {
+    ///
+    /// 手帳を真上から撮ると、iPhone が持ち方を判断できず、手帳が横倒しに写ることが多い。
+    /// 横倒しの日本語はほとんど読めない（2026-10-01 実物の手帳で、日付の数字が半分も取れなかった）。
+    /// そこで先に縮小画像を軽く読み、文字のかたまりが縦長ばかりなら横倒しとみなし、
+    /// 右に回した向きと左に回した向きの両方で読んで返す（返す値は「行の組」の配列）。
+    /// どちらが正しい向きかは、文字の量では見分けられない（日本語は縦書きも読めるため、
+    /// 逆さでも同じくらい文字が取れる）。中身の意味で JS 側（scanrouter.js の pickLines）が選ぶ。
+    ///
+    /// 同じ処理を mobile/tools/ocr-probe.swift にも置いてあり、Mac で実物の写真を確かめられる。
+    private func recognize(image: UIImage, purpose: String, completion: @escaping (Result<[[[String: Any]]], Error>) -> Void) {
         guard let cgImage = image.cgImage else {
             completion(.failure(NSError(domain: "ReceiptScanner", code: 1,
                                         userInfo: [NSLocalizedDescriptionKey: "画像を扱えません"])))
             return
         }
-        let request = VNRecognizeTextRequest { request, error in
-            if let error = error {
-                completion(.failure(error))
-                return
+        let base = cgOrientation(from: image.imageOrientation)
+        // 手帳の月間ページは、マスの隅の日付の数字や手書きが小さい。
+        // 既定のままだと小さな文字を読み飛ばすため、拾う文字の下限を下げる（そのぶん少し時間がかかる）
+        let minimumTextHeight: Float? = (purpose == "planner" || purpose == "any") ? 0.006 : nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let orientations = Self.candidateOrientations(cgImage, base: base)
+            var sets: [[[String: Any]]] = []
+            for orientation in orientations {
+                let request = Self.makeRequest(minimumTextHeight: minimumTextHeight, correction: true)
+                let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
+                do {
+                    try handler.perform([request])
+                } catch {
+                    if sets.isEmpty && orientation == orientations.last { completion(.failure(error)); return }
+                    continue
+                }
+                var lines: [[String: Any]] = []
+                for obs in request.results ?? [] {
+                    guard let best = obs.topCandidates(1).first else { continue }
+                    let box = obs.boundingBox  // Vision は左下が原点なので、上下を反転して左上原点に直す
+                    lines.append([
+                        "text": best.string,
+                        "confidence": Double(best.confidence),
+                        "x": Double(box.minX),
+                        "y": Double(1 - box.maxY),
+                        "width": Double(box.width),
+                        "height": Double(box.height)
+                    ])
+                }
+                sets.append(lines)
             }
-            let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
-            var lines: [[String: Any]] = []
-            for obs in observations {
-                guard let best = obs.topCandidates(1).first else { continue }
-                let box = obs.boundingBox  // Vision は左下が原点なので、上下を反転して左上原点に直す
-                lines.append([
-                    "text": best.string,
-                    "confidence": Double(best.confidence),
-                    "x": Double(box.minX),
-                    "y": Double(1 - box.maxY),
-                    "width": Double(box.width),
-                    "height": Double(box.height)
-                ])
-            }
-            completion(.success(lines))
+            completion(.success(sets))
         }
+    }
+
+    private static func makeRequest(minimumTextHeight: Float?, correction: Bool) -> VNRecognizeTextRequest {
+        let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["ja-JP", "en-US"]
-        request.usesLanguageCorrection = true
+        request.usesLanguageCorrection = correction
+        if let h = minimumTextHeight { request.minimumTextHeight = h }
+        return request
+    }
 
-        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: cgOrientation(from: image.imageOrientation), options: [:])
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                try handler.perform([request])
-            } catch {
-                completion(.failure(error))
-            }
+    /// 読む向きの候補。文字がまっすぐ写っていれば撮ったままの向きだけ、横倒しなら左右に回した2つ。
+    /// 縦書きの書類を誤って回さないよう、縦長のかたまりが横長の1.5倍を超えるときだけ横倒しとみなす。
+    private static func candidateOrientations(_ image: CGImage, base: CGImagePropertyOrientation) -> [CGImagePropertyOrientation] {
+        let small = shrink(image, maxSide: 1600)
+        let request = makeRequest(minimumTextHeight: 0.01, correction: false)
+        try? VNImageRequestHandler(cgImage: small, orientation: base, options: [:]).perform([request])
+        var wide = 0, tall = 0
+        for obs in request.results ?? [] {
+            guard let best = obs.topCandidates(1).first, best.string.count >= 2 else { continue }
+            if obs.boundingBox.width > obs.boundingBox.height { wide += 1 } else { tall += 1 }
         }
+        if tall > 3 && Double(tall) > Double(wide) * 1.5 { return rotations(of: base) }
+        return [base]
+    }
+
+    /// 右に90度・左に90度回したときの向き
+    private static func rotations(of o: CGImagePropertyOrientation) -> [CGImagePropertyOrientation] {
+        switch o {
+        case .up: return [.right, .left]
+        case .right: return [.down, .up]
+        case .left: return [.up, .down]
+        case .down: return [.left, .right]
+        default: return [.right, .left]
+        }
+    }
+
+    /// 向きを見分けるための下読み用に、画像を縮める
+    private static func shrink(_ image: CGImage, maxSide: Int) -> CGImage {
+        let scale = Double(maxSide) / Double(max(image.width, image.height))
+        if scale >= 1 { return image }
+        let w = Int(Double(image.width) * scale), h = Int(Double(image.height) * scale)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return image }
+        ctx.interpolationQuality = .medium
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage() ?? image
     }
 
     private func cgOrientation(from ui: UIImage.Orientation) -> CGImagePropertyOrientation {

@@ -82,5 +82,11 @@ const many = ICS.build([sample[0], { uid: "doc-2@x", title: "備品発注伺い"
 ok(linesOf(many).filter((l) => l === "BEGIN:VEVENT").length === 2, "2件ぶんの予定ができる");
 ok(ICS.filename("deadlines").endsWith(".ics"), "ファイル名の拡張子");
 
+console.log("== 終日の予定 ==");
+const allDay = linesOf(ICS.build([{ uid: "plan-1@x", title: "健診", date: "2026-10-31", allDay: true, alarms: [] }]));
+ok(allDay.includes("DTSTART;VALUE=DATE:20261031"), "終日の予定は日付だけで始まる");
+ok(allDay.includes("DTEND;VALUE=DATE:20261101"), "終わりは翌日（月をまたいでも正しい）");
+ok(!allDay.includes("BEGIN:VALARM"), "通知を空にすれば通知は付かない");
+
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて通過");
 process.exit(failures ? 1 : 0);

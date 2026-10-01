@@ -10,6 +10,8 @@
 		004DD6FF5311743F61CDFBC7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1AC8F45E959305C8A7517B99 /* Foundation.framework */; };
 		0534399A18A3BF11C165F2E4 /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */; };
 		05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */; };
+		726E67CBBB28498D943908A0 /* CalendarWriterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */; };
+		0CB97B323C0240D9BEA3CE93 /* SilentCameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */; };
 		0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54417C08DED3D9DAECF1E66F /* ViewController.swift */; };
 		17760D73051BA4D18EB031D0 /* ReceiptScannerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */; };
 		18116FD2CD499F7966E25B6B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 529B5B4D26CECC53B1B3D50D /* Foundation.framework */; };
@@ -108,6 +110,8 @@
 /* Begin PBXFileReference section */
 		03CE4193F022CF0F7EA8A8CC /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarReaderPlugin.swift; sourceTree = "<group>"; };
+		453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarWriterPlugin.swift; sourceTree = "<group>"; };
+		6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentCameraViewController.swift; sourceTree = "<group>"; };
 		12B22BFA83CC2B191D5EB3E7 /* NextUpWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextUpWidget.swift; sourceTree = "<group>"; };
 		16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridgePlugin.swift; sourceTree = "<group>"; };
 		1AC8F45E959305C8A7517B99 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -245,8 +249,10 @@
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */,
+				6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */,
 				16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */,
 				11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */,
+				453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */,
 				54417C08DED3D9DAECF1E66F /* ViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -507,8 +513,10 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				17760D73051BA4D18EB031D0 /* ReceiptScannerPlugin.swift in Sources */,
+				0CB97B323C0240D9BEA3CE93 /* SilentCameraViewController.swift in Sources */,
 				689B9E964FC64B47BCD87A3C /* WatchBridgePlugin.swift in Sources */,
 				05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */,
+				726E67CBBB28498D943908A0 /* CalendarWriterPlugin.swift in Sources */,
 				0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				0534399A18A3BF11C165F2E4 /* Snapshot.swift in Sources */,

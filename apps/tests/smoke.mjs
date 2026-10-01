@@ -580,6 +580,16 @@ console.log("== 会議の通知（apps/docs-tracker）==");
   ok(unfolded.includes("懇親会あり"), "懇親会の有無を予定の説明に入れる");
   ok(unfolded.includes("TRIGGER:-P1D") && unfolded.includes("TRIGGER:-PT30M"), "前日と30分前に通知する");
 
+  // 同じ会議を登録し直しても、識別子が変わらない（カレンダーで予定が増えない）
+  const uidOf = (text) => (/UID:(.+)/.exec(text) || [])[1];
+  const firstUid = uidOf(unfolded);
+  await mp.evaluate((l) => window.docsApp.applyMeetingScan(l), asLines(notice("a_committee")));
+  const [again] = await Promise.all([mp.waitForEvent("download"), mp.click("#meetingRegisterCal")]);
+  let ics2 = "";
+  for await (const chunk of await again.createReadStream()) ics2 += chunk.toString("utf8");
+  ok(!!firstUid && uidOf(ics2.replace(/\r\n /g, "")) === firstUid,
+    "同じ会議を登録し直しても識別子が変わらない（" + firstUid + "）");
+
   // 日付が無いものは登録できない
   await mp.evaluate((l) => window.docsApp.applyMeetingScan(l), asLines(notice("a_committee")));
   await mp.fill(".m-date >> nth=0", "");
@@ -601,6 +611,76 @@ console.log("== 会議の通知（apps/docs-tracker）==");
 
   ok(merrs.length === 0, "JSエラーなし" + (merrs.length ? " → " + merrs.join(" / ") : ""));
   await mctx.close();
+}
+
+/* ---------------- 手帳のページの読み取りとカレンダー登録 ---------------- */
+console.log("== 手帳（apps/docs-tracker）==");
+{
+  const pctx = await browser.newContext({ acceptDownloads: true });
+  const pp = await pctx.newPage();
+  const perrs = [];
+  pp.on("pageerror", (e) => perrs.push(String(e)));
+  const url = "file://" + path.join(ROOT, "apps/docs-tracker/index.html");
+  await pp.addInitScript(() => {
+    window.Capacitor = { isNativePlatform: () => true, nativePromise: () => Promise.resolve({ cancelled: true }) };
+  });
+  await pp.goto(url);
+  await pp.evaluate(() => localStorage.clear());
+  await pp.reload();
+  ok(await pp.locator("#plannerScanBtn").isVisible(), "アプリとして開くと「手帳を撮る」が出る");
+
+  // 2026年10月の月間ページ（日曜始まり・1日は木曜）。予定は架空のもの
+  const grid = (notes) => {
+    const f = [{ text: "2026年10月", x: 0.35, y: 0.03, width: 0.3, height: 0.05 }];
+    "日月火水木金土".split("").forEach((w, c) => f.push({ text: w, x: 0.08 + c * 0.137, y: 0.12, width: 0.02, height: 0.02 }));
+    for (let d = 1; d <= 31; d++) {
+      const i = d + 3, r = Math.floor(i / 7), c = i % 7;
+      f.push({ text: String(d), x: 0.026 + c * 0.137, y: 0.164 + r * 0.135, width: 0.012 * String(d).length, height: 0.018 });
+      (notes[d] || []).forEach((t, k) => f.push({ text: t, x: 0.03 + c * 0.137, y: 0.19 + r * 0.135 + k * 0.025, width: 0.12, height: 0.02 }));
+    }
+    return f;
+  };
+  const page1 = grid({ 5: ["10:00 歯医者"], 18: ["町内会の会議"], 24: ["飲み会 3,000円"] });
+
+  // 「会議の通知を撮る」で手帳を撮っても、手帳として読む
+  await pp.evaluate((l) => window.docsApp.applyMeetingScan(l), page1);
+  ok(await pp.locator("#plannerConfirm").isVisible() && !(await pp.locator("#meetingConfirm").isVisible()),
+    "会議の通知のつもりで手帳を撮っても、手帳の確認欄に出す");
+  ok((await pp.locator("#plannerForms .meeting").count()) === 3, "マスの書き込みを3件読み取る");
+  ok((await pp.locator(".p-title").first().inputValue()) === "歯医者" && (await pp.locator(".p-start").first().inputValue()) === "10:00", "件名と時刻が分かれて入る");
+  ok((await pp.locator("#plannerMonth").inputValue()) === "2026-10", "ページの年月が入る");
+
+  // 月を直すと日付が付け替わる
+  await pp.fill(".p-title >> nth=1", "町内会の会議（集会所）");
+  await pp.fill("#plannerMonth", "2026-11");
+  await pp.dispatchEvent("#plannerMonth", "change");
+  ok((await pp.locator(".p-date").first().inputValue()) === "2026-11-05", "月を直すと日付が付け替わる");
+  ok((await pp.locator(".p-title").nth(1).inputValue()) === "町内会の会議（集会所）", "月を直しても、直した件名は消えない");
+  await pp.fill("#plannerMonth", "2026-10");
+  await pp.dispatchEvent("#plannerMonth", "change");
+
+  // ブラウザ（CalendarWriter なし）では .ics で渡す。時刻なしは終日
+  await pp.uncheck("#plan2");
+  const [download] = await Promise.all([pp.waitForEvent("download"), pp.click("#plannerRegisterCal")]);
+  let ics = "";
+  for await (const chunk of await download.createReadStream()) ics += chunk.toString("utf8");
+  const unfolded = ics.replace(/\r\n /g, "");
+  ok(download.suggestedFilename().startsWith("planner-"), "手帳用のファイル名で書き出す");
+  ok(unfolded.includes("SUMMARY:歯医者") && unfolded.includes("DTSTART:20261005T100000"), "時刻のある予定はその時刻で入る");
+  ok(unfolded.includes("SUMMARY:町内会の会議（集会所）") && unfolded.includes("DTSTART;VALUE=DATE:20261018"), "時刻の無い予定は終日で入る");
+  ok(!unfolded.includes("飲み会"), "チェックを外した予定は入れない");
+  ok((unfolded.match(/BEGIN:VALARM/g) || []).length === 1, "通知は時刻のある予定だけ（30分前）");
+
+  // ホーム画面からの受け渡し
+  await pp.evaluate((l) => { window.ScanRouter.handoff("planner", l); }, page1);
+  await pp.reload();
+  ok(await pp.locator("#plannerConfirm").isVisible() && (await pp.locator("#plannerForms .meeting").count()) === 3,
+    "ホーム画面から手帳として渡されたら、開いた時点で確認欄を出す");
+  await pp.click("#plannerCancel");
+  ok(!(await pp.locator("#plannerConfirm").isVisible()), "「やめる」で確認欄が閉じる");
+
+  ok(perrs.length === 0, "JSエラーなし" + (perrs.length ? " → " + perrs.join(" / ") : ""));
+  await pctx.close();
 }
 
 /* ---------------- 買い物リスト（Apple Watch 向け） ---------------- */
@@ -663,6 +743,42 @@ console.log("== 買い物リスト（リマインダーへ送る）==");
 
   ok(serrs.length === 0, "JSエラーなし" + (serrs.length ? " → " + serrs.join(" / ") : ""));
   await sctx.close();
+}
+
+/* ---------------- 撮り方の選択（無音／自動で切り出す） ---------------- */
+console.log("== 撮り方の選択 ==");
+{
+  const pctx = await browser.newContext();
+  const pp = await pctx.newPage();
+  const perrs = [];
+  pp.on("pageerror", (e) => perrs.push("pageerror: " + e.message));
+  await pp.goto("file://" + path.join(ROOT, "apps/index.html"));
+
+  // ブラウザではカメラが無いため撮影の欄ごと隠れている。表示して中身を確かめる
+  const mount = () => pp.evaluate(() => {
+    document.getElementById("scanCard").hidden = false;
+    const box = document.getElementById("cameraPref");
+    box.hidden = false;
+    window.CameraPref.mount(box);
+  });
+
+  ok(await pp.evaluate(() => !!(window.CameraPref && window.CameraPref.mount)), "撮り方の部品が読み込まれている");
+  await mount();
+  const pressed = (mode) => pp.locator('#cameraPref button[data-camera="' + mode + '"]').getAttribute("aria-pressed");
+  ok((await pp.locator("#cameraPref button[data-camera]").count()) === 2, "2種類のボタンが出る");
+  ok((await pressed("silent")) === "true", "初期は「無音で撮る」が選ばれている");
+
+  await pp.click('#cameraPref button[data-camera="document"]');
+  ok((await pressed("document")) === "true" && (await pressed("silent")) === "false", "押すと切り替わる");
+  ok((await pp.locator("#cameraPref .footnote").last().textContent()).includes("シャッター音"),
+    "選んだ撮り方の短所を画面に出す");
+
+  await pp.reload();
+  await mount();
+  ok((await pressed("document")) === "true", "選んだ撮り方は次に開いても残る");
+
+  ok(perrs.length === 0, "JSエラーなし" + (perrs.length ? " → " + perrs.join(" / ") : ""));
+  await pctx.close();
 }
 
 /* ---------------- 期限の登録先（通知かカレンダーか） ---------------- */

@@ -1,5 +1,5 @@
 /*
- * apps/shared/scanrouter.js（撮った書類をレシート/会議の通知に振り分ける）のテスト。ブラウザ不要。
+ * apps/shared/scanrouter.js（撮った書類をレシート/会議の通知/手帳に振り分ける）のテスト。ブラウザ不要。
  *
  *   node apps/tests/scanrouter.test.mjs
  */
@@ -19,7 +19,7 @@ function makeSandbox() {
     setItem: (k, v) => { store[k] = String(v); },
     removeItem: (k) => { delete store[k]; }
   };
-  ["receipt.js", "meeting.js", "scanrouter.js"].forEach((f) => {
+  ["receipt.js", "meeting.js", "planner.js", "scanrouter.js"].forEach((f) => {
     new Function("window", fs.readFileSync(path.join(ROOT, "apps/shared", f), "utf8"))(g);
   });
   return g;
@@ -77,6 +77,68 @@ console.log("== 受け渡し ==");
   raw.at = Date.now() - 6 * 60 * 1000; // 6分前
   g.sessionStorage.setItem("pendingScan", JSON.stringify(raw));
   ok(g.ScanRouter.takeHandoff("receipt") === null, "古い受け渡しは使わない");
+}
+
+console.log("== 手帳 ==");
+const TODAY = new Date(2026, 9, 1);
+// 2026年10月の月間ページ（日曜始まり）。手書きの予定は架空のもの
+function monthGrid(notes) {
+  const f = [{ text: "2026年10月", x: 0.35, y: 0.03, width: 0.3, height: 0.05 }];
+  "日月火水木金土".split("").forEach((w, c) => f.push({ text: w, x: 0.08 + c * 0.137, y: 0.12, width: 0.02, height: 0.02 }));
+  for (let d = 1; d <= 31; d++) {
+    const i = d + 3, r = Math.floor(i / 7), c = i % 7;   // 1日は木曜
+    f.push({ text: String(d), x: 0.026 + c * 0.137, y: 0.164 + r * 0.135, width: 0.012 * String(d).length, height: 0.018 });
+    (notes[d] || []).forEach((t, k) => f.push({ text: t, x: 0.03 + c * 0.137, y: 0.19 + r * 0.135 + k * 0.025, width: 0.12, height: 0.02 }));
+  }
+  return f;
+}
+{
+  const g = makeSandbox();
+  const r = g.ScanRouter.classify(monthGrid({ 3: ["会費 3,000円"], 10: ["18:00 懇親会 5000円"], 21: ["支払 1,280円"] }), { today: TODAY });
+  ok(r.type === "planner", "金額が書いてある月間の手帳をレシートと間違えない", r.type);
+  ok(r.planner && r.planner.entries.length === 3, "手帳の予定を3件取り出す", r.planner && r.planner.entries);
+}
+{
+  const g = makeSandbox();
+  const r = g.ScanRouter.classify(monthGrid({ 15: ["町内会の会議"], 22: ["委員会"] }), { today: TODAY });
+  ok(r.type === "planner", "マスに「会議」「委員会」と書いてあっても会議の通知と間違えない", r.type);
+}
+{
+  const g = makeSandbox();
+  const r = g.ScanRouter.classify(frag(["10/3(土)", "歯医者 2,000円", "10/4(日)", "買い物", "10/6(火)", "打合せ"]), { today: TODAY });
+  ok(r.type === "planner", "日付ごとのメモ（3日ぶん）は手帳", r.type);
+}
+{
+  const g = makeSandbox();
+  const r = g.ScanRouter.classify(frag(["来週の買い物", "米 5kg", "予算 3,000円"]), { today: TODAY });
+  ok(r.type === "unknown", "金額らしい数字が1つあるだけではレシートにしない", r.type);
+}
+{
+  const g = makeSandbox();
+  const r = g.ScanRouter.classify(frag(["サンプル商店", "2026/09/18", "お茶 ¥150", "パン ¥220", "お預り ¥1,000", "お釣 ¥630"]), { today: TODAY });
+  ok(r.type === "receipt", "「合計」が読めなくても、明細とお預り・お釣があればレシート", r.type);
+}
+{
+  const g = makeSandbox();
+  ok(g.ScanRouter.destinationFor("planner") === "docs-tracker/index.html", "手帳は書類トラッカーへ（確認してカレンダーに登録）");
+  g.ScanRouter.handoff("planner", frag(["10/3(土)"]));
+  ok(g.ScanRouter.takeHandoff("meeting") === null, "手帳の受け渡しを会議として取り出さない");
+  ok(g.ScanRouter.takeHandoff("planner") !== null, "会議側が先に見ても、手帳宛ての受け渡しは消えずに残る");
+}
+
+console.log("== 向きの選択 ==");
+{
+  // 横倒しの写真を左右2つの向きで読んだ結果。正しい向きの方だけ、日付がマス目に並ぶ
+  const g = makeSandbox();
+  const right = monthGrid({ 5: ["歯医者"], 20: ["会議"] });
+  // 逆さに読んだときは、同じ文字が取れても位置がばらばらで、数字も読み違える
+  const wrong = right.map((f, i) => ({ ...f, text: /^\d+$/.test(f.text) ? String((Number(f.text) * 7) % 31 + 1) : f.text, x: (i * 0.37) % 1, y: (i * 0.53) % 1 }));
+  ok(g.ScanRouter.pickLines([wrong, right], { today: TODAY }) === right, "意味の通る向き（マス目が取れる方）を選ぶ");
+  ok(g.ScanRouter.pickLines([right, wrong], { today: TODAY }) === right, "候補の順番によらない");
+  const receipt = frag(["サンプル商店", "2026/09/18", "お茶 ¥150", "合計 ¥150"]);
+  const garbled = frag(["051¥ 計合", "茶お", "81/90/6202"]);
+  ok(g.ScanRouter.pickLines([garbled, receipt]) === receipt, "レシートなら合計が取れる向きを選ぶ");
+  ok(g.ScanRouter.pickLines([receipt]) === receipt, "候補が1つならそのまま");
 }
 
 console.log("== 振り分け先 ==");

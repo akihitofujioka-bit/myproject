@@ -70,8 +70,9 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 
   <section class="card" id="scanCard" hidden>
     <h2>📷 撮って振り分ける</h2>
-    <p class="note">レシートや会議の通知などを撮ると、内容を見て家計簿か書類トラッカーに振り分けます。撮影も文字の読み取りも端末の中だけで行い、外部には送りません。</p>
+    <p class="note">レシート・会議の通知・手帳のページ（月間のマス目や日付ごとのメモ）を撮ると、内容を見て家計簿か書類トラッカーに振り分けます。手帳の予定は、確認してから iPhone のカレンダーに登録できます。撮影も文字の読み取りも端末の中だけで行い、外部には送りません。</p>
     <button type="button" class="primary" id="scanBtn">📷 撮る</button>
+    <div id="cameraPref" style="margin-top:10px"></div>
     <div id="scanResult" hidden></div>
   </section>
 
@@ -141,6 +142,8 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 <div id="toast" class="toast" role="status"></div>
 <script src="shared/receipt.js"></script>
 <script src="shared/meeting.js"></script>
+<script src="shared/planner.js"></script>
+<script src="shared/camerapref.js"></script>
 <script src="shared/receiptscan.js"></script>
 <script src="shared/scanrouter.js"></script>
 <script src="shared/deeplink.js"></script>
@@ -158,6 +161,8 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 
   if (!(window.ReceiptScan && window.ReceiptScan.available())) return;
   document.getElementById("scanCard").hidden = false;
+  // 撮り方（無音／自動で切り出す）の選択。どのアプリでも同じ設定が使われる
+  if (window.CameraPref) window.CameraPref.mount(document.getElementById("cameraPref"));
 
   var btn = document.getElementById("scanBtn");
   var resultBox = document.getElementById("scanResult");
@@ -213,16 +218,30 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
     var choice = document.createElement("div");
     choice.className = "choice";
 
+    var LABEL = {
+      receipt: ["レシートとして記録", "家計簿を開いて確認"],
+      meeting: ["会議の通知として登録", "書類トラッカーを開いて確認"],
+      planner: ["手帳の予定として登録", "手帳の予定を確認してカレンダーへ"]
+    };
     if (result.type === "receipt") {
       status.textContent = "レシートのようです。";
-      addButton(choice, "家計簿を開いて確認", "primary", function () { goTo("receipt", result.lines); });
+      addButton(choice, LABEL.receipt[1], "primary", function () { goTo("receipt", result.lines); });
     } else if (result.type === "meeting") {
       status.textContent = "会議の通知のようです。";
-      addButton(choice, "書類トラッカーを開いて確認", "primary", function () { goTo("meeting", result.lines); });
+      addButton(choice, LABEL.meeting[1], "primary", function () { goTo("meeting", result.lines); });
+    } else if (result.type === "planner") {
+      var pl = result.planner || { entries: [] };
+      status.textContent = "手帳のページのようです（" +
+        (pl.kind === "month" ? pl.year + "年" + pl.month + "月の月間・" : "日付ごとのメモ・") +
+        pl.entries.length + "件の書き込み）。";
+      addButton(choice, LABEL.planner[1], "primary", function () { goTo("planner", result.lines); });
     } else {
-      status.textContent = "レシートか会議の通知かを判断できませんでした。選んでください。";
-      addButton(choice, "レシートとして記録", "small", function () { goTo("receipt", result.lines); });
-      addButton(choice, "会議の通知として登録", "small", function () { goTo("meeting", result.lines); });
+      // 当てはまった候補があればそれだけを、無ければ3つとも出して選んでもらう
+      var kinds = result.candidates && result.candidates.length ? result.candidates : ["receipt", "meeting", "planner"];
+      status.textContent = "何の書類かを判断できませんでした。選んでください。";
+      kinds.forEach(function (k) {
+        addButton(choice, LABEL[k][0], "small", function () { goTo(k, result.lines); });
+      });
     }
     resultBox.appendChild(status);
 
@@ -257,7 +276,8 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
       setScanning(false);
       toast("カメラが開かないときは、アプリを開き直してからもう一度お試しください");
     }, 12000);
-    window.ReceiptScan.scan().then(function (res) {
+    // 何を撮るかはまだ分からない（手帳の小さな文字も拾えるようにする）
+    window.ReceiptScan.scan({ purpose: "any" }).then(function (res) {
       clearTimeout(stuck);
       setScanning(false);
       if (res.cancelled) return;

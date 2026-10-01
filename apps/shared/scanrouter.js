@@ -1,11 +1,11 @@
 /*
- * カメラで撮った書類が「レシート」か「会議の通知」かを判定し、
+ * カメラで撮った書類が「レシート」「会議の通知」「手帳のページ」のどれかを判定し、
  * 適切なアプリへ振り分けるための橋渡し。
  *
- * 判定は Receipt.parse()（合計額が読み取れるか）と Meeting.parse()
- * （会議名・日付などが読み取れるか）の結果を使う。どちらとも言えない、
- * または両方に当てはまる場合は判定せず、呼び出し側（ホーム画面）で
- * 利用者に選んでもらう。自動では登録しない。
+ * 判定は Receipt.parse()（合計額が読み取れるか）、Meeting.parse()
+ * （会議名・日付などが読み取れるか）、Planner.parse()（手帳の日付の並びが
+ * 読み取れるか）の結果を使う。どれとも言えない、または複数に当てはまる場合は
+ * 判定せず、呼び出し側（ホーム画面）で利用者に選んでもらう。自動では登録しない。
  *
  * アプリをまたぐ受け渡しは sessionStorage を使う（この端末・このタブの中だけ）。
  * 通信は行わない。テストは apps/tests/scanrouter.test.mjs（ブラウザ不要）。
@@ -15,28 +15,102 @@
 
   var KEY = "pendingScan";
   var MAX_AGE_MS = 5 * 60 * 1000; // 古い受け渡しは事故防止のため使わない
-  var DEST = { receipt: "kakeibo/index.html", meeting: "docs-tracker/index.html" };
+  var DEST = { receipt: "kakeibo/index.html", meeting: "docs-tracker/index.html", planner: "docs-tracker/index.html" };
+
+  // レシートにだけ出てくる語。「合計」の見出しが読めなかったときの裏付けに使う
+  var RECEIPT_WORDS = /小\s*計|お預|預り|お釣|釣銭|おつり|領収|税込|内税|外税|消費税|税率|対象|レジ|\d+\s*点|お買上|お買い上げ|現金|クレジット|電子マネー/;
 
   /**
-   * 撮影結果（Vision の行データ）から、レシートか会議の通知かを判定する。
-   * 戻り値: { type: "receipt"|"meeting"|"ambiguous"|"unknown", lines, receipt, meetings }
+   * レシートらしいか。
+   * 以前は「金額らしい数字が1つでもあればレシート」としていたため、
+   * 手帳に「3,000円」と書いてあるだけでレシートと判定していた（2026-10-01 修正）。
+   * 「合計」などの見出しで合計額が取れたとき、または金額に加えてレシート特有の語か
+   * 明細が2行以上あるときだけレシートとみなす。
    */
-  function classify(lines) {
+  function looksLikeReceipt(receipt) {
+    if (!receipt || !receipt.total) return false;
+    if (receipt.total.confidence === "high") return true;
+    var joined = (receipt.rows || []).join("\n");
+    return RECEIPT_WORDS.test(joined) || (receipt.items || []).length >= 2;
+  }
+
+  /**
+   * 撮影結果（Vision の行データ）から、レシート・会議の通知・手帳のどれかを判定する。
+   * 戻り値: { type: "receipt"|"meeting"|"planner"|"ambiguous"|"unknown",
+   *          lines, receipt, meetings, planner, candidates }
+   *   candidates … 当てはまった種類（ambiguous のとき、選んでもらう候補に使う）
+   */
+  function classify(lines, opts) {
     var receipt = global.Receipt ? global.Receipt.parse(lines) : null;
     var rows = receipt ? receipt.rows : [];
     var meetings = global.Meeting ? global.Meeting.parse(rows, {}) : [];
+    var planner = global.Planner ? global.Planner.parse(lines, opts) : null;
+    var plannerStrength = global.Planner ? global.Planner.strength(planner) : "";
 
-    var looksReceipt = !!(receipt && receipt.total);
+    var looksReceipt = looksLikeReceipt(receipt);
     // 日付だけでは会議とみなさない（レシートにも日付は載っているため）。
     // 会議名らしい見出し（TITLE_HINT）が取れているものだけを数える
     var looksMeeting = meetings.some(function (m) { return !!m.title; });
 
-    var type = "unknown";
-    if (looksReceipt && looksMeeting) type = "ambiguous";
-    else if (looksReceipt) type = "receipt";
-    else if (looksMeeting) type = "meeting";
+    var candidates = [];
+    if (plannerStrength === "strong" && planner.kind === "month") {
+      // 月間のマス目の格子は、レシートや通知では起こらない。マスに「会議」と
+      // 書いてあっても、金額が書いてあっても手帳として扱う
+      candidates = ["planner"];
+    } else {
+      if (looksReceipt) candidates.push("receipt");
+      if (looksMeeting) candidates.push("meeting");
+      if (plannerStrength) candidates.push("planner");
+      // 日付の行が3つ以上並ぶ手帳は、会議名らしい語（「会議」と書いた予定）があっても手帳を先に出す
+      if (plannerStrength === "strong" && candidates.length > 1 && !looksReceipt) candidates = ["planner"];
+    }
 
-    return { type: type, lines: lines, receipt: receipt, meetings: meetings };
+    var type = "unknown";
+    if (candidates.length === 1) type = candidates[0];
+    else if (candidates.length > 1) type = "ambiguous";
+
+    return { type: type, lines: lines, receipt: receipt, meetings: meetings, planner: planner, candidates: candidates };
+  }
+
+  /**
+   * 同じ写真を別の向きで読んだ結果が複数あるとき、意味の通るものを選ぶ。
+   *
+   * 手帳を真上から撮ると、iPhone が向きを決められず、横倒しの写真になることが多い
+   * （2026-10-01 実物の手帳で確認）。横倒しの写真は右に回すか左に回すかで正しい向きが
+   * 決まるが、iPhone の文字認識は日本語の縦書きも読めるため、逆さでも文字の量は
+   * ほとんど変わらず、量では見分けられない。そこで、読み取った中身が
+   * 「手帳のマス目として日付が並ぶ」「レシートの合計が取れる」などの意味を持つかで選ぶ。
+   */
+  function structureScore(lines, opts) {
+    var score = 0;
+    if (global.Planner) {
+      var p = global.Planner.parse(lines, opts);
+      if (p.kind === "month") score += 30 + (p.anchors || 0);
+      else if (p.kind === "daily") score += 4 * (p.sections || 0);
+    }
+    if (global.Receipt) {
+      var r = global.Receipt.parse(lines);
+      if (r.total && r.total.confidence === "high") score += 20;
+      if (r.date) score += 4;
+      score += Math.min(10, (r.items || []).length);
+      if (global.Meeting && global.Meeting.parse(r.rows, {}).some(function (m) { return !!m.title; })) score += 10;
+    }
+    // どれにも当てはまらないときの手がかり: 確からしく読めた文字の量
+    (lines || []).forEach(function (l) {
+      if ((Number(l.confidence) || 0) >= 0.5) score += String(l.text || "").length * 0.02;
+    });
+    return score;
+  }
+
+  function pickLines(candidates, opts) {
+    var list = (candidates || []).filter(function (c) { return c && c.length; });
+    if (list.length <= 1) return list[0] || [];
+    var best = list[0], bestScore = structureScore(list[0], opts);
+    for (var i = 1; i < list.length; i++) {
+      var sc = structureScore(list[i], opts);
+      if (sc > bestScore) { best = list[i]; bestScore = sc; }
+    }
+    return best;
   }
 
   /** 振り分け先に渡すデータを控える。呼び出し側は、この後で利用者の操作により移動すること */
@@ -50,13 +124,16 @@
     }
   }
 
-  /** 振り分け先のアプリが、自分宛ての受け渡しを受け取る。一度取り出したら消える */
+  /** 振り分け先のアプリが、自分宛ての受け渡しを受け取る。一度取り出したら消える（古いものも消す） */
   function takeHandoff(expectedType) {
     try {
       var raw = global.sessionStorage.getItem(KEY);
       if (!raw) return null;
-      global.sessionStorage.removeItem(KEY);
       var data = JSON.parse(raw);
+      // 宛先が違うものは消さずに残す。書類トラッカーは「会議」と「手帳」の両方を
+      // 受け取るため、先に会議側が見たときに手帳宛てのものを消してしまわないように
+      if (data && data.type !== expectedType && data.at && Date.now() - data.at <= MAX_AGE_MS) return null;
+      global.sessionStorage.removeItem(KEY);
       if (!data || data.type !== expectedType) return null;
       if (!data.at || Date.now() - data.at > MAX_AGE_MS) return null;
       return data.lines;
@@ -71,6 +148,8 @@
     classify: classify,
     handoff: handoff,
     takeHandoff: takeHandoff,
-    destinationFor: destinationFor
+    destinationFor: destinationFor,
+    looksLikeReceipt: looksLikeReceipt,
+    pickLines: pickLines
   };
 })(typeof window !== "undefined" ? window : this);

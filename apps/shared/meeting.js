@@ -95,8 +95,11 @@
     return { start: null, end: null };
   }
 
-  // 「会 場」のように字の間に空白が入る書き方が多いため、空白を許す
-  var PLACE_LABEL = /^(場\s*所|会\s*場|開催\s*場所|開催\s*会場)\s*[:：]?\s*/;
+  /*
+   * 「会 場」のように字の間に空白が入る書き方と、
+   * 「2 場 所」のように行頭に番号や記号が付く書き方の両方を許す。
+   */
+  var PLACE_LABEL = /^(?:[(]?\d{1,2}[).．、]?\s*)?(?:[○●◎◆■・\-]\s*)?(?:場\s*所|会\s*場|開\s*催\s*場\s*所|開\s*催\s*会\s*場)\s*[:：]?\s*/;
 
   /** 「場所」「会場」の行から場所を取り出す。 */
   function findPlace(rows) {
@@ -177,13 +180,64 @@
     });
   }
 
+  /*
+   * 「日時」の行かどうか。
+   * 役所の通知は「1 日 時」「(1) とき」「・開催日時」のように番号や記号が付くことが多いため、
+   * 行頭の番号・記号を読み飛ばしてから見る。
+   */
+  var DATE_LABEL = /^(?:[(]?\d{1,2}[).．、]?\s*)?(?:[○●◎◆■・\-]\s*)?(?:日\s*時|と\s*き|開\s*催\s*日\s*時?|実\s*施\s*日\s*時?|期\s*日|日\s*に\s*ち)\s*[:]?/;
+
+  /*
+   * 発信日・文書番号など、開催日ではない日付が書かれる行。
+   * 通知の冒頭には発信日（多くは今日に近い日付）があり、これを開催日と取り違えると
+   * 「撮ったら今日になる」という誤りになる（利用者からの指摘: 2026-09-24）。
+   */
+  var ISSUE_LABEL = /(発\s*信|通\s*知\s*日|起\s*案|決\s*裁|収\s*受|文\s*書\s*番号|第\s*\d+\s*号)/;
+
+  // 時刻が書かれている行か（開催日の行にはたいてい時刻が併記されている）
+  function hasTime(text) {
+    return /(午前|午後|\d{1,2}\s*時|\d{1,2}\s*:\s*\d{2})/.test(text);
+  }
+
+  /*
+   * 「日時」の行が見つからないときに、本文から開催日らしい日付を選ぶ。
+   * 発信日らしい行を避け、時刻が併記された行を優先する。
+   */
+  function fallbackDate(lines, today) {
+    var texts = lines.map(normalize).filter(Boolean);
+    var body = texts.filter(function (t, i) {
+      if (ISSUE_LABEL.test(t)) return false;
+      // 冒頭に単独で置かれた日付は発信日とみなす（宛名より前の右寄せの日付）
+      if (i < 3 && /^(令和|R|20\d{2})[^ ]*日\)?$/.test(t.replace(/\s/g, ""))) return false;
+      return true;
+    });
+    var pick = function (list) {
+      var hit = null;
+      list.some(function (t) { hit = findDate(t, today); return !!hit; });
+      return hit;
+    };
+
+    // 時刻が併記された行がいちばん確からしい
+    var found = pick(body.filter(hasTime));
+    if (found) return found;
+
+    // それ以外は、確かめてもらうため確度を下げる
+    found = pick(body) || pick(texts);
+    return found ? { value: found.value, confidence: "low" } : null;
+  }
+
   function build(lines, today) {
     var joined = lines.map(normalize).join("\n");
-    // 日時は「日時」の行を優先し、無ければ全体から探す
-    var dateLine = lines.filter(function (l) { return /^(日\s*時|開催日|期日)/.test(normalize(l)); })[0];
-    var target = dateLine ? normalize(dateLine) : joined;
-    var date = findDate(target, today) || findDate(joined, today);
-    var times = findTimes(dateLine ? normalize(dateLine) : joined);
+    // 日時は「日時」の行を優先する。その行に日付が無ければ次の行も見る
+    var dateLine = "";
+    lines.forEach(function (l, i) {
+      if (dateLine) return;
+      var t = normalize(l);
+      if (!DATE_LABEL.test(t)) return;
+      dateLine = findDate(t, today) ? t : (t + " " + normalize(lines[i + 1] || ""));
+    });
+    var date = (dateLine ? findDate(dateLine, today) : null) || fallbackDate(lines, today);
+    var times = findTimes(dateLine || joined);
     var title = findTitle(lines);
     var place = findPlace(lines);
     var social = findSocial(lines);
