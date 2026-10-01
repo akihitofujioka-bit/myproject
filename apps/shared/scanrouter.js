@@ -72,6 +72,47 @@
     return { type: type, lines: lines, receipt: receipt, meetings: meetings, planner: planner, candidates: candidates };
   }
 
+  /**
+   * 同じ写真を別の向きで読んだ結果が複数あるとき、意味の通るものを選ぶ。
+   *
+   * 手帳を真上から撮ると、iPhone が向きを決められず、横倒しの写真になることが多い
+   * （2026-10-01 実物の手帳で確認）。横倒しの写真は右に回すか左に回すかで正しい向きが
+   * 決まるが、iPhone の文字認識は日本語の縦書きも読めるため、逆さでも文字の量は
+   * ほとんど変わらず、量では見分けられない。そこで、読み取った中身が
+   * 「手帳のマス目として日付が並ぶ」「レシートの合計が取れる」などの意味を持つかで選ぶ。
+   */
+  function structureScore(lines, opts) {
+    var score = 0;
+    if (global.Planner) {
+      var p = global.Planner.parse(lines, opts);
+      if (p.kind === "month") score += 30 + (p.anchors || 0);
+      else if (p.kind === "daily") score += 4 * (p.sections || 0);
+    }
+    if (global.Receipt) {
+      var r = global.Receipt.parse(lines);
+      if (r.total && r.total.confidence === "high") score += 20;
+      if (r.date) score += 4;
+      score += Math.min(10, (r.items || []).length);
+      if (global.Meeting && global.Meeting.parse(r.rows, {}).some(function (m) { return !!m.title; })) score += 10;
+    }
+    // どれにも当てはまらないときの手がかり: 確からしく読めた文字の量
+    (lines || []).forEach(function (l) {
+      if ((Number(l.confidence) || 0) >= 0.5) score += String(l.text || "").length * 0.02;
+    });
+    return score;
+  }
+
+  function pickLines(candidates, opts) {
+    var list = (candidates || []).filter(function (c) { return c && c.length; });
+    if (list.length <= 1) return list[0] || [];
+    var best = list[0], bestScore = structureScore(list[0], opts);
+    for (var i = 1; i < list.length; i++) {
+      var sc = structureScore(list[i], opts);
+      if (sc > bestScore) { best = list[i]; bestScore = sc; }
+    }
+    return best;
+  }
+
   /** 振り分け先に渡すデータを控える。呼び出し側は、この後で利用者の操作により移動すること */
   function handoff(type, lines) {
     if (!DEST[type]) return false;
@@ -108,6 +149,7 @@
     handoff: handoff,
     takeHandoff: takeHandoff,
     destinationFor: destinationFor,
-    looksLikeReceipt: looksLikeReceipt
+    looksLikeReceipt: looksLikeReceipt,
+    pickLines: pickLines
   };
 })(typeof window !== "undefined" ? window : this);

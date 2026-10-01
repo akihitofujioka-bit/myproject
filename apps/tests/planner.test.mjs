@@ -162,6 +162,25 @@ console.log("== 月間のマス目 ==");
   ok(r.kind === "month" && t.includes("2026-10-02 実家") && t.includes("2026-10-14 健診") && t.includes("2026-10-27 研修"), "日付の数字を読み落としても、残りの並びから割り出す", t);
 }
 
+{
+  // 見開きの手帳: 月曜始まりで、水曜と木曜の間に綴じ目があり、そこだけ列の間隔が広い。
+  // 曜日の見出しは英語で、左端に「MONTHLY」のような曜日と紛らわしい文字もある（実物の手帳に近い形）
+  const f = [{ text: "10月", x: 0.02, y: 0.14, width: 0.04, height: 0.027 }, { text: "MONTHLY", x: 0.0, y: 0.118, width: 0.05, height: 0.018 }];
+  const colX = [0.128, 0.241, 0.352, 0.512, 0.626, 0.741, 0.852];   // 3列目と4列目の間だけ広い
+  ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].forEach((w, c) => f.push({ text: w, x: colX[c] + 0.06, y: 0.105, width: 0.03, height: 0.017 }));
+  const notes = { 2: ["14-15 打合せ"], 10: ["研修会"], 12: ["通院"], 21: ["町内清掃"] };
+  for (let d = 1; d <= 31; d++) {
+    const i = d + 2, r = Math.floor(i / 7), c = i % 7;   // 2026年10月1日は木曜（月曜始まりで4列目）
+    f.push({ text: String(d), x: colX[c], y: 0.13 + r * 0.14, width: 0.012 * String(d).length, height: 0.025 });
+    (notes[d] || []).forEach((t, k) => f.push({ text: t, x: colX[c] + 0.005, y: 0.18 + r * 0.14 + k * 0.03, width: 0.09, height: 0.03 }));
+  }
+  const r = P.parse(f, { today: TODAY });
+  const t = r.kind ? titles(r) : [];
+  ok(r.kind === "month" && r.year === 2026 && r.month === 10, "見開きの月曜始まりでも 2026年10月と分かる", r);
+  ok(t.includes("2026-10-02 14:00~15:00 打合せ") && t.includes("2026-10-10 研修会") && t.includes("2026-10-12 通院") && t.includes("2026-10-21 町内清掃"),
+    "綴じ目で列の間隔が広がっても、右ページのマスを隣の日と取り違えない", t);
+}
+
 console.log("== 日付ごとのメモ ==");
 const rows = (texts, x = 0.05) => texts.map((t, i) => ({ text: t, x, y: 0.05 + i * 0.05, width: 0.6, height: 0.03 }));
 {

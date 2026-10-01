@@ -264,27 +264,79 @@
     });
     if (dys2.length) rowH = median(dys2);
 
-    // いちばん多くの数字と矛盾しない基準の数字を探す
-    var bestRef = null, bestSet = [];
-    cand.forEach(function (ref) {
-      var set = [];
-      cand.forEach(function (b) {
-        var dc = Math.round((b.x - ref.x) / colW);
-        var dr = Math.round((b.y - ref.y) / rowH);
-        if (Math.abs((b.x - ref.x) / colW - dc) > 0.35) return;
-        if (Math.abs((b.y - ref.y) / rowH - dr) > 0.35) return;
-        if (b.value - ref.value === dc + 7 * dr) set.push({ a: b, dc: dc, dr: dr });
+    // 日付の数字を、横位置の近いもの同士で「列」に、縦位置の近いもの同士で「段」にまとめ、番号を振る。
+    // 列の間隔は一定と決めつけない。見開きの手帳は綴じ目のところだけ間隔が広く、
+    // 一定とみなすと綴じ目より右のマスを1つずれた日に振り分けてしまう（2026-10-01 実物の手帳で確認）。
+    // 間隔が列幅の約2倍あれば、その間の列は数字を読み落としたとみなして番号を飛ばす。
+    function clusters(values, pitch) {
+      var sorted = values.slice().sort(function (p, q) { return p - q; });
+      var groups = [];
+      sorted.forEach(function (v) {
+        var last = groups[groups.length - 1];
+        if (last && v - last.items[last.items.length - 1] <= pitch * 0.45) last.items.push(v);
+        else groups.push({ items: [v] });
       });
-      if (set.length > bestSet.length) { bestSet = set; bestRef = ref; }
+      var idx = 0;
+      groups.forEach(function (g, i) {
+        g.center = median(g.items);
+        if (i > 0) idx += Math.max(1, Math.round((g.center - groups[i - 1].center) / pitch));
+        g.idx = idx;
+      });
+      return groups;
+    }
+    function indexIn(groups, v) {
+      var best = null;
+      groups.forEach(function (g) { if (!best || Math.abs(g.center - v) < Math.abs(best.center - v)) best = g; });
+      return best;
+    }
+    var colGroups = clusters(cand.map(function (a) { return a.x; }), colW);
+    var rowGroups = clusters(cand.map(function (a) { return a.y; }), rowH);
+
+    // 「日付 − 列番号 − 7×段番号」がいちばん多くそろう値を採り、それに合う数字だけを格子とする。
+    // 手書きの数字や余白の小さなカレンダーの数字は、ここで外れる
+    var votes = {};
+    var placed = cand.map(function (a) {
+      var c = indexIn(colGroups, a.x).idx, r = indexIn(rowGroups, a.y).idx;
+      var base = a.value - c - 7 * r;
+      votes[base] = (votes[base] || 0) + 1;
+      return { a: a, c: c, r: r, base: base };
     });
-    if (!bestRef || bestSet.length < 6) return null;
-    var dcs = bestSet.map(function (s) { return s.dc; });
-    var minDc = Math.min.apply(null, dcs), maxDc = Math.max.apply(null, dcs);
-    if (maxDc - minDc > 6) return null;   // 1週は7列まで
+    var bestBase = null, n = 0;
+    Object.keys(votes).forEach(function (k) { if (votes[k] > n) { n = votes[k]; bestBase = +k; } });
+    var set = placed.filter(function (p) { return p.base === bestBase; });
+    if (set.length < 6) return null;
+    var cs = set.map(function (p) { return p.c; });
+    var minC = Math.min.apply(null, cs), maxC = Math.max.apply(null, cs);
+    if (maxC - minC > 6) return null;   // 1週は7列まで
+
+    // 列・段ごとの数字の位置（格子に乗った数字の中央値）。数字が1つも無い列・段は、隣から列幅ぶんずらして補う
+    function positions(key, idxKey, pitch, lo, hi) {
+      var known = {};
+      set.forEach(function (p) { (known[p[idxKey]] = known[p[idxKey]] || []).push(p.a[key]); });
+      var out = {};
+      Object.keys(known).forEach(function (k) { out[k] = median(known[k]); });
+      var ks = Object.keys(out).map(Number);
+      for (var i = lo; i <= hi; i++) {
+        if (out[i] != null) continue;
+        var near = ks.reduce(function (p, q) { return Math.abs(q - i) < Math.abs(p - i) ? q : p; });
+        out[i] = out[near] + (i - near) * pitch;
+      }
+      return out;
+    }
+    var ref = set[0].a;
+    var cRef = set[0].c, rRef = set[0].r;
+    var rs = set.map(function (p) { return p.r; });
+    var colX = positions("x", "c", colW, minC - 1, minC + 7);
+    var rowY = positions("y", "r", rowH, Math.min.apply(null, rs) - 1, Math.max.apply(null, rs) + 6);
 
     return {
-      ref: bestRef, colW: colW, rowH: rowH, minDc: minDc, maxDc: maxDc,
-      members: bestSet.map(function (s) { return s.a; }),
+      ref: ref, colW: colW, rowH: rowH,
+      // 列・段の番号は、基準の数字（ref）からの差で扱う
+      minDc: minC - cRef, maxDc: maxC - cRef,
+      minDr: Math.min.apply(null, rs) - rRef, maxDr: Math.max.apply(null, rs) - rRef,
+      colX: function (dc) { return colX[dc + cRef]; },
+      rowY: function (dr) { return rowY[dr + rRef]; },
+      members: set.map(function (p) { return p.a; }),
       hMed: hMed
     };
   }
@@ -310,23 +362,49 @@
     labels = labels.filter(function (l) { return l.y < top; });
     if (labels.length < 3) return null;
 
-    var ref = grid.ref;
-    // 見出しは列の中央、日付の数字は列の端にあることが多い。
-    // 見出しの中心が基準の数字から何列目かを数え、曜日を逆算して多数決をとる
+    // 見出しは列の中央、日付の数字は列の端にあることが多い。見出しの中心が数字の位置から
+    // 列幅の何倍ずれているか（全部の見出しで共通のはず）を多数決で決め、各見出しの列を割り出す
+    // 見出しと数字の組み合わせは「同じ列の右寄り」とも「右隣の列の左寄り」とも取れる。
+    // 見出しがすべて、数字のある列（minDc〜maxDc）に収まる組み合わせを選ぶ。同点なら、ずれの小さい方
+    var dcs = [];
+    for (var dc = grid.minDc; dc <= grid.maxDc; dc++) dcs.push(dc);
+    var offsets = [];
+    labels.forEach(function (l) {
+      dcs.forEach(function (dc) {
+        var o = (l.cx - grid.colX(dc)) / grid.colW;
+        if (o > -0.95 && o < 0.95) offsets.push(o);
+      });
+    });
+    var bestO = 0, bestN = 0;
+    offsets.forEach(function (o) {
+      var k = labels.filter(function (l) {
+        return dcs.some(function (dc) { return Math.abs((l.cx - grid.colX(dc)) / grid.colW - o) < 0.15; });
+      }).length;
+      if (k > bestN || (k === bestN && Math.abs(o) < Math.abs(bestO))) { bestN = k; bestO = o; }
+    });
+    var near = offsets.filter(function (q) { return Math.abs(q - bestO) < 0.15; });
+    var offset = near.length ? median(near) : bestO;
+
     var refVote = {};
     labels.forEach(function (l) {
-      l.dc = Math.round((l.cx - ref.x) / grid.colW);
+      var hit = null;
+      dcs.forEach(function (dc) {
+        var o = (l.cx - grid.colX(dc)) / grid.colW;
+        if (Math.abs(o - offset) < 0.2 && (hit == null || Math.abs(o - offset) < Math.abs((l.cx - grid.colX(hit)) / grid.colW - offset))) hit = dc;
+      });
+      if (hit == null) return;
+      l.dc = hit;
       var wdAtRef = ((l.wd - l.dc) % 7 + 7) % 7;
       refVote[wdAtRef] = (refVote[wdAtRef] || 0) + 1;
     });
     var wdRef = -1, n = 0;
     Object.keys(refVote).forEach(function (k) { if (refVote[k] > n) { n = refVote[k]; wdRef = +k; } });
     if (n < 3) return null;
-    var agreed = labels.filter(function (l) { return ((l.wd - l.dc) % 7 + 7) % 7 === wdRef; });
+    var agreed = labels.filter(function (l) { return l.dc != null && ((l.wd - l.dc) % 7 + 7) % 7 === wdRef; });
     return {
       weekdayAtRefColumn: wdRef,
-      // 列の中心が、基準の数字の左端からどれだけ右にあるか（列幅の何倍か）
-      centerOffset: median(agreed.map(function (l) { return (l.cx - ref.x) / grid.colW - l.dc; })),
+      // 列の中心が、その列の数字の左端からどれだけ右にあるか（列幅の何倍か）
+      centerOffset: offset,
       firstDc: Math.min.apply(null, agreed.map(function (l) { return l.dc; })),
       count: agreed.length
     };
@@ -375,6 +453,10 @@
     var cellLeftRef;
     if (header) {
       cellLeftRef = ref.x + (header.centerOffset - 0.5) * grid.colW;
+      // 見出しが列の中央からずれて印刷されている手帳や、写真の遠近で上のほうがずれた場合でも、
+      // 日付の数字そのものは自分のマスの中に入るようにする
+      cellLeftRef = Math.min(cellLeftRef, ref.x - grid.colW * 0.02);
+      cellLeftRef = Math.max(cellLeftRef, ref.x + ref.w - grid.colW * 0.98);
     } else {
       var maxX = Math.max.apply(null, grid.members.map(function (a) { return a.x + a.w; }));
       var minX = Math.min.apply(null, grid.members.map(function (a) { return a.x; }));
@@ -438,13 +520,34 @@
       return true;
     });
 
+    // マスの境目は、列・段ごとの数字の位置から求める（間隔が一定でない手帳に合わせるため）
+    var shiftX = cellLeftRef - ref.x;
+    var shiftY = cellTopRef - ref.y;
+    function colOf(px) {
+      for (var dc = leftDc; dc <= leftDc + 6; dc++) {
+        var left = grid.colX(dc) + shiftX;
+        var right = dc < leftDc + 6 ? grid.colX(dc + 1) + shiftX : left + grid.colW;
+        if (px >= left && px < right) return dc;
+      }
+      return null;
+    }
+    function rowOf(py) {
+      for (var dr = grid.minDr - 1; dr <= grid.maxDr + 1; dr++) {
+        var top = grid.rowY(dr) + shiftY;
+        var bottom = grid.rowY(dr + 1) != null ? grid.rowY(dr + 1) + shiftY : top + grid.rowH;
+        if (py >= top && py < bottom) return dr;
+      }
+      return null;
+    }
+
     // 断片をマスに振り分ける。断片の書き出し（左端付近）と縦の中心で判断する
     var cells = {};
     content.forEach(function (f) {
       var px = f.x + Math.min(f.width / 2, grid.colW * 0.3);
       var py = f.y + f.height / 2;
-      var dc = Math.floor((px - cellLeftRef) / grid.colW);
-      var dr = Math.floor((py - cellTopRef) / grid.rowH);
+      var dc = colOf(px);
+      var dr = rowOf(py);
+      if (dc == null || dr == null) return;
       var d = dayAt(dc, dr);
       if (!d) return;
       (cells[d] = cells[d] || []).push(f);

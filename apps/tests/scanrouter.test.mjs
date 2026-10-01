@@ -126,6 +126,21 @@ function monthGrid(notes) {
   ok(g.ScanRouter.takeHandoff("planner") !== null, "会議側が先に見ても、手帳宛ての受け渡しは消えずに残る");
 }
 
+console.log("== 向きの選択 ==");
+{
+  // 横倒しの写真を左右2つの向きで読んだ結果。正しい向きの方だけ、日付がマス目に並ぶ
+  const g = makeSandbox();
+  const right = monthGrid({ 5: ["歯医者"], 20: ["会議"] });
+  // 逆さに読んだときは、同じ文字が取れても位置がばらばらで、数字も読み違える
+  const wrong = right.map((f, i) => ({ ...f, text: /^\d+$/.test(f.text) ? String((Number(f.text) * 7) % 31 + 1) : f.text, x: (i * 0.37) % 1, y: (i * 0.53) % 1 }));
+  ok(g.ScanRouter.pickLines([wrong, right], { today: TODAY }) === right, "意味の通る向き（マス目が取れる方）を選ぶ");
+  ok(g.ScanRouter.pickLines([right, wrong], { today: TODAY }) === right, "候補の順番によらない");
+  const receipt = frag(["サンプル商店", "2026/09/18", "お茶 ¥150", "合計 ¥150"]);
+  const garbled = frag(["051¥ 計合", "茶お", "81/90/6202"]);
+  ok(g.ScanRouter.pickLines([garbled, receipt]) === receipt, "レシートなら合計が取れる向きを選ぶ");
+  ok(g.ScanRouter.pickLines([receipt]) === receipt, "候補が1つならそのまま");
+}
+
 console.log("== 振り分け先 ==");
 {
   const g = makeSandbox();

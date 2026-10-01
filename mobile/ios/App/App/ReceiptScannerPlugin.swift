@@ -131,12 +131,13 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
                 }
                 self.recognize(image: image, purpose: self.purpose) { result in
                     switch result {
-                    case .success(let lines):
+                    case .success(let sets):
                         call.resolve([
                             "cancelled": false,
                             "width": image.size.width,
                             "height": image.size.height,
-                            "lines": lines
+                            "lines": sets.first ?? [],
+                            "alternates": Array(sets.dropFirst())
                         ])
                     case .failure(let error):
                         call.reject("文字を読み取れませんでした: \(error.localizedDescription)")
@@ -183,12 +184,13 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         let image = scan.imageOfPage(at: 0)
         recognize(image: image, purpose: purpose) { result in
             switch result {
-            case .success(let lines):
+            case .success(let sets):
                 call.resolve([
                     "cancelled": false,
                     "width": image.size.width,
                     "height": image.size.height,
-                    "lines": lines
+                    "lines": sets.first ?? [],
+                    "alternates": Array(sets.dropFirst())
                 ])
             case .failure(let error):
                 call.reject("文字を読み取れませんでした: \(error.localizedDescription)")
@@ -240,50 +242,103 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
     // MARK: - 文字認識
 
     /// 画像内の文字を行ごとに認識し、文字列と位置（画像の左上を原点とした 0〜1 の割合）を返す。
-    private func recognize(image: UIImage, purpose: String, completion: @escaping (Result<[[String: Any]], Error>) -> Void) {
+    ///
+    /// 手帳を真上から撮ると、iPhone が持ち方を判断できず、手帳が横倒しに写ることが多い。
+    /// 横倒しの日本語はほとんど読めない（2026-10-01 実物の手帳で、日付の数字が半分も取れなかった）。
+    /// そこで先に縮小画像を軽く読み、文字のかたまりが縦長ばかりなら横倒しとみなし、
+    /// 右に回した向きと左に回した向きの両方で読んで返す（返す値は「行の組」の配列）。
+    /// どちらが正しい向きかは、文字の量では見分けられない（日本語は縦書きも読めるため、
+    /// 逆さでも同じくらい文字が取れる）。中身の意味で JS 側（scanrouter.js の pickLines）が選ぶ。
+    ///
+    /// 同じ処理を mobile/tools/ocr-probe.swift にも置いてあり、Mac で実物の写真を確かめられる。
+    private func recognize(image: UIImage, purpose: String, completion: @escaping (Result<[[[String: Any]]], Error>) -> Void) {
         guard let cgImage = image.cgImage else {
             completion(.failure(NSError(domain: "ReceiptScanner", code: 1,
                                         userInfo: [NSLocalizedDescriptionKey: "画像を扱えません"])))
             return
         }
-        let request = VNRecognizeTextRequest { request, error in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-            let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
-            var lines: [[String: Any]] = []
-            for obs in observations {
-                guard let best = obs.topCandidates(1).first else { continue }
-                let box = obs.boundingBox  // Vision は左下が原点なので、上下を反転して左上原点に直す
-                lines.append([
-                    "text": best.string,
-                    "confidence": Double(best.confidence),
-                    "x": Double(box.minX),
-                    "y": Double(1 - box.maxY),
-                    "width": Double(box.width),
-                    "height": Double(box.height)
-                ])
-            }
-            completion(.success(lines))
-        }
-        request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["ja-JP", "en-US"]
-        request.usesLanguageCorrection = true
+        let base = cgOrientation(from: image.imageOrientation)
         // 手帳の月間ページは、マスの隅の日付の数字や手書きが小さい。
         // 既定のままだと小さな文字を読み飛ばすため、拾う文字の下限を下げる（そのぶん少し時間がかかる）
-        if purpose == "planner" || purpose == "any" {
-            request.minimumTextHeight = 0.006
-        }
+        let minimumTextHeight: Float? = (purpose == "planner" || purpose == "any") ? 0.006 : nil
 
-        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: cgOrientation(from: image.imageOrientation), options: [:])
         DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                try handler.perform([request])
-            } catch {
-                completion(.failure(error))
+            let orientations = Self.candidateOrientations(cgImage, base: base)
+            var sets: [[[String: Any]]] = []
+            for orientation in orientations {
+                let request = Self.makeRequest(minimumTextHeight: minimumTextHeight, correction: true)
+                let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
+                do {
+                    try handler.perform([request])
+                } catch {
+                    if sets.isEmpty && orientation == orientations.last { completion(.failure(error)); return }
+                    continue
+                }
+                var lines: [[String: Any]] = []
+                for obs in request.results ?? [] {
+                    guard let best = obs.topCandidates(1).first else { continue }
+                    let box = obs.boundingBox  // Vision は左下が原点なので、上下を反転して左上原点に直す
+                    lines.append([
+                        "text": best.string,
+                        "confidence": Double(best.confidence),
+                        "x": Double(box.minX),
+                        "y": Double(1 - box.maxY),
+                        "width": Double(box.width),
+                        "height": Double(box.height)
+                    ])
+                }
+                sets.append(lines)
             }
+            completion(.success(sets))
         }
+    }
+
+    private static func makeRequest(minimumTextHeight: Float?, correction: Bool) -> VNRecognizeTextRequest {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["ja-JP", "en-US"]
+        request.usesLanguageCorrection = correction
+        if let h = minimumTextHeight { request.minimumTextHeight = h }
+        return request
+    }
+
+    /// 読む向きの候補。文字がまっすぐ写っていれば撮ったままの向きだけ、横倒しなら左右に回した2つ。
+    /// 縦書きの書類を誤って回さないよう、縦長のかたまりが横長の1.5倍を超えるときだけ横倒しとみなす。
+    private static func candidateOrientations(_ image: CGImage, base: CGImagePropertyOrientation) -> [CGImagePropertyOrientation] {
+        let small = shrink(image, maxSide: 1600)
+        let request = makeRequest(minimumTextHeight: 0.01, correction: false)
+        try? VNImageRequestHandler(cgImage: small, orientation: base, options: [:]).perform([request])
+        var wide = 0, tall = 0
+        for obs in request.results ?? [] {
+            guard let best = obs.topCandidates(1).first, best.string.count >= 2 else { continue }
+            if obs.boundingBox.width > obs.boundingBox.height { wide += 1 } else { tall += 1 }
+        }
+        if tall > 3 && Double(tall) > Double(wide) * 1.5 { return rotations(of: base) }
+        return [base]
+    }
+
+    /// 右に90度・左に90度回したときの向き
+    private static func rotations(of o: CGImagePropertyOrientation) -> [CGImagePropertyOrientation] {
+        switch o {
+        case .up: return [.right, .left]
+        case .right: return [.down, .up]
+        case .left: return [.up, .down]
+        case .down: return [.left, .right]
+        default: return [.right, .left]
+        }
+    }
+
+    /// 向きを見分けるための下読み用に、画像を縮める
+    private static func shrink(_ image: CGImage, maxSide: Int) -> CGImage {
+        let scale = Double(maxSide) / Double(max(image.width, image.height))
+        if scale >= 1 { return image }
+        let w = Int(Double(image.width) * scale), h = Int(Double(image.height) * scale)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return image }
+        ctx.interpolationQuality = .medium
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage() ?? image
     }
 
     private func cgOrientation(from ui: UIImage.Orientation) -> CGImagePropertyOrientation {

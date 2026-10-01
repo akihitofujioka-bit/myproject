@@ -54,7 +54,14 @@
     // 何を撮るか（"receipt" / "planner"）。案内文と、小さな文字をどこまで拾うかが変わる
     if (options && options.purpose) args.purpose = options.purpose;
     return global.Capacitor.nativePromise(PLUGIN, "scan", args).then(function (res) {
-      return { cancelled: !!(res && res.cancelled), lines: (res && res.lines) || [] };
+      var lines = (res && res.lines) || [];
+      // 横倒しの写真は、右に回した向きと左に回した向きの両方で読んで返ってくる（alternates）。
+      // どちらが正しいかは中身の意味で選ぶ（scanrouter.js の pickLines）
+      var alternates = (res && res.alternates) || [];
+      if (alternates.length && global.ScanRouter && global.ScanRouter.pickLines) {
+        lines = global.ScanRouter.pickLines([lines].concat(alternates));
+      }
+      return { cancelled: !!(res && res.cancelled), lines: lines };
     });
   }
 
