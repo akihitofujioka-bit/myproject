@@ -28,6 +28,9 @@
       .replace(/[（]/g, "(").replace(/[）]/g, ")")
       .replace(/[：]/g, ":").replace(/[～〜]/g, "~")
       .replace(/[／]/g, "/").replace(/[－―‐ー](?=\d)/g, "-")
+      // 手書きの横棒は、漢字の「一」・長音「ー」・マイナス「−」・ダッシュとして読まれることが多い。
+      // 数字と数字の間にあるものは「-」とみなす（「14一15 会議」→「14-15 会議」）
+      .replace(/(\d)\s*[－―‐ー一−–—]\s*(?=\d)/g, "$1-")
       .replace(/[　\t]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -86,6 +89,10 @@
   var RANGE_RE = new RegExp("^" + AMPM + HM + "\\s*[~\\-]\\s*" + AMPM + "(\\d{1,2})\\s*(?::\\s*(\\d{2})|時\\s*(?:(\\d{1,2})\\s*分?|半)?)?");
   var SINGLE_RE = new RegExp("^" + AMPM + HM + "\\s*(?:~|から|より)?");
   var BARE_RANGE_RE = /^(\d{1,2})\s*[~\-]\s*(\d{1,2})(?!\d)(?!\s*[\/日月])/;
+  // 「9会議」「9 会議」のように、行頭の数字のすぐ後ろに件名が続く書き方は、その時刻から始まる予定とみなす
+  // （手帳では「9」だけで9時を表すことが多い。利用者の書き方: 2026-10-02）。
+  // 「2人」「3回」「5kg」「500円」のような数量は時刻にしない
+  var BARE_HOUR_RE = /^(\d{1,2})(?!\d)\s*(?![\d.,:\/~\-%]|人|名|個|回|件|枚|本|冊|円|日|月|年|歳|才|週|分|秒|号|番|階|点|位|台|社|部|班|組|割|度|時|k|K|g|m|c|L|l|F)(?=\S)/;
 
   /**
    * 行の先頭（または途中）の時刻を取り出し、残りを件名にする。
@@ -110,6 +117,10 @@
       var s = toTime(m[2], m[3] || m[4] || (/時\s*半/.test(m[0]) ? 30 : 0), m[1]);
       if (s) return { start: s, end: "", rest: lead.slice(m[0].length).trim() };
     }
+    m = lead.match(BARE_HOUR_RE);
+    if (m && Number(m[1]) >= 6 && Number(m[1]) <= 23 && lead.slice(m[0].length).trim()) {
+      return { start: toTime(m[1], 0), end: "", rest: lead.slice(m[0].length).trim() };
+    }
     m = lead.match(BARE_RANGE_RE);
     if (m && Number(m[1]) >= 6 && Number(m[1]) <= 22 && Number(m[2]) > Number(m[1]) && Number(m[2]) <= 23) {
       return { start: toTime(m[1], 0), end: toTime(m[2], 0), rest: lead.slice(m[0].length).trim() };
@@ -131,7 +142,7 @@
     var t = normalize(text);
     if (!t) return false;
     if (PRINTED.test(t)) return false;
-    if (!/[^\d\s.,:;~\-–—()\/%*※・|_=+]/.test(t)) return false;
+    if (!/[^\d\s.,:;~\-–—()\/%*※・|_=+ー一]/.test(t)) return false;
     // 曜日だけ
     if (weekdayOf(t) >= 0) return false;
     return true;
@@ -279,7 +290,9 @@
       var idx = 0;
       groups.forEach(function (g, i) {
         g.center = median(g.items);
-        if (i > 0) idx += Math.max(1, Math.round((g.center - groups[i - 1].center) / pitch));
+        // 間隔が列幅（段の高さ）の半分に満たないまとまりは、同じ番号にする。
+        // マスの中の手書きの数字（「9会議」の「9」など）が別のまとまりになっても、後ろの番号がずれないように
+        if (i > 0) idx += Math.round((g.center - groups[i - 1].center) / pitch);
         g.idx = idx;
       });
       return groups;
@@ -507,8 +520,18 @@
     // 日付の数字そのもの（格子に乗ったもの）は書き込みではない。
     // 格子に乗らなかった数字（手書きの「2」など）は書き込みに戻す
     var memberSet = grid.members;
-    var leftovers = collected.anchors.filter(function (a) { return memberSet.indexOf(a) < 0; }).map(function (a) {
-      return { text: String(a.value), x: a.x, y: a.y, width: a.w, height: a.h, src: a.src };
+    // 「9役員会議」のように数字と文字が1つの断片だったものは、切り分けた後ろの文字とつなぎ直す
+    var leftovers = [];
+    collected.anchors.filter(function (a) { return memberSet.indexOf(a) < 0; }).forEach(function (a) {
+      var tail = collected.rest.filter(function (f) { return f.inline && f.src === a.src; })[0];
+      if (tail) {
+        tail.text = a.value + tail.text;
+        tail.width += tail.x - a.x;
+        tail.x = a.x;
+        tail.inline = false;
+        return;
+      }
+      leftovers.push({ text: String(a.value), x: a.x, y: a.y, width: a.w, height: a.h, src: a.src });
     });
     // 見出しの年月・曜日の行は外す
     var content = collected.rest.concat(leftovers).filter(function (f) {
