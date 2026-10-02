@@ -1,0 +1,1613 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メール作成用QRコード ／ オフライン版</title>
+<style>
+  :root{
+    --teal:#2f7d72; --teal-dark:#25635b; --teal-pale:#e8f2f0;
+    --bg:#f4f6f5; --card:#fff; --line:#d9e0de; --text:#26302e;
+    --muted:#6b7975; --warn-bg:#fff6e5; --warn-line:#e0a92a;
+    --err-bg:#fdecec; --err-line:#c0392b; --ok:#2f7d72;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Meiryo","Yu Gothic UI","Hiragino Sans",system-ui,sans-serif;
+    line-height:1.7;font-size:15px}
+  header{background:var(--teal);color:#fff;padding:14px 20px;display:flex;
+    align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:700}
+  .offline-badge{margin-left:auto;background:rgba(255,255,255,.18);
+    border:1px solid rgba(255,255,255,.45);border-radius:999px;
+    padding:3px 12px;font-size:12px;white-space:nowrap}
+  .wrap{max-width:1080px;margin:20px auto;padding:0 16px;
+    display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;margin-bottom:18px}
+  .card>h2{margin:0;background:var(--teal-pale);color:var(--teal-dark);
+    font-size:15px;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .card>.body{padding:16px}
+  label.field{display:block;margin-bottom:16px}
+  label.field>.lbl{font-weight:700;display:block;margin-bottom:5px}
+  label.field>.lbl .sub{font-weight:400;color:var(--muted);font-size:13px}
+  input[type=text],input[type=email],textarea,select{
+    width:100%;padding:9px 11px;border:1px solid #c3ccc9;border-radius:6px;
+    font:inherit;background:#fff;color:inherit}
+  textarea{min-height:190px;resize:vertical;line-height:1.6}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--teal);
+    outline-offset:0;border-color:var(--teal)}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:150px}
+  .tmpl{display:flex;gap:8px;flex-wrap:wrap;margin:-6px 0 8px;align-items:center}
+  .tmpl button{background:#fff;border:1px solid var(--teal);color:var(--teal-dark);
+    border-radius:6px;padding:5px 11px;font:inherit;font-size:13px;cursor:pointer}
+  .tmpl button:hover{background:var(--teal-pale)}
+  .tmpl .empty{color:var(--muted);font-size:13px}
+  .tmpl button.link{border:0;background:none;text-decoration:underline;padding:5px 2px}
+  .dirty{display:none;font-size:12.5px;color:#8a6100;background:var(--warn-bg);
+    border:1px solid var(--warn-line);border-radius:999px;padding:2px 10px}
+  .dirty.on{display:inline-block}
+
+  #tmplPanel{border:1px solid var(--line);border-radius:8px;padding:0;margin:0 0 14px;
+    background:#fbfcfc}
+  #tmplPanel>summary{padding:9px 14px;background:#f2f5f4;border-radius:8px}
+  #tmplPanel[open]>summary{border-bottom:1px solid var(--line);border-radius:8px 8px 0 0}
+  #tmplPanel .inner{padding:12px 14px 14px}
+  .tlist{list-style:none;margin:8px 0 14px;padding:0}
+  .tlist li{display:flex;gap:6px;align-items:center;flex-wrap:wrap;
+    padding:8px 6px;border-bottom:1px solid #e7ecea}
+  .tlist li:last-child{border-bottom:0}
+  .tlist .tname{flex:1;min-width:130px;font-weight:700;font-size:14px}
+  .tlist .tinfo{color:var(--muted);font-size:12px;flex-basis:100%;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tlist button{background:#fff;border:1px solid #c3ccc9;border-radius:5px;
+    padding:3px 8px;font:inherit;font-size:12.5px;cursor:pointer;color:#3d4744}
+  .tlist button:hover{background:#eef2f1}
+  .tlist button.danger{border-color:#d9a9a3;color:#9c3125}
+  .tlist button.danger:hover{background:#fdecec}
+  .tlist button.primary{border-color:var(--teal);color:var(--teal-dark);font-weight:700}
+  .tlist button.primary:hover{background:var(--teal-pale)}
+  .tlist button:disabled{opacity:.35;cursor:not-allowed}
+  .saverow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .saverow input{flex:1;min-width:180px}
+  .filerow{display:flex;gap:8px;flex-wrap:wrap;padding-top:12px;
+    border-top:1px solid var(--line)}
+  .filerow button{background:#fff;border:1px solid var(--teal);color:var(--teal-dark);
+    border-radius:6px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}
+  .filerow button:hover{background:var(--teal-pale)}
+  .filerow button.reset{border-color:#c3ccc9;color:#5b6663}
+  .filerow button.reset:hover{background:#eef2f1}
+  .note{background:var(--teal-pale);border-left:4px solid var(--teal);
+    padding:10px 14px;border-radius:4px;font-size:13.5px;margin-bottom:16px}
+  .note b{color:var(--teal-dark)}
+  .meter{margin-top:6px}
+  .meter .bar{height:8px;background:#e3e8e6;border-radius:4px;overflow:hidden}
+  .meter .bar>span{display:block;height:100%;background:var(--ok);
+    transition:width .15s linear}
+  .meter .txt{font-size:12.5px;color:var(--muted);margin-top:4px}
+  .msg{padding:9px 13px;border-radius:6px;font-size:13.5px;margin-top:10px;display:none}
+  .msg.warn{background:var(--warn-bg);border:1px solid var(--warn-line);display:block}
+  .msg.err{background:var(--err-bg);border:1px solid var(--err-line);
+    color:#8e2b20;display:block}
+  #qrbox{text-align:center;padding:8px}
+  #qrbox canvas{max-width:100%;height:auto;image-rendering:pixelated;
+    border:1px solid var(--line)}
+  #qrbox .placeholder{color:var(--muted);padding:60px 10px;font-size:14px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .actions button{flex:1;min-width:110px;background:var(--teal);color:#fff;
+    border:0;border-radius:6px;padding:11px 8px;font:inherit;font-weight:700;
+    cursor:pointer}
+  .actions button:hover:not(:disabled){background:var(--teal-dark)}
+  .actions button:disabled{background:#b5c1be;cursor:not-allowed}
+  .actions button.ghost{background:#fff;color:var(--teal-dark);
+    border:1px solid var(--teal)}
+  .actions button.ghost:hover:not(:disabled){background:var(--teal-pale)}
+  .stats{font-size:12.5px;color:var(--muted);margin-top:10px;text-align:center}
+  .hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .hint b{color:#3d4744}
+  #sizeinfo{margin-top:10px;padding:9px 12px;border-radius:6px;font-size:13px;
+    background:var(--teal-pale);border-left:4px solid var(--teal)}
+  #sizeinfo.tight{background:var(--warn-bg);border-left-color:var(--warn-line)}
+  #sizeinfo b{color:var(--teal-dark)}
+  #sizeinfo.tight b{color:#8a6100}
+  #sizeinfo .mm{font-size:17px;font-weight:700}
+  #pastemsg{margin-top:10px;padding:9px 12px;border-radius:6px;font-size:12.5px;
+    background:var(--warn-bg);border:1px solid var(--warn-line);color:#6b5200}
+  #pastemsg b{color:#8a6100}
+  .hint ol{margin:6px 0}
+  .hint li{margin-bottom:4px}
+  #mailtoOut{font-family:"Consolas","Menlo",monospace;font-size:11.5px;
+    min-height:80px;background:#fafbfb;color:#4a5552}
+  details{margin-top:8px}
+  summary{cursor:pointer;color:var(--teal-dark);font-size:13.5px;font-weight:700}
+  details .inner{font-size:13.5px;color:#3d4744;padding:8px 2px 0}
+  details .inner ul{padding-left:20px;margin:6px 0}
+  footer{text-align:center;color:var(--muted);font-size:12px;padding:10px 16px 30px}
+  @media print{
+    header,footer,.card:not(#printcard),.actions,.tmpl{display:none!important}
+    .wrap{display:block;max-width:none}
+    #printcard{border:0}
+    #printcard>h2{display:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>メール作成用QRコード</h1>
+  <span class="offline-badge">完全オフライン動作／通信は一切行いません</span>
+</header>
+
+<div class="wrap">
+
+  <!-- ===== 左カラム：入力 ===== -->
+  <div>
+    <div class="card">
+      <h2>メールの起動設定</h2>
+      <div class="body">
+
+        <label class="field">
+          <span class="lbl">あなたがメールを受け取りたいアドレス
+            <span class="sub">（必須）</span></span>
+          <input type="email" id="to" placeholder="info@example.jp" autocomplete="off">
+        </label>
+
+        <label class="field">
+          <span class="lbl">件名
+            <span class="sub">（あなたが受け取りたい件名）</span></span>
+          <input type="text" id="subject" placeholder="「応募」「参加希望」「注文」など">
+        </label>
+
+        <span class="lbl" style="font-weight:700;display:block;margin-bottom:5px">本文
+          <span class="sub" style="font-weight:400;color:var(--muted);font-size:13px">（相手のメール本文に、あらかじめ入力された状態で表示されます）</span></span>
+
+        <div class="tmpl" id="tmplBar"></div>
+        <div class="tmpl">
+          <button type="button" class="link" id="btnClearBody">本文を消す</button>
+          <span class="dirty" id="dirtyFlag">未書き出しの変更があります</span>
+        </div>
+
+        <details id="tmplPanel">
+          <summary>定型文を管理する（追加・編集・書き出し・読み込み）</summary>
+          <div class="inner">
+
+            <div class="note" style="margin-bottom:12px">
+              <b>定型文はこのHTMLファイルには保存されません。</b>
+              画面を閉じると、追加・変更した内容は消えます。
+              使い続ける定型文は必ず <b>「定型文を書き出す」</b> で JSON ファイルに保存し、
+              庁内の共有フォルダなどに置いてください。
+              次回は <b>「定型文を読み込む」</b> でそのファイルを開けば元に戻ります。
+              <br><br>
+              定型文を呼び出すと、宛先・件名・本文に加えて<b>誤り訂正レベル・大きさ(mm)・日本語の入れ方</b>も一緒に入ります。
+              その定型文に<b>登録されていない（空の）項目は、いま入力中の内容がそのまま残ります</b>。
+              本文を空にしたいときは「本文を消す」を押してください。
+              <details>
+                <summary>なぜファイルに保存する方式なのか</summary>
+                <div class="inner">
+                  ブラウザ内に保存する方式（localStorage）だと、定型文が
+                  <b>そのパソコンのそのブラウザにしか存在しない</b>状態になります。
+                  担当者が代わって別のPCで開くと空になり、Edgeの「閲覧データの削除」でも消えます。
+                  ファイル方式なら、共有フォルダに置いて全員で同じ定型文を使え、
+                  引き継ぎもバックアップも通常の書類と同じ扱いでできます。
+                  書き出したファイルが外部へ送信されることはありません。
+                </div>
+              </details>
+            </div>
+
+            <ul class="tlist" id="tmplList"></ul>
+
+            <div class="saverow">
+              <input type="text" id="newName" placeholder="定型文の名前（例：道路破損の通報受付）">
+              <button type="button" class="primary" id="btnAdd"
+                style="background:var(--teal);color:#fff;border:0;border-radius:6px;padding:9px 14px;font:inherit;font-weight:700;cursor:pointer">
+                今の内容を新しい定型文として保存
+              </button>
+            </div>
+
+            <div class="filerow">
+              <button type="button" id="btnExport">定型文を書き出す（JSON）</button>
+              <button type="button" id="btnImport">定型文を読み込む（JSON）</button>
+              <button type="button" class="reset" id="btnReset">初期状態に戻す</button>
+              <input type="file" id="fileInput" accept=".json,application/json" hidden>
+            </div>
+          </div>
+        </details>
+
+        <textarea id="body" placeholder="指示や項目名などを簡潔に"></textarea>
+
+        <div class="meter">
+          <div class="bar"><span id="meterFill" style="width:0%"></span></div>
+          <div class="txt" id="meterTxt">宛先を入力すると計算します</div>
+        </div>
+        <div class="msg" id="msg"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>QRコードの設定</h2>
+      <div class="body">
+        <div class="row">
+          <label class="field">
+            <span class="lbl">誤り訂正レベル</span>
+            <select id="ecl">
+              <option value="L">L ／ 約7%まで復元（最も小さく作れる）</option>
+              <option value="M" selected>M ／ 約15%まで復元（標準・おすすめ）</option>
+              <option value="Q">Q ／ 約25%まで復元</option>
+              <option value="H">H ／ 約30%まで復元（汚れ・かすれに強い）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="lbl">貼り付け・印刷する大きさ
+              <span class="sub">（紙の上での実寸）</span></span>
+            <select id="mm">
+              <option value="15">15 mm 角（かなり小さい）</option>
+              <option value="20">20 mm 角（文書の隅に）</option>
+              <option value="25">25 mm 角（文書の隅に）</option>
+              <option value="30" selected>30 mm 角（標準）</option>
+              <option value="40">40 mm 角</option>
+              <option value="50">50 mm 角（チラシ）</option>
+              <option value="80">80 mm 角（掲示物）</option>
+              <option value="120">120 mm 角（大きく掲示）</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span class="lbl">日本語の入れ方
+            <span class="sub">（QRの大きさに大きく効きます）</span></span>
+          <select id="enc">
+            <option value="compact" selected>日本語をそのまま入れる（小さく作れる・推奨）</option>
+            <option value="safe">すべて記号に変換する（互換性重視・大きくなる）</option>
+          </select>
+        </label>
+        <details>
+          <summary>「日本語の入れ方」の違い</summary>
+          <div class="inner">
+            QRコードに入るのは <code>mailto:</code> で始まる1本の文字列です。
+            この中の日本語をどう表すかで、情報量が<b>3倍も変わります</b>。
+            <ul>
+              <li><b>日本語をそのまま入れる</b>：1文字が3バイト。QRコードが小さくなり、
+                丁寧な文面でも 25mm 角に収まります。改行や <code>&amp;</code> <code>?</code> など
+                URLを壊す記号だけは変換するので、構造は壊れません。
+                スマートフォンの標準カメラや主要な読み取りアプリは問題なく読めます。</li>
+              <li><b>すべて記号に変換する</b>：1文字が <code>%E5%90%8D</code> のような9バイトになります。
+                <code>mailto:</code> の最も厳密な書き方で、どんな読み取りアプリでも確実ですが、
+                QRコードは大きくなります。</li>
+            </ul>
+            まずは<b>そのまま入れる</b>で作り、実機で読み取って確認してください。
+            もし文字化けする端末があれば、<b>すべて記号に変換する</b>に切り替えてください。
+          </div>
+        </details>
+        <details>
+          <summary>どのレベルを選べばよいか</summary>
+          <div class="inner">
+            誤り訂正レベルとは、<b>QRコードが汚れたり一部隠れても読み取れる度合い</b>のことです。
+            レベルを上げるほど丈夫になりますが、同じ情報量でもQRコードの模様が細かくなり、
+            かえって読み取りにくくなることがあります。
+            <ul>
+              <li><b>画面表示・チラシ配布</b>なら M で十分です。</li>
+              <li><b>屋外の掲示物・現場に貼る看板</b>など、汚れや退色が想定される場合は Q または H。</li>
+              <li>本文が長くて「情報量が多すぎます」と出る場合は L に下げると収まることがあります。</li>
+            </ul>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>QRコードに実際に入る文字列（確認用）</h2>
+      <div class="body">
+        <textarea id="mailtoOut" readonly></textarea>
+        <div class="actions">
+          <button type="button" class="ghost" id="btnCopy">この文字列をコピー</button>
+        </div>
+        <details>
+          <summary>この文字列は何か</summary>
+          <div class="inner">
+            <code>mailto:</code> で始まるこの文字列がQRコードの中身です。
+            改行は Outlook でも正しく改行されるよう <code>%0D%0A</code> に、
+            空白や <code>&amp;</code> <code>?</code> <code>#</code> など
+            URLの構造を壊す記号も安全な形に変換しています。
+            <br><br>
+            「日本語の入れ方」を<b>そのまま入れる</b>にすると日本語はそのまま表示され、1文字3バイト。
+            <b>すべて記号に変換する</b>にすると <code>%E3%81%82</code> のような形になり、1文字9バイトです。
+            上の文字数メーターの数字は、この違いで3倍変わります。
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 右カラム：プレビュー ===== -->
+  <div>
+    <div class="card" id="printcard">
+      <h2>プレビュー</h2>
+      <div class="body">
+        <div id="qrbox">
+          <div class="placeholder">宛先アドレスを入力すると<br>ここにQRコードが表示されます</div>
+        </div>
+        <div class="stats" id="stats"></div>
+        <div id="sizeinfo" hidden></div>
+        <div class="actions">
+          <button type="button" id="btnCopyImg" disabled>画像をコピー</button>
+          <button type="button" class="ghost" id="btnPng" disabled>PNG画像で保存</button>
+        </div>
+        <div class="actions" style="margin-top:8px">
+          <button type="button" class="ghost" id="btnSvg" disabled>SVGで保存</button>
+          <button type="button" class="ghost" id="btnPrint" disabled>印刷</button>
+        </div>
+        <div id="pastemsg" hidden></div>
+        <div class="hint">
+          <b>実寸どおりに文書へ入れるなら、コピーではなく保存してから挿入してください。</b>
+          <ol style="padding-left:18px;margin:6px 0">
+            <li><b>SVGで保存</b> → Word の「挿入」→「画像」→「このデバイス」。
+              指定した実寸ちょうどで入り、拡大しても粗くなりません。<b>いちばん確実です。</b></li>
+            <li><b>PNG画像で保存</b> → 同じく「挿入」→「画像」。
+              解像度の情報を埋め込んであるので、こちらも実寸どおりに入ります。</li>
+          </ol>
+          <b>「画像をコピー」→ Ctrl+V</b> は手軽ですが、
+          Windows のクリップボードは解像度の情報を運べないため、
+          <b>Word では実寸より大きく貼り付きます</b>。
+          その場合は貼り付けた図を右クリック →「図の書式設定」→「サイズ」で、
+          高さ・幅を指定の mm に直してください。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  このツールはファイル1つで動作し、インターネットへ一切接続しません。<br>
+  入力した内容がこのパソコンの外へ送信されることはありません。
+</footer>
+
+<script>
+/* ============ QRコード生成エンジン（このファイル内に完結） ============ */
+/* QRコード生成エンジン (完全オフライン / 外部依存なし)
+ * 規格: ISO/IEC 18004  8ビットバイトモード専用
+ * mailto: の payload は必ず ASCII (パーセントエンコード後) になるため
+ * 数字/英数モードの最適化や ECI は不要。
+ */
+var QRGen = (function () {
+  "use strict";
+
+  /* ---- 表: RSブロック構成 (v1..v40 × [L,M,Q,H]) ---- */
+  /* 各レベルは (ブロック数, 総符号語, データ符号語) の3つ組の並び */
+  var RS_BLOCK_TABLE = [
+
+[[1,26,19],[1,26,16],[1,26,13],[1,26,9]],
+[[1,44,34],[1,44,28],[1,44,22],[1,44,16]],
+[[1,70,55],[1,70,44],[2,35,17],[2,35,13]],
+[[1,100,80],[2,50,32],[2,50,24],[4,25,9]],
+[[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12]],
+[[2,86,68],[4,43,27],[4,43,19],[4,43,15]],
+[[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14]],
+[[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15]],
+[[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13]],
+[[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16]],
+[[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13]],
+[[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15]],
+[[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12]],
+[[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13]],
+[[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13]],
+[[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16]],
+[[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15]],
+[[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15]],
+[[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14]],
+[[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16]],
+[[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17]],
+[[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13]],
+[[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16]],
+[[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17]],
+[[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16]],
+[[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17]],
+[[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16]],
+[[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16]],
+[[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16]],
+[[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16]],
+[[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16]],
+[[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16]],
+[[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16]],
+[[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17]],
+[[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16]],
+[[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16]],
+[[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16]],
+[[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16]],
+[[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16]],
+[[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],
+];
+  /* ---- 表: 位置合わせパターン中心座標 (v1..v40) ---- */
+  var ALIGN_POS = [
+
+[],
+[6,18],
+[6,22],
+[6,26],
+[6,30],
+[6,34],
+[6,22,38],
+[6,24,42],
+[6,26,46],
+[6,28,50],
+[6,30,54],
+[6,32,58],
+[6,34,62],
+[6,26,46,66],
+[6,26,48,70],
+[6,26,50,74],
+[6,30,54,78],
+[6,30,56,82],
+[6,30,58,86],
+[6,34,62,90],
+[6,28,50,72,94],
+[6,26,50,74,98],
+[6,30,54,78,102],
+[6,28,54,80,106],
+[6,32,58,84,110],
+[6,30,58,86,114],
+[6,34,62,90,118],
+[6,26,50,74,98,122],
+[6,30,54,78,102,126],
+[6,26,52,78,104,130],
+[6,30,56,82,108,134],
+[6,34,60,86,112,138],
+[6,30,58,86,114,142],
+[6,34,62,90,118,146],
+[6,30,54,78,102,126,150],
+[6,24,50,76,102,128,154],
+[6,28,54,80,106,132,158],
+[6,32,58,84,110,136,162],
+[6,26,54,82,110,138,166],
+[6,30,58,86,114,142,170],
+];
+
+  var ECL = { L: 0, M: 1, Q: 2, H: 3 };
+  /* 形式情報での誤り訂正レベルのビット表現 */
+  var ECL_FORMAT_BITS = { 0: 1, 1: 0, 2: 3, 3: 2 };
+
+  /* ---- GF(256) 原始多項式 0x11D ---- */
+  var EXP = new Uint8Array(512);
+  var LOG = new Uint8Array(256);
+  (function () {
+    var x = 1;
+    for (var i = 0; i < 255; i++) {
+      EXP[i] = x;
+      LOG[x] = i;
+      x <<= 1;
+      if (x & 0x100) x ^= 0x11d;
+    }
+    for (var j = 255; j < 512; j++) EXP[j] = EXP[j - 255];
+  })();
+
+  function gmul(a, b) {
+    if (a === 0 || b === 0) return 0;
+    return EXP[LOG[a] + LOG[b]];
+  }
+
+  /* 生成多項式 (係数は高次→低次) */
+  function rsGenPoly(degree) {
+    var g = [1];
+    for (var i = 0; i < degree; i++) {
+      var next = new Array(g.length + 1);
+      for (var k = 0; k < next.length; k++) next[k] = 0;
+      for (var j = 0; j < g.length; j++) {
+        next[j] ^= g[j];
+        next[j + 1] ^= gmul(g[j], EXP[i]);
+      }
+      g = next;
+    }
+    return g;
+  }
+
+  /* データ符号語 → 誤り訂正符号語 */
+  function rsEncode(data, ecLen) {
+    var g = rsGenPoly(ecLen);
+    var buf = new Uint8Array(data.length + ecLen);
+    buf.set(data, 0);
+    for (var i = 0; i < data.length; i++) {
+      var coef = buf[i];
+      if (coef !== 0) {
+        for (var j = 0; j < g.length; j++) buf[i + j] ^= gmul(g[j], coef);
+      }
+    }
+    return buf.subarray(data.length);
+  }
+
+  /* ---- ビットバッファ ---- */
+  function BitBuf() {
+    this.bytes = [];
+    this.len = 0;
+  }
+  BitBuf.prototype.putBit = function (bit) {
+    var i = this.len >>> 3;
+    if (this.bytes.length <= i) this.bytes.push(0);
+    if (bit) this.bytes[i] |= 0x80 >>> (this.len & 7);
+    this.len++;
+  };
+  BitBuf.prototype.put = function (num, bits) {
+    for (var i = bits - 1; i >= 0; i--) this.putBit(((num >>> i) & 1) === 1);
+  };
+
+  /* ---- バージョン情報 ---- */
+  function rsBlocksFor(version, ecl) {
+    var flat = RS_BLOCK_TABLE[version - 1][ecl];
+    var blocks = [];
+    for (var i = 0; i < flat.length; i += 3) {
+      for (var n = 0; n < flat[i]; n++) {
+        blocks.push({ total: flat[i + 1], data: flat[i + 2] });
+      }
+    }
+    return blocks;
+  }
+
+  function dataCodewords(version, ecl) {
+    var blocks = rsBlocksFor(version, ecl);
+    var sum = 0;
+    for (var i = 0; i < blocks.length; i++) sum += blocks[i].data;
+    return sum;
+  }
+
+  function charCountBits(version) {
+    return version <= 9 ? 8 : 16;
+  }
+
+  /* バイト列がそのバージョン/レベルに収まるか */
+  function capacityBytes(version, ecl) {
+    var bits = dataCodewords(version, ecl) * 8 - 4 - charCountBits(version);
+    return bits >>> 3;
+  }
+
+  function remainderBits(version) {
+    if (version === 1) return 0;
+    if (version <= 6) return 7;
+    if (version <= 13) return 0;
+    if (version <= 20) return 3;
+    if (version <= 27) return 4;
+    if (version <= 34) return 3;
+    return 0;
+  }
+
+  /* ---- データ符号語列の構築 (終端・パディング・ブロック分割・インターリーブ) ---- */
+  function buildCodewords(bytes, version, ecl) {
+    var bb = new BitBuf();
+    bb.put(4, 4); // 8ビットバイトモード
+    bb.put(bytes.length, charCountBits(version));
+    for (var i = 0; i < bytes.length; i++) bb.put(bytes[i], 8);
+
+    var capBits = dataCodewords(version, ecl) * 8;
+    // 終端子 0000 (最大4ビット)
+    var term = Math.min(4, capBits - bb.len);
+    bb.put(0, term);
+    // バイト境界まで 0 埋め
+    bb.put(0, (8 - (bb.len & 7)) & 7);
+    // 残りを 0xEC / 0x11 交互で埋める
+    var pad = [0xec, 0x11];
+    for (var p = 0; bb.len < capBits; p++) bb.put(pad[p & 1], 8);
+
+    var dataArr = new Uint8Array(bb.bytes);
+
+    // ブロックへ分割 + 誤り訂正符号語生成
+    var blocks = rsBlocksFor(version, ecl);
+    var dataBlocks = [];
+    var ecBlocks = [];
+    var off = 0;
+    var maxData = 0;
+    var maxEc = 0;
+    for (var b = 0; b < blocks.length; b++) {
+      var dLen = blocks[b].data;
+      var eLen = blocks[b].total - dLen;
+      var chunk = dataArr.subarray(off, off + dLen);
+      off += dLen;
+      dataBlocks.push(chunk);
+      ecBlocks.push(rsEncode(chunk, eLen));
+      if (dLen > maxData) maxData = dLen;
+      if (eLen > maxEc) maxEc = eLen;
+    }
+
+    // インターリーブ
+    var out = [];
+    for (var i2 = 0; i2 < maxData; i2++) {
+      for (var b2 = 0; b2 < dataBlocks.length; b2++) {
+        if (i2 < dataBlocks[b2].length) out.push(dataBlocks[b2][i2]);
+      }
+    }
+    for (var i3 = 0; i3 < maxEc; i3++) {
+      for (var b3 = 0; b3 < ecBlocks.length; b3++) {
+        if (i3 < ecBlocks[b3].length) out.push(ecBlocks[b3][i3]);
+      }
+    }
+    return new Uint8Array(out);
+  }
+
+  /* ---- モジュール配置 ---- */
+  function Grid(version) {
+    this.version = version;
+    this.size = version * 4 + 17;
+    this.modules = [];
+    this.isFunc = [];
+    for (var y = 0; y < this.size; y++) {
+      var r1 = [], r2 = [];
+      for (var x = 0; x < this.size; x++) {
+        r1.push(false);
+        r2.push(false);
+      }
+      this.modules.push(r1);
+      this.isFunc.push(r2);
+    }
+  }
+  Grid.prototype.setFunc = function (x, y, dark) {
+    this.modules[y][x] = dark;
+    this.isFunc[y][x] = true;
+  };
+
+  function getBit(n, i) {
+    return ((n >>> i) & 1) !== 0;
+  }
+
+  function drawFinder(g, cx, cy) {
+    for (var dy = -4; dy <= 4; dy++) {
+      for (var dx = -4; dx <= 4; dx++) {
+        var dist = Math.max(Math.abs(dx), Math.abs(dy));
+        var x = cx + dx, y = cy + dy;
+        if (x >= 0 && x < g.size && y >= 0 && y < g.size) {
+          g.setFunc(x, y, dist !== 2 && dist !== 4);
+        }
+      }
+    }
+  }
+
+  function drawAlign(g, cx, cy) {
+    for (var dy = -2; dy <= 2; dy++) {
+      for (var dx = -2; dx <= 2; dx++) {
+        g.setFunc(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+      }
+    }
+  }
+
+  function drawFormatBits(g, ecl, mask) {
+    var data = (ECL_FORMAT_BITS[ecl] << 3) | mask;
+    var rem = data;
+    for (var i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
+    var bits = ((data << 10) | rem) ^ 0x5412;
+
+    for (var j = 0; j <= 5; j++) g.setFunc(8, j, getBit(bits, j));
+    g.setFunc(8, 7, getBit(bits, 6));
+    g.setFunc(8, 8, getBit(bits, 7));
+    g.setFunc(7, 8, getBit(bits, 8));
+    for (var k = 9; k < 15; k++) g.setFunc(14 - k, 8, getBit(bits, k));
+
+    for (var m = 0; m < 8; m++) g.setFunc(g.size - 1 - m, 8, getBit(bits, m));
+    for (var n = 8; n < 15; n++) g.setFunc(8, g.size - 15 + n, getBit(bits, n));
+    g.setFunc(8, g.size - 8, true); // 固定の暗モジュール
+  }
+
+  function drawVersionBits(g) {
+    if (g.version < 7) return;
+    var rem = g.version;
+    for (var i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1f25);
+    var bits = (g.version << 12) | rem;
+    for (var j = 0; j < 18; j++) {
+      var bit = getBit(bits, j);
+      var a = g.size - 11 + (j % 3);
+      var b = Math.floor(j / 3);
+      g.setFunc(a, b, bit);
+      g.setFunc(b, a, bit);
+    }
+  }
+
+  function drawFunctionPatterns(g, ecl) {
+    // タイミングパターン
+    for (var i = 0; i < g.size; i++) {
+      g.setFunc(6, i, i % 2 === 0);
+      g.setFunc(i, 6, i % 2 === 0);
+    }
+    // 切り出しシンボル + 分離パターン
+    drawFinder(g, 3, 3);
+    drawFinder(g, g.size - 4, 3);
+    drawFinder(g, 3, g.size - 4);
+    // 位置合わせパターン
+    var pos = ALIGN_POS[g.version - 1];
+    var last = pos.length - 1;
+    for (var a = 0; a <= last; a++) {
+      for (var b = 0; b <= last; b++) {
+        if ((a === 0 && b === 0) || (a === 0 && b === last) || (a === last && b === 0)) continue;
+        drawAlign(g, pos[a], pos[b]);
+      }
+    }
+    drawFormatBits(g, ecl, 0); // マスク確定前の仮置き
+    drawVersionBits(g);
+  }
+
+  function drawCodewords(g, data) {
+    var i = 0;
+    for (var right = g.size - 1; right >= 1; right -= 2) {
+      if (right === 6) right = 5;
+      for (var vert = 0; vert < g.size; vert++) {
+        for (var j = 0; j < 2; j++) {
+          var x = right - j;
+          var upward = ((right + 1) & 2) === 0;
+          var y = upward ? g.size - 1 - vert : vert;
+          if (!g.isFunc[y][x] && i < data.length * 8) {
+            g.modules[y][x] = getBit(data[i >>> 3], 7 - (i & 7));
+            i++;
+          }
+        }
+      }
+    }
+  }
+
+  function maskFn(mask, x, y) {
+    switch (mask) {
+      case 0: return (x + y) % 2 === 0;
+      case 1: return y % 2 === 0;
+      case 2: return x % 3 === 0;
+      case 3: return (x + y) % 3 === 0;
+      case 4: return (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0;
+      case 5: return ((x * y) % 2) + ((x * y) % 3) === 0;
+      case 6: return (((x * y) % 2) + ((x * y) % 3)) % 2 === 0;
+      case 7: return (((x + y) % 2) + ((x * y) % 3)) % 2 === 0;
+    }
+    return false;
+  }
+
+  function applyMask(g, mask) {
+    for (var y = 0; y < g.size; y++) {
+      for (var x = 0; x < g.size; x++) {
+        if (!g.isFunc[y][x] && maskFn(mask, x, y)) {
+          g.modules[y][x] = !g.modules[y][x];
+        }
+      }
+    }
+  }
+
+  /* 評価スコア (低いほど良い) */
+  function penalty(g) {
+    var size = g.size, m = g.modules, score = 0, x, y;
+
+    // 規則1: 行/列に同色が5個以上連続
+    for (y = 0; y < size; y++) {
+      var run = 1;
+      for (x = 1; x < size; x++) {
+        if (m[y][x] === m[y][x - 1]) {
+          run++;
+          if (run === 5) score += 3;
+          else if (run > 5) score += 1;
+        } else run = 1;
+      }
+    }
+    for (x = 0; x < size; x++) {
+      var runc = 1;
+      for (y = 1; y < size; y++) {
+        if (m[y][x] === m[y - 1][x]) {
+          runc++;
+          if (runc === 5) score += 3;
+          else if (runc > 5) score += 1;
+        } else runc = 1;
+      }
+    }
+
+    // 規則2: 2x2 の同色ブロック
+    for (y = 0; y < size - 1; y++) {
+      for (x = 0; x < size - 1; x++) {
+        var c = m[y][x];
+        if (c === m[y][x + 1] && c === m[y + 1][x] && c === m[y + 1][x + 1]) score += 3;
+      }
+    }
+
+    // 規則3: 1:1:3:1:1 比率パターン (前後に4モジュールの明領域)
+    var patA = [true, false, true, true, true, false, true, false, false, false, false];
+    var patB = [false, false, false, false, true, false, true, true, true, false, true];
+    function matches(get, i) {
+      var okA = true, okB = true;
+      for (var k = 0; k < 11; k++) {
+        if (get(i + k) !== patA[k]) okA = false;
+        if (get(i + k) !== patB[k]) okB = false;
+      }
+      return okA || okB;
+    }
+    for (y = 0; y < size; y++) {
+      for (x = 0; x + 11 <= size; x++) {
+        if (matches(function (i) { return m[y][i]; }, x)) score += 40;
+      }
+    }
+    for (x = 0; x < size; x++) {
+      for (y = 0; y + 11 <= size; y++) {
+        if (matches(function (i) { return m[i][x]; }, y)) score += 40;
+      }
+    }
+
+    // 規則4: 暗モジュール比率の偏り
+    var dark = 0;
+    for (y = 0; y < size; y++) for (x = 0; x < size; x++) if (m[y][x]) dark++;
+    var total = size * size;
+    var k2 = Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1;
+    score += k2 * 10;
+    return score;
+  }
+
+  /* ---- 公開API ---- */
+
+  /* 文字列 → UTF-8 バイト列 */
+  function utf8Bytes(str) {
+    var out = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) {
+        out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+      } else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+        var c2 = str.charCodeAt(i + 1);
+        var cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
+        i++;
+        out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+      } else {
+        out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+      }
+    }
+    return out;
+  }
+
+  /* 収まる最小バージョンを返す。収まらなければ 0 */
+  function minVersion(byteLen, ecl) {
+    for (var v = 1; v <= 40; v++) {
+      if (byteLen <= capacityBytes(v, ecl)) return v;
+    }
+    return 0;
+  }
+
+  /* text: 文字列 / ecl: 'L'|'M'|'Q'|'H' / opts.version: 明示指定 / opts.mask: 明示指定
+   * 戻り値: { size, modules(2次元boolean), version, mask, ecl } */
+  function encode(text, eclName, opts) {
+    opts = opts || {};
+    var ecl = ECL[eclName];
+    if (ecl === undefined) throw new Error("誤り訂正レベルが不正です: " + eclName);
+
+    var bytes = utf8Bytes(text);
+    var version = opts.version || minVersion(bytes.length, ecl);
+    if (!version) throw new Error("情報量が多すぎてQRコードに収まりません");
+    if (bytes.length > capacityBytes(version, ecl)) {
+      throw new Error("指定バージョンに収まりません");
+    }
+
+    var codewords = buildCodewords(bytes, version, ecl);
+
+    var best = null;
+    var maskList = opts.mask !== undefined && opts.mask !== null ? [opts.mask] : [0, 1, 2, 3, 4, 5, 6, 7];
+    for (var mi = 0; mi < maskList.length; mi++) {
+      var mask = maskList[mi];
+      var g = new Grid(version);
+      drawFunctionPatterns(g, ecl);
+      drawCodewords(g, codewords);
+      applyMask(g, mask);
+      drawFormatBits(g, ecl, mask);
+      var s = penalty(g);
+      if (best === null || s < best.score) best = { score: s, grid: g, mask: mask };
+    }
+
+    return {
+      size: best.grid.size,
+      modules: best.grid.modules,
+      version: version,
+      mask: best.mask,
+      ecl: eclName,
+      byteLength: bytes.length,
+    };
+  }
+
+  return {
+    encode: encode,
+    minVersion: minVersion,
+    capacityBytes: capacityBytes,
+    utf8Bytes: utf8Bytes,
+  };
+})();
+
+/* ============ 画面の処理 ============ */
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var toEl = $("to"), subjEl = $("subject"), bodyEl = $("body");
+  var eclEl = $("ecl"), mmEl = $("mm"), encEl = $("enc");
+  var msgEl = $("msg"), meterFill = $("meterFill"), meterTxt = $("meterTxt");
+  var qrbox = $("qrbox"), statsEl = $("stats"), mailtoOut = $("mailtoOut");
+  var btnPng = $("btnPng"), btnSvg = $("btnSvg"), btnPrint = $("btnPrint");
+  var btnCopyImg = $("btnCopyImg");
+
+  var QUIET = 4;              // 余白（クワイエットゾーン）：規格上4モジュール必要
+  var current = null;         // 直近の生成結果
+
+  /* ---- 定型文 ---- */
+  var FILE_TYPE = "qr-mail-templates";
+  var FILE_VERSION = 3;   // 3 で enc を追加。1・2 のファイルもそのまま読める。
+
+  function builtins() {
+    return [
+      {
+        /* 「日本語をそのまま入れる」方式なら、この文面のまま 25mm 角に収まる
+           （140バイト → バージョン8・1マス0.44mm）。 */
+        name: "画像添付の受付（25mm角）",
+        to: "",
+        subject: "",
+        body:
+          "【お名前】\n" +
+          "【ご連絡先】\n" +
+          "※このメールに画像を添付してください。",
+        ecl: "M",
+        mm: 25,
+        enc: "compact"
+      },
+      {
+        name: "写真を添付してもらう受付",
+        to: "",
+        subject: "",
+        body:
+          "【お名前】\n" +
+          "【ご連絡先（電話番号）】\n" +
+          "【場所】\n" +
+          "【状況】\n\n" +
+          "※このメールに現場の写真を添付して送信してください。",
+        ecl: "M",
+        mm: 40,
+        enc: "compact"
+      },
+      {
+        name: "参加申込の受付",
+        to: "",
+        subject: "",
+        body:
+          "【お名前】\n" +
+          "【ご住所】\n" +
+          "【ご連絡先（電話番号）】\n" +
+          "【参加人数】\n" +
+          "【ご質問など】",
+        ecl: "M",
+        mm: 40,
+        enc: "compact"
+      }
+    ];
+  }
+
+  /* 選択肢として存在する値かどうか */
+  function hasOption(selectEl, value) {
+    return Array.prototype.some.call(selectEl.options, function (o) { return o.value === String(value); });
+  }
+
+  var templates = builtins();
+  var dirty = false;
+
+  function setDirty(v) {
+    dirty = v;
+    $("dirtyFlag").className = "dirty" + (v ? " on" : "");
+  }
+
+  window.addEventListener("beforeunload", function (e) {
+    if (!dirty) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+
+  /* 定型文を画面へ適用する。
+     定型文に登録されていない（空の）項目は、いま入力中の内容をそのまま残す。
+     本文を空にしたいときは「本文を消す」を使う。 */
+  function applyTemplate(t) {
+    if (t.to) toEl.value = t.to;
+    if (t.subject) subjEl.value = t.subject;
+    if (t.body) bodyEl.value = t.body;
+    if (t.ecl && hasOption(eclEl, t.ecl)) eclEl.value = t.ecl;
+    if (t.mm && hasOption(mmEl, t.mm)) mmEl.value = String(t.mm);
+    if (t.enc && hasOption(encEl, t.enc)) encEl.value = t.enc;
+    update();
+  }
+
+  /* 定型文として保存する現在の設定 */
+  function currentRecord(name) {
+    return {
+      name: name,
+      to: toEl.value.trim(),
+      subject: subjEl.value,
+      body: bodyEl.value,
+      ecl: eclEl.value,
+      mm: parseInt(mmEl.value, 10),
+      enc: encEl.value
+    };
+  }
+
+  function renderTemplates() {
+    /* 本文欄の上のボタン列 */
+    var bar = $("tmplBar");
+    bar.innerHTML = "";
+    if (!templates.length) {
+      var em = document.createElement("span");
+      em.className = "empty";
+      em.textContent = "定型文はまだありません。下の「定型文を管理する」から追加できます。";
+      bar.appendChild(em);
+    }
+    templates.forEach(function (t) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = t.name;
+      b.title = (t.to ? "宛先：" + t.to : "宛先：登録なし（現在の入力のまま）") +
+                "\n" + (t.subject ? "件名：" + t.subject : "件名：登録なし（現在の入力のまま）") +
+                (t.ecl ? "\n誤り訂正：" + t.ecl : "") +
+                (t.mm ? "\n大きさ：" + t.mm + "mm 角" : "");
+      b.addEventListener("click", function () {
+        applyTemplate(t);
+        bodyEl.focus();
+      });
+      bar.appendChild(b);
+    });
+
+    /* 管理パネルの一覧 */
+    var list = $("tmplList");
+    list.innerHTML = "";
+    templates.forEach(function (t, i) {
+      var li = document.createElement("li");
+
+      var nm = document.createElement("span");
+      nm.className = "tname";
+      nm.textContent = t.name;
+      li.appendChild(nm);
+
+      function mk(label, cls, fn) {
+        var b = document.createElement("button");
+        b.type = "button";
+        if (cls) b.className = cls;
+        b.textContent = label;
+        b.addEventListener("click", fn);
+        li.appendChild(b);
+        return b;
+      }
+
+      mk("呼び出す", "primary", function () { applyTemplate(t); });
+
+      mk("今の内容で上書き", "", function () {
+        if (!confirm("「" + t.name + "」を、いま画面にある内容（宛先・件名・本文・誤り訂正レベル・大きさ）で上書きします。よろしいですか？")) return;
+        templates[i] = currentRecord(t.name);
+        setDirty(true);
+        renderTemplates();
+      });
+
+      mk("名前を変更", "", function () {
+        var n = prompt("新しい名前を入力してください。", t.name);
+        if (n === null) return;
+        n = n.trim();
+        if (!n) { alert("名前を空にはできません。"); return; }
+        t.name = n;
+        setDirty(true);
+        renderTemplates();
+      });
+
+      var up = mk("↑", "", function () {
+        templates.splice(i - 1, 0, templates.splice(i, 1)[0]);
+        setDirty(true);
+        renderTemplates();
+      });
+      up.disabled = i === 0;
+
+      var dn = mk("↓", "", function () {
+        templates.splice(i + 1, 0, templates.splice(i, 1)[0]);
+        setDirty(true);
+        renderTemplates();
+      });
+      dn.disabled = i === templates.length - 1;
+
+      mk("削除", "danger", function () {
+        if (!confirm("定型文「" + t.name + "」を削除します。よろしいですか？\n（書き出し済みのJSONファイルは変更されません）")) return;
+        templates.splice(i, 1);
+        setDirty(true);
+        renderTemplates();
+      });
+
+      var info = document.createElement("span");
+      info.className = "tinfo";
+      var firstLine = (t.body || "").split("\n")[0] || "（本文なし）";
+      info.textContent =
+        (t.to ? "宛先: " + t.to : "宛先: 登録なし") +
+        " ／ 件名: " + (t.subject || "なし") +
+        " ／ 本文: " + firstLine +
+        (t.ecl ? " ／ 誤り訂正 " + t.ecl : "") +
+        (t.mm ? " ／ " + t.mm + "mm角" : "") +
+        (t.enc ? " ／ " + (t.enc === "safe" ? "記号に変換" : "日本語そのまま") : "");
+      li.appendChild(info);
+
+      list.appendChild(li);
+    });
+  }
+
+  function exportTemplates() {
+    var data = { type: FILE_TYPE, version: FILE_VERSION, templates: templates };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    download(blob, "QRメール定型文.json");
+    setDirty(false);
+  }
+
+  function importTemplates(text) {
+    var data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      alert("ファイルを読み取れませんでした。\nこのツールで書き出した JSON ファイルを選んでください。");
+      return;
+    }
+    if (!data || data.type !== FILE_TYPE || !Array.isArray(data.templates)) {
+      alert("このツールの定型文ファイルではないようです。\n読み込みを中止しました。");
+      return;
+    }
+    var clean = [];
+    for (var i = 0; i < data.templates.length; i++) {
+      var t = data.templates[i];
+      if (!t || typeof t.name !== "string" || !t.name.trim()) continue;
+      var rec = {
+        name: String(t.name),
+        to: typeof t.to === "string" ? t.to : "",
+        subject: typeof t.subject === "string" ? t.subject : "",
+        body: typeof t.body === "string" ? t.body : ""
+      };
+      /* 誤り訂正レベルと大きさは省略可。値が不正なものは黙って捨てる。 */
+      if (typeof t.ecl === "string" && hasOption(eclEl, t.ecl)) rec.ecl = t.ecl;
+      if ((typeof t.mm === "number" || typeof t.mm === "string") && hasOption(mmEl, t.mm)) rec.mm = parseInt(t.mm, 10);
+      if (typeof t.enc === "string" && hasOption(encEl, t.enc)) rec.enc = t.enc;
+      clean.push(rec);
+    }
+    if (!clean.length) {
+      alert("読み込める定型文が1件もありませんでした。");
+      return;
+    }
+    if (!confirm("定型文 " + clean.length + " 件を読み込みます。\n現在表示されている定型文はすべて置き換わります。よろしいですか？")) return;
+    templates = clean;
+    setDirty(false);
+    renderTemplates();
+  }
+
+  /* UTF-8 の多バイト文字（先頭バイト C0-FF ＋ 後続バイト 80-BF）の並び。
+     encodeURIComponent が出す %XX の列のうち、これに当たるものだけが日本語。 */
+  var MULTIBYTE = /(?:%[CDEF][0-9A-F](?:%[89AB][0-9A-F])+)/g;
+
+  /* 日本語は生のまま、URLを壊す文字（改行・空白・& ? # % など）だけを変換する。
+     日本語1文字あたり 9バイト → 3バイト になり、QRコードが大幅に小さくなる。 */
+  function encodeKeepJa(s) {
+    return encodeURIComponent(s).replace(MULTIBYTE, function (m) {
+      return decodeURIComponent(m);
+    });
+  }
+
+  function encoder() {
+    return encEl.value === "safe" ? encodeURIComponent : encodeKeepJa;
+  }
+
+  /* mailto: 文字列を組み立てる */
+  function buildMailto() {
+    var to = toEl.value.trim();
+    var subj = subjEl.value;
+    var body = bodyEl.value;
+    if (!to) return "";
+
+    // 改行は Outlook でも確実に改行されるよう CRLF に揃える
+    var normBody = body.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
+    var enc = encoder();
+
+    var params = [];
+    if (subj) params.push("subject=" + enc(subj));
+    if (normBody) params.push("body=" + enc(normBody));
+
+    var addr = encodeURIComponent(to).replace(/%40/g, "@");
+    return "mailto:" + addr + (params.length ? "?" + params.join("&") : "");
+  }
+
+  function validEmail(v) {
+    return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(v);
+  }
+
+  function showMsg(type, html) {
+    msgEl.className = "msg " + type;
+    msgEl.innerHTML = html;
+  }
+  function hideMsg() {
+    msgEl.className = "msg";
+    msgEl.innerHTML = "";
+  }
+
+  var DPI = 300;                 // 印刷品質。1インチ = 25.4mm
+  var MIN_SCALE = 4;            // 1マスあたり最低4画素は確保する
+
+  /* 実寸(mm)から、1マス何画素で描くかを決める */
+  function scaleFor(res, mm) {
+    var n = res.size + QUIET * 2;
+    var targetPx = (mm / 25.4) * DPI;
+    return Math.max(MIN_SCALE, Math.floor(targetPx / n));
+  }
+
+  /* キャンバスへ描画 */
+  function draw(res, mm) {
+    var n = res.size + QUIET * 2;
+    var scale = scaleFor(res, mm);
+    var side = n * scale;
+
+    var c = document.createElement("canvas");
+    c.width = side;
+    c.height = side;
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, side, side);
+    ctx.fillStyle = "#000000";
+    for (var y = 0; y < res.size; y++) {
+      for (var x = 0; x < res.size; x++) {
+        if (res.modules[y][x]) {
+          ctx.fillRect((x + QUIET) * scale, (y + QUIET) * scale, scale, scale);
+        }
+      }
+    }
+    qrbox.innerHTML = "";
+    c.style.width = "min(100%, 320px)";
+    qrbox.appendChild(c);
+    return c;
+  }
+
+  /* SVGは実寸(mm)で出力する。Word に挿入するとそのままの大きさで入る。 */
+  function toSvg(res, mm) {
+    var n = res.size + QUIET * 2;
+    var s = '<svg xmlns="http://www.w3.org/2000/svg" width="' + mm + 'mm" height="' + mm +
+            'mm" viewBox="0 0 ' + n + ' ' + n + '" shape-rendering="crispEdges">';
+    s += '<rect width="' + n + '" height="' + n + '" fill="#ffffff"/>';
+    s += '<path fill="#000000" d="';
+    for (var y = 0; y < res.size; y++) {
+      for (var x = 0; x < res.size; x++) {
+        if (res.modules[y][x]) s += "M" + (x + QUIET) + " " + (y + QUIET) + "h1v1h-1z";
+      }
+    }
+    s += '"/></svg>';
+    return s;
+  }
+
+  function safeName() {
+    var to = toEl.value.trim().split("@")[0].replace(/[^\w\-]/g, "") || "mail";
+    return "QR_" + to;
+  }
+
+  /* ---- PNG に物理解像度(pHYs)を埋め込む ----
+     ブラウザが作るPNGには解像度の情報が無く、Word はこれを 96dpi とみなして
+     大きく挿入してしまう。pHYs チャンクで「1メートルあたり何画素か」を書いておくと、
+     Word・Excel が指定どおりの実寸で貼り付けてくれる。 */
+  var CRC_TABLE = (function () {
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(bytes) {
+    var c = 0xffffffff;
+    for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+
+  function be32(v) {
+    return [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+  }
+
+  /* ppm: pixels per metre */
+  function pngWithDensity(buf, ppm) {
+    var u8 = new Uint8Array(buf);
+    var pos = 8; // PNGシグネチャの直後
+    while (pos + 8 <= u8.length) {
+      var len = (u8[pos] << 24 >>> 0) + (u8[pos + 1] << 16) + (u8[pos + 2] << 8) + u8[pos + 3];
+      var type = String.fromCharCode(u8[pos + 4], u8[pos + 5], u8[pos + 6], u8[pos + 7]);
+      if (type === "pHYs") return u8;           // 既にあるなら触らない
+      if (type === "IDAT") break;               // 画像データの直前に挿入する
+      pos += 12 + len;
+    }
+    if (pos + 8 > u8.length) return u8;         // 想定外の構造なら元のまま
+
+    var body = new Uint8Array(13);              // 型(4) + データ(9)
+    body.set([0x70, 0x48, 0x59, 0x73], 0);      // "pHYs"
+    body.set(be32(ppm), 4);                     // X方向
+    body.set(be32(ppm), 8);                     // Y方向
+    body[12] = 1;                               // 単位=メートル
+
+    var chunk = new Uint8Array(21);             // 長さ(4)+型(4)+データ(9)+CRC(4)
+    chunk.set(be32(9), 0);
+    chunk.set(body, 4);
+    chunk.set(be32(crc32(body)), 17);
+
+    var out = new Uint8Array(u8.length + 21);
+    out.set(u8.subarray(0, pos), 0);
+    out.set(chunk, pos);
+    out.set(u8.subarray(pos), pos + 21);
+    return out;
+  }
+
+  /* キャンバスを、指定した実寸(mm)の情報を持つPNG Blob にする */
+  function canvasToPng(c, mm) {
+    return new Promise(function (resolve) {
+      c.toBlob(function (blob) {
+        if (!blob) { resolve(null); return; }
+        var ppm = Math.round(c.width / (mm / 1000));   // 1メートルあたりの画素数
+        blob.arrayBuffer().then(function (buf) {
+          resolve(new Blob([pngWithDensity(buf, ppm)], { type: "image/png" }));
+        }, function () { resolve(blob); });
+      }, "image/png");
+    });
+  }
+
+  function download(blob, filename) {
+    var a = document.createElement("a");
+    var url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  /* 入力が変わるたびに再生成 */
+  function update() {
+    var payload = buildMailto();
+    mailtoOut.value = payload;
+    current = null;
+    btnPng.disabled = btnSvg.disabled = btnPrint.disabled = btnCopyImg.disabled = true;
+    $("sizeinfo").hidden = true;
+    $("pastemsg").hidden = true;   // 設定を変えたら貼り付け見込みの案内は消す
+
+    var to = toEl.value.trim();
+    if (!to) {
+      qrbox.innerHTML = '<div class="placeholder">宛先アドレスを入力すると<br>ここにQRコードが表示されます</div>';
+      statsEl.textContent = "";
+      meterFill.style.width = "0%";
+      meterTxt.textContent = "宛先を入力すると計算します";
+      hideMsg();
+      return;
+    }
+    if (!validEmail(to)) {
+      qrbox.innerHTML = '<div class="placeholder">宛先アドレスの形式を確認してください</div>';
+      statsEl.textContent = "";
+      showMsg("err", "<b>宛先アドレスの形式が正しくありません。</b> " +
+        "<code>名前@ドメイン名</code> の形（例：<code>info@vill.example.jp</code>）で入力してください。");
+      return;
+    }
+
+    var ecl = eclEl.value;
+    /* 「日本語をそのまま入れる」と payload に多バイト文字が混ざるため、
+       文字数ではなく UTF-8 のバイト数を数える。 */
+    var bytes = QRGen.utf8Bytes(payload).length;
+    var maxBytes = QRGen.capacityBytes(40, { L: 0, M: 1, Q: 2, H: 3 }[ecl]);
+    var perChar = encEl.value === "safe" ? 9 : 3;   // 日本語1文字あたりのバイト数
+    var pct = Math.min(100, Math.round((bytes / maxBytes) * 100));
+    meterFill.style.width = pct + "%";
+
+    var res;
+    try {
+      res = QRGen.encode(payload, ecl);
+    } catch (e) {
+      meterFill.style.background = "#c0392b";
+      meterTxt.textContent = bytes + " / " + maxBytes + " バイト（上限超過）";
+      qrbox.innerHTML = '<div class="placeholder">情報量が多すぎます</div>';
+      statsEl.textContent = "";
+      showMsg("err",
+        "<b>情報量が多すぎてQRコードに収まりません。</b><br>" +
+        "現在 " + bytes + " バイト、この誤り訂正レベル（" + ecl + "）の上限は " + maxBytes + " バイトです。<br>" +
+        "本文を短くするか、誤り訂正レベルを <b>L</b> に下げてください。" +
+        "（日本語1文字が" + perChar + "バイトになるため、本文の日本語を減らすのが最も効きます）" +
+        (encEl.value === "safe"
+          ? "<br><b>「日本語の入れ方」を『日本語をそのまま入れる』にすると、情報量が約3分の1になります。</b>"
+          : ""));
+      return;
+    }
+
+    meterFill.style.background = res.version >= 25 ? "#e0a92a" : "#2f7d72";
+    meterTxt.textContent = bytes + " / " + maxBytes + " バイト使用（QRのバージョン " + res.version + " ／ 40）";
+
+    if (res.version >= 30) {
+      showMsg("warn",
+        "<b>QRコードの模様がかなり細かくなっています（バージョン " + res.version + "）。</b><br>" +
+        "小さく印刷すると、古いスマートフォンでは読み取れないことがあります。" +
+        "本文を短くするか、印刷サイズを大きくしてください。");
+    } else if (res.version >= 22) {
+      showMsg("warn",
+        "<b>情報量がやや多めです（バージョン " + res.version + "）。</b> " +
+        "名刺サイズなど小さく印刷する場合は、本文を短くすることをおすすめします。");
+    } else {
+      hideMsg();
+    }
+
+    var mm = parseInt(mmEl.value, 10);
+    var canvas = draw(res, mm);
+    current = { res: res, mm: mm };
+    btnPng.disabled = btnSvg.disabled = btnPrint.disabled = btnCopyImg.disabled = false;
+
+    statsEl.textContent =
+      "バージョン " + res.version + "（" + res.size + "×" + res.size + "モジュール）／ " +
+      "誤り訂正 " + res.ecl + " ／ " + bytes + " バイト／ 画像 " +
+      canvas.width + "×" + canvas.width + " px（" +
+      Math.round(canvas.width / (mm / 25.4)) + " dpi）";
+
+    showSizeInfo(res, mm);
+  }
+
+  /* 印刷したときに読み取れる最小の大きさの目安を表示する。
+     一般的なスマートフォンのカメラで確実に読めるのは、
+     QRコードの1マス（モジュール）が 0.4mm 以上のとき。 */
+  var MODULE_MM_MIN = 0.4;
+
+  function showSizeInfo(res, mm) {
+    var modulesAcross = res.size + QUIET * 2;      // 余白を含めた一辺のマス数
+    var recMm = Math.ceil(modulesAcross * MODULE_MM_MIN);
+    var moduleMm = mm / modulesAcross;
+    var tooSmall = mm < recMm;
+
+    var box = $("sizeinfo");
+    box.hidden = false;
+    box.className = tooSmall ? "tight" : "";
+
+    var html =
+      "<b>読み取れる最小サイズ：</b><span class='mm'> 約 " + recMm + " mm 角</span><br>" +
+      "<span style='font-size:12px;color:#5b6663'>" +
+      "（余白を含め一辺 " + modulesAcross + " マス。1マスが " +
+      MODULE_MM_MIN + "mm を下回ると読み取れなくなります）</span>";
+
+    if (tooSmall) {
+      html +=
+        "<div style='margin-top:8px;font-size:12.5px'>" +
+        "<b>いま選んでいる " + mm + "mm 角では小さすぎます。</b>" +
+        "1マスが " + moduleMm.toFixed(2) + "mm しかありません。<br>" +
+        "大きさを <b>" + recMm + "mm 以上</b>にするか、" +
+        (encEl.value === "safe"
+          ? "<b>「日本語の入れ方」を『日本語をそのまま入れる』に切り替えて</b>ください（情報量が約3分の1になり、大きく縮みます）。"
+          : "<b>本文を短くして</b>マス数を減らしてください（日本語は1文字で3バイト増えます）。") +
+        "</div>";
+    }
+    box.innerHTML = html;
+  }
+
+  /* ---- イベント ---- */
+  [toEl, subjEl, bodyEl].forEach(function (el) {
+    el.addEventListener("input", update);
+  });
+  [eclEl, mmEl, encEl].forEach(function (el) {
+    el.addEventListener("change", update);
+  });
+
+  $("btnClearBody").addEventListener("click", function () {
+    bodyEl.value = "";
+    update();
+    bodyEl.focus();
+  });
+
+  $("btnAdd").addEventListener("click", function () {
+    var name = $("newName").value.trim();
+    if (!name) {
+      alert("定型文の名前を入力してください。");
+      $("newName").focus();
+      return;
+    }
+    if (!subjEl.value && !bodyEl.value) {
+      alert("件名も本文も空です。保存する内容を入力してください。");
+      return;
+    }
+    var exists = templates.filter(function (t) { return t.name === name; })[0];
+    if (exists && !confirm("同じ名前の定型文があります。上書きしますか？")) return;
+
+    var rec = currentRecord(name);
+    if (exists) {
+      templates[templates.indexOf(exists)] = rec;
+    } else {
+      templates.push(rec);
+    }
+    $("newName").value = "";
+    setDirty(true);
+    renderTemplates();
+  });
+
+  $("btnExport").addEventListener("click", exportTemplates);
+
+  $("btnImport").addEventListener("click", function () { $("fileInput").click(); });
+
+  $("fileInput").addEventListener("change", function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { importTemplates(String(r.result)); };
+    r.onerror = function () { alert("ファイルの読み込みに失敗しました。"); };
+    r.readAsText(f, "utf-8");
+    this.value = ""; // 同じファイルを続けて選べるようにする
+  });
+
+  $("btnReset").addEventListener("click", function () {
+    if (!confirm("定型文を初期状態（組み込みの2件）に戻します。\n現在の定型文はすべて失われます。よろしいですか？")) return;
+    templates = builtins();
+    setDirty(false);
+    renderTemplates();
+  });
+
+  /* QR画像をクリップボードへ。Word・Excel に Ctrl+V で貼り付けられる。 */
+  btnCopyImg.addEventListener("click", function () {
+    if (!current) return;
+    var btn = btnCopyImg;
+    var old = btn.textContent;
+    var restore = function (text) {
+      btn.textContent = text;
+      setTimeout(function () { btn.textContent = old; }, 2200);
+    };
+
+    if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) {
+      restore("この方法は使えません");
+      alert("このブラウザでは画像のコピーに対応していません。\n" +
+            "QRコードを右クリックして「画像をコピー」を選んでください。");
+      return;
+    }
+
+    var c = draw(current.res, current.mm);
+    canvasToPng(c, current.mm).then(function (blob) {
+      if (!blob) { restore("コピーできませんでした"); return; }
+      navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).then(
+        function () {
+          restore("コピーしました");
+          showPasteMsg(c.width, current.mm);
+        },
+        function () {
+          restore("コピーできませんでした");
+          alert("画像のコピーがブラウザに拒否されました。\n" +
+                "QRコードを右クリックして「画像をコピー」を選んでください。");
+        }
+      );
+    });
+  });
+
+  /* 貼り付けたときに実際どうなるかを、その場で数字にして見せる。
+     クリップボードは解像度の情報を運べず、多くのソフトが 96dpi とみなすため、
+     画素数 ÷ 96 × 25.4 mm の大きさで貼り付いてしまう。 */
+  var ASSUMED_DPI = 96;
+
+  function showPasteMsg(px, mm) {
+    var pasteMm = Math.round((px / ASSUMED_DPI) * 25.4);
+    var box = $("pastemsg");
+    box.hidden = false;
+    box.innerHTML =
+      "コピーしました。ただし貼り付けると <b>約 " + pasteMm + "mm 角</b>（指定の " + mm + "mm より大きい）になります。<br>" +
+      "Windows のクリップボードは解像度の情報を運べず、Word が " + ASSUMED_DPI + "dpi の画像とみなすためです。<br>" +
+      "貼り付けた図を右クリック →「図の書式設定」→「サイズ」で、高さ・幅を <b>" + mm + "mm</b> に直してください。<br>" +
+      "実寸のまま入れたい場合は <b>「SVGで保存」→ Word の「挿入」→「画像」</b> をお使いください。";
+  }
+
+  btnPng.addEventListener("click", function () {
+    if (!current) return;
+    var c = draw(current.res, current.mm);
+    canvasToPng(c, current.mm).then(function (blob) {
+      if (blob) download(blob, safeName() + "_" + current.mm + "mm.png");
+    });
+  });
+
+  btnSvg.addEventListener("click", function () {
+    if (!current) return;
+    var blob = new Blob([toSvg(current.res, current.mm)], { type: "image/svg+xml" });
+    download(blob, safeName() + "_" + current.mm + "mm.svg");
+  });
+
+  btnPrint.addEventListener("click", function () { window.print(); });
+
+  $("btnCopy").addEventListener("click", function () {
+    mailtoOut.select();
+    mailtoOut.setSelectionRange(0, 99999);
+    var done = false;
+    try { done = document.execCommand("copy"); } catch (e) {}
+    if (navigator.clipboard && !done) {
+      navigator.clipboard.writeText(mailtoOut.value);
+      done = true;
+    }
+    var btn = $("btnCopy");
+    var old = btn.textContent;
+    btn.textContent = done ? "コピーしました" : "コピーできませんでした";
+    setTimeout(function () { btn.textContent = old; }, 1500);
+  });
+
+  renderTemplates();
+  update();
+})();
+</script>
+</body>
+</html>
