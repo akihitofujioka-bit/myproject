@@ -193,6 +193,16 @@ console.log("== 月間のマス目 ==");
   ok(r.anchors >= 28, "マスの中の手書きの数字があっても、日付の格子は崩れない（" + r.anchors + "）");
 }
 
+{
+  // 利用者の手帳（2026-10-02）:「11」が「H」と読まれる。「13.30」は13時30分のつもり
+  const r = P.parse(monthPage({ notes: { 6: ["H-12 来客"], 13: ["13.30 研修"], 20: ["ll会議"], 21: ["HOME 掃除"] } }), { today: TODAY });
+  const t = titles(r);
+  ok(t.includes("2026-10-06 11:00~12:00 来客"), "「H-12」の H を 11 と読む", t);
+  ok(t.includes("2026-10-13 13:30 研修"), "「13.30」を 13:30 と読む", t);
+  ok(t.includes("2026-10-20 11:00 会議"), "縦棒2本（ll）も 11 と読む", t);
+  ok(t.includes("2026-10-21 HOME 掃除"), "英単語の H は直さない", t);
+}
+
 console.log("== 日付ごとのメモ ==");
 const rows = (texts, x = 0.05) => texts.map((t, i) => ({ text: t, x, y: 0.05 + i * 0.05, width: 0.6, height: 0.03 }));
 {
