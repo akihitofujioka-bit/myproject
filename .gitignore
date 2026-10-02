@@ -22,3 +22,6 @@ tools/*/wheels/
 # 様式は前年の議会だより（人の名前が入る）なので、リポジトリに入れない
 tools/gikai_template/様式/
 tools/gikai_template/設定.json
+
+# 議会だより編集ツール V5（tools/gikai_v5）の試し出力（trial.py でいつでも作り直せる）
+tools/gikai_v5/試し出力/
