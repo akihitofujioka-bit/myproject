@@ -156,7 +156,8 @@ def _place_picture(page: dx.Page, g: Geometry, part: I.Part, rect: Rect,
 
 
 def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geometry,
-             photo_sizes: Optional[Dict[int, Optional[str]]] = None) -> PageResult:
+             photo_sizes: Optional[Dict[int, Optional[str]]] = None,
+             overrides: Optional[Dict[int, dict]] = None) -> PageResult:
     page = dx.Page()
     fixed = layout.fixed_areas(section, g)
     occupied: List[Rect] = list(fixed.values())
@@ -164,15 +165,31 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
     warnings: List[str] = []
     overflow = 0
     photo_sizes = photo_sizes or {}
+    overrides = overrides or {}
+    manual: Dict[int, Rect] = {}
     for name, rect in fixed.items():
         page.items.append(dx.Placeholder(to_box(g, rect), name, name))
 
+    # 人が場所を決めた写真・大見出しを先に確保する。置けない指定だけを
+    # 退け、後の自動配置へ戻す。
+    for index, part in enumerate(parts):
+        change = overrides.get(index, {})
+        rect = change.get("rect")
+        if part.kind not in ("写真", "大見出し") or rect is None or change.get("removed"):
+            continue
+        if not isinstance(rect, Rect) or not _fits(g, rect, occupied):
+            warnings.append(f"部品{index + 1}は重なるか版面の外にあるため、自動の位置に戻しました")
+            continue
+        occupied.append(rect)
+        manual[index] = rect
+
     title_index = next((n for n, p in enumerate(parts) if p.kind == "大見出し"), None)
-    if title_index is not None:
+    if title_index is not None and not overrides.get(title_index, {}).get("removed"):
         title = parts[title_index]
-        rect = Rect(0, 0, 2, 4)
-        if _fits(g, rect, occupied):
-            occupied.append(rect)
+        rect = manual.get(title_index, Rect(0, 0, 2, 4))
+        if title_index in manual or _fits(g, rect, occupied):
+            if title_index not in manual:
+                occupied.append(rect)
             placements.append(Placement(title, rect, title_index))
             _add_text(page, g, rect, _heading_lines(title.text, _per_line(g, rect, 18.0)), font=dx.GOTHIC, pt=18.0,
                       pitch=22.0, border=True, center=True, name="大見出し")
@@ -183,14 +200,18 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
     first_face = photo_indices[0] if section == layout.IPPAN and photo_indices else None
     skip = {title_index} if title_index is not None else set()
     if first_face is not None:
-        size = photo_sizes.get(first_face, "顔")
+        change = overrides.get(first_face, {})
+        size = photo_sizes.get(first_face, change.get("size") or "顔")
+        if change.get("removed"):
+            size = None
         skip.add(first_face)
         if first_face + 1 < len(parts) and parts[first_face + 1].kind == "写真説明":
             skip.add(first_face + 1)
         if size is not None:
-            rect = photo_rect(g, size, 0, 4)
-            if _fits(g, rect, occupied):
-                occupied.append(rect)
+            rect = manual.get(first_face, photo_rect(g, size, 0, 4))
+            if first_face in manual or _fits(g, rect, occupied):
+                if first_face not in manual:
+                    occupied.append(rect)
                 placements.append(Placement(parts[first_face], rect, first_face))
                 _place_picture(page, g, parts[first_face], rect, images,
                                _caption(parts, first_face), 1, size, warnings)
@@ -205,10 +226,20 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
         if index in skip or part.kind in ("大見出し", "写真説明"):
             continue
         if part.kind == "写真":
-            size = photo_sizes.get(index, "中")
+            change = overrides.get(index, {})
+            size = photo_sizes.get(index, change.get("size") or "中")
+            if change.get("removed"):
+                size = None
             if index + 1 < len(parts) and parts[index + 1].kind == "写真説明":
                 skip.add(index + 1)
             if size is None:
+                continue
+            if index in manual:
+                rect = manual[index]
+                placements.append(Placement(part, rect, index))
+                _place_picture(page, g, part, rect, images, _caption(parts, index),
+                               photo_number, size, warnings)
+                last_rect = rect
                 continue
             line_span = photo_rect(g, size, 0, 0).line_span
             start_dan = last_rect.dan if last_rect else 0
@@ -265,20 +296,20 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
 
 
 def compose_page(section: str, parts: List[I.Part], images: Dict[str, bytes],
-                 g: Geometry) -> PageResult:
+                 g: Geometry, overrides: Optional[Dict[int, dict]] = None) -> PageResult:
     """部品を 1 ページへ配置し、あふれ・余りと写真変更の提案を返す。"""
-    result = _compose(section, parts, images, g)
+    result = _compose(section, parts, images, g, overrides=overrides)
     if result.overflow_lines:
         photos = [n for n, p in enumerate(parts) if p.kind == "写真"]
         for number, index in enumerate(photos, 1):
             current = "顔" if section == layout.IPPAN and number == 1 else "中"
             smaller = PHOTO_SMALLER[current]
-            changed = _compose(section, parts, images, g, {index: smaller})
+            changed = _compose(section, parts, images, g, {index: smaller}, overrides)
             gain = result.overflow_lines - changed.overflow_lines
             if gain > 0:
                 action = f"{smaller}にする" if smaller else "外す"
                 result.warnings.append(f"写真{number} を{action}と あと {gain} 行入ります")
-            removed = _compose(section, parts, images, g, {index: None})
+            removed = _compose(section, parts, images, g, {index: None}, overrides)
             gain = result.overflow_lines - removed.overflow_lines
             if smaller is not None and gain > 0:
                 result.warnings.append(f"写真{number} を外すと あと {gain} 行入ります")
