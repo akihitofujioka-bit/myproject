@@ -1723,7 +1723,9 @@ function drawPlannerRows(entries) {
         '<div class="field date"><label>日付</label><input type="date" class="p-date" value="' + esc(e.date) + '"></div>' +
         '<div class="field"><label>開始（空なら終日）</label><input type="time" class="p-start" value="' + esc(e.startTime) + '"></div>' +
         '<div class="field"><label>終了（任意）</label><input type="time" class="p-end" value="' + esc(e.endTime) + '"></div>' +
-      "</div></div>";
+      "</div>" +
+      (e.dateGuess ? '<div class="warn">※ 手書きの日付がはっきり読めなかったため、前後の日付と曜日から推測しました。確かめてください</div>' : "") +
+      "</div>";
   }).join("") || '<p class="empty">書き込みは見つかりませんでした。「＋ 1件足す」で入れられます。</p>';
   document.getElementById("plannerToggleAll").textContent = "全部外す";
 }
