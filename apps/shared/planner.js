@@ -67,8 +67,9 @@
     var t = String(token || "").replace(/[()\[\]\s.]/g, "");
     var ja = t.match(/^(日|月|火|水|木|金|土)(曜日?|曜)?$/);
     if (ja) return WEEKDAYS_JA.indexOf(ja[1]);
-    var en = t.toUpperCase().match(/^(SUN|MON|TUE|WED|THU|FRI|SAT)/);
-    if (en && /^[A-Z]+$/.test(t.toUpperCase()) && t.length <= 9) return WEEKDAYS_EN.indexOf(en[1]);
+    // 「MONTH」（月の欄の見出し）を月曜と読まないよう、曜日の綴りの範囲だけ認める
+    var en = t.toUpperCase().match(/^(SUN|MON|TUE|WED|THU|FRI|SAT)(DAY|S|SDAY|NESDAY|R|RS|RSDAY|URDAY)?$/);
+    if (en) return WEEKDAYS_EN.indexOf(en[1]);
     return -1;
   }
 
@@ -101,13 +102,15 @@
    * 後ろに数字・区切り・件名が続くときだけ直し、英単語（「HOME」など）は直さない。
    */
   function fixTimeChars(t) {
-    // 「13.30」の点は、手書きだと「,」「・」「'」に読まれたり、読み落とされたり（「13 30」「1330」）する。
+    // 「13.30」の点は、手書きだと「,」「・」「'」や数字に読まれたり、読み落とされたり（「13 30」「1330」「13230」）する。
     // 「9.会議」のように時の後ろに点だけ打つ書き方もある（利用者の手帳。2026-10-02）
     function hm(h, m) { return +h >= 0 && +h <= 23 && +m >= 0 && +m <= 59; }
     t = t
       .replace(/^(\d{1,2})\s*[,，．・･。'’`;]\s*(\d{2})(?!\d)/, function (all, h, m) { return hm(h, m) ? h + ":" + m : all; })
       .replace(/^(\d{1,2})-([2-5]\d)(?!\d)/, function (all, h, m) { return +m >= 24 && hm(h, m) ? h + ":" + m : all; })
       .replace(/^(\d{1,2})\s+(\d{2})(?!\d)(?=\s*[^\d\s~\-])/, function (all, h, m) { return +h >= 6 && +m % 5 === 0 && hm(h, m) ? h + ":" + m : all; })
+      // 点が数字に読まれた「13230」（13.30。2026-10-02 実物で確認）
+      .replace(/^([12]\d)\d([0-5]\d)(?!\d)(?=\s*[^\d\s.,%円人名個回件枚本冊kKgmLl年月日])/, function (all, h, m) { return +h >= 6 && +m % 5 === 0 && hm(h, m) ? h + ":" + m : all; })
       .replace(/^(\d{1,2})([0-5]\d)(?!\d)(?=\s*[^\d\s.,%円人名個回件枚本冊kKgmLl年月日])/, function (all, h, m) { return +h >= 6 && +m % 5 === 0 && hm(h, m) ? h + ":" + m : all; })
       .replace(/^(\d{1,2})\s*[.．。・･]\s*(?=[^\d\s.．。・･])/, function (all, h) { return +h >= 6 && +h <= 23 ? h + ":00 " : all; });
     return t
@@ -405,17 +408,25 @@
     // 見出しがすべて、数字のある列（minDc〜maxDc）に収まる組み合わせを選ぶ。同点なら、ずれの小さい方
     var dcs = [];
     for (var dc = grid.minDc; dc <= grid.maxDc; dc++) dcs.push(dc);
+    // ずれは、その列の幅（右隣の列までの間隔）を1とした割合で測る。
+    // 見開きの綴じ目の列は幅が広く、手帳全体の列幅で測ると綴じ目の右の見出しだけずれて見え、
+    // 見出しを右隣の列の曜日と取り違える（2026-10-02 実物で確認。日付が1日ずれ、年も誤る）
+    function offsetOf(l, dc) {
+      var w = grid.colX(dc + 1) - grid.colX(dc);
+      if (!(w > grid.colW * 0.5)) w = grid.colW;
+      return (l.cx - grid.colX(dc)) / w;
+    }
     var offsets = [];
     labels.forEach(function (l) {
       dcs.forEach(function (dc) {
-        var o = (l.cx - grid.colX(dc)) / grid.colW;
+        var o = offsetOf(l, dc);
         if (o > -0.95 && o < 0.95) offsets.push(o);
       });
     });
     var bestO = 0, bestN = 0;
     offsets.forEach(function (o) {
       var k = labels.filter(function (l) {
-        return dcs.some(function (dc) { return Math.abs((l.cx - grid.colX(dc)) / grid.colW - o) < 0.15; });
+        return dcs.some(function (dc) { return Math.abs(offsetOf(l, dc) - o) < 0.15; });
       }).length;
       if (k > bestN || (k === bestN && Math.abs(o) < Math.abs(bestO))) { bestN = k; bestO = o; }
     });
@@ -426,8 +437,8 @@
     labels.forEach(function (l) {
       var hit = null;
       dcs.forEach(function (dc) {
-        var o = (l.cx - grid.colX(dc)) / grid.colW;
-        if (Math.abs(o - offset) < 0.2 && (hit == null || Math.abs(o - offset) < Math.abs((l.cx - grid.colX(hit)) / grid.colW - offset))) hit = dc;
+        var o = offsetOf(l, dc);
+        if (Math.abs(o - offset) < 0.2 && (hit == null || Math.abs(o - offset) < Math.abs(offsetOf(l, hit) - offset))) hit = dc;
       });
       if (hit == null) return;
       l.dc = hit;
@@ -633,6 +644,16 @@
   }
 
   /**
+   * 手帳に印刷された祝日の名前の読み違いを直す（「文化の目」→「文化の日」。2026-10-02 実物で確認）。
+   * 「日」は小さく印刷されるため「目」「白」などに読まれやすい。
+   */
+  function fixHoliday(title) {
+    return title
+      .replace(/(成人|建国記念|春分|昭和|みどり|こども|海|山|敬老|秋分|スポーツ|文化|勤労感謝)\s*[のノ]\s*[目自白曰旦]/g, "$1の日")
+      .replace(/(憲法記念|天皇誕生|振替休|国民の休)\s*[目自白曰旦]/g, "$1日");
+  }
+
+  /**
    * 1日ぶんの書き込み（行の配列）を予定にする。
    * 1行を1件とする。時刻だけの行（「10:00」の次の行に「歯医者」）は、時刻を次の行へ引き継ぐ。
    */
@@ -653,7 +674,7 @@
         return;
       }
       var t = splitTime(text);
-      var title = t.rest.replace(/^[・\-*•○◯●□■☆★◎→>:]+\s*/, "").trim();
+      var title = fixHoliday(t.rest.replace(/^[・\-*•○◯●□■☆★◎→>:]+\s*/, "").trim());
       if (!meaningful(title)) {
         if (t.start) pending = t;
         return;

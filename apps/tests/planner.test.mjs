@@ -223,6 +223,27 @@ console.log("== 月間のマス目 ==");
   ok(r.entries.length === 3, "括弧書きを別の予定にしない", t);
 }
 
+{
+  // 見開きの月曜始まり。綴じ目（木と金の間）で列が広く、見出しが列の中央より右に寄っている。
+  // 左上には「MONTH」の欄。曜日の見出しを右隣の列と取り違えると、日付が1日ずれ、年も誤る（2026-10-02 実物で確認）
+  const colX = [0.136, 0.237, 0.345, 0.457, 0.622, 0.737, 0.864];
+  const frags = [{ text: "11月", x: 0.033, y: 0.104, width: 0.029, height: 0.025 }, { text: "MONTH", x: 0.007, y: 0.08, width: 0.052, height: 0.023 }];
+  [["MON", 0.208], ["TUE", 0.325], ["THU", 0.588], ["FRI", 0.703], ["SAT", 0.815], ["SUN", 0.93]].forEach(([t, cx]) => frags.push({ text: t, x: cx - 0.015, y: 0.06, width: 0.03, height: 0.018 }));
+  for (let d = 1; d <= 30; d++) {
+    const i = d + 5, c = i % 7, r = Math.floor(i / 7);
+    frags.push({ text: String(d), x: colX[c], y: 0.11 + r * 0.13, width: 0.025, height: 0.023 });
+  }
+  frags.push({ text: "13230 会議", x: colX[1] + 0.005, y: 0.11 + 3 * 0.13 + 0.03, width: 0.09, height: 0.03 });
+  frags.push({ text: "10 打合せ", x: colX[1] + 0.01, y: 0.11 + 4 * 0.13 + 0.03, width: 0.06, height: 0.03 });
+  frags.push({ text: "文化の目", x: colX[1] + 0.01, y: 0.11 + 0.03, width: 0.06, height: 0.03 });
+  const r = P.parse(frags, { today: TODAY });
+  const t = titles(r);
+  ok(r.year === 2026 && r.month === 11, "見出しの曜日から 2026年11月と分かる", r.year + "/" + r.month);
+  ok(t.includes("2026-11-17 13:30 会議") && t.includes("2026-11-24 10:00 打合せ"), "書き込みを次の日にずらさない・「13230」は13時30分", t);
+  ok(!t.some((x) => /文化/.test(x)), "印刷の「文化の日」が「文化の目」と読まれても予定にしない", t);
+  ok(P.parse([{ text: "MONTH", x: 0, y: 0, width: 0.1, height: 0.02 }]).kind === null, "「MONTH」は曜日ではない");
+}
+
 console.log("== 日付ごとのメモ ==");
 const rows = (texts, x = 0.05) => texts.map((t, i) => ({ text: t, x, y: 0.05 + i * 0.05, width: 0.6, height: 0.03 }));
 {
