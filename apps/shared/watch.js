@@ -70,7 +70,8 @@
       if (!isOpen(it)) return;
       var days = daysUntil(today, it.dueOn);
       if (days === null) return;
-      if (it.kind === "会議") {
+      // 手帳から入れた「予定」も、会議と同じく日時のある予定として扱う（過ぎたら出さない）
+      if (it.kind === "会議" || it.kind === "予定") {
         if (days < 0 || days > MEETING_DAYS) return;
         var d = meetingDetail(it.note);
         meetings.push({

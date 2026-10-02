@@ -287,7 +287,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
           <label for="f-kind">種別</label>
           <select id="f-kind" name="kind">
             <option>申請</option><option>回覧</option><option>提出</option>
-            <option>会議</option><option>支払い</option><option>その他</option>
+            <option>会議</option><option>予定</option><option>支払い</option><option>その他</option>
           </select>
         </div>
       </div>
@@ -339,7 +339,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
         <select id="kindFilter">
           <option value="すべて">すべて</option>
           <option>申請</option><option>回覧</option><option>提出</option>
-          <option>会議</option><option>支払い</option><option>その他</option>
+          <option>会議</option><option>予定</option><option>支払い</option><option>その他</option>
         </select>
       </div>
       <div class="field">
@@ -420,13 +420,16 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
     </div>
     <div id="plannerForms"></div>
     <div class="chips" style="margin-top:10px">
-      <button type="button" class="primary" id="plannerRegisterCal">チェックした予定をカレンダーに登録</button>
+      <button type="button" class="primary" id="plannerRegisterBoth">カレンダーとアプリに登録</button>
+      <button type="button" id="plannerRegisterCal">カレンダーだけ</button>
+      <button type="button" id="plannerRegisterApp">アプリだけ</button>
       <button type="button" id="plannerAddRow">＋ 1件足す</button>
       <button type="button" class="link" id="plannerCancel">やめる</button>
     </div>
     <p class="footnote" style="margin:10px 0 0">
       時刻が書かれていない予定は「終日」として入ります。時刻のある予定は開始30分前に通知します。
-      同じページを撮り直して登録しても、件名と日付が同じ予定は上書きされ、増えません。
+      アプリには種別「予定」として入ります。
+      同じページを撮り直して登録しても、件名と日付が同じ予定は上書きされ、カレンダーにもアプリにも増えません。
     </p>
   </section>
 
@@ -545,7 +548,9 @@ function normalize(data) {
         note: it.note || "",
         createdAt: it.createdAt || new Date().toISOString(),
         doneAt: it.doneAt || "",
-        icsSeq: Number(it.icsSeq) || 0
+        icsSeq: Number(it.icsSeq) || 0,
+        // 手帳から入れた予定の識別子。撮り直して登録したときに、増やさず書き換えるために使う
+        planKey: it.planKey || ""
       };
     })
   };
@@ -867,7 +872,7 @@ document.getElementById("statusFilter").addEventListener("click", function (e) {
  */
 function noticeLine(item) {
   var parts = [];
-  if (item.kind === "会議") {
+  if (item.kind === "会議" || item.kind === "予定") {
     var time = "", social = "";
     String(item.note || "").split("\n").forEach(function (line) {
       var t = line.trim();
@@ -1767,7 +1772,45 @@ function plannerEvents(list) {
   });
 }
 
-document.getElementById("plannerRegisterCal").addEventListener("click", function () {
+// アプリの一覧に種別「予定」として入れる。
+// 同じ日・同じ件名のもの（識別子 planKey が同じもの）が既にあれば、増やさずに書き換える
+function registerPlannerToApp(list) {
+  var now = new Date().toISOString();
+  var added = 0, updated = 0;
+  plannerEvents(list).forEach(function (ev, i) {
+    var e = list[i];
+    var note = (e.startTime ? e.startTime + (e.endTime ? "〜" + e.endTime : "") + " 開始\n" : "") + "（手帳から登録）";
+    var found = state.items.filter(function (it) { return it.planKey === ev.uid; })[0];
+    if (found) {
+      found.title = e.title;
+      found.dueOn = e.date;
+      found.note = note;
+      updated++;
+      return;
+    }
+    state.items.push({
+      id: uid(),
+      title: e.title,
+      kind: "予定",
+      dest: "",
+      dueOn: e.date,
+      status: "未着手",
+      priority: "中",
+      note: note,
+      planKey: ev.uid,
+      createdAt: now,
+      doneAt: "",
+      icsSeq: 0
+    });
+    added++;
+  });
+  save();
+  render();
+  return { added: added, updated: updated };
+}
+
+// mode: "both"（カレンダーとアプリ）/ "cal"（カレンダーだけ）/ "app"（アプリだけ）
+function registerPlanner(mode, btn) {
   var picked = collectPlanner();
   var list = picked.filter(function (e) { return e.date && e.title; });
   if (!list.length) {
@@ -1775,23 +1818,35 @@ document.getElementById("plannerRegisterCal").addEventListener("click", function
     return;
   }
   var skipped = picked.length - list.length;
-  var btn = this;
+  var note = skipped ? "（件名か日付が空の" + skipped + "件は除く）" : "";
+  var appMsg = "";
+  if (mode === "app" || mode === "both") {
+    var r = registerPlannerToApp(list);
+    appMsg = "アプリに" + (r.added ? r.added + "件追加" : "") + (r.added && r.updated ? "・" : "") + (r.updated ? r.updated + "件更新" : "");
+  }
+  if (mode === "app") {
+    toast(appMsg + note);
+    renderPlanner(null);
+    return;
+  }
   btn.disabled = true;
   writeToCalendar(plannerEvents(list), "手帳", "planner").then(function (res) {
     btn.disabled = false;
-    if (res.how === "cancelled") return;
-    var note = skipped ? "（件名か日付が空の" + skipped + "件は除く）" : "";
-    if (res.how === "direct") {
-      toast("カレンダーに登録しました（" + res.count + "件）" + note);
-      renderPlanner(null);
-    } else {
-      toast((res.how === "shared" ? "カレンダーアプリを選んでください（" : "予定ファイルを保存しました（") + list.length + "件）" + note);
-    }
+    if (res.how === "cancelled") { if (appMsg) toast(appMsg + note); return; }
+    var calMsg = res.how === "direct"
+      ? "カレンダーに" + res.count + "件"
+      : res.how === "shared" ? "カレンダーアプリを選んでください（" + list.length + "件）" : "予定ファイルを保存しました（" + list.length + "件）";
+    toast((appMsg ? appMsg + "／" : "") + calMsg + (res.how === "direct" ? "登録しました" : "") + note);
+    if (res.how === "direct") renderPlanner(null);
   }, function (err) {
     btn.disabled = false;
-    toast("登録できませんでした：" + (err && err.message ? err.message : "原因不明"));
+    toast((appMsg ? appMsg + "。" : "") + "カレンダーには登録できませんでした：" + (err && err.message ? err.message : "原因不明"));
   });
-});
+}
+
+document.getElementById("plannerRegisterBoth").addEventListener("click", function () { registerPlanner("both", this); });
+document.getElementById("plannerRegisterCal").addEventListener("click", function () { registerPlanner("cal", this); });
+document.getElementById("plannerRegisterApp").addEventListener("click", function () { registerPlanner("app", this); });
 
 document.getElementById("plannerMonth").addEventListener("change", function () {
   var v = this.value.split("-").map(Number);
