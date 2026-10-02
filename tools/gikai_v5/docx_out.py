@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from grid import Box, Geometry, mm2pt
+from grid import TATECHUYOKO, Box, Geometry, mm2pt
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -95,17 +95,37 @@ def _rpr(font: str, pt: float) -> str:
             f'<w:sz w:val="{round(pt * 2)}"/><w:szCs w:val="{round(pt * 2)}"/></w:rPr>')
 
 
-def _text_para(t: TextBox) -> str:
+def _line_runs(line: str, font: str, pt: float, ids: list[int]) -> list[str]:
+    """1 行を run に分ける。2〜3 桁の半角数字は縦中横の run にする。
+
+    縦中横（`w:eastAsianLayout w:combine="1"`）は文書の中で一意の id が要る（gikai_template §11）。
+    """
+    rpr = _rpr(font, pt)
+    out, pos = [], 0
+    for m in TATECHUYOKO.finditer(line):
+        if m.start() > pos:
+            out.append(f'<w:r>{rpr}<w:t xml:space="preserve">{escape(line[pos:m.start()])}</w:t></w:r>')
+        ids[0] += 1
+        tcy = rpr.replace("</w:rPr>", f'<w:eastAsianLayout w:id="{ids[0]}" w:combine="1"/></w:rPr>')
+        out.append(f"<w:r>{tcy}<w:t>{m.group(0)}</w:t></w:r>")
+        pos = m.end()
+    if pos < len(line):
+        out.append(f'<w:r>{rpr}<w:t xml:space="preserve">{escape(line[pos:])}</w:t></w:r>')
+    return out
+
+
+def _text_para(t: TextBox, ids: list[int]) -> str:
     rpr = _rpr(t.font, t.pt)
     runs = []
     for i, line in enumerate(t.lines):
         if i:
             runs.append(f"<w:r>{rpr}<w:br/></w:r>")
-        if line:
-            runs.append(f'<w:r>{rpr}<w:t xml:space="preserve">{escape(line)}</w:t></w:r>')
+        runs.extend(_line_runs(line, t.font, t.pt, ids))
     # 縦書きの枠では「行送り」が左右の間隔になる。字の大きさより小さくしない
     pitch = max(t.pitch_pt, t.pt)
-    return ('<w:p><w:pPr><w:snapToGrid w:val="0"/>'
+    # autoSpaceDE/DN: 日本語と英字・数字のあいだに Word が自動で入れるすき間を止める。
+    # 入れられると行が計算より長くなり、最後の字が次の行へ送られる（段階 1 で確認）
+    return ('<w:p><w:pPr><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/><w:snapToGrid w:val="0"/>'
             f'<w:spacing w:before="0" w:after="0" w:line="{twip(pitch)}" w:lineRule="exact"/>'
             '<w:ind w:left="0" w:right="0" w:firstLine="0"/>'
             '<w:jc w:val="left"/></w:pPr>'
@@ -142,7 +162,7 @@ def _shape(box: Box, *, line: str, inner: str = "", body: str = "", fill: str = 
     )
 
 
-def _item_xml(item, idx: int) -> str:
+def _item_xml(item, idx: int, ids: list[int]) -> str:
     if isinstance(item, TextBox):
         # 枠は 1 行の長さ（＝高さ）を少し長くとる。上の端は動かさない
         box = Box(item.box.x, item.box.y, item.box.w, item.box.h + SLACK_PT)
@@ -150,7 +170,7 @@ def _item_xml(item, idx: int) -> str:
                 if item.border else "<a:ln><a:noFill/></a:ln>")
         body = ('<wps:bodyPr rot="0" vert="eaVert" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" '
                 f'anchor="{"ctr" if item.center else "t"}" anchorCtr="0"><a:noAutofit/></wps:bodyPr>')
-        return _anchor(idx, box, _shape(box, line=line, inner=_text_para(item), body=body), name=item.name)
+        return _anchor(idx, box, _shape(box, line=line, inner=_text_para(item, ids), body=body), name=item.name)
     if isinstance(item, Placeholder):
         line = ('<a:ln w="9525"><a:solidFill><a:srgbClr val="1E88E5"/></a:solidFill>'
                 '<a:prstDash val="dash"/></a:ln>')
@@ -169,10 +189,11 @@ def _item_xml(item, idx: int) -> str:
 def document_xml(g: Geometry, pages: list[Page]) -> str:
     body = []
     idx = 1
+    ids = [0]          # 縦中横の通し番号
     for n, page in enumerate(pages):
         runs = []
         for item in page.items:
-            runs.append(_item_xml(item, idx))
+            runs.append(_item_xml(item, idx, ids))
             idx += 1
         # 枠をつなぎ留める段落。2 ページ目からは pageBreakBefore で必ずページを変える
         # （`w:br type="page"` は続けて使うと読み飛ばされることがあった。gikai_editor）

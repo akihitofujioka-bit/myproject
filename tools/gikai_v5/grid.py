@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 MM_PER_PT = 25.4 / 72
@@ -130,33 +131,71 @@ GYOMATSU_KINSOKU = set("（「『【〔〈《［｛")
 MIN_LINE_RATIO = 0.75
 
 
+# 縦中横（2〜3 桁の半角数字を横に並べて 1 字ぶんに収める）にする数字のかたまり。
+# 4 桁以上は縦中横にせず、半角のまま 1 字 0.5 字ぶんで横に寝かせる（gikai_simple §6 と同じ）。
+# 「－」でつないだ番号（郵便番号・電話番号・番地）は書いてあるとおりに残し、縦中横にしない
+_TCY = r"(?<![0-9－\-‐])[0-9]{2,3}(?![0-9－\-‐])"
+TATECHUYOKO = re.compile(_TCY)
+# 半角の英単語は途中で行を分けない（8 字まで。長い語は分けないと 1 行に入らない）
+_WORD = r"[A-Za-z]{2,8}"
+_UNIT = re.compile(_TCY + "|" + _WORD + "|.", re.S)
+
+
+def units(text: str) -> list[str]:
+    """行分けの単位に分ける。縦中横の数字・英単語はひとかたまり、ほかは 1 字ずつ。"""
+    return _UNIT.findall(text)
+
+
+def _char_width(c: str) -> float:
+    if ord(c) < 0x80 or 0xFF61 <= ord(c) <= 0xFF9F:   # 半角英数・半角カナ
+        return 0.5
+    return 1.0
+
+
+def unit_width(u: str) -> float:
+    """1 単位が縦に占める長さ（全角 1 字 = 1）。"""
+    if TATECHUYOKO.fullmatch(u):            # 縦中横は 1 字ぶん
+        return 1.0
+    return sum(_char_width(c) for c in u)
+
+
+def text_width(text: str) -> float:
+    return sum(unit_width(u) for u in units(text))
+
+
 def split_lines(paragraph: str, n: int, indent: bool = True) -> list[str]:
-    """1 つの段落を、1 行 n 字以内の行に分ける。
+    """1 つの段落を、1 行 n 字ぶん以内の行に分ける。
 
     禁則は**追い出し**（前の行の最後の字を次の行へ送る）で守る。ぶら下げ
     （句読点を行の外へはみ出させる）は使わない。はみ出すと枠からこぼれ、
     計算と紙面が食い違うため。
 
+    半角の英数字は 0.5 字ぶん、縦中横の数字は 1 字ぶんで数える。
     indent が真なら段落の頭を 1 字下げる。
     """
     text = ("　" + paragraph) if indent and paragraph else paragraph
     if not text:
         return [""]
+    us = units(text)
     lines: list[str] = []
     i = 0
-    floor = max(1, int(n * MIN_LINE_RATIO))
-    while i < len(text):
-        end = min(i + n, len(text))
-        if end < len(text):
+    while i < len(us):
+        # n 字ぶんに収まるところまで取る
+        end, width = i, 0.0
+        while end < len(us) and width + unit_width(us[end]) <= n + 1e-9:
+            width += unit_width(us[end])
+            end += 1
+        end = max(end, i + 1)
+        if end < len(us):
+            floor = i + max(1, int((end - i) * MIN_LINE_RATIO))
             cut = end
             # 次の行の頭が禁則の字、または この行の終わりが開き括弧なら 1 字ずつ送る
-            while cut - i > floor and (text[cut] in GYOTO_KINSOKU
-                                       or text[cut - 1] in GYOMATSU_KINSOKU):
+            while cut > floor and (us[cut][0] in GYOTO_KINSOKU or us[cut - 1][-1] in GYOMATSU_KINSOKU):
                 cut -= 1
-            if text[cut] in GYOTO_KINSOKU or text[cut - 1] in GYOMATSU_KINSOKU:
+            if us[cut][0] in GYOTO_KINSOKU or us[cut - 1][-1] in GYOMATSU_KINSOKU:
                 cut = end          # 送りきれない（禁則の字が続きすぎ）ときは元の位置で切る
             end = cut
-        lines.append(text[i:end])
+        lines.append("".join(us[i:end]))
         i = end
     return lines
 

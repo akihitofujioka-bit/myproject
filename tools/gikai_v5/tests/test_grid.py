@@ -18,7 +18,8 @@ sys.path.insert(0, str(HERE.parent))
 
 import docx_out as dx  # noqa: E402
 from grid import (GYOTO_KINSOKU, GYOMATSU_KINSOKU, Geometry, Rect, flow,  # noqa: E402
-                  free_runs, layout_text, mm2pt, split_lines, to_box, whole_page)
+                  free_runs, layout_text, mm2pt, split_lines, text_width, to_box,
+                  units, whole_page)
 
 
 class GeometryTest(unittest.TestCase):
@@ -73,6 +74,23 @@ class SplitLinesTest(unittest.TestCase):
 
     def test_empty_paragraph(self):
         self.assertEqual(split_lines("", 12), [""])
+
+    def test_tatechuyoko_is_one_char(self):
+        self.assertEqual(units("第46回"), ["第", "46", "回"])
+        self.assertEqual(text_width("第46回"), 3)
+        self.assertEqual(text_width("131チーム"), 4)          # 3 桁も 1 字ぶん
+        self.assertEqual(text_width("2025年"), 3)              # 4 桁は 0.5 × 4
+        self.assertEqual(text_width("ＤＸとAI"), 4)
+        self.assertEqual(text_width("〒781－2194"), 5.5)       # 「－」つなぎは縦中横にしない
+
+    def test_tatechuyoko_not_split(self):
+        lines = split_lines("あいうえおかきくけこさ46人", 12, indent=False)
+        self.assertEqual(lines[0], "あいうえおかきくけこさ46")
+        self.assertTrue(all(text_width(x) <= 12 for x in split_lines("ab" * 40, 12)))
+        # 英単語は途中で分けない
+        lines = split_lines("あいうえおかきくけこDXとAI。", 12, indent=False)
+        self.assertTrue(all("DX" in x or "D" not in x for x in lines), lines)
+        self.assertTrue(all("AI" in x or "A" not in x for x in lines), lines)
 
 
 class FlowTest(unittest.TestCase):

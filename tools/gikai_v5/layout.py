@@ -20,6 +20,7 @@ from pathlib import Path
 from grid import Geometry, Rect
 
 MAX_PAGES = 22
+MAX_QUESTIONERS = 10             # 一般質問の人数の上限（議会の決まり）
 MONTHS = (4, 7, 10, 1)
 # 号の月 → その号で報告する定例会の月
 TEIREIKAI = {4: 3, 7: 6, 10: 9, 1: 12}
@@ -128,6 +129,8 @@ def make_plan(issue: Issue) -> Plan:
         errors.append(f"号の月は 4・7・10・1 のどれかです（{issue.month} 月になっています）")
     if issue.questioners < 0 or issue.committee_pages < 0:
         errors.append("人数・ページ数に負の数は使えません")
+    if issue.questioners > MAX_QUESTIONERS:
+        errors.append(f"一般質問は {MAX_QUESTIONERS} 人までです（{issue.questioners} 人になっています）")
     if issue.questioners == 0:
         notes.append("一般質問の人数が 0 です。一般質問のページは作りません")
 
@@ -163,9 +166,9 @@ def make_plan(issue: Issue) -> Plan:
 
 
 def max_questioners(month: int, committee_pages: int = COMMITTEE_PAGES) -> int:
-    """22 ページに収まる一般質問の人数の上限。"""
+    """一般質問の人数の上限。10 人か、22 ページに収まる人数の少ない方。"""
     n = 0
-    while not make_plan(Issue(0, month, questioners=n + 1, committee_pages=committee_pages)).errors:
+    while n < MAX_QUESTIONERS and not make_plan(Issue(0, month, questioners=n + 1, committee_pages=committee_pages)).errors:
         n += 1
     return n
 

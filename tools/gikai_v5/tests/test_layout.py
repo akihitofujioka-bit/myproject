@@ -41,7 +41,7 @@ class OrderTest(unittest.TestCase):
 class CountTest(unittest.TestCase):
     def test_always_even_when_auto(self):
         for m in L.MONTHS:
-            for q in range(0, 13):
+            for q in range(0, L.MAX_QUESTIONERS + 1):
                 p = plan(m, q)
                 if p.total <= L.MAX_PAGES:
                     self.assertEqual(p.total % 2, 0, (m, q))
@@ -55,10 +55,12 @@ class CountTest(unittest.TestCase):
         self.assertEqual(p.total, fixed + feature[1] - feature[0] + 1)
         self.assertEqual(p.total, 14)
 
-    def test_october_limit_is_12(self):
-        self.assertEqual(L.max_questioners(10), 12)
-        self.assertEqual(plan(10, 12).total, 22)
-        self.assertTrue(plan(10, 13).errors)
+    def test_questioner_limit_is_10(self):
+        for m in L.MONTHS:
+            self.assertEqual(L.max_questioners(m), 10)
+            self.assertEqual(plan(m, 10).errors, [])
+            self.assertTrue(any("10 人まで" in e for e in plan(m, 11).errors))
+        self.assertLessEqual(plan(10, 10).total, 22)
 
     def test_manual_feature_odd_is_error(self):
         p = plan(10, 5, feature_pages=3)        # 1+2+1+1+2+5+3+1 = 16 → 偶数
