@@ -639,7 +639,19 @@
   function entriesFrom(lines, date) {
     var out = [];
     var pending = null;
+    // 開き括弧が閉じていない件名（「会議(市役所」）は、次の行もその件名の続きとみなす
+    function unclosed(title) {
+      return (title.match(/\(/g) || []).length > (title.match(/\)/g) || []).length;
+    }
     lines.forEach(function (text) {
+      var n = normalize(text);
+      var last = out[out.length - 1];
+      // 件名の後ろの括弧書き（場所・持ち物・相手など）は、その件名の一部（利用者の書き方。2026-10-02）。
+      // 括弧で始まる行や、閉じていない括弧の続きは、直前の予定の件名につなげる
+      if (last && (/^\(/.test(n) || unclosed(last.title))) {
+        last.title = (last.title + (/^\(/.test(n) || unclosed(last.title) ? "" : " ") + n).trim();
+        return;
+      }
       var t = splitTime(text);
       var title = t.rest.replace(/^[・\-*•○◯●□■☆★◎→>:]+\s*/, "").trim();
       if (!meaningful(title)) {

@@ -213,6 +213,16 @@ console.log("== 月間のマス目 ==");
   ok(r.anchors >= 28, "マスの中の「13 30」があっても日付の格子は崩れない（" + r.anchors + "）");
 }
 
+{
+  // 件名の後ろの括弧書きは件名に含める（次の行に書いても、括弧が行をまたいでも）
+  const r = P.parse(monthPage({ notes: { 6: ["14-15 町内会議", "（公民館）"], 9: ["研修会(市役所", "3階)"], 15: ["歯医者 (定期)"] } }), { today: TODAY });
+  const t = titles(r);
+  ok(t.includes("2026-10-06 14:00~15:00 町内会議(公民館)"), "次の行の「（公民館）」を件名に含める", t);
+  ok(t.includes("2026-10-09 研修会(市役所3階)"), "行をまたぐ括弧を1件にまとめる", t);
+  ok(t.includes("2026-10-15 歯医者 (定期)"), "同じ行の括弧はそのまま", t);
+  ok(r.entries.length === 3, "括弧書きを別の予定にしない", t);
+}
+
 console.log("== 日付ごとのメモ ==");
 const rows = (texts, x = 0.05) => texts.map((t, i) => ({ text: t, x, y: 0.05 + i * 0.05, width: 0.6, height: 0.03 }));
 {
@@ -240,6 +250,11 @@ const rows = (texts, x = 0.05) => texts.map((t, i) => ({ text: t, x, y: 0.05 + i
   const right = rows(["10/8(木)", "出張", "10/9(金)", "研修"], 0.55);
   const t = titles(P.parse(left.concat(right), { today: TODAY }));
   ok(t.includes("2026-10-05 通院") && t.includes("2026-10-08 出張") && t.includes("2026-10-06 会議") && t.includes("2026-10-09 研修"), "見開きの左右を混ぜない", t);
+}
+
+{
+  const r = P.parse(rows(["10/3(土)", "歯医者", "(駅前)", "10/4(日)", "買い物"]), { today: TODAY });
+  ok(titles(r).includes("2026-10-03 歯医者(駅前)"), "日付ごとのメモでも括弧書きを件名に含める", titles(r));
 }
 
 console.log("== 手書きの日付の読み違い ==");
