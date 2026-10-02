@@ -101,6 +101,15 @@
    * 後ろに数字・区切り・件名が続くときだけ直し、英単語（「HOME」など）は直さない。
    */
   function fixTimeChars(t) {
+    // 「13.30」の点は、手書きだと「,」「・」「'」に読まれたり、読み落とされたり（「13 30」「1330」）する。
+    // 「9.会議」のように時の後ろに点だけ打つ書き方もある（利用者の手帳。2026-10-02）
+    function hm(h, m) { return +h >= 0 && +h <= 23 && +m >= 0 && +m <= 59; }
+    t = t
+      .replace(/^(\d{1,2})\s*[,，．・･。'’`;]\s*(\d{2})(?!\d)/, function (all, h, m) { return hm(h, m) ? h + ":" + m : all; })
+      .replace(/^(\d{1,2})-([2-5]\d)(?!\d)/, function (all, h, m) { return +m >= 24 && hm(h, m) ? h + ":" + m : all; })
+      .replace(/^(\d{1,2})\s+(\d{2})(?!\d)(?=\s*[^\d\s~\-])/, function (all, h, m) { return +h >= 6 && +m % 5 === 0 && hm(h, m) ? h + ":" + m : all; })
+      .replace(/^(\d{1,2})([0-5]\d)(?!\d)(?=\s*[^\d\s.,%円人名個回件枚本冊kKgmLl年月日])/, function (all, h, m) { return +h >= 6 && +m % 5 === 0 && hm(h, m) ? h + ":" + m : all; })
+      .replace(/^(\d{1,2})\s*[.．。・･]\s*(?=[^\d\s.．。・･])/, function (all, h) { return +h >= 6 && +h <= 23 ? h + ":00 " : all; });
     return t
       .replace(/^[HＨ](?=\s*[\d:.~\-時]|\s*[^\x00-\x7F]|\s*$)/, "11")
       .replace(/^[lI|｜!ｌ]{2}(?=\s*[\d:.~\-時]|\s*[^\x00-\x7F]|\s*$)/, "11")
