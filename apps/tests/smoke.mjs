@@ -670,6 +670,26 @@ console.log("== 手帳（apps/docs-tracker）==");
   ok(unfolded.includes("SUMMARY:町内会の会議（集会所）") && unfolded.includes("DTSTART;VALUE=DATE:20261018"), "時刻の無い予定は終日で入る");
   ok(!unfolded.includes("飲み会"), "チェックを外した予定は入れない");
   ok((unfolded.match(/BEGIN:VALARM/g) || []).length === 1, "通知は時刻のある予定だけ（30分前）");
+  const plans = () => pp.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1") || '{"items":[]}').items.filter((i) => i.kind === "予定"));
+  ok((await plans()).length === 0, "「カレンダーだけ」ではアプリの一覧に入れない");
+
+  // アプリにも入れる
+  await pp.evaluate((l) => window.docsApp.applyPlannerScan(l), page1);
+  await pp.click("#plannerRegisterApp");
+  let items = await plans();
+  ok(items.length === 3, "「アプリだけ」で一覧に種別「予定」として3件入る");
+  const dentist = items.find((i) => i.title === "歯医者");
+  ok(dentist && dentist.dueOn === "2026-10-05" && dentist.note.startsWith("10:00 開始"), "日付は予定の日、メモに時刻が入る");
+  ok(!(await pp.locator("#plannerConfirm").isVisible()), "アプリに登録すると確認欄が閉じる");
+  ok(await pp.locator("#list").getByText("歯医者").count() > 0 || (await pp.content()).includes("歯医者"), "一覧に表示される");
+
+  // 同じページを撮り直して登録しても増えない（再読み込みのあとでも）
+  await pp.reload();
+  await pp.evaluate((l) => window.docsApp.applyPlannerScan(l), page1);
+  const [dl2] = await Promise.all([pp.waitForEvent("download"), pp.click("#plannerRegisterBoth")]);
+  ok(!!dl2, "「カレンダーとアプリに登録」でカレンダーにも渡す");
+  items = await plans();
+  ok(items.length === 3, "撮り直して登録しても、アプリの予定は増えない（" + items.length + "件）");
 
   // ホーム画面からの受け渡し
   await pp.evaluate((l) => { window.ScanRouter.handoff("planner", l); }, page1);
