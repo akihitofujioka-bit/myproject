@@ -45,11 +45,11 @@ def _p(text: str, style: str = "") -> str:
     return f"<w:p>{ppr}{_run(text)}</w:p>"
 
 
-def _image_p() -> str:
+def _image_p(rel_id: str = "rIdImage1", name: str = "見本写真") -> str:
     """DrawingML と VML のうち、現在の Word が使う DrawingML で画像を貼る。"""
     return (f'<w:p><w:r><w:drawing><wp:inline><wp:extent cx="100000" cy="100000"/>'
-            '<wp:docPr id="1" name="見本写真"/><a:graphic>'
-            f'<a:graphicData uri="{PIC}"><pic:pic><pic:blipFill><a:blip r:embed="rIdImage1"/>'
+            f'<wp:docPr id="1" name="{escape(name)}"/><a:graphic>'
+            f'<a:graphicData uri="{PIC}"><pic:pic><pic:blipFill><a:blip r:embed="{rel_id}"/>'
             '</pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>')
 
 
@@ -152,6 +152,65 @@ def make_ippan_txt(path: Path) -> Path:
     return path
 
 
+def _write_parts_docx(path: Path, body: List[str], images: List[tuple[str, bytes]]) -> Path:
+    """任意の本文と画像から、取り込み確認用の小さな Word を作る。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                f'<w:document xmlns:w="{W}" xmlns:r="{R}" xmlns:wp="{WP}" xmlns:a="{A}" '
+                f'xmlns:pic="{PIC}" xmlns:v="{V}"><w:body>{"".join(body)}'
+                '<w:sectPr/></w:body></w:document>')
+    content_types = ('<?xml version="1.0" encoding="UTF-8"?>'
+                     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                     '<Default Extension="xml" ContentType="application/xml"/>'
+                     '<Default Extension="png" ContentType="image/png"/>'
+                     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-'
+                     'officedocument.wordprocessingml.document.main+xml"/></Types>')
+    root_rels = ('<?xml version="1.0" encoding="UTF-8"?>'
+                 '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                 f'<Relationship Id="rIdDoc" Type="{R}/officeDocument" Target="word/document.xml"/>'
+                 '</Relationships>')
+    image_rels = "".join(f'<Relationship Id="rIdImage{n}" Type="{R}/image" Target="media/{name}"/>'
+                         for n, (name, _) in enumerate(images, 1))
+    doc_rels = ('<?xml version="1.0" encoding="UTF-8"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                f'<Relationship Id="rIdStyles" Type="{R}/styles" Target="styles.xml"/>{image_rels}'
+                '</Relationships>')
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", content_types)
+        z.writestr("_rels/.rels", root_rels)
+        z.writestr("word/document.xml", document)
+        z.writestr("word/styles.xml", _styles_xml())
+        z.writestr("word/_rels/document.xml.rels", doc_rels)
+        for name, data in images:
+            z.writestr(f"word/media/{name}", data)
+    return path
+
+
+def make_overflow_ippan_docx(path: Path) -> Path:
+    """答弁が 1 ページからあふれる、架空の一般質問原稿を作る。"""
+    body = [_p("地域交通を将来へつなぐ", "MainHeading"), _image_p(), _p("▲架空　花子議員"),
+            _p("移動手段の確保", "MinorHeading"), _p("問　地域の移動手段をどう守りますか。")]
+    sentence = "答　町内の状況を丁寧に調べ、利用する人の声を聞きながら持続できる方法を検討します。"
+    body.extend(_p(sentence * 5) for _ in range(12))
+    return _write_parts_docx(path, body, [("face.png", _png(60, 80))])
+
+
+def make_gyosei_two_photos_docx(path: Path) -> Path:
+    """写真が 2 枚ある、架空の行政報告原稿を作る。"""
+    body = [_p("町の取り組みを報告します", "MainHeading"),
+            _p("交流施設の整備", "MinorHeading"),
+            _p("新しい交流施設の工事が進み、地域の皆さんによる見学会を開きました。"),
+            _image_p("rIdImage1", "交流施設"), _p("▲交流施設の見学会"),
+            _p("防災訓練を実施", "MinorHeading"),
+            _p("架空地区で避難経路を確かめ、備蓄品の取り扱いを練習しました。"),
+            _image_p("rIdImage2", "防災訓練"), _p("▲架空地区の防災訓練"),
+            _p("参加者から寄せられた意見を、今後の取り組みに生かします。")]
+    images = [("facility.png", _png(80, 60)), ("drill.png", _png(64, 48))]
+    return _write_parts_docx(path, body, images)
+
+
 def main(argv: List[str]) -> int:
     if len(argv) != 2:
         print(__doc__)
@@ -159,8 +218,12 @@ def main(argv: List[str]) -> int:
     folder = Path(argv[1])
     docx = make_ippan_docx(folder / "一般質問_見本太郎.docx")
     txt = make_ippan_txt(folder / "一般質問_見本太郎.txt")
+    overflow = make_overflow_ippan_docx(folder / "一般質問_あふれる見本花子.docx")
+    gyosei = make_gyosei_two_photos_docx(folder / "行政報告_写真2枚.docx")
     print(f"作りました: {docx}")
     print(f"作りました: {txt}")
+    print(f"作りました: {overflow}")
+    print(f"作りました: {gyosei}")
     return 0
 
 
