@@ -675,8 +675,40 @@
    * 行の先頭にある日付を読む。読めたら { year, month, day, weekday, rest } を返す。
    * month が null のものは「3日(金)」のように日だけが書かれたもの。
    */
+  /**
+   * 手書きの日付に多い読み違いを、行頭の日付の部分だけ直す。
+   * 数字の隣にある「O」「〇」は0、「l」「I」「|」は1、数字にはさまれた「ノ」「\」は「/」とみなす。
+   */
+  function fixDateChars(t) {
+    var head = t.slice(0, 12), tail = t.slice(12);
+    head = head
+      .replace(/(\d)\s*[ノﾉ\\∕⁄]\s*(?=\d)/g, "$1/")
+      .replace(/[OoＯｏ〇○◯](?=\s*[\d\/月日])|(\d)[OoＯｏ〇○◯]/g, function (all, d) { return (d || "") + "0"; })
+      .replace(/[lI|｜!ｌ](?=\d)|(\d)[lI|｜!ｌ](?![A-Za-z])/g, function (all, d) { return (d || "") + "1"; });
+    return head + tail;
+  }
+
+  /**
+   * 「/」を読み落として「1013(金)」のように1つの数字になった日付の分け方の候補。
+   * 曜日が付いているときだけ使う（ただの番号と区別するため）。
+   * 例: 1013 → 10/13・10/3（間の「1」は「/」の読み違い）、113 → 1/13・11/3・1/3
+   */
+  function splitMergedDate(digits) {
+    var out = [];
+    for (var i = 1; i <= 2 && i < digits.length; i++) {
+      var mo = Number(digits.slice(0, i)), rest = digits.slice(i);
+      if (!(mo >= 1 && mo <= 12)) continue;
+      if (rest.length <= 2 && Number(rest) >= 1 && Number(rest) <= 31) out.push({ month: mo, day: Number(rest) });
+      if (rest.length >= 2 && /[17]/.test(rest[0]) && rest.length - 1 <= 2) {
+        var d2 = Number(rest.slice(1));
+        if (d2 >= 1 && d2 <= 31) out.push({ month: mo, day: d2 });
+      }
+    }
+    return out;
+  }
+
   function dateHead(text) {
-    var t = normalize(text);
+    var t = fixDateChars(normalize(text));
     var m, w, after;
     function done(year, month, day, needWeekday) {
       after = t.slice(m[0].length);
@@ -691,6 +723,12 @@
     if ((m = t.match(/^(\d{1,2})\s*\/\s*(\d{1,2})(?![\d:\/.])/))) return done(null, +m[1], +m[2]);
     // 「10.3(金)」は曜日が付くときだけ（「1.5L」のような量と区別するため）
     if ((m = t.match(/^(\d{1,2})\.(\d{1,2})(?![\d.])/))) return done(null, +m[1], +m[2], true);
+    // 「1013(金)」— 「/」を読み落としたもの。曜日が付いているときだけ、分け方の候補を全部持たせる
+    if ((m = t.match(/^(\d{3,4})(?!\d)/))) {
+      var parts = splitMergedDate(m[1]);
+      var hm = parts.length ? done(null, parts[0].month, parts[0].day, true) : null;
+      if (hm) { hm.alts = parts; return hm; }
+    }
     // 「3日(金)」「3(金)」「3 FRI」— 曜日が付いているものだけ（ただの数字と区別するため）
     if ((m = t.match(/^(\d{1,2})(?!\d)\s*日?/))) return done(null, null, +m[1], true);
     // 「FRI 3」
@@ -704,6 +742,81 @@
     if (!(y >= 2000 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return false;
     var dt = new Date(y, m - 1, d);
     return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+  }
+
+  function dayDiff(a, b) {
+    var pa = a.split("-").map(Number), pb = b.split("-").map(Number);
+    return Math.round((new Date(pb[0], pb[1] - 1, pb[2]) - new Date(pa[0], pa[1] - 1, pa[2])) / 86400000);
+  }
+  function addDays(date, n) {
+    var p = date.split("-").map(Number);
+    var d = new Date(p[0], p[1] - 1, p[2] + n);
+    return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+  function weekdayOfDate(date) {
+    var p = date.split("-").map(Number);
+    return new Date(p[0], p[1] - 1, p[2]).getDay();
+  }
+
+  /**
+   * 手書きの日付の読み違いを、前後の日付と曜日で直す。
+   * 日付ごとのメモは上から順に日付が進むので、並びから外れたものや曜日と合わないものは読み違いとみなす。
+   *   1) 分け方の候補（1013 → 10/13・10/3）があれば、曜日と前後の並びに合うものを選ぶ
+   *   2) 曜日と合わなければ、前後の日付の間で曜日が合う日にする
+   *   3) 曜日が無く、前後がちょうど2日違いなら、その間の日にする
+   * 直した日付には guessed を付け、確認欄で知らせる。
+   */
+  function fixSequence(list) {
+    function wdOk(s, date) { return s.weekday < 0 || weekdayOfDate(date) === s.weekday; }
+    // 正しく読めたとみなす日付を決める。曜日が合うものを候補にし、
+    // 並び順と矛盾する組（後ろの行なのに前の日付、または離れすぎ）がなくなるまで、
+    // 矛盾をいちばん多く作っているものから外していく
+    var good = list.map(function (s) { return wdOk(s, s.date); });
+    function conflict(i, j) {   // i < j
+      var d = dayDiff(list[i].date, list[j].date);
+      return d <= 0 || d > 7 * (j - i);
+    }
+    for (;;) {
+      var worst = -1, worstN = 0, worstCost = -1;
+      list.forEach(function (s, i) {
+        if (!good[i]) return;
+        var n = 0, cost = 0;
+        list.forEach(function (t, j) {
+          if (i === j || !good[j]) return;
+          var a = Math.min(i, j), b = Math.max(i, j);
+          if (conflict(a, b)) n++;
+          cost += Math.abs(dayDiff(list[a].date, list[b].date) - (b - a));
+        });
+        if (n > worstN || (n === worstN && n > 0 && cost > worstCost)) { worst = i; worstN = n; worstCost = cost; }
+      });
+      if (worst < 0) break;
+      good[worst] = false;
+    }
+    list.forEach(function (s, i) {
+      if (good[i]) {
+        // 分け方が複数考えられたが、前後とつながる方に決まったもの
+        if (s.alts.length > 1) s.guessed = false;
+        return;
+      }
+      var pi = i - 1; while (pi >= 0 && !good[pi]) pi--;
+      var ni = i + 1; while (ni < list.length && !good[ni]) ni++;
+      var lo = pi >= 0 ? list[pi].date : null, hi = ni < list.length ? list[ni].date : null;
+      function between(d) {
+        return (!lo || dayDiff(lo, d) > 0) && (!hi || dayDiff(d, hi) > 0) && wdOk(s, d);
+      }
+      var pick = s.alts.filter(between)[0];
+      if (!pick && (lo || hi)) {
+        // 正しい日付から、並び順どおりに数えた位置を中心に、曜日が合う日を探す
+        var expect = lo ? addDays(lo, i - pi) : addDays(hi, -(ni - i));
+        for (var k = 0; k <= 6 && !pick; k++) {
+          [addDays(expect, k), addDays(expect, -k)].some(function (c) {
+            if (between(c)) { pick = c; return true; }
+            return false;
+          });
+        }
+      }
+      if (pick && pick !== s.date) { s.date = pick; s.guessed = true; }
+    });
   }
 
   /**
@@ -738,37 +851,44 @@
     var sections = [];
     var lowConfidence = false;
 
+    // 日付の行を、年・月を補って "YYYY-MM-DD" にする。読めなければ null
+    function resolve(h, day, monthIn) {
+      var month = monthIn || heading.month;
+      var year = h.year || heading.year;
+      if (!month) {
+        // 月が書かれていない。曜日が分かれば、今日に近い月のうち曜日が合うものを探す
+        for (var add = -1; add <= 11 && h.weekday >= 0; add++) {
+          var d = new Date(base.getFullYear(), base.getMonth() + add, day);
+          if (d.getDate() === day && d.getDay() === h.weekday) {
+            lowConfidence = true;
+            return ymd(d.getFullYear(), d.getMonth() + 1, day);
+          }
+        }
+        return null;   // 日付として扱えない（ただの番号の可能性）
+      }
+      if (!year) {
+        year = guessYear(month, base);
+        // 曜日が書かれていれば、それに合う年を前後1年で探す
+        if (h.weekday >= 0 && validDate(year, month, day) && new Date(year, month - 1, day).getDay() !== h.weekday) {
+          [year + 1, year - 1].some(function (y) {
+            if (validDate(y, month, day) && new Date(y, month - 1, day).getDay() === h.weekday) { year = y; return true; }
+            return false;
+          });
+        }
+      }
+      return validDate(year, month, day) ? ymd(year, month, day) : null;
+    }
+
     splitColumns(frags).forEach(function (colFrags) {
       var current = null;
       rowsOf(colFrags).forEach(function (row) {
         var h = dateHead(row.text);
         if (h && h.day >= 1 && h.day <= 31) {
-          var month = h.month || heading.month;
-          var year = h.year || heading.year;
-          if (!month) {
-            // 月が書かれていない。曜日が分かれば、今日に近い月のうち曜日が合うものを探す
-            var found = null;
-            for (var add = -1; add <= 11 && h.weekday >= 0; add++) {
-              var d = new Date(base.getFullYear(), base.getMonth() + add, h.day);
-              if (d.getDate() === h.day && d.getDay() === h.weekday) { found = d; break; }
-            }
-            if (!found) { current = null; return; }  // 日付として扱えない（ただの番号の可能性）
-            month = found.getMonth() + 1;
-            year = found.getFullYear();
-            lowConfidence = true;
-          }
-          if (!year) {
-            year = guessYear(month, base);
-            // 曜日が書かれていれば、それに合う年を前後1年で探す
-            if (h.weekday >= 0 && validDate(year, month, h.day) && new Date(year, month - 1, h.day).getDay() !== h.weekday) {
-              [year + 1, year - 1].some(function (y) {
-                if (validDate(y, month, h.day) && new Date(y, month - 1, h.day).getDay() === h.weekday) { year = y; return true; }
-                return false;
-              });
-            }
-          }
-          if (!validDate(year, month, h.day)) { current = null; return; }
-          current = { date: ymd(year, month, h.day), lines: [] };
+          var date = resolve(h, h.day, h.month);
+          var alts = (h.alts || []).map(function (c) { return resolve(h, c.day, c.month); }).filter(Boolean);
+          if (!date && alts.length) date = alts[0];
+          if (!date) { current = null; return; }
+          current = { date: date, lines: [], weekday: h.weekday, alts: alts, guessed: alts.length > 1 };
           sections.push(current);
           if (h.rest) current.lines.push(h.rest);
           return;
@@ -777,13 +897,23 @@
       });
     });
 
+    fixSequence(sections);
+
     // 同じ日付が別々に出てきた場合はまとめ、日付の順に並べる
-    var byDate = {};
-    sections.forEach(function (s) { byDate[s.date] = (byDate[s.date] || []).concat(s.lines); });
+    var byDate = {}, guessed = {};
+    sections.forEach(function (s) {
+      byDate[s.date] = (byDate[s.date] || []).concat(s.lines);
+      if (s.guessed) guessed[s.date] = true;
+    });
     var order = Object.keys(byDate).sort();
 
     var entries = [];
-    order.forEach(function (date) { entries = entries.concat(entriesFrom(byDate[date], date)); });
+    order.forEach(function (date) {
+      entriesFrom(byDate[date], date).forEach(function (e) {
+        if (guessed[date]) e.dateGuess = true;   // 確認欄で「推測した日付」と分かるようにする
+        entries.push(e);
+      });
+    });
     return {
       kind: "daily",
       sections: order.length,

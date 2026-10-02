@@ -699,6 +699,13 @@ console.log("== 手帳（apps/docs-tracker）==");
   await pp.click("#plannerCancel");
   ok(!(await pp.locator("#plannerConfirm").isVisible()), "「やめる」で確認欄が閉じる");
 
+  // 手書きの日付を読み違えたもの（10/8(日) は並びと曜日から 10/4 と推測）には注意書きを出す
+  const memo = ["10/3(土)", "歯医者", "10/8(日)", "買い物", "10/5(月)", "会議"].map((t, i) => ({ text: t, x: 0.05, y: 0.05 + i * 0.05, width: 0.6, height: 0.03 }));
+  await pp.evaluate((l) => window.docsApp.applyPlannerScan(l), memo);
+  ok((await pp.locator("#plannerForms .warn").count()) === 1 && (await pp.locator(".p-date").nth(1).inputValue()) === "2026-10-04",
+    "推測した日付の予定にだけ注意書きを出す");
+  await pp.click("#plannerCancel");
+
   ok(perrs.length === 0, "JSエラーなし" + (perrs.length ? " → " + perrs.join(" / ") : ""));
   await pctx.close();
 }
