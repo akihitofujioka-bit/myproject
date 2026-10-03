@@ -88,6 +88,10 @@ header p.lead { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 h2 { font-size: 15px; margin: 0 0 10px; }
 .stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .stat {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -101,6 +105,7 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .stat.danger .num { color: var(--danger); }
 .stat.warn { background: var(--warn-weak); border-color: var(--warn); }
 .stat.warn .num { color: var(--warn); }
+.stat[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
 form .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
 .field { flex: 1 1 130px; min-width: 0; }
@@ -516,7 +521,8 @@ var PRIORITY_ORDER = { "高": 0, "中": 1, "低": 2 };
 
 var state = load();
 var editingId = null;
-var filters = { q: "", status: "未完了", kind: "すべて", sort: "due" };
+// due: 上の件数のボタンで選んだ期限の絞り込み（"" / "expired" / "today" / "week"）
+var filters = { q: "", status: "未完了", kind: "すべて", sort: "due", due: "" };
 
 function load() {
   try {
@@ -625,12 +631,22 @@ function toast(msg) {
 
 /* ---------- 描画 ---------- */
 
+function dueMatches(item, due) {
+  var d = daysUntil(item.dueOn);
+  if (d === null) return false;
+  if (due === "expired") return d < 0;
+  if (due === "today") return d === 0;
+  if (due === "week") return d >= 0 && d <= 7;
+  return true;
+}
+
 function visibleItems() {
   var q = filters.q.trim().toLowerCase();
   var list = state.items.filter(function (it) {
     if (filters.status === "未完了") { if (!isOpen(it)) return false; }
     else if (filters.status !== "すべて" && it.status !== filters.status) return false;
     if (filters.kind !== "すべて" && it.kind !== filters.kind) return false;
+    if (filters.due && !dueMatches(it, filters.due)) return false;
     if (!q) return true;
     return (it.title + " " + it.dest + " " + it.note).toLowerCase().indexOf(q) >= 0;
   });
@@ -667,13 +683,16 @@ function renderStats() {
     if (d >= 0 && d <= 7) week++;
   });
   var cards = [
-    { num: open.length, label: "未処理", cls: "" },
-    { num: expired, label: "期限超過", cls: expired ? "danger" : "" },
-    { num: today, label: "今日まで", cls: today ? "warn" : "" },
-    { num: week, label: "1週間以内", cls: "" }
+    { num: open.length, label: "未処理", cls: "", due: "" },
+    { num: expired, label: "期限超過", cls: expired ? "danger" : "", due: "expired" },
+    { num: today, label: "今日まで", cls: today ? "warn" : "", due: "today" },
+    { num: week, label: "1週間以内", cls: "", due: "week" }
   ];
+  // 押すと、その件数の書類を下の一覧に出す
   document.getElementById("stats").innerHTML = cards.map(function (c) {
-    return '<div class="stat ' + c.cls + '"><div class="num">' + c.num + '</div><div class="label">' + c.label + "</div></div>";
+    var on = filters.status === "未完了" && filters.due === c.due;
+    return '<button type="button" class="stat ' + c.cls + '" data-due="' + c.due + '" aria-pressed="' + on + '">' +
+      '<div class="num">' + c.num + '</div><div class="label">' + c.label + "</div></button>";
   }).join("");
 }
 
@@ -858,8 +877,20 @@ document.getElementById("statusFilter").addEventListener("click", function (e) {
   var status = e.target.getAttribute && e.target.getAttribute("data-status");
   if (!status) return;
   filters.status = status;
+  filters.due = "";
+  renderStats();
   renderFilters();
   renderList();
+});
+document.getElementById("stats").addEventListener("click", function (e) {
+  var btn = e.target.closest && e.target.closest(".stat");
+  if (!btn) return;
+  filters.status = "未完了";
+  filters.due = btn.getAttribute("data-due") || "";
+  renderStats();
+  renderFilters();
+  renderList();
+  document.getElementById("list").scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 /* ---------- 持ち出し ---------- */

@@ -139,6 +139,12 @@ ok((await stat(2)) === "1", "今日まで1件");
 ok((await page.locator("li.item").first().locator(".item-name").textContent()) === "受講報告書", "期限が近い順に並ぶ");
 ok((await page.locator("li.item").first().getAttribute("class")).includes("expired"), "期限超過の色分け");
 ok((await page.locator("li.item").first().locator(".badge.pri-高").count()) === 1, "優先度「高」のバッジ");
+await page.locator("#stats .stat").nth(1).click();
+ok((await page.locator("li.item[data-id]").count()) === 1 && (await page.locator("li.item[data-id] .item-name").textContent()) === "受講報告書", "「期限超過」を押すとその書類だけ出る");
+await page.locator("#stats .stat").nth(3).click();
+ok((await page.locator("li.item[data-id]").count()) === 1, "「1週間以内」を押すと今日〜7日後の書類が出る");
+await page.locator("#stats .stat").nth(0).click();
+ok((await page.locator("li.item[data-id]").count()) === 3, "「未処理」を押すと未処理がすべて出る");
 
 const target = () => page.locator("li.item", { hasText: "受講報告書" });
 await target().locator('button[data-action="advance"]').click();
