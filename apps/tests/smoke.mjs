@@ -76,6 +76,12 @@ ok((await page.locator("li.item[data-id]").count()) === 3, "3件追加できる"
 ok((await stat(0)) === "3", "在庫3件");
 ok((await stat(1)) === "1", "期限切れ1件");
 ok((await stat(2)) === "1", "3日以内1件");
+await page.locator("#stats .stat").nth(1).click();
+ok((await page.locator("li.item[data-id]").count()) === 1 && (await page.locator("li.item[data-id] .item-name").textContent()) === "牛乳", "「期限切れ」を押すとその食材だけ出る");
+await page.locator("#stats .stat").nth(2).click();
+ok((await page.locator("li.item[data-id] .item-name").textContent()) === "たまご", "「3日以内」を押すとその食材だけ出る");
+await page.locator("#stats .stat").nth(0).click();
+ok((await page.locator("li.item[data-id]").count()) === 3, "「在庫」を押すとすべて出る");
 ok((await page.locator("li.item").first().locator(".item-name").textContent()) === "牛乳", "期限が近い順に並ぶ");
 ok((await page.locator("li.item").first().getAttribute("class")).includes("expired"), "期限切れの色分け");
 ok((await page.locator("li.item").first().locator(".due").textContent()).includes("2日超過"), "超過日数の表示");
@@ -139,6 +145,12 @@ ok((await stat(2)) === "1", "今日まで1件");
 ok((await page.locator("li.item").first().locator(".item-name").textContent()) === "受講報告書", "期限が近い順に並ぶ");
 ok((await page.locator("li.item").first().getAttribute("class")).includes("expired"), "期限超過の色分け");
 ok((await page.locator("li.item").first().locator(".badge.pri-高").count()) === 1, "優先度「高」のバッジ");
+await page.locator("#stats .stat").nth(1).click();
+ok((await page.locator("li.item[data-id]").count()) === 1 && (await page.locator("li.item[data-id] .item-name").textContent()) === "受講報告書", "「期限超過」を押すとその書類だけ出る");
+await page.locator("#stats .stat").nth(3).click();
+ok((await page.locator("li.item[data-id]").count()) === 1, "「1週間以内」を押すと今日〜7日後の書類が出る");
+await page.locator("#stats .stat").nth(0).click();
+ok((await page.locator("li.item[data-id]").count()) === 3, "「未処理」を押すと未処理がすべて出る");
 
 const target = () => page.locator("li.item", { hasText: "受講報告書" });
 await target().locator('button[data-action="advance"]').click();
@@ -690,6 +702,16 @@ console.log("== 手帳（apps/docs-tracker）==");
   ok(!!dl2, "「カレンダーとアプリに登録」でカレンダーにも渡す");
   items = await plans();
   ok(items.length === 3, "撮り直して登録しても、アプリの予定は増えない（" + items.length + "件）");
+
+  // 撮り直しで読み方が少し変わっても、同じ読み取りの中に同じ予定が2つあっても増やさない
+  await pp.evaluate((l) => window.docsApp.applyPlannerScan(l), grid({ 5: ["10:00 歯 医者"], 18: ["町内会の会議(集会所)", "町内会の会議"], 24: ["飲み会 3,000円"], 26: ["14:00 研修"] }));
+  await pp.click("#plannerRegisterApp");
+  items = await plans();
+  ok(items.length === 4 && items.filter((i) => i.dueOn === "2026-10-18").length === 1, "読み方の違う同じ予定・同じ読み取りの中の重複は増やさず、新しい予定だけ入る（" + items.length + "件）");
+  ok(items.some((i) => i.title === "歯医者") && !items.some((i) => i.title === "歯 医者"), "件名は先に登録したものを残す");
+  await pp.evaluate((l) => window.docsApp.applyPlannerScan(l), grid({ 26: ["16:00 研修"] }));
+  await pp.click("#plannerRegisterApp");
+  ok((await plans()).length === 5, "同じ日・同じ件名でも時刻が違えば別の予定");
 
   // ホーム画面からの受け渡し
   await pp.evaluate((l) => { window.ScanRouter.handoff("planner", l); }, page1);
