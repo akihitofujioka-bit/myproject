@@ -1792,7 +1792,7 @@ function plannerEvents(list) {
     }
     return {
       // 同じ日・同じ件名なら同じ識別子。撮り直して登録しても予定が増えない
-      uid: "plan-" + window.Native.idFrom(e.date + "/" + e.title) + "@docs-tracker",
+      uid: e.planKey || "plan-" + window.Native.idFrom(e.date + "/" + e.title) + "@docs-tracker",
       title: e.title,
       date: e.date,
       time: e.startTime || "",
@@ -1805,8 +1805,63 @@ function plannerEvents(list) {
   });
 }
 
+/*
+ * 同じ予定かどうか。手帳は撮り直すたびに読み方が少し変わる（「町内会議」と「町内会 議」、
+ * 括弧書きの有無、1字の読み違い）ため、件名が完全に同じでなくても、同じ日で件名がほぼ同じなら同じ予定とみなす。
+ * 時刻が両方にあって違うときは別の予定（同じ日に同じ名前の会議が2回ある場合）。
+ */
+function titleKey(t) {
+  return String(t || "").normalize("NFKC").replace(/\(.*?\)|（.*?）/g, "").replace(/[\s・、。.,:：\-ー〜~]/g, "").toLowerCase();
+}
+function nearlySameTitle(a, b) {
+  var x = titleKey(a), y = titleKey(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  var short = x.length <= y.length ? x : y, long = x.length <= y.length ? y : x;
+  // 片方がもう片方を含む（「町内会議」と「町内会議 公民館」）。「会議」と「町内会議」のような短いものは別の予定とみなす
+  if (short.length >= 3 && short.length >= long.length * 0.6 && long.indexOf(short) >= 0) return true;
+  if (short.length < 4 || long.length - short.length > 1) return false;
+  // 1字だけ違う（読み違い・読み落とし）
+  var i = 0;
+  while (i < short.length && short[i] === long[i]) i++;
+  return short.slice(i + (short.length === long.length ? 1 : 0)) === long.slice(i + 1);
+}
+function itemStartTime(it) {
+  var m = String(it.note || "").match(/^(\d{1,2}:\d{2})/);
+  return m ? m[1] : "";
+}
+function sameEvent(e, it) {
+  if (it.dueOn !== e.date || !nearlySameTitle(e.title, it.title)) return false;
+  var t = itemStartTime(it);
+  return !(e.startTime && t && e.startTime !== t);
+}
+
+// 手帳から登録する予定を、一覧に既にあるもの・同じ読み取りの中の重複と突き合わせる。
+// 戻り値は登録するものだけ。既にある「予定」に当たったものは、その識別子を使う（カレンダーでも同じ予定を書き換える）。
+// 会議の通知などから入れた別の種類のものに当たったときは、登録しない
+function dedupePlanner(list) {
+  var out = [];
+  var skipped = 0;
+  list.forEach(function (e) {
+    if (out.some(function (o) { return sameEvent(e, { dueOn: o.date, title: o.title, note: o.startTime }); })) { skipped++; return; }
+    var exact = "plan-" + window.Native.idFrom(e.date + "/" + e.title) + "@docs-tracker";
+    var found = state.items.filter(function (it) { return sameEvent(e, it) && it.planKey === exact; })[0] ||
+      state.items.filter(function (it) { return sameEvent(e, it); })[0];
+    if (found && !found.planKey) { skipped++; return; }
+    var copy = {};
+    Object.keys(e).forEach(function (k) { copy[k] = e[k]; });
+    if (found) copy.planKey = found.planKey;
+    // 同じ日・同じ件名で時刻の違う予定が既にあるときは、時刻も入れた識別子にする（カレンダーで上書きしないため）
+    else if (state.items.some(function (it) { return it.planKey === exact; })) {
+      copy.planKey = "plan-" + window.Native.idFrom(e.date + "/" + e.startTime + "/" + e.title) + "@docs-tracker";
+    }
+    out.push(copy);
+  });
+  return { list: out, skipped: skipped };
+}
+
 // アプリの一覧に種別「予定」として入れる。
-// 同じ日・同じ件名のもの（識別子 planKey が同じもの）が既にあれば、増やさずに書き換える
+// 同じ予定（識別子 planKey が同じもの。dedupePlanner で突き合わせ済み）が既にあれば、増やさずに書き換える
 function registerPlannerToApp(list) {
   var now = new Date().toISOString();
   var added = 0, updated = 0;
@@ -1815,7 +1870,7 @@ function registerPlannerToApp(list) {
     var note = (e.startTime ? e.startTime + (e.endTime ? "〜" + e.endTime : "") + " 開始\n" : "") + "（手帳から登録）";
     var found = state.items.filter(function (it) { return it.planKey === ev.uid; })[0];
     if (found) {
-      found.title = e.title;
+      // 件名は先に登録したもの（確認欄で直したものかもしれない）を残す
       found.dueOn = e.date;
       found.note = note;
       updated++;
@@ -1852,6 +1907,11 @@ function registerPlanner(mode, btn) {
   }
   var skipped = picked.length - list.length;
   var note = skipped ? "（件名か日付が空の" + skipped + "件は除く）" : "";
+  // 同じ予定を二重に登録しない（撮り直し・同じ読み取りの中の重複・既に一覧にあるもの）
+  var dd = dedupePlanner(list);
+  list = dd.list;
+  if (dd.skipped) note += "（登録済み・重複の" + dd.skipped + "件は除く）";
+  if (!list.length) { toast("すべて登録済みです" + note); renderPlanner(null); return; }
   var appMsg = "";
   if (mode === "app" || mode === "both") {
     var r = registerPlannerToApp(list);
