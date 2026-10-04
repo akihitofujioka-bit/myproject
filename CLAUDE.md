@@ -79,3 +79,123 @@
 
 - アプリは外部にデータを送らない（画面の文言にも書いてある設計方針）。通信を伴う機能を足す前に必ず利用者に相談する
 - リポジトリは非公開。公開設定や GitHub Pages の有効化は利用者の判断
+
+## アイコン更新の手順 — Web と iOS ネイティブアプリ両対応
+
+### ファイルの構成
+
+```
+apps/
+  icon-180.png       （Web用ホーム画面アイコン、180x180）
+  icon-192.png       （Web用ホーム画面アイコン、192x192）
+  icon-512.png       （Web用ホーム画面アイコン、512x512、またはソースイメージ）
+  fridge/
+    icon-180.png     （Web用冷蔵庫サブアプリ、180x180）
+    icon-192.png     （Web用冷蔵庫サブアプリ、192x192）
+    icon-512.png     （Web用冷蔵庫サブアプリ、512x512）
+  docs-tracker/
+    icon-*.png       （同様）
+  stock/
+    icon-*.png       （同様）
+  kakeibo/
+    icon-*.png       （同様）
+  cards/
+    icon-*.png       （同様）
+
+mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset/
+  AppIcon-20x20@1x.png
+  AppIcon-20x20@2x.png
+  AppIcon-20x20@3x.png
+  AppIcon-29x29@1x.png
+  AppIcon-29x29@2x.png
+  AppIcon-29x29@3x.png
+  AppIcon-40x40@1x.png
+  AppIcon-40x40@2x.png
+  AppIcon-40x40@3x.png
+  AppIcon-60x60@2x.png
+  AppIcon-60x60@3x.png
+  AppIcon-76x76@1x.png
+  AppIcon-76x76@2x.png
+  AppIcon-83.5x83.5@2x.png
+  AppIcon-1024x1024@1x.png
+  Contents.json      （各アイコンのメタデータ）
+```
+
+### アイコン画像を更新するコマンド（Claude Cloud Session）
+
+**ホーム画面アイコンを更新:**
+
+```bash
+# 1. 新しい画像ファイルをコピー（例：/path/to/new-icon.webp）
+cp /path/to/new-icon.webp /home/user/myproject/apps/icon-512.png
+
+# 2. 正方形にリサイズして各サイズを生成
+cd /home/user/myproject/apps
+convert icon-512.png -trim +repage -resize 512x512! -background none icon-512.png
+convert icon-512.png -resize 180x180 icon-180.png
+convert icon-512.png -resize 192x192 icon-192.png
+
+# 3. iOS ホーム画面アイコンセットも更新
+cd /home/user/myproject/mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset
+SOURCE="/home/user/myproject/apps/icon-512.png"
+convert "$SOURCE" -resize 20x20 AppIcon-20x20@1x.png
+convert "$SOURCE" -resize 40x40 AppIcon-20x20@2x.png
+convert "$SOURCE" -resize 60x60 AppIcon-20x20@3x.png
+convert "$SOURCE" -resize 29x29 AppIcon-29x29@1x.png
+convert "$SOURCE" -resize 58x58 AppIcon-29x29@2x.png
+convert "$SOURCE" -resize 87x87 AppIcon-29x29@3x.png
+convert "$SOURCE" -resize 40x40 AppIcon-40x40@1x.png
+convert "$SOURCE" -resize 80x80 AppIcon-40x40@2x.png
+convert "$SOURCE" -resize 120x120 AppIcon-40x40@3x.png
+convert "$SOURCE" -resize 120x120 AppIcon-60x60@2x.png
+convert "$SOURCE" -resize 180x180 AppIcon-60x60@3x.png
+convert "$SOURCE" -resize 76x76 AppIcon-76x76@1x.png
+convert "$SOURCE" -resize 152x152 AppIcon-76x76@2x.png
+convert "$SOURCE" -resize 167x167 AppIcon-83.5x83.5@2x.png
+convert "$SOURCE" -resize 1024x1024 AppIcon-1024x1024@1x.png
+```
+
+**サブアプリ（例：冷蔵庫）アイコンを更新:**
+
+```bash
+# 1. 新しい画像をコピー
+cp /path/to/new-icon.webp /home/user/myproject/apps/fridge/icon-512.png
+
+# 2. 各サイズを生成
+cd /home/user/myproject/apps/fridge
+convert icon-512.png -trim +repage -resize 512x512! -background none icon-512.png
+convert icon-512.png -resize 180x180 icon-180.png
+convert icon-512.png -resize 192x192 icon-192.png
+```
+
+**コミット・push（クラウド環境）:**
+
+```bash
+cd /home/user/myproject
+git add apps/ mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset/
+git commit -m "アイコンを更新：[変更内容を説明]"
+git push origin main
+```
+
+### ビルド・デプロイ（Mac のターミナル）
+
+```bash
+cd /Users/ichishi/myproject
+git pull
+
+cd mobile
+rm -rf .build
+npm run iphone
+```
+
+### トラブルシューティング
+
+**アイコンが反映されない:**
+- キャッシュをクリア: `rm -rf .build ~/Library/Developer/Xcode/DerivedData/*`
+- iPhone のアプリを削除してから再インストール
+- Safari キャッシュをクリア（Web版の場合）
+
+**ビルドエラー「AppIcon did not have any applicable content」:**
+- iOS アイコンセットに 15 個のサイズがすべて揃っているか確認
+- Contents.json が正しい形式か確認（JSON フォーマッタで検証）
+- `git checkout` で古い状態に戻して再度生成
