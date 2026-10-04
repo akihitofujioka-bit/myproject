@@ -79,6 +79,10 @@ header p.lead { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
 h2 { font-size: 15px; margin: 0 0 10px; }
 .stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .stat {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -92,6 +96,7 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .stat.danger .num { color: var(--danger); }
 .stat.warn { background: var(--warn-weak); border-color: var(--warn); }
 .stat.warn .num { color: var(--warn); }
+.stat[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
 form .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
 .field { flex: 1 1 130px; min-width: 0; }
@@ -362,7 +367,8 @@ var PLACES = ["冷蔵", "冷凍", "常温"];
 
 var state = load();
 var editingId = null;
-var filters = { q: "", place: "すべて", sort: "due" };
+// due: 上の件数のボタンで選んだ期限の絞り込み（"" / "expired" / "soon"）
+var filters = { q: "", place: "すべて", sort: "due", due: "" };
 
 function load() {
   try {
@@ -457,6 +463,7 @@ function visibleItems() {
   var q = filters.q.trim().toLowerCase();
   var list = state.items.filter(function (it) {
     if (filters.place !== "すべて" && it.place !== filters.place) return false;
+    if (filters.due && dueLevel(it.expiresOn) !== filters.due) return false;
     if (!q) return true;
     return (it.name + " " + (it.note || "")).toLowerCase().indexOf(q) >= 0;
   });
@@ -487,13 +494,16 @@ function renderStats() {
   }).length;
 
   var cards = [
-    { num: state.items.length, label: "在庫", cls: "" },
-    { num: expired, label: "期限切れ", cls: expired ? "danger" : "" },
-    { num: soon, label: "3日以内", cls: soon ? "warn" : "" },
-    { num: discarded, label: "今月の廃棄", cls: "" }
+    { num: state.items.length, label: "在庫", cls: "", due: "" },
+    { num: expired, label: "期限切れ", cls: expired ? "danger" : "", due: "expired" },
+    { num: soon, label: "3日以内", cls: soon ? "warn" : "", due: "soon" },
+    { num: discarded, label: "今月の廃棄", cls: "", due: "loss" }
   ];
+  // 押すと、その件数の食材を下の一覧に出す（廃棄は廃棄の記録へ移る）
   document.getElementById("stats").innerHTML = cards.map(function (c) {
-    return '<div class="stat ' + c.cls + '"><div class="num">' + c.num + '</div><div class="label">' + c.label + "</div></div>";
+    var on = c.due !== "loss" && filters.due === c.due;
+    return '<button type="button" class="stat ' + c.cls + '" data-due="' + c.due + '" aria-pressed="' + on + '">' +
+      '<div class="num">' + c.num + '</div><div class="label">' + c.label + "</div></button>";
   }).join("");
 }
 
@@ -784,6 +794,19 @@ document.getElementById("placeFilter").addEventListener("click", function (e) {
   filters.place = place;
   renderFilters();
   renderList();
+});
+document.getElementById("stats").addEventListener("click", function (e) {
+  var btn = e.target.closest && e.target.closest(".stat");
+  if (!btn) return;
+  var due = btn.getAttribute("data-due") || "";
+  if (due === "loss") {
+    document.getElementById("lossList").scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  filters.due = due;
+  renderStats();
+  renderList();
+  document.getElementById("list").scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 /* ---------- 持ち出し ---------- */
