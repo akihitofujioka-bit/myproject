@@ -1,7 +1,8 @@
 #!/bin/bash
-# USB で繋いだ iPhone に、アプリをビルドして入れ直す（Mac 専用）。
+# iPhone に、アプリをビルドして入れ直す（Mac 専用）。
 #
-#   cd mobile && npm run iphone
+#   USB 接続: cd mobile && npm run iphone
+#   WiFi 接続: cd mobile && WIFI=1 npm run iphone
 #
 # やること: www の組み立て → cap sync → 署名付きビルド → iPhone へ転送 → 起動。
 # Xcode の画面操作は不要。iPhone はロックを解除しておく。
@@ -9,19 +10,45 @@
 set -eo pipefail
 cd "$(dirname "$0")/.."
 
+WIFI_MODE="${WIFI:-0}"
 DEVICE="${IPHONE_UDID:-}"
+
 if [ -z "${DEVICE}" ]; then
   # 繋がっている本物の iPhone（physical）を 1 台選ぶ。シミュレータや Apple Watch は除く。
-  DEVICE=$(xcrun devicectl list devices 2>/dev/null \
-    | grep -E "physical" | grep -Ei "iPhone" \
-    | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}' | head -1)
+  if [ "${WIFI_MODE}" = "1" ]; then
+    echo "▶ WiFi 接続の iPhone を探索中…"
+    DEVICE=$(xcrun devicectl list devices 2>/dev/null \
+      | grep -E "physical.*network" | grep -Ei "iPhone" \
+      | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}' | head -1)
+  else
+    DEVICE=$(xcrun devicectl list devices 2>/dev/null \
+      | grep -E "physical" | grep -Ei "iPhone" \
+      | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}' | head -1)
+  fi
 fi
+
 if [ -z "${DEVICE}" ]; then
-  echo "✗ iPhone が見つかりません。USB 接続とロック解除、「このコンピュータを信頼」を済ませてください。" >&2
-  echo "  複数台あるときは IPHONE_UDID=xxxx npm run iphone で指定できます。" >&2
+  if [ "${WIFI_MODE}" = "1" ]; then
+    echo "✗ WiFi 接続の iPhone が見つかりません。以下を確認してください：" >&2
+    echo "  1. iPhone が WiFi に接続している" >&2
+    echo "  2. Mac と同じ WiFi ネットワークに繋がっている" >&2
+    echo "  3. iPhone と Mac が信頼関係を確立している（初回は USB 接続が必要な場合があります）" >&2
+    echo "  複数台あるときは IPHONE_UDID=xxxx WIFI=1 npm run iphone で指定できます。" >&2
+  else
+    echo "✗ USB 接続の iPhone が見つかりません。以下を確認してください：" >&2
+    echo "  1. iPhone を USB で Mac に接続している" >&2
+    echo "  2. iPhone のロックを解除している" >&2
+    echo "  3. 「このコンピュータを信頼」をタップしている" >&2
+    echo "  複数台あるときは IPHONE_UDID=xxxx npm run iphone で指定できます。" >&2
+  fi
   exit 1
 fi
-echo "▶ 転送先: ${DEVICE}"
+
+CONNECTION_TYPE="USB"
+if [ "${WIFI_MODE}" = "1" ]; then
+  CONNECTION_TYPE="WiFi"
+fi
+echo "▶ 転送先: ${DEVICE}（${CONNECTION_TYPE} 接続）"
 
 echo "▶ www を組み立てて iOS プロジェクトへ反映…"
 npm run sync
