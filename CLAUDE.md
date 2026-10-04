@@ -45,8 +45,18 @@
 ### 更新の流れ（Mac で作業しているとき）
 
 1. 変更をコミットする（版表記にコミット番号が入るため。未コミットだと番号に `+` が付く）
-2. iPhone を USB で繋いでロックを解除してもらう
-3. `cd mobile && npm run iphone` を実行する（`mobile/scripts/install-iphone.sh`）
+2. **USB 接続の場合**: iPhone を USB で繋いでロックを解除してもらう
+   **WiFi 接続の場合**: iPhone が Mac と同じ WiFi に接続していることを確認
+3. ビルド・インストール:
+   ```bash
+   cd mobile
+   
+   # USB 接続で実行
+   npm run iphone
+   
+   # または WiFi 接続で実行（初回は USB 接続が必要な場合あり）
+   WIFI=1 npm run iphone
+   ```
    - `www` の組み立て → `cap sync` → 署名付き `xcodebuild` → `devicectl` で転送 → 起動、まで自動
    - **サンドボックスの中では失敗する**（Swift Package のキャッシュ書き込み、Mach ポート、キーチェーン）。そのコマンドに限りサンドボックスを外して実行する
    - iPhone がロック中だと起動だけ失敗するが、インストールは済んでいる
@@ -54,9 +64,25 @@
 
 ### 端末の見分け方
 
-- 本物の iPhone は `xcrun devicectl list devices` で `physical` と出る行（端末名「壱師」、UDID `00008150-000E058C0240401C`）
+```bash
+# 接続済みデバイスを一覧表示（Mac のターミナルで実行）
+xcrun devicectl list devices
+```
+
+出力例:
+```
+00008150-000E058C0240401C  壱師                iPhone 15 Pro       physical
+```
+
+- 本物の iPhone は `physical` と出る行（端末名「壱師」、UDIP `00008150-000E058C0240401C`）
+  - USB 接続: `physical connected` と表示される
+  - WiFi 接続: `physical network` と表示される
 - 「iPhone 17 Pro」のように機種名だけの行は **シミュレータ**。Xcode の実行先がこれになっていると本物には入らない
-- 複数台あるときは `IPHONE_UDID=… npm run iphone` で指定する
+- 複数台あるときは環境変数で指定:
+  ```bash
+  IPHONE_UDID=00008150-000E058C0240401C npm run iphone
+  IPHONE_UDID=00008150-000E058C0240401C WIFI=1 npm run iphone
+  ```
 
 ### Swift を変えたとき
 
