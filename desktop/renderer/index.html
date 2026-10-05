@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>壱師アプリ再インストール</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>壱師アプリ</h1>
+      <p>Apple Watch 再インストール</p>
+    </div>
+
+    <div class="content">
+      <div class="icon">📱⌚</div>
+
+      <p class="description">
+        Apple Watch の壱師アプリを再インストールします。<br>
+        インストール中は Mac のターミナルをご確認ください。
+      </p>
+
+      <div class="connection-options">
+        <label>
+          <input type="radio" name="connection" value="usb" checked>
+          USB 接続
+        </label>
+        <label>
+          <input type="radio" name="connection" value="wifi">
+          WiFi 接続
+        </label>
+      </div>
+
+      <button id="reinstallBtn" class="btn-primary">再インストール開始</button>
+
+      <div id="status" class="status hidden">
+        <div id="statusIcon" class="status-icon"></div>
+        <p id="statusMessage"></p>
+      </div>
+
+      <div id="output" class="output hidden">
+        <textarea id="outputText" readonly></textarea>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p class="help-text">
+        問題が発生した場合は、CLAUDE.md の手順を確認してください。
+      </p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
