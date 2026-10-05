@@ -84,6 +84,42 @@ xcrun devicectl list devices
   IPHONE_UDID=00008150-000E058C0240401C WIFI=1 npm run iphone
   ```
 
+### Apple Watch アプリを再インストール
+
+Apple Watch から壱師アプリが消えた場合、または新しい版を入れたいときは以下の手順で。
+
+**Mac のターミナルで実行（USB または WiFi 接続）:**
+
+```bash
+cd /Users/[ユーザー名]/myproject/mobile
+
+# USB 接続で実行
+npm run apple-watch
+
+# または WiFi 接続で実行（初回は USB 接続が必要な場合あり）
+WIFI=1 npm run apple-watch
+```
+
+自動で以下が実行されます：
+- `www` の組み立て → `cap sync` → Watch アプリのビルド → Apple Watch へ転送 → 起動
+
+**確認事項：**
+- Apple Watch が iPhone とペアリング済みであること
+- Apple Watch がロック解除されていること（自動起動がうまくいくため）
+- Mac と Apple Watch が同じ WiFi に接続していること（WiFi 接続の場合）
+
+**複数台の Apple Watch がある場合：**
+```bash
+IPHONE_UDID=00008150-000E058C0240401C npm run apple-watch
+```
+
+**Scheme 名が異なる場合：**
+Xcode のプロジェクトで Watch アプリの Scheme 名を確認し、
+```bash
+WATCH_SCHEME=DailyAppsWatchApp npm run apple-watch
+```
+で指定してください。
+
 ### Swift を変えたとき
 
 - この Mac には Xcode があるので、`xcodebuild … -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` で **必ずコンパイルを通してから** 「できた」と言う

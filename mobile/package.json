@@ -8,7 +8,8 @@
     "build": "node scripts/build-www.mjs",
     "sync": "npm run build && cap sync",
     "ios": "npm run sync && cap open ios",
-    "iphone": "bash scripts/install-iphone.sh"
+    "iphone": "bash scripts/install-iphone.sh",
+    "apple-watch": "bash scripts/install-apple-watch.sh"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",
