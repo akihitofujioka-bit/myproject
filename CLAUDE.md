@@ -120,6 +120,16 @@ WATCH_SCHEME=DailyAppsWatchApp npm run apple-watch
 ```
 で指定してください。
 
+### macOS デスクトップアプリ（将来実装予定）
+
+**目的:** ターミナルを使わずに、ダブルクリックで起動して「再インストール」ボタンを押すだけで Apple Watch に壱師アプリを入れ直せるようにする
+
+**実装予定:**
+- Electron で macOS ネイティブアプリを作成
+- ボタン 1 個：Apple Watch へ再インストール
+- Applications フォルダに配置
+- MacBook が近くにある時に実装
+
 ### Swift を変えたとき
 
 - この Mac には Xcode があるので、`xcodebuild … -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` で **必ずコンパイルを通してから** 「できた」と言う
