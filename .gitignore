@@ -2,6 +2,7 @@
 node_modules/
 *.log
 .DS_Store
+*.swp
 
 # Python（gikai_editor）
 __pycache__/
@@ -22,3 +23,13 @@ tools/*/wheels/
 # 様式は前年の議会だより（人の名前が入る）なので、リポジトリに入れない
 tools/gikai_template/様式/
 tools/gikai_template/設定.json
+
+# 生成された報告書・逐語録は業務情報を含むため git 管理対象外。
+# ディレクトリ自体は残したいので .gitkeep だけ通す。
+reports/daily/
+reports/weekly/
+reports/verbatim/
+!reports/**/.gitkeep
+
+# 逐語録の作業ファイル（get_transcript の生の応答）
+.work/
