@@ -8,7 +8,7 @@ let mainWindow;
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 400,
-    height: 300,
+    height: 420,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -43,18 +43,27 @@ app.on('activate', () => {
   }
 });
 
-// Apple Watch 再インストールコマンド実行
-ipcMain.handle('run-apple-watch', async (event, options = {}) => {
-  return new Promise((resolve) => {
-    const projectPath = path.join(os.homedir(), 'myproject', 'mobile');
-    const wifiMode = options.wifi ? 'WIFI=1' : '';
+// 再インストールコマンド実行（iPhone / Apple Watch）
+const TARGETS = {
+  iphone: { script: 'iphone', label: 'iPhone' },
+  watch: { script: 'apple-watch', label: 'Apple Watch' },
+  both: { script: 'iphone && npm run apple-watch', label: 'iPhone と Apple Watch' }
+};
 
-    let command = `cd ${projectPath} && npm run apple-watch`;
-    if (wifiMode) {
-      command = `cd ${projectPath} && ${wifiMode} npm run apple-watch`;
+ipcMain.handle('run-install', async (event, options = {}) => {
+  return new Promise((resolve) => {
+    const target = TARGETS[options.target];
+    if (!target) {
+      resolve({ success: false, message: '対象が不明です', error: String(options.target) });
+      return;
     }
 
-    const proc = spawn('bash', ['-c', command]);
+    const projectPath = path.join(os.homedir(), 'myproject', 'mobile');
+    const wifiMode = options.wifi ? 'export WIFI=1 && ' : '';
+    const command = `cd "${projectPath}" && ${wifiMode}npm run ${target.script}`;
+
+    // ログインシェルで起動する（Finder から開いたアプリは PATH が最小限で npm が見つからないため）
+    const proc = spawn('bash', ['-lc', command]);
 
     let output = '';
     let errorOutput = '';
@@ -71,14 +80,14 @@ ipcMain.handle('run-apple-watch', async (event, options = {}) => {
       if (code === 0) {
         resolve({
           success: true,
-          message: 'Apple Watch へのインストールが完了しました',
+          message: `${target.label} へのインストールが完了しました`,
           output: output
         });
       } else {
         resolve({
           success: false,
           message: 'エラーが発生しました',
-          error: errorOutput || output
+          error: (errorOutput + output) || `終了コード ${code}`
         });
       }
     });
