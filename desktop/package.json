@@ -1,7 +1,7 @@
 {
   "name": "dailyapps-installer",
   "version": "1.0.0",
-  "description": "壱師アプリ Apple Watch 再インストール用ツール",
+  "description": "壱師アプリ iPhone / Apple Watch 再インストール用ツール",
   "main": "src/main.js",
   "homepage": "./",
   "scripts": {

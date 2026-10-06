@@ -1574,10 +1574,15 @@ function meetingNote(m) {
   return parts.join("\n");
 }
 
-// アプリの一覧に会議として登録する
+// アプリの一覧に会議として登録する（同じ日・同じ会議名がすでにあれば足さない）
 function registerMeetingsToApp(list) {
   var now = new Date().toISOString();
+  var added = 0;
   list.forEach(function (m) {
+    var exists = state.items.some(function (it) {
+      return it.kind === "会議" && it.dueOn === m.date && it.title === m.title;
+    });
+    if (exists) return;
     state.items.push({
       id: uid(),
       title: m.title,
@@ -1591,9 +1596,11 @@ function registerMeetingsToApp(list) {
       doneAt: "",
       icsSeq: 0
     });
+    added++;
   });
   save();
   render();
+  return added;
 }
 
 // 端末のカレンダーに予定として渡す
@@ -1622,37 +1629,45 @@ function registerMeetingsToCalendar(list) {
   return writeToCalendar(events, "会議", "meetings");
 }
 
-function registerMeetings(mode) {
-  var list = collectMeetings().filter(function (m) { return m.date; });
-  var skipped = collectMeetings().length - list.length;
+function registerMeetings(mode, btn) {
+  var picked = collectMeetings();
+  var list = picked.filter(function (m) { return m.date; });
+  var skipped = picked.length - list.length;
   if (!list.length) {
     toast(skipped ? "日付が空の会議は登録できません。日付を入れてください" : "登録するものにチェックを付けてください");
     return;
   }
-  var done = [];
+  var note = skipped ? "（日付が空の" + skipped + "件は除く）" : "";
+  var appMsg = "";
   if (mode === "app" || mode === "both") {
-    registerMeetingsToApp(list);
-    done.push("アプリに" + list.length + "件");
+    var added = registerMeetingsToApp(list);
+    appMsg = added === list.length ? "アプリに" + added + "件登録" : "アプリに" + added + "件登録（" + (list.length - added) + "件は登録済み）";
   }
-  if (mode === "cal" || mode === "both") {
-    registerMeetingsToCalendar(list).then(function (res) {
-      if (res.how === "cancelled") return;
-      toast(res.how === "direct"
-        ? "カレンダーに登録しました（" + res.count + "件）"
-        : res.how === "shared"
-          ? "カレンダーアプリを選んでください（" + list.length + "件）"
-          : "予定ファイルを保存しました（" + list.length + "件）。開くとカレンダーに登録できます");
-    });
-    done.push("カレンダーに" + list.length + "件");
-  } else {
-    toast(done.join("／") + "登録しました" + (skipped ? "（日付が空の" + skipped + "件は除く）" : ""));
+  if (mode === "app") {
+    toast(appMsg + "しました" + note);
+    renderMeetings([]);
+    return;
   }
-  if (mode === "app") renderMeetings([]);
+  btn.disabled = true;
+  registerMeetingsToCalendar(list).then(function (res) {
+    btn.disabled = false;
+    if (res.how === "cancelled") { if (appMsg) toast(appMsg + note); return; }
+    var calMsg = res.how === "direct"
+      ? "カレンダーに" + res.count + "件登録しました"
+      : res.how === "shared"
+        ? "カレンダーアプリを選んでください（" + list.length + "件）"
+        : "予定ファイルを保存しました（" + list.length + "件）。開くとカレンダーに登録できます";
+    toast((appMsg ? appMsg + "／" : "") + calMsg + note);
+    renderMeetings([]);
+  }, function (err) {
+    btn.disabled = false;
+    toast((appMsg ? appMsg + "。" : "") + "カレンダーには登録できませんでした：" + (err && err.message ? err.message : "原因不明"));
+  });
 }
 
-document.getElementById("meetingRegisterBoth").addEventListener("click", function () { registerMeetings("both"); });
-document.getElementById("meetingRegisterCal").addEventListener("click", function () { registerMeetings("cal"); });
-document.getElementById("meetingRegisterApp").addEventListener("click", function () { registerMeetings("app"); });
+document.getElementById("meetingRegisterBoth").addEventListener("click", function () { registerMeetings("both", this); });
+document.getElementById("meetingRegisterCal").addEventListener("click", function () { registerMeetings("cal", this); });
+document.getElementById("meetingRegisterApp").addEventListener("click", function () { registerMeetings("app", this); });
 document.getElementById("meetingCancel").addEventListener("click", function () {
   renderMeetings([]);
   toast("読み取った内容を取り消しました");

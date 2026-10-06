@@ -1,6 +1,6 @@
 # 壱師アプリ再インストール ツール
 
-macOS で Apple Watch の壱師アプリを再インストールするための Electron アプリです。
+macOS で iPhone / Apple Watch の壱師アプリを再インストールするための Electron アプリです。
 
 ## セットアップ
 
@@ -35,7 +35,7 @@ npm run build
 ## 使い方
 
 1. アプリをダブルクリックで起動
-2. USB または WiFi 接続を選択
+2. 対象（iPhone / Apple Watch）と、USB または WiFi 接続を選択
 3. 「再インストール開始」ボタンをクリック
 4. インストール完了を待つ
 
@@ -53,7 +53,8 @@ npm run build
 3. ターミナルで手動実行:
    ```bash
    cd /Users/[ユーザー名]/myproject/mobile
-   npm run apple-watch
+   npm run iphone        # iPhone
+   npm run apple-watch   # Apple Watch
    # または WiFi 接続
    WIFI=1 npm run apple-watch
    ```

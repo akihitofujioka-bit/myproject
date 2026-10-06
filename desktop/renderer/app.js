@@ -4,9 +4,10 @@ const statusMessage = document.getElementById('statusMessage');
 const statusIcon = document.getElementById('statusIcon');
 const outputDiv = document.getElementById('output');
 const outputText = document.getElementById('outputText');
-const connectionRadios = document.querySelectorAll('input[name="connection"]');
+const connectionRadios = document.querySelectorAll('input[name="connection"], input[name="target"]');
 
 reinstallBtn.addEventListener('click', async () => {
+  const target = document.querySelector('input[name="target"]:checked').value;
   const wifiMode = document.querySelector('input[name="connection"]:checked').value === 'wifi';
 
   // UI 状態をリセット
@@ -18,7 +19,7 @@ reinstallBtn.addEventListener('click', async () => {
   connectionRadios.forEach(r => r.disabled = true);
 
   try {
-    const result = await window.electronAPI.runAppleWatch({ wifi: wifiMode });
+    const result = await window.electronAPI.runInstall({ target, wifi: wifiMode });
 
     if (result.success) {
       statusDiv.className = 'status success';
