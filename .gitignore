@@ -33,3 +33,6 @@ reports/verbatim/
 
 # 逐語録の作業ファイル（get_transcript の生の応答）
 .work/
+
+# Claude Code の個人用設定
+.claude/settings.local.json
