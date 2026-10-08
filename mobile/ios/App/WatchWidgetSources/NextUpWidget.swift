@@ -130,7 +130,8 @@ struct NextUpEntryView: View {
     }
 
     private var inlineView: some View {
-        Text(entry.hasItem ? "\(entry.title)・\(entry.dayLabel)" : "予定なし")
+        // 1行に収まらないと末尾が切れるため、残り日数を先頭に出す（会議名が長くても日数は残る）
+        Text(entry.hasItem ? "\(entry.dayLabel)・\(entry.title)" : "予定なし")
     }
 
     private var cornerView: some View {
