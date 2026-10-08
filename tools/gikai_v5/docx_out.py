@@ -155,6 +155,23 @@ def _line_runs(line: str, font: str, pt: float, ids: list[int], *,
     return out
 
 
+# 行送りに余裕がある（字の大きさの 1.4 倍以上）ときは「最小値」で指定する。
+# 「固定値」だと、役場の Windows の Word が行からはみ出した字の部分を切り落とし、
+# 本文の各行の最後の字が欠けた（2026-10-08、diag_spacing.py の Ｂ・Ｄ だけ欠けなかった）。
+# 見出しのように行送りに余裕が無い字は、最小値にすると Word が行を広げて枠からはみ出すので
+# 固定値のまま（見出しは固定値でも欠けなかった）
+AT_LEAST_RATIO = 1.4
+
+
+# 最小値にするのは本文の大きさ（12pt 以下）の字だけ。見出し（14pt 以上）を最小値にすると、
+# 行送りに余裕があっても Word が行の位置を変え、本文に重なった（Mac の Word で確認）
+AT_LEAST_MAX_PT = 12.0
+
+
+def line_rule(pt: float, pitch: float) -> str:
+    return "atLeast" if pt <= AT_LEAST_MAX_PT and pitch >= pt * AT_LEAST_RATIO else "exact"
+
+
 def _text_para(t: TextBox, ids: list[int]) -> str:
     rpr = _rpr(t.font, t.pt, t.bold)
     runs = []
@@ -172,7 +189,7 @@ def _text_para(t: TextBox, ids: list[int]) -> str:
     # 入れられると行が計算より長くなり、最後の字が次の行へ送られる（段階 1 で確認）
     align = {"左": "left", "中央": "center", "右": "right"}.get(t.align, "left")
     return ('<w:p><w:pPr><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/><w:snapToGrid w:val="0"/>'
-            f'<w:spacing w:before="0" w:after="0" w:line="{twip(pitch)}" w:lineRule="exact"/>'
+            f'<w:spacing w:before="0" w:after="0" w:line="{twip(pitch)}" w:lineRule="{line_rule(t.pt, pitch)}"/>'
             '<w:ind w:left="0" w:right="0" w:firstLine="0"/>'
             f'<w:jc w:val="{align}"/></w:pPr>'
             f'{"".join(runs)}{"" if runs else f"<w:r>{rpr}</w:r>"}</w:p>')
@@ -316,7 +333,10 @@ def _item_xml(item, idx: int, ids: list[int], rel_id: str = "") -> tuple[str, in
         # 左へ 1 行送りぶん広げる。右端・上端と、従来の高さの余裕は変えない。
         old_box = (Box(item.box.x, item.box.y, item.box.w, item.box.h + SLACK_PT)
                    if item.vertical else item.box)
-        box = (Box(old_box.x - item.pitch_pt, old_box.y,
+        # 字を中央にそろえる枠（見出し）は、左だけ広げると字の中央が左へ半行ずれて
+        # 隣の本文に重なった。左右に半行ずつ広げて中央の位置を保つ
+        shift = item.pitch_pt / 2 if item.center else item.pitch_pt
+        box = (Box(old_box.x - shift, old_box.y,
                    old_box.w + item.pitch_pt, old_box.h)
                if item.vertical else old_box)
         no_line = "<a:ln><a:noFill/></a:ln>"

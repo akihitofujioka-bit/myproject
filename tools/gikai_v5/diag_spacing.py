@@ -8,9 +8,9 @@
 
 | 段 | 頭の字 | 指定 |
 |---|---|---|
-| 1 | Ａ | 今の作り（行送り 固定値 17pt・枠の下の余裕 6pt） |
-| 2 | Ｂ | 行送り「最小値」17pt（Word が行を広げてよい） |
-| 3 | Ｃ | 固定値 17pt のまま、枠の下の余裕を 1 字半（17pt）に |
+| 1 | Ａ | 今の作り（本文の行送り 最小値 17pt・枠の下の余裕 6pt。2026-10-08 に固定値から変更） |
+| 2 | Ｂ | 行送り「最小値」17pt（今の作りと同じ） |
+| 3 | Ｃ | 固定値 17pt、枠の下の余裕を 1 字半（17pt）に |
 | 4 | Ｄ | 行送りを指定しない（1 行） |
 | 5 | Ｅ | 固定値 20pt（行送りを広げる） |
 
@@ -50,15 +50,16 @@ def _vary(xml: str) -> str:
     for part in parts[1:]:
         letter = next((c for c in LETTERS if c in part), None)
         if letter == "Ｂ":
-            part = part.replace('w:lineRule="exact"', 'w:lineRule="atLeast"')
+            part = re.sub(r'w:lineRule="\w+"', 'w:lineRule="atLeast"', part)
         elif letter == "Ｃ":
+            part = re.sub(r'w:lineRule="\w+"', 'w:lineRule="exact"', part)
             extra = int(round((17 - dx.SLACK_PT) * EMU))
             part = re.sub(r'(<wp:extent cx="\d+" cy=")(\d+)', lambda m: m.group(1) + str(int(m.group(2)) + extra), part)
             part = re.sub(r'(<a:ext cx="\d+" cy=")(\d+)', lambda m: m.group(1) + str(int(m.group(2)) + extra), part)
         elif letter == "Ｄ":
-            part = re.sub(r' w:line="\d+" w:lineRule="exact"', "", part)
+            part = re.sub(r' w:line="\d+" w:lineRule="\w+"', "", part)
         elif letter == "Ｅ":
-            part = re.sub(r'w:line="\d+" w:lineRule="exact"', 'w:line="400" w:lineRule="exact"', part)
+            part = re.sub(r'w:line="\d+" w:lineRule="\w+"', 'w:line="400" w:lineRule="exact"', part)
         out.append(part)
     return "<w:r><w:drawing>".join(out)
 
