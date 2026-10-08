@@ -12,7 +12,10 @@ from typing import Dict, List, Optional, Tuple
 
 import docx_out as dx
 import edition
+import ingest
 import layout
+import templates
+from settings import Settings
 from grid import Rect, TATECHUYOKO, mm2pt, to_box
 
 
@@ -29,7 +32,7 @@ LABELS = {"質問": "問", "答弁": "答"}
 KIND_BUTTONS = ("大見出し", "中見出し", "質問", "答弁", "本文", "写真説明", "議案")
 HELP_TEXT = """①「新しい号」を押し、号数と月などを入れます。前の号を続けるときは「号を開く」を押します。
 
-② 左のページ一覧で ○ のページを選び、「原稿を入れる」を押します。
+② 左のページ一覧で ○ のページを選びます。表紙・審議・最終ページは「入力欄を開く」で書き込み、ほかは「原稿を入れる」を押します。
 
 ③ 紙面と「このページの部品」で内容を確かめます。写真と大見出しはドラッグで動かせます。緑は置ける場所、赤は置けない場所です。写真は「大・中・小・顔」で大きさを変えられます。
 
@@ -42,6 +45,212 @@ HELP_TEXT = """①「新しい号」を押し、号数と月などを入れま�
 色と札: 問・答・大見出しなど、部品の種類を色と右上の札で示します。？付きの札と点線の枠は推測された部品です。
 
 保存場所: 選んだ号フォルダの「原稿」「写真」「出力」に保存されます。完成した Word は「出力」に入ります。"""
+
+
+class FormEditor:
+    """書き込み式ページの入力欄を別窓に表示する。"""
+
+    MARKS = ("", "○", "●", "議長", "欠席")
+
+    def __init__(self, app: "App", page_no: int) -> None:
+        self.app = app
+        self.page_no = page_no
+        self.page = app.edition.pages[page_no - 1]
+        self.form = dict(self.page["form"])
+        self.widgets = {}
+        self.pending = None
+        self.window = tk.Toplevel(app.root)
+        self.window.title(self.page["label"] + "の入力欄")
+        self.window.geometry("760x720")
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
+        outer = ttk.Frame(self.window, padding=10)
+        outer.pack(fill="both", expand=True)
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        self.body = ttk.Frame(canvas)
+        self.body.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.body, anchor="nw")
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        if self.page["section"] == layout.SHINGI:
+            ttk.Label(self.body, text="本文の印： 【区分】予算／◎議案名／質疑／問　…／答　…",
+                      font=FONT).pack(anchor="w", pady=(0, 8))
+        for field in templates.FIELDS[self.page["section"]]:
+            if field.name in ("counts", "votes", "editorial_photos", "photo"):
+                continue
+            self._text_field(field)
+        if self.page["section"] == layout.COVER:
+            self._single_photo("photo", "表紙写真を選ぶ")
+        elif self.page["section"] == layout.SHINGI:
+            self._counts()
+            self._votes()
+        elif self.page["section"] == layout.LAST:
+            self._photos()
+            ttk.Button(self.body, text="自由欄へ原稿を入れる",
+                       command=self._load_free_source).pack(anchor="w", pady=4)
+        ttk.Button(self.body, text="閉じる", command=self.close).pack(anchor="e", pady=10)
+
+    def _label(self, field) -> None:
+        ttk.Label(self.body, text=field.label, font=(self.app.default_family, FONT_SIZE, "bold")).pack(anchor="w", pady=(8, 0))
+        detail = field.description + (("　例：" + field.example) if field.example else "")
+        ttk.Label(self.body, text=detail, font=SMALL_FONT, wraplength=700).pack(anchor="w")
+
+    def _text_field(self, field) -> None:
+        self._label(field)
+        value = str(self.form.get(field.name, "") or "")
+        if field.multiline:
+            widget = tk.Text(self.body, height=5, width=80, font=FONT, wrap="word")
+            widget.insert("1.0", value)
+            widget.bind("<KeyRelease>", lambda _e, name=field.name, item=widget:
+                        self._changed(name, item.get("1.0", "end-1c")))
+        else:
+            variable = tk.StringVar(value=value)
+            widget = ttk.Entry(self.body, textvariable=variable, width=85, font=FONT)
+            variable.trace_add("write", lambda *_a, name=field.name, var=variable:
+                               self._changed(name, var.get()))
+        widget.pack(fill="x", pady=(2, 3))
+        self.widgets[field.name] = widget
+
+    def _changed(self, name: str, value) -> None:
+        self.form[name] = value
+        if self.pending:
+            self.window.after_cancel(self.pending)
+        self.pending = self.window.after(350, self._save)
+
+    def _save(self) -> None:
+        self.pending = None
+        self.app.edition.set_form(self.page_no, self.form)
+        self.app._draw()
+
+    def _single_photo(self, name: str, label: str) -> None:
+        row = ttk.Frame(self.body)
+        row.pack(fill="x", pady=6)
+        ttk.Button(row, text=label, command=lambda: self._choose_photo(name)).pack(side="left")
+        self.photo_label = ttk.Label(row, text=Path(str(self.form.get(name, ""))).name, font=SMALL_FONT)
+        self.photo_label.pack(side="left", padx=8)
+
+    def _choose_photo(self, name: str) -> None:
+        path = filedialog.askopenfilename(parent=self.window, title="写真を選ぶ",
+                                          filetypes=[("画像", "*.png *.jpg *.jpeg")])
+        if path:
+            self.photo_label.configure(text=Path(path).name)
+            self._changed(name, path)
+
+    def _counts(self) -> None:
+        ttk.Label(self.body, text="議案等の種類と件数", font=(self.app.default_family, FONT_SIZE, "bold")).pack(anchor="w", pady=(8, 0))
+        text = "\n".join(f"{item.get('kind', '')}={item.get('count', 0)}" for item in self.form.get("counts", []))
+        widget = tk.Text(self.body, height=4, width=80, font=FONT)
+        widget.insert("1.0", text)
+        widget.pack(fill="x")
+        def changed(_event=None):
+            rows = []
+            for line in widget.get("1.0", "end-1c").splitlines():
+                if "=" in line:
+                    kind, count = line.split("=", 1)
+                    try:
+                        rows.append({"kind": kind.strip(), "count": int(count.strip())})
+                    except ValueError:
+                        pass
+            self._changed("counts", rows)
+        widget.bind("<KeyRelease>", changed)
+        ttk.Label(self.body, text="1行に「種類=件数」の形で入力します。例：条例関係=3", font=SMALL_FONT).pack(anchor="w")
+
+    def _votes(self) -> None:
+        ttk.Label(self.body, text="議案・発議案と賛否", font=(self.app.default_family, FONT_SIZE, "bold")).pack(anchor="w", pady=(10, 2))
+        self.vote_frame = ttk.Frame(self.body)
+        self.vote_frame.pack(fill="x")
+        ttk.Button(self.body, text="行を追加", command=self._add_vote).pack(anchor="w", pady=4)
+        self._draw_votes()
+
+    def _draw_votes(self) -> None:
+        for child in self.vote_frame.winfo_children():
+            child.destroy()
+        members = self.app.edition.settings.members
+        for row_no, row in enumerate(self.form.get("votes", [])):
+            line = ttk.Frame(self.vote_frame)
+            line.pack(fill="x", pady=2)
+            for key, width in (("kind", 10), ("title", 28), ("result", 10)):
+                var = tk.StringVar(value=row.get(key, ""))
+                ttk.Entry(line, textvariable=var, width=width).pack(side="left", padx=1)
+                var.trace_add("write", lambda *_a, n=row_no, k=key, v=var: self._vote_text(n, k, v.get()))
+            for member in members:
+                mark = row.setdefault("marks", {}).get(member, "")
+                ttk.Button(line, text=mark or "－", width=4,
+                           command=lambda n=row_no, m=member: self._cycle_mark(n, m)).pack(side="left", padx=1)
+            ttk.Button(line, text="削除", command=lambda n=row_no: self._delete_vote(n)).pack(side="left", padx=2)
+
+    def _vote_text(self, row_no: int, key: str, value: str) -> None:
+        self.form["votes"][row_no][key] = value
+        self._changed("votes", self.form["votes"])
+
+    def _cycle_mark(self, row_no: int, member: str) -> None:
+        current = self.form["votes"][row_no].setdefault("marks", {}).get(member, "")
+        mark = self.MARKS[(self.MARKS.index(current) + 1) % len(self.MARKS)] if current in self.MARKS else ""
+        self.form["votes"][row_no]["marks"][member] = mark
+        self._changed("votes", self.form["votes"])
+        self._draw_votes()
+
+    def _add_vote(self) -> None:
+        self.form.setdefault("votes", []).append({"kind": "", "title": "", "result": "", "marks": {}})
+        self._changed("votes", self.form["votes"])
+        self._draw_votes()
+
+    def _delete_vote(self, row_no: int) -> None:
+        del self.form["votes"][row_no]
+        self._changed("votes", self.form["votes"])
+        self._draw_votes()
+
+    def _photos(self) -> None:
+        ttk.Label(self.body, text="編集後記の写真（0～2枚）", font=(self.app.default_family, FONT_SIZE, "bold")).pack(anchor="w", pady=(8, 0))
+        ttk.Button(self.body, text="写真を追加", command=self._add_photo).pack(anchor="w", pady=3)
+        ttk.Button(self.body, text="写真をすべて外す", command=self._clear_photos).pack(anchor="w", pady=3)
+        self.photos_label = ttk.Label(self.body, text=self._photo_names(), font=SMALL_FONT)
+        self.photos_label.pack(anchor="w")
+
+    def _photo_names(self) -> str:
+        return "、".join(Path(item.get("path", "")).name for item in self.form.get("editorial_photos", [])) or "写真なし"
+
+    def _add_photo(self) -> None:
+        if len(self.form.setdefault("editorial_photos", [])) >= 2:
+            messagebox.showinfo("写真", "編集後記の写真は2枚までです。", parent=self.window)
+            return
+        path = filedialog.askopenfilename(parent=self.window, title="写真を選ぶ",
+                                          filetypes=[("画像", "*.png *.jpg *.jpeg")])
+        if path:
+            caption = simpledialog.askstring("写真の説明", "短い説明", parent=self.window) or ""
+            self.form["editorial_photos"].append({"path": path, "caption": caption})
+            self.photos_label.configure(text=self._photo_names())
+            self._changed("editorial_photos", self.form["editorial_photos"])
+
+    def _clear_photos(self) -> None:
+        self.form["editorial_photos"] = []
+        self.photos_label.configure(text=self._photo_names())
+        self._changed("editorial_photos", [])
+
+    def _load_free_source(self) -> None:
+        path = filedialog.askopenfilename(parent=self.window, title="自由欄の原稿を選ぶ",
+                                          filetypes=[("原稿", "*.docx *.doc *.txt")])
+        if not path:
+            return
+        try:
+            result = ingest.ingest(Path(path))
+        except (OSError, ValueError) as error:
+            messagebox.showerror("取り込めませんでした", str(error), parent=self.window)
+            return
+        text = "\n".join(part.text for part in result.parts if part.text)
+        widget = self.widgets.get("free")
+        if isinstance(widget, tk.Text):
+            widget.delete("1.0", "end")
+            widget.insert("1.0", text)
+        self._changed("free", text)
+
+    def close(self) -> None:
+        if self.pending:
+            self.window.after_cancel(self.pending)
+            self._save()
+        self.app.form_editor = None
+        self.window.destroy()
 
 
 class App:
@@ -65,6 +274,7 @@ class App:
         self.step = 1
         self.zoom_level = 1
         self.photo_images = []  # type: List[tk.PhotoImage]
+        self.form_editor = None  # type: Optional[FormEditor]
         self.default_family = tkfont.nametofont("TkDefaultFont").actual("family")
         self._build()
 
@@ -81,6 +291,7 @@ class App:
             label.pack(side="left")
             self.steps.append(label)
         ttk.Button(top, text="使い方", command=self._show_help).pack(side="right", padx=3)
+        ttk.Button(top, text="設定", command=self._settings).pack(side="right", padx=3)
         ttk.Button(top, text="新しい号", command=self.create_edition).pack(side="right", padx=3)
         ttk.Button(top, text="号を開く", command=self.open_edition).pack(side="right", padx=3)
 
@@ -165,6 +376,8 @@ class App:
         ttk.Button(actions, text="やり直す", command=self._redo).pack(
             side="left", fill="x", expand=True, padx=1)
         ttk.Button(right, text="原稿を入れる", command=self._assign).pack(fill="x", pady=(6, 2))
+        ttk.Button(right, text="入力欄を開く", command=self._open_form).pack(fill="x", pady=2)
+        ttk.Button(right, text="前の号から写す", command=self._copy_forms).pack(fill="x", pady=2)
         ttk.Button(right, text="確かめる", command=self._check).pack(fill="x", pady=2)
         ttk.Button(right, text="Word に書き出す", command=self._export).pack(fill="x", pady=2)
         self.status = ttk.Label(right, text="新しい号を作るか、号フォルダを開いてください。",
@@ -257,6 +470,64 @@ class App:
             self.page_no = selected[0] + 1
             self.selected_part = None
             self._draw()
+            if "form" in self.edition.pages[self.page_no - 1]:
+                self._open_form()
+
+    def _open_form(self) -> None:
+        if not self.edition or not self.page_no:
+            return
+        page = self.edition.pages[self.page_no - 1]
+        if "form" not in page:
+            messagebox.showinfo("入力欄", "このページは原稿ファイルを入れるページです。")
+            return
+        if self.form_editor:
+            if self.form_editor.page_no == self.page_no:
+                self.form_editor.window.lift()
+                return
+            self.form_editor.close()
+        self.form_editor = FormEditor(self, self.page_no)
+
+    def _copy_forms(self) -> None:
+        if not self.edition:
+            return
+        folder = filedialog.askdirectory(title="前の号のフォルダを選ぶ")
+        if not folder:
+            return
+        try:
+            self.edition.copy_forms_from(Path(folder))
+        except (OSError, ValueError, KeyError) as error:
+            messagebox.showerror("写せませんでした", str(error))
+            return
+        self._draw()
+
+    def _settings(self) -> None:
+        current = Settings.load()
+        window = tk.Toplevel(self.root)
+        window.title("設定")
+        window.transient(self.root)
+        frame = ttk.Frame(window, padding=12)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="議員名簿（賛否表の列順、1行に1人）", font=FONT).pack(anchor="w")
+        members = tk.Text(frame, width=45, height=12, font=FONT)
+        members.insert("1.0", "\n".join(current.members))
+        members.pack(fill="both", expand=True, pady=(2, 8))
+        ttk.Label(frame, text="議長の名前", font=FONT).pack(anchor="w")
+        chair = ttk.Entry(frame, width=45, font=FONT)
+        chair.insert(0, current.chair)
+        chair.pack(fill="x", pady=(2, 8))
+        ttk.Label(frame, text="委員会名", font=FONT).pack(anchor="w")
+        committee = ttk.Entry(frame, width=60, font=FONT)
+        committee.insert(0, current.committee)
+        committee.pack(fill="x", pady=(2, 8))
+        def save_settings():
+            value = Settings([line.strip() for line in members.get("1.0", "end-1c").splitlines() if line.strip()],
+                             chair.get().strip(), committee.get().strip())
+            value.save()
+            if self.edition:
+                self.edition.settings = value
+                self._draw()
+            window.destroy()
+        ttk.Button(frame, text="保存", command=save_settings).pack(side="right")
 
     def _set_canvas_size(self) -> None:
         self.canvas.configure(width=round(self.PAPER_W * self.scale),
@@ -307,6 +578,41 @@ class App:
                 y = y1 + 2 + row * advance + advance / 2
                 self.canvas.create_text(x, y, text=cell, font=font, anchor="center")
 
+    def _draw_horizontal(self, item: dx.TextBox) -> None:
+        x1, y1, x2, y2 = self._paper_box(item.box)
+        anchor = {"左": "nw", "中央": "n", "右": "ne"}.get(item.align, "nw")
+        x = {"左": x1 + 2, "中央": (x1 + x2) / 2, "右": x2 - 2}.get(item.align, x1 + 2)
+        font = (self.default_family, -max(6, round(item.pt * self.scale)),
+                "bold" if item.font == dx.GOTHIC else "normal")
+        self.canvas.create_text(x, y1 + 2, text="\n".join(item.lines), anchor=anchor,
+                                justify={"左": "left", "中央": "center", "右": "right"}.get(item.align, "left"),
+                                font=font, width=max(10, x2 - x1 - 4))
+        if item.border:
+            self.canvas.create_rectangle(x1, y1, x2, y2, outline="#333333")
+
+    def _draw_table(self, item: dx.Table) -> None:
+        x1, y1, x2, y2 = self._paper_box(item.box)
+        rows = max(1, len(item.rows))
+        row_h = (y2 - y1) / rows
+        total = sum(item.column_widths) or 1
+        x = x1
+        for width in item.column_widths:
+            self.canvas.create_line(x, y1, x, y2, fill="#333333")
+            x += (x2 - x1) * width / total
+        self.canvas.create_line(x2, y1, x2, y2, fill="#333333")
+        for row_no, values in enumerate(item.rows):
+            top = y1 + row_no * row_h
+            self.canvas.create_line(x1, top, x2, top, fill="#333333")
+            x = x1
+            for index, width in enumerate(item.column_widths):
+                cell_w = (x2 - x1) * width / total
+                text = values[index] if index < len(values) else ""
+                self.canvas.create_text(x + cell_w / 2, top + row_h / 2, text=text,
+                                        font=(self.default_family, -max(5, round(item.pt * self.scale))),
+                                        width=max(4, cell_w - 2))
+                x += cell_w
+        self.canvas.create_line(x1, y2, x2, y2, fill="#333333")
+
     @staticmethod
     def _boxes_overlap(first, second) -> bool:
         return not (first.x + first.w <= second.x or second.x + second.w <= first.x
@@ -350,7 +656,12 @@ class App:
                                          fill=COLORS.get(kind, "#f5f5f5"),
                                          outline="#a0a0a0")
         if isinstance(item, dx.TextBox):
-            self._draw_vertical(item)
+            if item.vertical:
+                self._draw_vertical(item)
+            else:
+                self._draw_horizontal(item)
+        elif isinstance(item, dx.Table):
+            self._draw_table(item)
         elif isinstance(item, dx.Picture):
             placement = next((p for p in result.placements
                               if p.part.kind == "写真" and self._boxes_overlap(
@@ -425,7 +736,7 @@ class App:
                 font=FONT, justify="center", width=self.PAPER_W * self.scale - 30)
             return
         page = self.edition.pages[self.page_no - 1]
-        if not page["source"]:
+        if not page["source"] and "form" not in page:
             self._refresh_parts([])
             self.canvas.create_text(self.PAPER_W * self.scale / 2,
                                     self.PAPER_H * self.scale / 2,
@@ -443,7 +754,7 @@ class App:
                                          fill=COLORS.get(placement.part.kind, "#eeeeee"),
                                          outline="")
         for item in result.page.items:
-            if isinstance(item, (dx.TextBox, dx.Picture, dx.Placeholder)):
+            if isinstance(item, (dx.TextBox, dx.Picture, dx.Placeholder, dx.Table)):
                 self._draw_page_item(item, result)
         self._draw_part_marks(parts, result)
         self._refresh_parts(parts)

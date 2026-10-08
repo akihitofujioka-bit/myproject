@@ -21,6 +21,32 @@ A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 V = "urn:schemas-microsoft-com:vml"
 
+SAMPLE_MEMBERS = [f"見本{number}郎" for number in "一二三四五六七八九十"]
+
+
+def sample_forms() -> dict:
+    """3つの書き込み式ページで使う架空の見本を返す。"""
+    marks = {name: ("議長" if index == 0 else "○")
+             for index, name in enumerate(SAMPLE_MEMBERS)}
+    return {
+        "表紙": {
+            "photo_caption": "見本行事の様子",
+            "feature_titles": "暮らしを考える特集\n地域の取り組み",
+        },
+        "審議したこと・決まったこと": {
+            "period": "Ｒ８．３．４～３．１１",
+            "counts": [{"kind": "報告", "count": 3}, {"kind": "条例関係", "count": 2},
+                       {"kind": "予算関係", "count": 4}],
+            "body": "【区分】予算\n◎見本条例\n質疑\n問　見本事業の内容を伺います。\n答　計画に沿って進めます。",
+            "votes": [{"kind": "条例", "title": "見本条例", "result": "可決", "marks": marks}],
+        },
+        "最終ページ": {
+            "editorial": "今号も多くの方の協力で発行できました。",
+            "free": "【見本のお知らせ】\n地域の話題と写真を募集しています。",
+            "next_meeting": "次の定例会は６月４日（木）午前１０時に開会の予定です。",
+        },
+    }
+
 
 def _png(width: int = 8, height: int = 8) -> bytes:
     """外部部品なしで、青一色の小さな PNG を作る。"""

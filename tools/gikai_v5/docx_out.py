@@ -57,7 +57,7 @@ def twip(pt: float) -> int:
 
 @dataclass
 class TextBox:
-    """縦書きの文字の枠。lines は 1 行ずつ（改行はこちらで入れる）。"""
+    """文字の枠。lines は 1 行ずつ（改行はこちらで入れる）。"""
     box: Box
     lines: list[str]
     font: str = MINCHO
@@ -66,6 +66,22 @@ class TextBox:
     border: bool = False              # 囲み
     center: bool = False              # 枠の中で行のかたまりを左右の真ん中に
     name: str = "text"
+    vertical: bool = True             # 偽なら横書き
+    align: str = "左"                 # 横書きの左・中央・右
+    bold: bool = False                # 太字
+
+
+@dataclass
+class Table:
+    """ページに固定する横書きの表。列幅は pt、rows は行ごとの文字。"""
+    box: Box
+    column_widths: list[float]
+    rows: list[list[str]]
+    pt: float = 8.0
+    font: str = MINCHO
+    border: bool = True
+    name: str = "table"
+    cell_pts: object = None             # 行×列の字の大きさ。無ければ pt
 
 
 @dataclass
@@ -105,18 +121,22 @@ class Page:
 # ---------------------------------------------------------------- XML
 
 
-def _rpr(font: str, pt: float) -> str:
+def _rpr(font: str, pt: float, bold: bool = False) -> str:
     f = escape(font, {'"': "&quot;"})
     return (f'<w:rPr><w:rFonts w:ascii="{f}" w:eastAsia="{f}" w:hAnsi="{f}"/>'
-            f'<w:sz w:val="{round(pt * 2)}"/><w:szCs w:val="{round(pt * 2)}"/></w:rPr>')
+            f'<w:sz w:val="{round(pt * 2)}"/><w:szCs w:val="{round(pt * 2)}"/>'
+            f'{"<w:b/>" if bold else ""}</w:rPr>')
 
 
-def _line_runs(line: str, font: str, pt: float, ids: list[int]) -> list[str]:
+def _line_runs(line: str, font: str, pt: float, ids: list[int], *,
+               vertical: bool = True, bold: bool = False) -> list[str]:
     """1 行を run に分ける。2〜3 桁の半角数字は縦中横の run にする。
 
     縦中横（`w:eastAsianLayout w:combine="1"`）は文書の中で一意の id が要る（gikai_template §11）。
     """
-    rpr = _rpr(font, pt)
+    rpr = _rpr(font, pt, bold)
+    if not vertical:
+        return [f'<w:r>{rpr}<w:t xml:space="preserve">{escape(line)}</w:t></w:r>']
     out, pos = [], 0
     for m in TATECHUYOKO.finditer(line):
         if m.start() > pos:
@@ -131,21 +151,51 @@ def _line_runs(line: str, font: str, pt: float, ids: list[int]) -> list[str]:
 
 
 def _text_para(t: TextBox, ids: list[int]) -> str:
-    rpr = _rpr(t.font, t.pt)
+    rpr = _rpr(t.font, t.pt, t.bold)
     runs = []
     for i, line in enumerate(t.lines):
         if i:
             runs.append(f"<w:r>{rpr}<w:br/></w:r>")
-        runs.extend(_line_runs(line, t.font, t.pt, ids))
+        runs.extend(_line_runs(line, t.font, t.pt, ids, vertical=t.vertical, bold=t.bold))
     # 縦書きの枠では「行送り」が左右の間隔になる。字の大きさより小さくしない
     pitch = max(t.pitch_pt, t.pt)
     # autoSpaceDE/DN: 日本語と英字・数字のあいだに Word が自動で入れるすき間を止める。
     # 入れられると行が計算より長くなり、最後の字が次の行へ送られる（段階 1 で確認）
+    align = {"左": "left", "中央": "center", "右": "right"}.get(t.align, "left")
     return ('<w:p><w:pPr><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/><w:snapToGrid w:val="0"/>'
             f'<w:spacing w:before="0" w:after="0" w:line="{twip(pitch)}" w:lineRule="exact"/>'
             '<w:ind w:left="0" w:right="0" w:firstLine="0"/>'
-            '<w:jc w:val="left"/></w:pPr>'
+            f'<w:jc w:val="{align}"/></w:pPr>'
             f'{"".join(runs)}{"" if runs else f"<w:r>{rpr}</w:r>"}</w:p>')
+
+
+def _table_xml(table: Table) -> str:
+    """固定幅の Word 表を作る。セル内でも自動の和欧文間隔を止める。"""
+    widths = table.column_widths or [table.box.w]
+    grid = "".join(f'<w:gridCol w:w="{twip(width)}"/>' for width in widths)
+    border = "single" if table.border else "nil"
+    borders = "".join(
+        f'<w:{side} w:val="{border}" w:sz="4" w:space="0" w:color="000000"/>'
+        for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    rows = []
+    for row_index, values in enumerate(table.rows):
+        cells = []
+        for index, width in enumerate(widths):
+            value = values[index] if index < len(values) else ""
+            pt = table.pt
+            if table.cell_pts and row_index < len(table.cell_pts) and index < len(table.cell_pts[row_index]):
+                pt = table.cell_pts[row_index][index]
+            rpr = _rpr(table.font, pt)
+            para = ('<w:p><w:pPr><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/>'
+                    '<w:snapToGrid w:val="0"/><w:spacing w:before="0" w:after="0"/>'
+                    '<w:jc w:val="center"/></w:pPr>'
+                    f'<w:r>{rpr}<w:t xml:space="preserve">{escape(value)}</w:t></w:r></w:p>')
+            cells.append(f'<w:tc><w:tcPr><w:tcW w:w="{twip(width)}" w:type="dxa"/>'
+                         f'<w:vAlign w:val="center"/></w:tcPr>{para}</w:tc>')
+        rows.append('<w:tr>' + "".join(cells) + '</w:tr>')
+    return ('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>'
+            '<w:tblLayout w:type="fixed"/><w:tblBorders>' + borders + '</w:tblBorders>'
+            '</w:tblPr><w:tblGrid>' + grid + '</w:tblGrid>' + "".join(rows) + '</w:tbl>')
 
 
 def _anchor(idx: int, box: Box, graphic: str, *, behind: bool = False, name: str = "") -> str:
@@ -245,13 +295,21 @@ def _picture_xml(item: Picture, idx: int, rel_id: str) -> tuple[str, int]:
 
 def _item_xml(item, idx: int, ids: list[int], rel_id: str = "") -> tuple[str, int]:
     if isinstance(item, TextBox):
-        # 枠は 1 行の長さ（＝高さ）を少し長くとる。上の端は動かさない
-        box = Box(item.box.x, item.box.y, item.box.w, item.box.h + SLACK_PT)
+        # 縦書きは 1 行の長さ（＝高さ）を少し長くとる。上の端は動かさない
+        box = (Box(item.box.x, item.box.y, item.box.w, item.box.h + SLACK_PT)
+               if item.vertical else item.box)
         line = ('<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>'
                 if item.border else "<a:ln><a:noFill/></a:ln>")
-        body = ('<wps:bodyPr rot="0" vert="eaVert" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" '
+        vert = ' vert="eaVert"' if item.vertical else ""
+        body = (f'<wps:bodyPr rot="0"{vert} wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" '
                 f'anchor="{"ctr" if item.center else "t"}" anchorCtr="0"><a:noAutofit/></wps:bodyPr>')
         return _anchor(idx, box, _shape(box, line=line, inner=_text_para(item, ids), body=body), name=item.name), 1
+    if isinstance(item, Table):
+        line = '<a:ln><a:noFill/></a:ln>'
+        body = '<wps:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"><a:noAutofit/></wps:bodyPr>'
+        return (_anchor(idx, item.box,
+                        _shape(item.box, line=line, inner=_table_xml(item), body=body),
+                        name=item.name), 1)
     if isinstance(item, Placeholder):
         line = ('<a:ln w="9525"><a:solidFill><a:srgbClr val="1E88E5"/></a:solidFill>'
                 '<a:prstDash val="dash"/></a:ln>')

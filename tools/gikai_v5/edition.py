@@ -16,6 +16,8 @@ import compose as C
 import docx_out as dx
 import ingest as I
 import layout
+import templates
+from settings import Settings
 from grid import Geometry, Rect, to_box
 
 
@@ -35,7 +37,10 @@ def next_hint(current: Optional["Edition"]) -> str:
     """号の状態から、利用者が次にすることを短い一文で返す。"""
     if current is None:
         return "「新しい号」を押して、号数と月を入れてください。"
-    if any(page["state"] == "未入力" for page in current.pages):
+    unfilled = next((page for page in current.pages if page["state"] == "未入力"), None)
+    if unfilled:
+        if "form" in unfilled:
+            return "左の一覧で ○ の書き込み式ページを選び、右の入力欄へ書いてください。"
         return "左の一覧で ○ のページを選び「原稿を入れる」を押してください。"
     if any(page["state"] == "あふれ" for page in current.pages):
         return "赤いページの写真を小さくするか、種類を確かめてください。"
@@ -53,6 +58,7 @@ class Edition:
         self.history = data.get("history", [])
         self.history_index = data.get("history_index", len(self.history))
         self.geometry = Geometry()
+        self.settings = Settings.load()
         self._ingest_cache = {}
 
     @classmethod
@@ -79,9 +85,12 @@ class Edition:
 
     @staticmethod
     def _new_page(slot: layout.PageSlot) -> dict:
-        return {"no": slot.no, "section": slot.section, "index": slot.index,
+        page = {"no": slot.no, "section": slot.section, "index": slot.index,
                 "label": slot.label, "source": None, "overrides": {},
                 "state": "未入力"}
+        if slot.section in templates.FORM_SECTIONS:
+            page["form"] = templates.default_form(slot.section)
+        return page
 
     def save(self) -> None:
         """号情報と紙面を JSON に保存する。履歴も紙面.json に含める。"""
@@ -183,13 +192,16 @@ class Edition:
     def parts(self, page_no: int) -> List[I.Part]:
         """画面表示用に、人が直した種類を反映した部品を返す。"""
         page = self._page(page_no)
-        if not page["source"]:
+        if "form" in page or not page["source"]:
             return []
         result = self._ingest(page["source"])
         return C.apply_kind_overrides(result.parts, self._overrides(page))
 
     def _compose_page(self, page_no: int) -> C.PageResult:
         page = self._page(page_no)
+        if "form" in page:
+            return templates.build(page["section"], page["form"], self.issue,
+                                   self.plan, self.settings, self.geometry)
         result = self._ingest(page["source"])
         return C.compose_page(page["section"], result.parts, result.images,
                               self.geometry, self._overrides(page))
@@ -197,12 +209,54 @@ class Edition:
     def compose(self, page_no: int) -> C.PageResult:
         """指定ページを組み、現在の状態を更新する。"""
         page = self._page(page_no)
+        if "form" in page:
+            result = self._compose_page(page_no)
+            page["state"] = "あふれ" if result.overflow_lines else (
+                "できた" if self._form_has_input(page) else "未入力")
+            self.save()
+            return result
         if not page["source"]:
             return C.compose_page(page["section"], [], {}, self.geometry)
         result = self._compose_page(page_no)
         page["state"] = "あふれ" if result.overflow_lines else "できた"
         self.save()
         return result
+
+    @staticmethod
+    def _form_has_input(page: dict) -> bool:
+        """既定の決まり文句以外に、利用者が入力した欄があるか。"""
+        current = page.get("form", {})
+        default = templates.default_form(page["section"])
+        return any(value not in ("", [], None) and value != default.get(key)
+                   for key, value in current.items())
+
+    def set_form(self, page_no: int, form: dict) -> None:
+        """書き込み式ページの入力を保存し、元に戻す履歴へ記録する。"""
+        page = self._page(page_no)
+        if "form" not in page:
+            raise ValueError("このページは書き込み式ではありません")
+        before = self._state()
+        values = templates.default_form(page["section"])
+        values.update(copy.deepcopy(form))
+        page["form"] = values
+        result = self._compose_page(page_no)
+        page["state"] = "あふれ" if result.overflow_lines else (
+            "できた" if self._form_has_input(page) else "未入力")
+        self._record(f"{page_no}ページの入力欄を直す", before)
+
+    def copy_forms_from(self, other_folder: Path) -> None:
+        """前号の書き込み欄を写し、号ごとの内容だけ空に戻す。"""
+        other = Edition.open(other_folder)
+        before = self._state()
+        old = {(page["section"], page["index"]): page for page in other.pages}
+        for page in self.pages:
+            if "form" not in page:
+                continue
+            previous = old.get((page["section"], page["index"]))
+            if previous and "form" in previous:
+                page["form"] = templates.copied_form(page["section"], previous["form"])
+                page["state"] = "未入力"
+        self._record("前の号から書き込み欄を写す", before)
 
     def set_kind(self, page_no: int, part_no: int, kind: str) -> None:
         """部品の種類を人の判断で直し、操作履歴へ記録する。"""
@@ -305,7 +359,11 @@ class Edition:
 
     def _update_page_state(self, page_no: int) -> None:
         page = self._page(page_no)
-        if page["source"]:
+        if "form" in page:
+            result = self._compose_page(page_no)
+            page["state"] = "あふれ" if result.overflow_lines else (
+                "できた" if self._form_has_input(page) else "未入力")
+        elif page["source"]:
             page["state"] = "あふれ" if self._compose_page(page_no).overflow_lines else "できた"
 
     def change_issue(self, **changes) -> None:
@@ -327,6 +385,8 @@ class Edition:
                 page["source"] = previous["source"]
                 page["overrides"] = previous["overrides"]
                 page["state"] = previous["state"]
+                if "form" in previous and "form" in page:
+                    page["form"] = previous["form"]
             self.pages.append(page)
         self._record("号情報を変える", before)
 
@@ -354,6 +414,14 @@ class Edition:
         messages.extend("・" + n for n in self.plan.notes)
         for page in self.pages:
             prefix = f"{page['no']}ページ（{page['label']}）"
+            if "form" in page:
+                result = self.compose(page["no"])
+                if page["state"] == "未入力":
+                    messages.append(prefix + ": 入力欄が未入力です")
+                if result.overflow_lines:
+                    messages.append(prefix + f": {result.overflow_lines}行あふれています")
+                messages.extend(prefix + ": " + w for w in result.warnings)
+                continue
             if not page["source"]:
                 messages.append(prefix + ": 原稿が未入力です")
                 continue
@@ -376,6 +444,9 @@ class Edition:
         pages = []
         written_photos = []
         for page_data in self.pages:
+            if "form" in page_data:
+                pages.append(self.compose(page_data["no"]).page)
+                continue
             if not page_data["source"]:
                 box = to_box(self.geometry, Rect(0, 0, 1, 10))
                 pages.append(dx.Page([dx.TextBox(box, [page_data["label"]],
