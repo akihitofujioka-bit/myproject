@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Dict, List, Optional, Tuple
 
 import docx_out as dx
+import chat
 import edition
 import ingest
 import layout
@@ -33,15 +34,17 @@ LABELS = {"質問": "問", "答弁": "答"}
 KIND_BUTTONS = ("大見出し", "中見出し", "質問", "答弁", "本文", "写真説明", "議案")
 HELP_TEXT = """①「新しい号」を押し、号数と月などを入れます。前の号を続けるときは「号を開く」を押します。
 
-② 左のページ一覧で ○ のページを選びます。表紙・審議・最終ページは「入力欄を開く」で書き込みます。ほかは「原稿を入れる」、または「書いて直す」でツールの中に原稿を書きます。
+② 左のページ一覧で ○ のページを選びます。表紙・審議・最終ページは、右の「ページ」タブの「入力欄を開く」で書き込みます。ほかは、同じタブの「原稿を入れる」、または「書いて直す」でツールの中に原稿を書きます。
 
 「書いて直す」では、大見出し・中見出し・問・答・本文・写真のボタンで今の行へ印を付けます。入力中も紙面、あふれ、余りが変わります。保存先は号フォルダの「事務局原稿」です。原稿ファイルを入れたページも、元ファイルを書き換えずに書き直せます。
 
-③ 紙面と「このページの部品」で内容を確かめます。写真と大見出しはドラッグで動かせます。緑は置ける場所、赤は置けない場所です。写真は「大・中・小・顔」で大きさを変えられます。
+③ 紙面と、右の「部品」タブの「このページの部品」で内容を確かめます。写真と大見出しはドラッグで動かせます。緑は置ける場所、赤は置けない場所です。写真は同じタブの「大・中・小・顔」で大きさを変えられます。
 
-④ 種類が違う部品を選び、「種類を直す」で正しい種類を押します。「元に戻す」で直前の操作を戻し、「やり直す」で戻す前の状態へ進めます。
+④ 種類が違う部品を選び、右の「部品」タブの「種類を直す」で正しい種類を押します。タブの下の「元に戻す」で直前の操作を戻し、「やり直す」で戻す前の状態へ進めます。
 
-⑤「確かめる」で未入力やあふれを確認し、「Word に書き出す」を押します。
+⑤ 右側のタブの下にある「確かめる」で未入力やあふれを確認し、「Word に書き出す」を押します。
+
+右の「チャット」タブには「次のページ」「写真2を小さく」「3番を答弁に」などと入力できます。内容を読み取ると「こうします」と表示します。[実行]を押すまでは紙面を変えません。読み取れないときは、推測せず言い方の例を表示します。
 
 印の意味: ○ は原稿が未入力、✓ はできたページ、！ は紙面からあふれたページです。部品の ✓ は確かな判断、？ は確認が必要な推測です。
 
@@ -275,10 +278,11 @@ class App:
         self.drag = None
         self.shadow = None
         self.step = 1
-        self.zoom_level = 1
+        self.zoom_level = 0
         self.photo_images = []  # type: List[tk.PhotoImage]
         self.form_editor = None  # type: Optional[FormEditor]
         self.writer_editor = None  # type: Optional[writer.WriterEditor]
+        self.pending_chat = None  # type: Optional[chat.Interpretation]
         self.default_family = tkfont.nametofont("TkDefaultFont").actual("family")
         self._build()
 
@@ -287,6 +291,8 @@ class App:
         return self.ZOOMS[self.zoom_level]
 
     def _build(self) -> None:
+        self.root.geometry("1366x740")
+        self.root.minsize(1024, 640)
         self.steps = []
         top = ttk.Frame(self.root, padding=6)
         top.pack(fill="x")
@@ -310,7 +316,7 @@ class App:
         body.pack(fill="both", expand=True, padx=6, pady=(0, 6))
         left = ttk.Frame(body, width=240, padding=5)
         center = ttk.Frame(body, padding=5)
-        right = ttk.Frame(body, width=300, padding=5)
+        right = ttk.Frame(body, width=380, padding=5)
         body.add(left, weight=1)
         body.add(center, weight=3)
         body.add(right, weight=2)
@@ -343,18 +349,34 @@ class App:
             tk.Label(legend, text=LABELS.get(kind, kind), bg=COLORS[kind],
                      font=(self.default_family, 8), padx=2).pack(side="left", padx=1)
 
-        ttk.Label(right, text="このページの部品", font=FONT).pack(anchor="w")
-        self.part_list = tk.Listbox(right, font=SMALL_FONT, width=38, height=12,
-                                    exportselection=False)
-        self.part_list.pack(fill="both", expand=True, pady=(3, 5))
-        self.part_list.bind("<<ListboxSelect>>", self._select_part_from_list)
-        ttk.Label(right, text="選んだ部品", font=FONT).pack(anchor="w")
-        self.selection = ttk.Label(right, text="なし", font=SMALL_FONT,
-                                   wraplength=285, justify="left")
-        self.selection.pack(fill="x", pady=(3, 6))
+        self.right_notebook = ttk.Notebook(right)
+        self.right_notebook.pack(fill="both", expand=True)
+        self.parts_tab = ttk.Frame(self.right_notebook, padding=5)
+        self.chat_tab = ttk.Frame(self.right_notebook, padding=5)
+        self.page_tab = ttk.Frame(self.right_notebook, padding=5)
+        self.right_notebook.add(self.parts_tab, text="部品")
+        self.right_notebook.add(self.chat_tab, text="チャット")
+        self.right_notebook.add(self.page_tab, text="ページ")
 
-        ttk.Label(right, text="種類を直す", font=SMALL_FONT).pack(anchor="w")
-        kinds = ttk.Frame(right)
+        ttk.Label(self.parts_tab, text="このページの部品", font=FONT).pack(anchor="w")
+        self.part_list = tk.Listbox(self.parts_tab, font=SMALL_FONT, width=38, height=7,
+                                    exportselection=False)
+        self.part_list.pack(fill="x", pady=(3, 5))
+        self.part_list.bind("<<ListboxSelect>>", self._select_part_from_list)
+        ttk.Label(self.parts_tab, text="選んだ部品（全文と理由）", font=FONT).pack(anchor="w")
+        selection_frame = ttk.Frame(self.parts_tab)
+        selection_frame.pack(fill="both", expand=True, pady=(3, 6))
+        self.selection = tk.Text(selection_frame, height=5, width=36, font=SMALL_FONT,
+                                 wrap="word", state="disabled")
+        selection_scroll = ttk.Scrollbar(selection_frame, orient="vertical",
+                                         command=self.selection.yview)
+        self.selection.configure(yscrollcommand=selection_scroll.set)
+        self.selection.pack(side="left", fill="both", expand=True)
+        selection_scroll.pack(side="right", fill="y")
+        self._set_selection_text("なし")
+
+        ttk.Label(self.parts_tab, text="種類を直す", font=SMALL_FONT).pack(anchor="w")
+        kinds = ttk.Frame(self.parts_tab)
         kinds.pack(fill="x", pady=(2, 6))
         for number, kind in enumerate(KIND_BUTTONS):
             ttk.Button(kinds, text=kind,
@@ -364,32 +386,152 @@ class App:
         for column in range(3):
             kinds.columnconfigure(column, weight=1)
 
-        ttk.Label(right, text="写真の大きさ", font=SMALL_FONT).pack(anchor="w")
-        size_frame = ttk.Frame(right)
+        ttk.Label(self.parts_tab, text="写真の大きさ", font=SMALL_FONT).pack(anchor="w")
+        size_frame = ttk.Frame(self.parts_tab)
         size_frame.pack(fill="x", pady=(2, 0))
         for size in ("大", "中", "小", "顔"):
             ttk.Button(size_frame, text=size,
                        command=lambda value=size: self._resize(value)).pack(side="left", padx=2)
-        ttk.Button(right, text="写真を外す", command=self._remove).pack(fill="x", pady=(6, 2))
-        ttk.Button(right, text="写真を戻す", command=self._restore).pack(fill="x", pady=2)
-        ttk.Separator(right).pack(fill="x", pady=6)
+        photo_actions = ttk.Frame(self.parts_tab)
+        photo_actions.pack(fill="x", pady=(6, 0))
+        ttk.Button(photo_actions, text="写真を外す", command=self._remove).pack(
+            side="left", fill="x", expand=True, padx=(0, 1))
+        ttk.Button(photo_actions, text="写真を戻す", command=self._restore).pack(
+            side="left", fill="x", expand=True, padx=(1, 0))
+
+        ttk.Button(self.page_tab, text="原稿を入れる", command=self._assign).pack(
+            fill="x", pady=(2, 4))
+        ttk.Button(self.page_tab, text="書いて直す", command=self._open_writer).pack(
+            fill="x", pady=4)
+        ttk.Button(self.page_tab, text="入力欄を開く", command=self._open_form).pack(
+            fill="x", pady=4)
+        ttk.Button(self.page_tab, text="前の号から写す", command=self._copy_forms).pack(
+            fill="x", pady=4)
+
         actions = ttk.Frame(right)
-        actions.pack(fill="x")
-        ttk.Button(actions, text="元に戻す", command=self._undo).pack(
-            side="left", fill="x", expand=True, padx=1)
-        ttk.Button(actions, text="やり直す", command=self._redo).pack(
-            side="left", fill="x", expand=True, padx=1)
-        ttk.Button(right, text="原稿を入れる", command=self._assign).pack(fill="x", pady=(6, 2))
-        ttk.Button(right, text="書いて直す", command=self._open_writer).pack(fill="x", pady=2)
-        ttk.Button(right, text="入力欄を開く", command=self._open_form).pack(fill="x", pady=2)
-        ttk.Button(right, text="前の号から写す", command=self._copy_forms).pack(fill="x", pady=2)
-        ttk.Button(right, text="確かめる", command=self._check).pack(fill="x", pady=2)
-        ttk.Button(right, text="Word に書き出す", command=self._export).pack(fill="x", pady=2)
-        self.status = ttk.Label(right, text="新しい号を作るか、号フォルダを開いてください。",
-                                font=SMALL_FONT, wraplength=285)
-        self.status.pack(fill="x", pady=8)
+        actions.pack(fill="x", pady=(5, 0))
+        ttk.Button(actions, text="元に戻す", command=self._undo).grid(
+            row=0, column=0, sticky="ew", padx=1, pady=1)
+        ttk.Button(actions, text="やり直す", command=self._redo).grid(
+            row=0, column=1, sticky="ew", padx=1, pady=1)
+        ttk.Button(actions, text="確かめる", command=self._check).grid(
+            row=1, column=0, sticky="ew", padx=1, pady=1)
+        ttk.Button(actions, text="Word に書き出す", command=self._export).grid(
+            row=1, column=1, sticky="ew", padx=1, pady=1)
+        actions.columnconfigure(0, weight=1)
+        actions.columnconfigure(1, weight=1)
+        self.status = tk.Label(right, text="新しい号を作るか、号フォルダを開いてください。",
+                               font=SMALL_FONT, anchor="nw", justify="left", height=2,
+                               wraplength=360)
+        self.status.pack(fill="x", pady=(3, 0))
+
+        chat_frame = self.chat_tab
+        self.chat_history = tk.Text(chat_frame, height=5, width=36, font=SMALL_FONT,
+                                    wrap="word", state="disabled")
+        self.chat_history.pack(fill="both", expand=True)
+        self.chat_confirm = ttk.Label(chat_frame, text="", font=SMALL_FONT,
+                                      wraplength=340, justify="left")
+        self.chat_confirm.pack(fill="x", pady=(4, 2))
+        confirm_buttons = ttk.Frame(chat_frame)
+        confirm_buttons.pack(fill="x")
+        self.chat_execute = ttk.Button(confirm_buttons, text="実行",
+                                       command=self._chat_execute, state="disabled")
+        self.chat_execute.pack(side="left", fill="x", expand=True, padx=1)
+        self.chat_cancel = ttk.Button(confirm_buttons, text="やめる",
+                                      command=self._chat_cancel, state="disabled")
+        self.chat_cancel.pack(side="left", fill="x", expand=True, padx=1)
+        entry_row = ttk.Frame(chat_frame)
+        entry_row.pack(fill="x", pady=(4, 2))
+        self.chat_input = ttk.Entry(entry_row, font=FONT)
+        self.chat_input.pack(side="left", fill="x", expand=True)
+        self.chat_input.bind("<Return>", self._chat_send)
+        ttk.Button(entry_row, text="送信", command=self._chat_send).pack(side="left", padx=(3, 0))
+        quick = ttk.Frame(chat_frame)
+        quick.pack(fill="x")
+        for number, phrase in enumerate(("次のページ", "写真を小さく", "元に戻して",
+                                         "あふれているページは？", "確かめて")):
+            ttk.Button(quick, text=phrase,
+                       command=lambda value=phrase: self._chat_send(text=value)).grid(
+                           row=number // 2, column=number % 2,
+                           sticky="ew", padx=1, pady=1)
+        for column in range(2):
+            quick.columnconfigure(column, weight=1)
+        self._chat_add("ツール", "決まった言い方で操作できます。「使い方」で一覧を表示します。")
         self._show_step()
         self._set_canvas_size()
+        self._draw()
+
+    def _chat_add(self, speaker: str, text: str) -> None:
+        """チャット履歴へ発言を追加する。"""
+        self.chat_history.configure(state="normal")
+        self.chat_history.insert("end", f"{speaker}: {text}\n")
+        self.chat_history.see("end")
+        self.chat_history.configure(state="disabled")
+
+    def _set_selection_text(self, text: str) -> None:
+        """選んだ部品の全文を、編集できない欄へ表示する。"""
+        self.selection.configure(state="normal")
+        self.selection.delete("1.0", "end")
+        self.selection.insert("1.0", text)
+        self.selection.configure(state="disabled")
+
+    def _chat_send(self, _event=None, text: Optional[str] = None) -> None:
+        """入力を読み取り、操作なら確認待ちにする。"""
+        value = text if text is not None else self.chat_input.get()
+        value = value.strip()
+        if not value:
+            return
+        self.chat_input.delete(0, "end")
+        self._chat_add("あなた", value)
+        result = chat.interpret(value, self.edition, self.page_no, self.selected_part)
+        self.pending_chat = None
+        self.chat_execute.configure(state="disabled")
+        self.chat_cancel.configure(state="disabled")
+        if not result.understood:
+            examples = "／".join(result.examples)
+            self.chat_confirm.configure(text="")
+            self._chat_add("ツール", result.reason + "\n例: " + examples)
+        elif not result.operations:
+            self.chat_confirm.configure(text="")
+            self._chat_add("ツール", result.description)
+        else:
+            self.pending_chat = result
+            self.chat_confirm.configure(text="こうします：" + result.description)
+            self.chat_execute.configure(state="normal")
+            self.chat_cancel.configure(state="normal")
+
+    def _chat_cancel(self) -> None:
+        """確認中の操作を取り消す。"""
+        self.pending_chat = None
+        self.chat_confirm.configure(text="")
+        self.chat_execute.configure(state="disabled")
+        self.chat_cancel.configure(state="disabled")
+        self._chat_add("ツール", "操作をやめました。")
+
+    def _chat_execute(self) -> None:
+        """確認済みのチャット操作を Edition へ渡す。"""
+        if self.pending_chat is None or self.edition is None:
+            return
+        pending = self.pending_chat
+        result = chat.execute(pending, self.edition)
+        page_operation = next((op for op in pending.operations if op.kind == "page"), None)
+        if any(op.kind == "check" for op in pending.operations):
+            self.step = 4
+            self._show_step()
+        elif any(op.kind == "export" for op in pending.operations):
+            self.step = 5
+            self._show_step()
+        if page_operation is not None:
+            self.page_no = page_operation.page_no
+            self.selected_part = None
+            self.page_list.selection_clear(0, "end")
+            self.page_list.selection_set(self.page_no - 1)
+            self.page_list.see(self.page_no - 1)
+        self.pending_chat = None
+        self.chat_confirm.configure(text="")
+        self.chat_execute.configure(state="disabled")
+        self.chat_cancel.configure(state="disabled")
+        self._chat_add("ツール", result)
         self._draw()
 
     def _show_step(self) -> None:
@@ -455,6 +597,7 @@ class App:
         self._refresh_pages()
         if self.page_no:
             self.page_list.selection_set(0)
+        self.right_notebook.select(self.parts_tab)
         self._draw()
         self.status.configure(text=str(self.edition.folder) if self.edition else "")
         self._show_step()
@@ -748,7 +891,7 @@ class App:
         self.hint.configure(text=edition.next_hint(self.edition))
         if not self.edition or not self.page_no:
             self.part_list.delete(0, "end")
-            self.selection.configure(text="なし")
+            self._set_selection_text("なし")
             self.canvas.create_text(
                 self.PAPER_W * self.scale / 2, self.PAPER_H * self.scale / 2,
                 text="はじめに\n\n「新しい号」：号数と月を入れて作り始めます\n「号を開く」：保存した号の続きを開きます",
@@ -796,16 +939,14 @@ class App:
             self.part_list.see(self.selected_part)
             self._show_selection(parts[self.selected_part], self.selected_part)
         else:
-            self.selection.configure(text="なし")
+            self._set_selection_text("なし")
 
     def _show_selection(self, part, index: int) -> None:
         text = part.text or ("写真：" + Path(part.image or "ファイルなし").name)
-        if len(text) > 200:
-            text = text[:200] + "…"
         mark = "✓" if part.sure else "？"
         reason = part.reason or "理由なし"
-        self.selection.configure(
-            text=f"{index + 1}. {part.kind} {mark}\n{text}\n理由：{reason}")
+        self._set_selection_text(
+            f"{index + 1}. {part.kind} {mark}\n{text}\n理由：{reason}")
 
     def _select_part_from_list(self, _event=None) -> None:
         selected = self.part_list.curselection()

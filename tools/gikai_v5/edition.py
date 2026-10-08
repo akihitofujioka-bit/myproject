@@ -43,11 +43,11 @@ def next_hint(current: Optional["Edition"]) -> str:
     unfilled = next((page for page in current.pages if page["state"] == "未入力"), None)
     if unfilled:
         if "form" in unfilled:
-            return "左の一覧で ○ の書き込み式ページを選び、右の入力欄へ書いてください。"
-        return "左の一覧で ○ のページを選び「原稿を入れる」か「書いて直す」を押してください。"
+            return "左の一覧で ○ のページを選び、右の「ページ」タブの「入力欄を開く」を押してください。"
+        return "左の一覧で ○ のページを選び、右の「ページ」タブの「原稿を入れる」か「書いて直す」を押してください。"
     if any(page["state"] == "あふれ" for page in current.pages):
-        return "赤いページの写真を小さくするか、種類を確かめてください。"
-    return "「確かめる」のあと「Word に書き出す」を押してください。"
+        return "赤いページを選び、右の「部品」タブで写真を小さくするか、種類を確かめてください。"
+    return "右側のタブの下にある「確かめる」のあと「Word に書き出す」を押してください。"
 
 
 class Edition:
