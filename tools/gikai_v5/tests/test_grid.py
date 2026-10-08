@@ -156,10 +156,10 @@ class DocxTest(unittest.TestCase):
             extent = anchor.find("{%s}extent" % dx.WP)
             return x, int(extent.get("cx")), int(extent.get("cy"))
 
-        self.assertEqual(geometry(anchors[0]), (dx.emu(83), dx.emu(51), dx.emu(52)))
-        self.assertEqual(geometry(anchors[1]), (dx.emu(183), dx.emu(51), dx.emu(52)))
+        self.assertEqual(geometry(anchors[0]), (dx.emu(83), dx.emu(51), dx.emu(50 + dx.SLACK_PT)))
+        self.assertEqual(geometry(anchors[1]), (dx.emu(183), dx.emu(51), dx.emu(50 + dx.SLACK_PT)))
         # 囲み線だけは、幅を広げる前と同じ x・幅に置く。
-        self.assertEqual(geometry(anchors[2]), (dx.emu(200), dx.emu(34), dx.emu(52)))
+        self.assertEqual(geometry(anchors[2]), (dx.emu(200), dx.emu(34), dx.emu(50 + dx.SLACK_PT)))
 
 
 if __name__ == "__main__":
