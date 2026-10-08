@@ -1,9 +1,9 @@
 @echo off
-rem 号フォルダをこのファイルに落とすと、その号を開いて起動する
+rem 架空の見本の号（第999号）と、格子の確かめ用の Word を作り、できたフォルダを開く。
+rem 役場のパソコンの Word で、ツールの計算どおりに文字が並ぶかを確かめるために使う。
 setlocal
 cd /d "%~dp0"
-title 議会だより編集ツール V5
-rem 「py」がほかのソフトの消えた Python を指していることがあるので、本当に動く Python を探す
+title 確かめ用の見本を作る
 call "%~dp0_find_python.bat"
 if not defined PYFOUND (
     echo.
@@ -19,4 +19,12 @@ if not defined PYFOUND (
     pause
     exit /b 1
 )
-start "" %PYW% app.pyw %1
+%PY% demo_edition.py
+%PY% trial.py
+echo.
+echo  できました。開いたフォルダの中の次の 2 つを Word で開いてください。
+echo    段階1_格子の確認.docx  … どの行も「終」の字が段の下の端に来ていれば計算どおり
+echo    第999号\出力\第999号.docx … 文字が枠からはみ出していないか
+echo.
+start "" explorer "%~dp0試し出力"
+pause

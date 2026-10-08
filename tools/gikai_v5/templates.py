@@ -183,6 +183,13 @@ def _cover(form: dict, issue: layout.Issue, plan: layout.Plan, g: Geometry) -> c
     date_w, date_h = _one_line_box(issue_date, 16)
     kana_w, kana_h = _one_line_box("ひだか", 36)
     title_w, title_h = _one_line_box("議会だより", 55)
+    # 字の幅ちょうどの枠だと、Windows の Word や画面の見本では字の幅がわずかに違い、
+    # 最後の字が欠ける（役場のパソコンで確認）。右上の 2 つは 80mm、題字は 120mm の幅をとり、
+    # 寄せ方（右・左）で位置を決める。発行日に曜日などを書き足しても入る
+    no_w = max(no_w, mm2pt(80))
+    date_w = max(date_w, mm2pt(80))
+    kana_w = max(kana_w, mm2pt(60))
+    title_w = max(title_w, mm2pt(120))
     right = mm2pt(195)
     _htext(page, Box(right - no_w, mm2pt(15), no_w, no_h), issue_no, 20,
            align="右", name="号数", warnings=warnings)
