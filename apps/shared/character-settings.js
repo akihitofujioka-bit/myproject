@@ -57,6 +57,11 @@
     return button;
   }
 
+  function photoAlbumPlugin() {
+    var cap = global.Capacitor;
+    return cap && cap.Plugins && cap.Plugins.PhotoAlbum ? cap.Plugins.PhotoAlbum : null;
+  }
+
   function mount(container, opts) {
     if (!container || !global.Character) return;
     opts = opts || {};
@@ -70,7 +75,10 @@
         interval: "day",
         veil: "normal",
         startDate: global.Character.todayString(new Date()),
-        photos: []
+        photos: [],
+        album: null,
+        albumIds: [],
+        manualPhotos: []
       };
     }
 
@@ -79,7 +87,7 @@
       box.style.cssText = "border-top:1px solid var(--border);padding-top:14px;margin-top:14px";
       container.appendChild(box);
 
-      var editor = { slot: slot, box: box, record: emptyRecord(slot), urls: [] };
+      var editor = { slot: slot, box: box, record: emptyRecord(slot), urls: [], albumStatus: "ok" };
       editors.push(editor);
 
       function clearURLs() {
@@ -95,6 +103,18 @@
         heading.style.cssText = "font-size:15px;margin:0 0 10px";
         heading.textContent = SLOT_LABELS[slot];
         box.appendChild(heading);
+
+        var noticeText = global.Character.albumNotice(
+          editor.albumStatus,
+          editor.record.album ? editor.record.album.title : ""
+        );
+        if (noticeText) {
+          var notice = global.document.createElement("p");
+          notice.className = "note";
+          notice.style.margin = "0 0 10px";
+          notice.textContent = noticeText;
+          box.appendChild(notice);
+        }
 
         var photos = global.document.createElement("div");
         photos.style.cssText = "display:grid;gap:10px;margin-bottom:10px";
@@ -118,27 +138,47 @@
           image.style.cssText = "width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)";
           row.appendChild(image);
 
-          var up = makeButton("上へ", function () { move(index, -1); });
-          up.disabled = index === 0;
-          row.appendChild(up);
-          var down = makeButton("下へ", function () { move(index, 1); });
-          down.disabled = index === editor.record.photos.length - 1;
-          row.appendChild(down);
-          row.appendChild(makeButton("削除", function () { remove(index); }));
+          if (!editor.record.album) {
+            var up = makeButton("上へ", function () { move(index, -1); });
+            up.disabled = index === 0;
+            row.appendChild(up);
+            var down = makeButton("下へ", function () { move(index, 1); });
+            down.disabled = index === editor.record.photos.length - 1;
+            row.appendChild(down);
+            row.appendChild(makeButton("削除", function () { remove(index); }));
+          }
           photos.appendChild(row);
         });
         box.appendChild(photos);
 
-        var fileLabel = global.document.createElement("label");
-        fileLabel.style.cssText = "display:block;margin-bottom:10px";
-        fileLabel.appendChild(global.document.createTextNode("写真を追加 "));
-        var input = global.document.createElement("input");
-        input.type = "file";
-        input.accept = "image/*";
-        input.multiple = true;
-        input.addEventListener("change", function () { addPhotos(input); });
-        fileLabel.appendChild(input);
-        box.appendChild(fileLabel);
+        if (editor.record.album) {
+          var connected = global.document.createElement("p");
+          connected.className = "note";
+          connected.textContent = "アルバム『" + editor.record.album.title + "』とつないでいます（" + editor.record.photos.length + "枚）";
+          box.appendChild(connected);
+          box.appendChild(makeButton("つなげるのをやめる", disconnectAlbum));
+        } else {
+          var fileLabel = global.document.createElement("label");
+          fileLabel.style.cssText = "display:block;margin-bottom:10px";
+          fileLabel.appendChild(global.document.createTextNode("写真を追加 "));
+          var input = global.document.createElement("input");
+          input.type = "file";
+          input.accept = "image/*";
+          input.multiple = true;
+          input.addEventListener("change", function () { addPhotos(input); });
+          fileLabel.appendChild(input);
+          box.appendChild(fileLabel);
+
+          var plugin = photoAlbumPlugin();
+          if (plugin) {
+            var albumArea = global.document.createElement("div");
+            albumArea.style.cssText = "margin-bottom:10px";
+            albumArea.appendChild(makeButton("アルバムとつなげる", function () {
+              showAlbums(albumArea, plugin);
+            }));
+            box.appendChild(albumArea);
+          }
+        }
 
         var settings = global.document.createElement("div");
         settings.style.cssText = "display:flex;flex-wrap:wrap;gap:10px 16px";
@@ -168,7 +208,10 @@
           interval: editor.record.interval,
           veil: editor.record.veil,
           startDate: global.Character.todayString(new Date()),
-          photos: editor.record.photos.slice()
+          photos: editor.record.photos.slice(),
+          album: editor.record.album,
+          albumIds: editor.record.albumIds.slice(),
+          manualPhotos: editor.record.manualPhotos.slice()
         };
       }
 
@@ -208,8 +251,67 @@
         });
       }
 
+      function showAlbums(parent, plugin) {
+        Promise.resolve(plugin.listAlbums()).then(function (result) {
+          var status = result && result.status;
+          if (status !== "ok") {
+            editor.albumStatus = status === "limited" ? "limited" : "denied";
+            render();
+            return;
+          }
+          editor.albumStatus = "ok";
+          var old = parent.querySelector("select");
+          if (old) old.remove();
+          var select = global.document.createElement("select");
+          select.style.cssText = "display:block;margin-top:8px;font:inherit;max-width:100%;padding:8px";
+          addOption(select, { value: "", label: "アルバムを選んでください" });
+          (result.albums || []).forEach(function (album) {
+            addOption(select, { value: album.id, label: album.title + "（" + album.count + "枚）" });
+          });
+          select.addEventListener("change", function () {
+            var album = (result.albums || []).find(function (item) { return item.id === select.value; });
+            if (album) connectAlbum(album, plugin);
+          });
+          parent.appendChild(select);
+        }, function () {
+          toast("アルバムを読み込めませんでした");
+        });
+      }
+
+      function connectAlbum(album, plugin) {
+        var next = changedRecord();
+        next.manualPhotos = editor.record.photos.slice();
+        next.album = { id: album.id, title: album.title };
+        next.albumIds = [];
+        next.startDate = global.Character.todayString(new Date());
+        save(next).then(function () {
+          return global.Character.syncAlbum(slot, plugin);
+        }).then(function (result) {
+          editor.albumStatus = result.status;
+          return global.Character.load(slot);
+        }).then(function (record) {
+          editor.record = record;
+          render();
+          onChange(slot);
+        }).catch(function () {
+          toast("アルバムを読み込めませんでした");
+        });
+      }
+
+      function disconnectAlbum() {
+        var next = changedRecord();
+        next.photos = editor.record.manualPhotos.slice();
+        next.album = null;
+        next.albumIds = [];
+        next.manualPhotos = [];
+        next.startDate = global.Character.todayString(new Date());
+        editor.albumStatus = "ok";
+        save(next);
+      }
+
       global.Character.load(slot).then(function (record) {
         editor.record = record;
+        editor.albumStatus = global.Character.albumStatus(slot);
         render();
       }).catch(function () {
         editor.record = emptyRecord(slot);

@@ -10,6 +10,7 @@
   var DB_VERSION = 1;
   var STORE_NAME = "slots";
   var SLOTS = ["top", "fridge", "docs-tracker", "stock", "kakeibo", "cards"];
+  var albumStatuses = {};
 
   function todayString(date) {
     var year = date.getFullYear();
@@ -64,13 +65,47 @@
 
   function normalize(record, slot) {
     record = record && typeof record === "object" ? record : {};
+    var album = record.album;
+    if (!album || typeof album !== "object" || typeof album.id !== "string" || typeof album.title !== "string") album = null;
+    else album = { id: album.id, title: album.title };
     return {
       slot: slot,
       interval: record.interval === "week" || record.interval === "month" ? record.interval : "day",
       veil: record.veil === "light" || record.veil === "strong" ? record.veil : "normal",
       startDate: dateParts(record.startDate) ? record.startDate : todayString(new Date()),
-      photos: Array.isArray(record.photos) ? record.photos : []
+      photos: Array.isArray(record.photos) ? record.photos : [],
+      album: album,
+      albumIds: Array.isArray(record.albumIds) ? record.albumIds : [],
+      manualPhotos: Array.isArray(record.manualPhotos) ? record.manualPhotos : []
     };
+  }
+
+  function albumDiff(oldIds, newIds) {
+    oldIds = Array.isArray(oldIds) ? oldIds : [];
+    newIds = Array.isArray(newIds) ? newIds : [];
+    var oldSet = {};
+    oldIds.forEach(function (id) { oldSet[id] = true; });
+    return {
+      keep: newIds.filter(function (id) { return !!oldSet[id]; }),
+      add: newIds.filter(function (id) { return !oldSet[id]; }),
+      order: newIds.slice()
+    };
+  }
+
+  function albumNotice(status, title) {
+    if (status === "ok") return "";
+    if (status === "limited" || status === "denied") {
+      return "設定アプリ → プライバシー → 写真 で『すべての写真』を許可してください";
+    }
+    if (status === "not-found") return "アルバム『" + title + "』が見つかりません。選び直してください";
+    return "";
+  }
+
+  function base64Blob(data) {
+    var binary = global.atob(String(data || "").replace(/^data:[^,]*,/, ""));
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new global.Blob([bytes], { type: "image/jpeg" });
   }
 
   function openDatabase() {
@@ -138,17 +173,17 @@
     });
   }
 
-  function resizedDimensions(width, height) {
-    var scale = Math.min(1, 1080 / Math.max(width, height));
+  function resizedDimensions(width, height, maxSide) {
+    var scale = Math.min(1, (maxSide || 1080) / Math.max(width, height));
     return { width: Math.round(width * scale), height: Math.round(height * scale) };
   }
 
-  function resizeWithImage(file) {
+  function resizeWithImage(file, maxSide) {
     return new Promise(function (resolve, reject) {
       var url = global.URL.createObjectURL(file);
       var image = new global.Image();
       image.onload = function () {
-        var size = resizedDimensions(image.naturalWidth, image.naturalHeight);
+        var size = resizedDimensions(image.naturalWidth, image.naturalHeight, maxSide);
         canvasBlob(image, size.width, size.height).then(resolve, reject).finally(function () {
           global.URL.revokeObjectURL(url);
         });
@@ -161,14 +196,20 @@
     });
   }
 
-  function resize(file) {
-    if (typeof global.createImageBitmap !== "function") return resizeWithImage(file);
+  function resize(file, maxSide) {
+    if (typeof global.createImageBitmap !== "function") return resizeWithImage(file, maxSide);
     return global.createImageBitmap(file).then(function (bitmap) {
-      var size = resizedDimensions(bitmap.width, bitmap.height);
+      var size = resizedDimensions(bitmap.width, bitmap.height, maxSide);
       return canvasBlob(bitmap, size.width, size.height).finally(function () {
         if (typeof bitmap.close === "function") bitmap.close();
       });
     });
+  }
+
+  function watchMark(record, today) {
+    record = normalize(record, record && record.slot);
+    if (!record.photos.length) return "clear";
+    return todayString(today) + ":" + pickIndex(record.photos.length, record.interval, record.startDate, today) + ":" + record.photos.length;
   }
 
   function currentPhotoURL(slot) {
@@ -222,16 +263,80 @@
     });
   }
 
-  global.Character = {
+  var character = {
     SLOTS: SLOTS,
     pickIndex: pickIndex,
     veilAlpha: veilAlpha,
     normalize: normalize,
+    albumDiff: albumDiff,
+    albumNotice: albumNotice,
+    albumStatus: function (slot) { return albumStatuses[slot] || "ok"; },
     todayString: todayString,
     load: load,
     save: save,
     resize: resize,
+    watchMark: watchMark,
     currentPhotoURL: currentPhotoURL,
-    applyBackground: applyBackground
+    applyBackground: applyBackground,
+    _store: { load: load, save: save }
   };
+
+  function syncAlbum(slot, plugin) {
+    var store = character._store;
+    return store.load(slot).then(function (record) {
+      record = normalize(record, slot);
+      if (!record.album) {
+        albumStatuses[slot] = "ok";
+        return { status: "ok", added: 0, failed: 0 };
+      }
+      return Promise.resolve(plugin.assetIds({ albumId: record.album.id })).then(function (result) {
+        var status = result && result.status;
+        if (status !== "ok") {
+          status = status === "limited" ? "limited" : "denied";
+          albumStatuses[slot] = status;
+          return { status: status, added: 0, failed: 0 };
+        }
+
+        var ids = Array.isArray(result.ids) ? result.ids : [];
+        var diff = albumDiff(record.albumIds, ids);
+        var photosById = {};
+        record.albumIds.forEach(function (id, index) {
+          if (record.photos[index]) photosById[id] = record.photos[index];
+        });
+        var added = 0;
+        var failed = 0;
+        var chain = Promise.resolve();
+        diff.add.forEach(function (id) {
+          chain = chain.then(function () {
+            return Promise.resolve(plugin.loadPhoto({ id: id, maxSide: 1080 })).then(function (photo) {
+              try {
+                photosById[id] = base64Blob(photo && photo.data);
+                added++;
+              } catch (e) {
+                failed++;
+              }
+            }, function () {
+              failed++;
+            });
+          });
+        });
+        return chain.then(function () {
+          var keptIds = diff.order.filter(function (id) { return !!photosById[id]; });
+          var next = normalize(record, slot);
+          next.albumIds = keptIds;
+          next.photos = keptIds.map(function (id) { return photosById[id]; });
+          return store.save(next).then(function () {
+            albumStatuses[slot] = "ok";
+            return { status: "ok", added: added, failed: failed };
+          });
+        });
+      }, function () {
+        albumStatuses[slot] = "not-found";
+        return { status: "not-found", added: 0, failed: 0 };
+      });
+    });
+  }
+
+  character.syncAlbum = syncAlbum;
+  global.Character = character;
 })(typeof window !== "undefined" ? window : this);

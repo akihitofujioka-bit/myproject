@@ -155,6 +155,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 <script src="shared/camerapref.js"></script>
 <script src="shared/character.js"></script>
 <script src="shared/character-settings.js"></script>
+<script src="shared/watch.js"></script>
 <script src="shared/receiptscan.js"></script>
 <script src="shared/scanrouter.js"></script>
 <script src="shared/deeplink.js"></script>
@@ -171,6 +172,38 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   });
 
   var characterDisplayVersion = 0;
+  var characterWatchSending = "";
+
+  function updateWatchBackground() {
+    if (!window.WatchSync || (window.Watch && !window.Watch.available())) return;
+    window.Character.load("top").then(function (record) {
+      var today = new Date();
+      var mark = window.Character.watchMark(record, today);
+      var sent = "";
+      try { sent = window.localStorage.getItem("character.watchSent") || ""; } catch (e) { /* 送信は続ける */ }
+      if (mark === sent || mark === characterWatchSending) return;
+      characterWatchSending = mark;
+
+      var sending;
+      if (mark === "clear") {
+        sending = window.WatchSync.setBackground(null);
+      } else {
+        var index = window.Character.pickIndex(record.photos.length, record.interval, record.startDate, today);
+        sending = window.Character.resize(record.photos[index], 400).then(function (blob) {
+          return window.WatchSync.setBackground(blob);
+        });
+      }
+      return sending.then(function (result) {
+        if (result && result.ok) {
+          try { window.localStorage.setItem("character.watchSent", mark); } catch (e) { /* 次回また送る */ }
+        }
+      }).finally(function () {
+        if (characterWatchSending === mark) characterWatchSending = "";
+      });
+    }).catch(function () {
+      characterWatchSending = "";
+    });
+  }
 
   function updateCharacterDisplay() {
     if (!window.Character) return;
@@ -195,15 +228,33 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
         }
       });
     });
+    updateWatchBackground();
   }
 
-  if (window.CharacterSettings) {
-    window.CharacterSettings.mount(document.getElementById("characterCard"), {
-      onChange: updateCharacterDisplay,
-      toast: toast
-    });
+  function startCharacter() {
+    if (window.CharacterSettings) {
+      window.CharacterSettings.mount(document.getElementById("characterCard"), {
+        onChange: updateCharacterDisplay,
+        toast: toast
+      });
+    }
+    updateCharacterDisplay();
   }
-  updateCharacterDisplay();
+
+  var photoAlbum = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PhotoAlbum;
+  if (window.Character && photoAlbum) {
+    var albumSync = Promise.resolve();
+    window.Character.SLOTS.forEach(function (slot) {
+      albumSync = albumSync.then(function () {
+        return window.Character.syncAlbum(slot, photoAlbum).catch(function () {
+          // 1枠を読めなくても、残りの枠の同期と画面表示は続ける
+        });
+      });
+    });
+    albumSync.then(startCharacter, startCharacter);
+  } else {
+    startCharacter();
+  }
 
   if (!(window.ReceiptScan && window.ReceiptScan.available())) return;
   document.getElementById("scanCard").hidden = false;

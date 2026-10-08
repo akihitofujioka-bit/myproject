@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const g = {};
+const g = { Blob, atob };
 new Function("window", fs.readFileSync(path.join(ROOT, "apps/shared/character.js"), "utf8"))(g);
 
 let failures = 0;
@@ -39,6 +39,46 @@ ok(n.slot === "fridge" && n.interval === "day" && n.veil === "normal" && Array.i
 ok(/^\d{4}-\d{2}-\d{2}$/.test(n.startDate), "startDate が無ければ今日");
 ok(C.todayString(new Date(2026, 0, 5)) === "2026-01-05", "地域の日付で YYYY-MM-DD");
 ok(C.SLOTS.join(",") === "top,fridge,docs-tracker,stock,kakeibo,cards", "6 つの枠");
+
+const D = C.albumDiff(["a", "b", "c"], ["b", "c", "d"]);
+ok(D.keep.join() === "b,c" && D.add.join() === "d" && D.order.join() === "b,c,d", "albumDiff: 増えた d だけ add、消えた a は除く");
+ok(C.albumDiff(["a", "b"], ["b", "a"]).add.length === 0, "albumDiff: 並び替えだけなら add は空");
+ok(C.albumDiff([], []).order.length === 0, "albumDiff: 空どうし");
+const m = C.normalize({ album: "壊れた値", albumIds: 1, manualPhotos: null }, "top");
+ok(m.album === null && Array.isArray(m.albumIds) && Array.isArray(m.manualPhotos), "normalize: アルバムの項目を埋める");
+ok(C.albumNotice("ok", "キャラ") === "", "albumNotice: ok は空");
+ok(/すべての写真/.test(C.albumNotice("limited", "キャラ")) && /すべての写真/.test(C.albumNotice("denied", "キャラ")), "albumNotice: 許可の案内");
+ok(/キャラ.*見つかりません/.test(C.albumNotice("not-found", "キャラ")), "albumNotice: アルバムが無い");
+
+let saved;
+const originalStore = C._store;
+C._store = {
+  load: async () => C.normalize({
+    slot: "top",
+    startDate: "2026-09-01",
+    photos: [new Blob(["old"], { type: "image/jpeg" })],
+    album: { id: "album-1", title: "架空アルバム" },
+    albumIds: ["old"],
+    manualPhotos: []
+  }, "top"),
+  save: async (record) => { saved = record; }
+};
+const fakePlugin = {
+  assetIds: async () => ({ status: "ok", ids: ["x", "y"] }),
+  loadPhoto: async ({ id }) => {
+    if (id === "y") throw new Error("架空の取得失敗");
+    return { data: "eA==" };
+  }
+};
+const synced = await C.syncAlbum("top", fakePlugin);
+ok(synced.added === 1 && synced.failed === 1, "syncAlbum: 取得できない写真だけを飛ばす");
+ok(saved.albumIds.join() === "x" && saved.photos.length === 1, "syncAlbum: 取得できた写真だけを保存する");
+ok(saved.startDate === "2026-09-01", "syncAlbum: startDate を変えない");
+C._store = originalStore;
+
+ok(C.watchMark({ photos: [] }, d("2026-10-08")) === "clear", "watchMark: 写真 0 枚は clear");
+const watchRecord = { photos: [{}, {}], interval: "day", startDate: "2026-10-08" };
+ok(C.watchMark(watchRecord, d("2026-10-08")) === C.watchMark(watchRecord, d("2026-10-08")), "watchMark: 同じ日は同じ印");
 
 console.log(failures ? `\n${failures} 件失敗` : "\nすべて成功");
 process.exit(failures ? 1 : 0);
