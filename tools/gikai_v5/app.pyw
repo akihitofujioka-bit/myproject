@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import base64
 import os
+import queue
 import subprocess
 import sys
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
@@ -19,6 +20,7 @@ import edition
 import ingest
 import layout
 import templates
+import thumbs
 import writer
 from settings import Settings
 from grid import Box, Rect, TATECHUYOKO, mm2pt, to_box
@@ -301,8 +303,12 @@ class App:
         self.fit_scale = 0.72
         self.fit_after = None
         self.photo_images = []  # type: List[tk.PhotoImage]
-        self.library_images = []  # type: List[tk.PhotoImage]
+        self.library_images = {}  # type: Dict[int, tk.PhotoImage]
         self.photo_rows = []
+        self.photo_preview_image = None  # type: Optional[tk.PhotoImage]
+        self.photo_generation = 0
+        self.photo_results = queue.Queue()
+        self.photo_worker = None
         self.selected_photo = None  # type: Optional[str]
         self.photo_drag = False
         self.form_editor = None  # type: Optional[FormEditor]
@@ -548,6 +554,13 @@ class App:
         self.photo_tree.bind("<ButtonPress-1>", self._photo_drag_start)
         self.photo_tree.bind("<B1-Motion>", self._photo_drag_motion)
         self.photo_tree.bind("<ButtonRelease-1>", self._photo_drag_end)
+        self.photo_preview = tk.Label(photos_body, bg=UI["card"],
+                                      text="写真を選ぶと、ここに大きく表示します。",
+                                      font=SMALL_FONT, anchor="center")
+        self.photo_preview.pack(fill="x", pady=(8, 0))
+        self.photo_detail = ttk.Label(photos_body, text="", font=SMALL_FONT,
+                                      wraplength=360, justify="left")
+        self.photo_detail.pack(fill="x", pady=(4, 0))
         self.photo_help = ttk.Label(
             photos_body, text="写真を選び、紙面をクリックしてください。\n一覧から紙面へドラッグしても置けます。",
             font=SMALL_FONT, wraplength=360, justify="left")
@@ -799,31 +812,103 @@ class App:
             return
         for item in self.photo_tree.get_children():
             self.photo_tree.delete(item)
-        self.library_images = []
+        self.photo_generation += 1
+        generation = self.photo_generation
+        self.library_images = {}
         self.photo_rows = []
+        self.photo_preview_image = None
+        self.photo_preview.configure(image="", text="写真を選ぶと、ここに大きく表示します。")
+        self.photo_detail.configure(text="")
         if not self.edition:
             return
         for index, item in enumerate(self.edition.photo_files()):
             self.photo_rows.append(item)
-            image = ""
             kind_label = item["kind"].upper() if item["kind"] else "画像"
-            if item["kind"] == "png" and not item["message"]:
+            detail = item["message"] or "読み込み中"
+            name = f"{kind_label}　{item['name']}"
+            self.photo_tree.insert("", "end", iid=str(index), text=name, values=(detail,))
+        paths = [(index, item["path"]) for index, item in enumerate(self.photo_rows)
+                 if not item["message"]]
+        if paths:
+            def make_thumbnails() -> None:
+                for index, path in paths:
+                    small = thumbs.thumbnail(path, 48)
+                    self.photo_results.put((generation, index, 48, small))
+                    large = thumbs.thumbnail(path, 200)
+                    self.photo_results.put((generation, index, 200, large))
+            self.photo_worker = threading.Thread(target=make_thumbnails, daemon=True)
+            self.photo_worker.start()
+            self.root.after(60, self._poll_photo_thumbnails)
+
+    def _poll_photo_thumbnails(self) -> None:
+        """作業スレッドの結果を、Tk のメインスレッドで画面へ反映する。"""
+        while True:
+            try:
+                generation, index, size, path = self.photo_results.get_nowait()
+            except queue.Empty:
+                break
+            if generation != self.photo_generation or index >= len(self.photo_rows):
+                continue
+            item = self.photo_rows[index]
+            if path is None:
+                if size == 48:
+                    item["message"] = "画像を読み取れません。JPEG か PNG に変えてください"
+                    if self.photo_tree.exists(str(index)):
+                        self.photo_tree.set(str(index), "detail", item["message"])
+                continue
+            item[f"thumb{size}"] = path
+            if size == 48 and self.photo_tree.exists(str(index)):
                 try:
-                    thumb = tk.PhotoImage(file=str(item["path"]))
-                    # subsample は縦横へ同じ整数を使い、比率を保ったまま一辺48px以内にする。
-                    sample = max(1, (max(thumb.width(), thumb.height()) + 47) // 48)
-                    if sample > 1:
-                        thumb = thumb.subsample(sample, sample)
-                    self.library_images.append(thumb)
-                    image = thumb
+                    image = tk.PhotoImage(file=str(path))
+                    self.library_images[index] = image
+                    self.photo_tree.item(str(index), text=item["name"], image=image)
+                    pixels = (f"{item['pixels'][0]}×{item['pixels'][1]} px"
+                              if item["pixels"] else "画素数を読み取れません")
+                    self.photo_tree.set(str(index), "detail", pixels)
                 except tk.TclError:
                     item["message"] = "画像を読み取れません。JPEG か PNG に変えてください"
-            pixels = (f"{item['pixels'][0]}×{item['pixels'][1]} px"
-                      if item["pixels"] else item["message"])
-            # Tk が直接表示できない JPEG 等は、空画像の代わりに形式名を短く示す。
-            name = item["name"] if image else f"{kind_label}　{item['name']}"
-            self.photo_tree.insert("", "end", iid=str(index), text=name,
-                                   image=image, values=(pixels,))
+            elif size == 200:
+                selected = self.photo_tree.selection()
+                if selected and int(selected[0]) == index:
+                    self._show_library_preview(item)
+                # 紙面は縮小画像が出来るまで従来の枠を出し、完成後に写真へ差し替える。
+                if self.edition and self.page_no:
+                    self._draw()
+        if self.photo_worker and self.photo_worker.is_alive():
+            self.root.after(60, self._poll_photo_thumbnails)
+
+    def _photo_dpi_text(self, item: dict) -> str:
+        if not item.get("pixels") or not self.edition or not self.page_no:
+            return "置いた時の dpi：画素数を読み取れません"
+        width, height = item["pixels"]
+        try:
+            orientation = thumbs.exif_orientation(item["path"].read_bytes())
+            if orientation >= 5:
+                width, height = height, width
+        except OSError:
+            pass
+        page = self.edition.pages[self.page_no - 1]
+        size = "顔" if page["section"] == layout.IPPAN else "中"
+        rect = compose.photo_rect(self.edition.geometry, size, 0, 0)
+        box = to_box(self.edition.geometry, rect)
+        dpi = round(min(width / max(box.w / 72, 0.01), height / max(box.h / 72, 0.01)))
+        return f"{size}で置いた時の目安：約{dpi} dpi"
+
+    def _show_library_preview(self, item: dict) -> None:
+        path = item.get("thumb200")
+        if path:
+            try:
+                self.photo_preview_image = tk.PhotoImage(file=str(path))
+                self.photo_preview.configure(image=self.photo_preview_image, text="")
+            except tk.TclError:
+                self.photo_preview_image = None
+                self.photo_preview.configure(image="", text=item.get("message") or "画像を表示できません")
+        else:
+            self.photo_preview_image = None
+            self.photo_preview.configure(image="", text=item.get("message") or "読み込み中")
+        pixels = (f"{item['pixels'][0]}×{item['pixels'][1]} px"
+                  if item.get("pixels") else "画素数を読み取れません")
+        self.photo_detail.configure(text=pixels + "\n" + self._photo_dpi_text(item))
 
     def _select_library_photo(self, _event=None) -> None:
         selected = self.photo_tree.selection()
@@ -831,6 +916,7 @@ class App:
             return
         item = self.photo_rows[int(selected[0])]
         self.selected_photo = item["name"] if not item["message"] else None
+        self._show_library_preview(item)
         self.photo_help.configure(text=(
             "紙面の置きたい所をクリックするか、ここから紙面へドラッグしてください。"
             if self.selected_photo else item["message"]))
@@ -1112,27 +1198,39 @@ class App:
     def _draw_picture(self, item: dx.Picture, x1: float, y1: float,
                       x2: float, y2: float, filename: str) -> None:
         caption_h = min(30, max(16, (y2 - y1) * 0.18)) if item.caption else 16
-        if item.ext.lower() == "png":
+        drawn = False
+        cached = next((row.get("thumb200") for row in self.photo_rows
+                       if row["name"] == Path(filename).name), None)
+        if cached:
             try:
-                photo = tk.PhotoImage(data=base64.b64encode(item.data).decode("ascii"))
-                ratio = max(photo.width() / max(1, x2 - x1 - 6),
-                            photo.height() / max(1, y2 - y1 - caption_h - 6), 1)
-                sample = max(1, int(ratio + 0.999))
-                if sample > 1:
-                    photo = photo.subsample(sample, sample)
+                photo = tk.PhotoImage(file=str(cached))
+                available_w = max(1, round(x2 - x1 - 6))
+                available_h = max(1, round(y2 - y1 - (caption_h if item.caption else 0) - 6))
+                ratio = min(available_w / photo.width(), available_h / photo.height(), 4.0)
+                candidates = [(int(ratio * denominator), denominator)
+                              for denominator in range(1, 5)
+                              if int(ratio * denominator) >= 1]
+                if candidates:
+                    numerator, denominator = max(candidates,
+                                                 key=lambda value: value[0] / value[1])
+                else:
+                    numerator, denominator = 1, max(1, int(1 / ratio + 0.999))
+                photo = photo.zoom(numerator, numerator).subsample(denominator, denominator)
                 self.photo_images.append(photo)
                 self.canvas.create_image((x1 + x2) / 2, y1 + 3,
                                          image=photo, anchor="n")
+                drawn = True
             except tk.TclError:
                 pass
-        text = "写真：" + Path(filename).name
+        text = "" if drawn else "写真：" + Path(filename).name
         if item.caption:
             self.canvas.create_rectangle(x1, y2 - caption_h, x2, y2,
                                          fill=COLORS["写真説明"], outline="")
-            text += "\n" + item.caption
-        self.canvas.create_text((x1 + x2) / 2, y2 - 2, text=text, anchor="s",
-                                font=(self.default_family, -max(7, round(9 * self.scale))),
-                                width=max(20, x2 - x1 - 4))
+            text = (text + "\n" if text else "") + item.caption
+        if text:
+            self.canvas.create_text((x1 + x2) / 2, y2 - 2, text=text, anchor="s",
+                                    font=(self.default_family, -max(7, round(9 * self.scale))),
+                                    width=max(20, x2 - x1 - 4))
 
     def _draw_page_item(self, item, result) -> None:
         if isinstance(item, dx.TextBox):

@@ -9,6 +9,7 @@ import copy
 import json
 import re
 import shutil
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -273,7 +274,8 @@ class Edition:
         folder = self.folder / "写真"
         folder.mkdir(exist_ok=True)
         items = []
-        for path in sorted((p for p in folder.iterdir() if p.is_file()),
+        for path in sorted((p for p in folder.iterdir()
+                            if p.is_file() and not p.name.startswith(".")),
                            key=lambda p: p.name.casefold()):
             ext = path.suffix.lower().lstrip(".")
             kind = "jpeg" if ext in ("jpg", "jpeg") else ext
@@ -284,6 +286,9 @@ class Edition:
                     pixels = dx.image_size(path.read_bytes(), kind)
                 except (OSError, ValueError):
                     message = "画像を読み取れません。JPEG か PNG に変えてください"
+            elif kind == "heic" and sys.platform == "darwin":
+                # Mac の画面見本は sips で PNG に変換できる。画素数は変換後に表示する。
+                message = ""
             else:
                 message = "JPEG か PNG に変えてください"
             items.append({"name": path.name, "path": path, "kind": kind,

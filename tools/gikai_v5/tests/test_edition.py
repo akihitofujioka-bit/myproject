@@ -90,6 +90,9 @@ class EditionTest(unittest.TestCase):
 
     def test_export_has_all_pages_photos_and_checklist(self):
         self.edition.assign(self.ippan[0], self.source)
+        hidden = self.edition.folder / "写真" / ".縮小"
+        hidden.mkdir()
+        (hidden / "画面だけ.png").write_bytes(samples._png(48, 48))
         paths = self.edition.export()
         docx, checklist = paths[:2]
         self.assertTrue(docx.is_absolute())
@@ -101,6 +104,8 @@ class EditionTest(unittest.TestCase):
         self.assertEqual(xml.count("<w:pageBreakBefore/>"), len(self.edition.pages) - 1)
         self.assertTrue((self.edition.folder / "出力" / "写真" /
                          f"p{self.ippan[0]:02d}_写真1.png").is_file())
+        self.assertFalse((self.edition.folder / "出力" / "写真" / "画面だけ.png").exists())
+        self.assertTrue(all(".縮小" not in str(path) for path in paths))
         text = checklist.read_text(encoding="utf-8")
         self.assertIn("原稿が未入力です", text)
 
@@ -142,10 +147,17 @@ class EditionTest(unittest.TestCase):
         jpeg = self.edition.folder / "写真" / "架空の会場.jpg"
         jpeg.write_bytes(b"\xff\xd8\xff\xc0\x00\x0b\x08\x01\xe0\x02\x80\x03\x01\x11\x00")
         (self.edition.folder / "写真" / "架空.heic").write_bytes(b"unreadable")
+        hidden = self.edition.folder / "写真" / ".縮小"
+        hidden.mkdir()
+        (hidden / "画面用.png").write_bytes(samples._png(48, 48))
         listed = {item["name"]: item for item in self.edition.photo_files()}
+        self.assertNotIn("画面用.png", listed)
         self.assertEqual(listed["架空の風景.png"]["pixels"], (640, 480))
         self.assertEqual(listed["架空の会場.jpg"]["pixels"], (640, 480))
-        self.assertIn("JPEG か PNG", listed["架空.heic"]["message"])
+        if sys.platform == "darwin":
+            self.assertEqual(listed["架空.heic"]["message"], "")
+        else:
+            self.assertIn("JPEG か PNG", listed["架空.heic"]["message"])
 
         target = Rect(2, 12, 1, 1)
         self.assertTrue(self.edition.place_photo(page_no, photo.name, target))
