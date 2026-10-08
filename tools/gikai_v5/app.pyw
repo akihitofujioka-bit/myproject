@@ -284,6 +284,13 @@ class App:
         self.writer_editor = None  # type: Optional[writer.WriterEditor]
         self.pending_chat = None  # type: Optional[chat.Interpretation]
         self.default_family = tkfont.nametofont("TkDefaultFont").actual("family")
+        families = set(tkfont.families(root))
+        self.gothic_family = next((name for name in
+                                   ("ＭＳ ゴシック", "MS Gothic", "Yu Gothic", "Hiragino Sans", "Arial")
+                                   if name in families), self.default_family)
+        self.mincho_family = next((name for name in
+                                   ("ＭＳ 明朝", "MS Mincho", "Yu Mincho", "Hiragino Mincho ProN", "Times New Roman")
+                                   if name in families), self.default_family)
         self._build()
 
     @property
@@ -731,21 +738,26 @@ class App:
         total = len(item.lines) * pitch
         right = ((x1 + x2 + total) / 2 if item.center else x2) - pitch / 2
         size = max(6, round(item.pt * self.scale))
-        bold = item.font == dx.GOTHIC or item.name in ("大見出し", "中見出し")
-        font = (self.default_family, -size, "bold" if bold else "normal")
         advance = max(5, item.pt * self.scale)
         for column, line in enumerate(item.lines):
             x = right - column * pitch
-            for row, cell in enumerate(self._vertical_cells(line)):
-                y = y1 + 2 + row * advance + advance / 2
-                self.canvas.create_text(x, y, text=cell, font=font, anchor="center")
+            row = 0
+            styled = item.line_runs[column] if item.line_runs and column < len(item.line_runs) else [(line, item.font)]
+            for text, font_name in styled:
+                family = self.gothic_family if font_name == dx.GOTHIC else self.mincho_family
+                font = (family, -size, "bold" if item.bold else "normal")
+                for cell in self._vertical_cells(text):
+                    y = y1 + 2 + row * advance + advance / 2
+                    self.canvas.create_text(x, y, text=cell, font=font, anchor="center")
+                    row += 1
 
     def _draw_horizontal(self, item: dx.TextBox) -> None:
         x1, y1, x2, y2 = self._paper_box(item.box)
         anchor = {"左": "nw", "中央": "n", "右": "ne"}.get(item.align, "nw")
         x = {"左": x1 + 2, "中央": (x1 + x2) / 2, "右": x2 - 2}.get(item.align, x1 + 2)
-        font = (self.default_family, -max(6, round(item.pt * self.scale)),
-                "bold" if item.font == dx.GOTHIC else "normal")
+        family = self.gothic_family if item.font == dx.GOTHIC else self.mincho_family
+        font = (family, -max(6, round(item.pt * self.scale)),
+                "bold" if item.bold else "normal")
         self.canvas.create_text(x, y1 + 2, text="\n".join(item.lines), anchor=anchor,
                                 justify={"左": "left", "中央": "center", "右": "right"}.get(item.align, "left"),
                                 font=font, width=max(10, x2 - x1 - 4))
@@ -770,7 +782,7 @@ class App:
                 cell_w = (x2 - x1) * width / total
                 text = values[index] if index < len(values) else ""
                 self.canvas.create_text(x + cell_w / 2, top + row_h / 2, text=text,
-                                        font=(self.default_family, -max(5, round(item.pt * self.scale))),
+                                        font=(self.gothic_family, -max(5, round(item.pt * self.scale))),
                                         width=max(4, cell_w - 2))
                 x += cell_w
         self.canvas.create_line(x1, y2, x2, y2, fill="#333333")

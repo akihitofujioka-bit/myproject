@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 import docx_out as dx  # noqa: E402
-from grid import (GYOTO_KINSOKU, GYOMATSU_KINSOKU, Geometry, Rect, flow,  # noqa: E402
+from grid import (GYOTO_KINSOKU, GYOMATSU_KINSOKU, Box, Geometry, Rect, flow,  # noqa: E402
                   free_runs, layout_text, mm2pt, split_lines, text_width, to_box,
                   units, whole_page)
 
@@ -140,6 +140,26 @@ class DocxTest(unittest.TestCase):
             self.assertEqual(len(ids), len(set(ids)))             # ID が重ならない
             body = [e for e in doc.iter("{%s}bodyPr" % dx.WPS) if e.get("vert") == "eaVert"]
             self.assertEqual(len(body), len(res.runs))
+
+    def test_vertical_textbox_is_widened_left_and_border_stays_in_place(self):
+        page = dx.Page([
+            dx.TextBox(Box(100, 10, 34, 50), ["本文"], pitch_pt=17, name="本文"),
+            dx.TextBox(Box(200, 20, 34, 50), ["囲み"], pitch_pt=17,
+                       border=True, name="囲み"),
+        ])
+        doc = ET.fromstring(dx.document_xml(Geometry(), [page]).encode("utf-8"))
+        anchors = list(doc.iter("{%s}anchor" % dx.WP))
+        self.assertEqual(len(anchors), 3)
+
+        def geometry(anchor):
+            x = int(anchor.find("{%s}positionH/{%s}posOffset" % (dx.WP, dx.WP)).text)
+            extent = anchor.find("{%s}extent" % dx.WP)
+            return x, int(extent.get("cx")), int(extent.get("cy"))
+
+        self.assertEqual(geometry(anchors[0]), (dx.emu(83), dx.emu(51), dx.emu(52)))
+        self.assertEqual(geometry(anchors[1]), (dx.emu(183), dx.emu(51), dx.emu(52)))
+        # 囲み線だけは、幅を広げる前と同じ x・幅に置く。
+        self.assertEqual(geometry(anchors[2]), (dx.emu(200), dx.emu(34), dx.emu(52)))
 
 
 if __name__ == "__main__":

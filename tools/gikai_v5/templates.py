@@ -74,7 +74,7 @@ def _fit_lines(text: str, units_per_line: int) -> List[str]:
     return lines
 
 
-def _htext(page: dx.Page, box: Box, text: str, pt: float, *, font: str = dx.MINCHO,
+def _htext(page: dx.Page, box: Box, text: str, pt: float, *, font: str = dx.GOTHIC,
            align: str = "左", border: bool = False, name: str = "text",
            warnings: Optional[List[str]] = None, bold: bool = False) -> None:
     """横書き文字を枠幅で分け、枠高に入らない分は警告する。"""
@@ -89,7 +89,7 @@ def _htext(page: dx.Page, box: Box, text: str, pt: float, *, font: str = dx.MINC
                                  False, name, False, align, bold))
 
 
-def _vtext(page: dx.Page, box: Box, text: str, pt: float, *, font: str = dx.MINCHO,
+def _vtext(page: dx.Page, box: Box, text: str, pt: float, *, font: str = dx.GOTHIC,
            pitch: float = 17.0, border: bool = False, center: bool = False,
            name: str = "text", warnings: Optional[List[str]] = None) -> None:
     """縦書き文字を枠高で分け、枠幅に入らない分は警告する。"""
@@ -261,7 +261,7 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
         take = min(len(lines), take_span)
         dan, line = 1 + used // g.lines_per_dan, used % g.lines_per_dan
         rect = Rect(dan, line, 1, take_span)
-        font = dx.GOTHIC if part.kind in ("中見出し", "議案", "質問") else dx.MINCHO
+        font = dx.GOTHIC
         page.items.append(dx.TextBox(to_box(g, rect), lines[:take], font, pt, 17.0,
                                      part.kind == "中見出し" and part.reason == "【区分】の印",
                                      heading, part.kind))
@@ -292,7 +292,7 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
         cell_pts.extend([[11.0, 11.0] + [8.0] * len(members) + [11.0]
                          for _row in rows[1:]])
         page.items.append(dx.Table(_box(15, 181, 180, 55), widths, rows, 8.0,
-                                   dx.MINCHO, True, "賛否表", cell_pts))
+                                   dx.GOTHIC, True, "賛否表", cell_pts))
         table_overflow = max(0, len(rows) - 8)
         if table_overflow:
             warnings.append(f"賛否表が{table_overflow}行あふれています。件名をまとめるか、行を減らしてください。")
@@ -312,7 +312,7 @@ def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
     editorial_lines = split_lines(str(form.get("editorial", "")), g.chars_per_line)
     editorial_capacity = max(0, g.lines_per_dan - 5)
     page.items.append(dx.TextBox(to_box(g, Rect(0, 5, 1, min(editorial_capacity, len(editorial_lines) or 1))),
-                                 editorial_lines[:editorial_capacity], dx.MINCHO, 11, 17,
+                                 editorial_lines[:editorial_capacity], dx.GOTHIC, 11, 17,
                                  False, False, "編集後記本文"))
     photos = list(form.get("editorial_photos", []) or [])[:2]
     for index, photo in enumerate(photos):
@@ -327,7 +327,7 @@ def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
         chunk = free_lines[start:start + g.lines_per_dan]
         if chunk:
             page.items.append(dx.TextBox(to_box(g, Rect(dan, 0, 1, len(chunk))), chunk,
-                                         dx.MINCHO, 11, 17, False, False, "自由欄"))
+                                         dx.GOTHIC, 11, 17, False, False, "自由欄"))
 
     fifth = to_box(g, Rect(4, 0, 1, g.lines_per_dan))
     hearing = Box(mm2pt(20), fifth.y, mm2pt(112), mm2pt(36))

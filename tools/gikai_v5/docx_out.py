@@ -69,6 +69,9 @@ class TextBox:
     vertical: bool = True             # 偽なら横書き
     align: str = "左"                 # 横書きの左・中央・右
     bold: bool = False                # 太字
+    # 行ごとの (文字, 書体) の並び。None の行は font を使う。
+    # 行分けそのものは lines が正で、書体を変えても字数計算には影響させない。
+    line_runs: list[list[tuple[str, str]]] | None = None
 
 
 @dataclass
@@ -156,7 +159,11 @@ def _text_para(t: TextBox, ids: list[int]) -> str:
     for i, line in enumerate(t.lines):
         if i:
             runs.append(f"<w:r>{rpr}<w:br/></w:r>")
-        runs.extend(_line_runs(line, t.font, t.pt, ids, vertical=t.vertical, bold=t.bold))
+        styled = t.line_runs[i] if t.line_runs and i < len(t.line_runs) else [(line, t.font)]
+        for text, font in styled:
+            if text:
+                runs.extend(_line_runs(text, font, t.pt, ids,
+                                       vertical=t.vertical, bold=t.bold))
     # 縦書きの枠では「行送り」が左右の間隔になる。字の大きさより小さくしない
     pitch = max(t.pitch_pt, t.pt)
     # autoSpaceDE/DN: 日本語と英字・数字のあいだに Word が自動で入れるすき間を止める。
@@ -303,15 +310,26 @@ def _picture_xml(item: Picture, idx: int, rel_id: str) -> tuple[str, int]:
 
 def _item_xml(item, idx: int, ids: list[int], rel_id: str = "") -> tuple[str, int]:
     if isinstance(item, TextBox):
-        # 縦書きは 1 行の長さ（＝高さ）を少し長くとる。上の端は動かさない
-        box = (Box(item.box.x, item.box.y, item.box.w, item.box.h + SLACK_PT)
-               if item.vertical else item.box)
-        line = ('<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>'
-                if item.border else "<a:ln><a:noFill/></a:ln>")
+        # Windows の Word は縦書きの行送りをわずかに広く取るため、字の枠を
+        # 左へ 1 行送りぶん広げる。右端・上端と、従来の高さの余裕は変えない。
+        old_box = (Box(item.box.x, item.box.y, item.box.w, item.box.h + SLACK_PT)
+                   if item.vertical else item.box)
+        box = (Box(old_box.x - item.pitch_pt, old_box.y,
+                   old_box.w + item.pitch_pt, old_box.h)
+               if item.vertical else old_box)
+        no_line = "<a:ln><a:noFill/></a:ln>"
         vert = ' vert="eaVert"' if item.vertical else ""
         body = (f'<wps:bodyPr rot="0"{vert} wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" '
                 f'anchor="{"ctr" if item.center else "t"}" anchorCtr="0"><a:noAutofit/></wps:bodyPr>')
-        return _anchor(idx, box, _shape(box, line=line, inner=_text_para(item, ids), body=body), name=item.name), 1
+        text = _anchor(idx, box, _shape(box, line=no_line, inner=_text_para(item, ids), body=body),
+                       name=item.name)
+        if not item.border:
+            return text, 1
+        # 囲み線は広げる前の位置・大きさのまま、別の図形として重ねる。
+        border_line = '<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>'
+        border = _anchor(idx + 1, old_box, _shape(old_box, line=border_line),
+                         name=item.name + "_border")
+        return text + border, 2
     if isinstance(item, Table):
         line = '<a:ln><a:noFill/></a:ln>'
         body = '<wps:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"><a:noAutofit/></wps:bodyPr>'

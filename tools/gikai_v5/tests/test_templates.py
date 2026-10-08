@@ -78,6 +78,24 @@ class TemplateTest(unittest.TestCase):
                  and item.name in ("中見出し", "議案")]
         self.assertEqual([item.border for item in boxes], [True, False, False])
 
+    def test_shingi_answer_and_last_page_body_are_gothic(self):
+        shingi = templates.build(
+            layout.SHINGI, {"body": "問　架空の質問です。\n答　架空の答弁です。"},
+            self.issue, self.plan, self.settings, self.g)
+        answer = next(item for item in shingi.page.items
+                      if isinstance(item, dx.TextBox) and item.name == "答弁")
+        self.assertEqual((answer.font, answer.pt), (dx.GOTHIC, 11.0))
+
+        last = templates.build(layout.LAST,
+                               {"editorial": "架空の編集後記です。",
+                                "free": "架空のお知らせです。"},
+                               self.issue, self.plan, self.settings, self.g)
+        bodies = [item for item in last.page.items
+                  if isinstance(item, dx.TextBox)
+                  and item.name in ("編集後記本文", "自由欄")]
+        self.assertTrue(bodies)
+        self.assertTrue(all(item.font == dx.GOTHIC and item.pt == 11 for item in bodies))
+
     def test_last_page_hearing_notice_is_horizontal(self):
         result = templates.build(layout.LAST, samples.sample_forms()[layout.LAST], self.issue,
                                  self.plan, self.settings, self.g)

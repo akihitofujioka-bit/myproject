@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 import sys
 import zipfile
 from dataclasses import dataclass, field, replace
@@ -99,22 +100,58 @@ def _heading_lines(text: str, per_line: int, max_lines: int = 2) -> List[str]:
     return lines[:max_lines - 1] + ["".join(lines[max_lines - 1:])]
 
 
-def _format(kind: str) -> Tuple[str, float, float]:
-    if kind in ("質問", "議案"):
-        return dx.GOTHIC, 11.0, 17.0
-    return dx.MINCHO, 11.0, 17.0
+ROLE_ENDINGS = ("長", "参事", "主幹", "室長", "所長", "局長")
+ANSWER_START = re.compile(r"^(?P<head>[ \u3000]*答)(?P<gap>[ \u3000]*)(?P<rest>.*)$", re.S)
+
+
+def _is_role(text: str) -> bool:
+    value = text.strip()
+    return bool(value and len(value) <= 12 and value.endswith(ROLE_ENDINGS))
+
+
+def _answer_line_runs(lines: List[str]) -> Optional[List[List[Tuple[str, str]]]]:
+    """一般質問の答弁を、答・役職名と答弁本文の書体に分ける。"""
+    joined = "".join(lines)
+    match = ANSWER_START.match(joined)
+    if not match:
+        return None
+    prefix = match.group("head")
+    rest = match.group("rest")
+    role, separator, _body = rest.partition("　")
+    if _is_role(role) and (separator or not _body):
+        prefix += match.group("gap") + role
+    prefix_left = len(prefix)
+    styled = []
+    for line in lines:
+        gothic_count = min(prefix_left, len(line))
+        runs = []
+        if gothic_count:
+            runs.append((line[:gothic_count], dx.GOTHIC))
+        if gothic_count < len(line):
+            runs.append((line[gothic_count:], dx.MINCHO))
+        styled.append(runs)
+        prefix_left -= gothic_count
+    return styled
+
+
+def _format(section: str, kind: str) -> Tuple[str, float, float]:
+    if section == layout.IPPAN and kind == "答弁":
+        return dx.MINCHO, 11.0, 17.0
+    return dx.GOTHIC, 11.0, 17.0
 
 
 def _same_text_style(a: dx.TextBox, b: dx.TextBox) -> bool:
-    return (a.font, a.pt, a.pitch_pt, a.border, a.center) == (
-        b.font, b.pt, b.pitch_pt, b.border, b.center)
+    return (a.font, a.pt, a.pitch_pt, a.border, a.center, bool(a.line_runs)) == (
+        b.font, b.pt, b.pitch_pt, b.border, b.center, bool(b.line_runs))
 
 
 def _add_text(page: dx.Page, g: Geometry, rect: Rect, lines: List[str], *,
               font: str, pt: float, pitch: float, name: str,
-              border: bool = False, center: bool = False) -> None:
+              border: bool = False, center: bool = False,
+              line_runs: Optional[List[List[Tuple[str, str]]]] = None) -> None:
     """同じ段で同じ書式が続く枠は、Word 上の 1 枠へまとめる。"""
-    item = dx.TextBox(to_box(g, rect), lines, font, pt, pitch, border, center, name)
+    item = dx.TextBox(to_box(g, rect), lines, font, pt, pitch, border, center, name,
+                      line_runs=line_runs)
     if page.items and isinstance(page.items[-1], dx.TextBox):
         previous = page.items[-1]
         previous_rect = getattr(previous, "_grid_rect", None)
@@ -125,6 +162,8 @@ def _add_text(page: dx.Page, g: Geometry, rect: Rect, lines: List[str], *,
                           previous_rect.line_span + rect.line_span)
             previous.box = to_box(g, merged)
             previous.lines.extend(lines)
+            if previous.line_runs is not None and line_runs is not None:
+                previous.line_runs.extend(line_runs)
             previous._grid_rect = merged
             return
     item._grid_rect = rect
@@ -260,7 +299,12 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             last_rect = rect
             continue
 
-        if part.kind == "中見出し":
+        # 答弁者名が独立した短い 1 行なら、中見出し扱いになっていても
+        # 一般質問の答弁者名としてゴシック 11pt で置く。
+        standalone_role = (section == layout.IPPAN and _is_role(part.text)
+                           and index + 1 < len(parts) and parts[index + 1].kind == "答弁")
+
+        if part.kind == "中見出し" and not standalone_role:
             # 枠は 2 行ぶんの幅しかない。行送りを本文と同じにしないと 2 行目が枠からはみ出す
             target = next((r for r in free_runs(g, whole_page(g), occupied)
                            if r.line_span >= 2), None)
@@ -277,16 +321,23 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
 
         lines = split_lines(part.text, g.chars_per_line)
         pos = 0
-        font, pt, pitch = _format(part.kind)
+        font, pt, pitch = _format(section, part.kind)
+        if standalone_role:
+            font = dx.GOTHIC
+        styled_lines = (_answer_line_runs(lines)
+                        if section == layout.IPPAN and part.kind == "答弁" else None)
         for run in free_runs(g, whole_page(g), occupied):
             if pos >= len(lines):
                 break
             take = min(run.line_span, len(lines) - pos)
             rect = Rect(run.dan, run.line, 1, take)
             chunk = lines[pos:pos + take]
+            chunk_runs = styled_lines[pos:pos + take] if styled_lines is not None else None
             occupied.append(rect)
             placements.append(Placement(part, rect, index))
-            _add_text(page, g, rect, chunk, font=font, pt=pt, pitch=pitch, name=part.kind)
+            _add_text(page, g, rect, chunk, font=font, pt=pt, pitch=pitch,
+                      name="答弁者名" if standalone_role else part.kind,
+                      line_runs=chunk_runs)
             last_rect = rect
             pos += take
         overflow += len(lines) - pos
