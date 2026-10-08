@@ -36,6 +36,7 @@ a.app {
 }
 a.app:hover, a.app:focus-visible { border-color: var(--accent); background: var(--accent-weak); }
 a.app img { width: 52px; height: 52px; border-radius: 12px; flex: none; }
+a.app img[data-char-slot] { object-fit: cover; }
 a.app .name { font-weight: 700; }
 a.app .desc { font-size: 13px; color: var(--muted); }
 section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 20px; }
@@ -79,7 +80,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </section>
 
   <a class="app" href="fridge/index.html">
-    <img src="fridge/icon-192.png" alt="">
+    <img src="fridge/icon-192.png" data-default-src="fridge/icon-192.png" data-char-slot="fridge" alt="">
     <span>
       <span class="name">冷蔵庫の在庫・賞味期限管理</span><br>
       <span class="desc">バーコードで食材を登録し、期限が近い順に並べます</span>
@@ -87,7 +88,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </a>
 
   <a class="app" href="docs-tracker/index.html">
-    <img src="docs-tracker/icon-192.png" alt="">
+    <img src="docs-tracker/icon-192.png" data-default-src="docs-tracker/icon-192.png" data-char-slot="docs-tracker" alt="">
     <span>
       <span class="name">書類・回覧・会議の期限トラッカー</span><br>
       <span class="desc">提出期限のある書類と、会議の予定を状態とともに管理します</span>
@@ -95,7 +96,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </a>
 
   <a class="app" href="stock/index.html">
-    <img src="stock/icon-192.png" alt="">
+    <img src="stock/icon-192.png" data-default-src="stock/icon-192.png" data-char-slot="stock" alt="">
     <span>
       <span class="name">備蓄・消耗品の管理</span><br>
       <span class="desc">残りが少なくなったものと、期限が近いものを知らせます</span>
@@ -103,7 +104,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </a>
 
   <a class="app" href="kakeibo/index.html">
-    <img src="kakeibo/icon-192.png" alt="">
+    <img src="kakeibo/icon-192.png" data-default-src="kakeibo/icon-192.png" data-char-slot="kakeibo" alt="">
     <span>
       <span class="name">家計簿</span><br>
       <span class="desc">レシートの合計額を記録し、費目ごとの内訳と月の推移を見ます</span>
@@ -111,7 +112,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </a>
 
   <a class="app" href="cards/index.html">
-    <img src="cards/icon-192.png" alt="">
+    <img src="cards/icon-192.png" data-default-src="cards/icon-192.png" data-char-slot="cards" alt="">
     <span>
       <span class="name">ポイントカード</span><br>
       <span class="desc">カードを撮影して保管し、レジで画面のバーコードや写真を見せます</span>
@@ -169,8 +170,32 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
     if (el && el !== document.body && typeof el.blur === "function") el.blur();
   });
 
-  // Task 3 で、背景と各機能のアイコンを更新する処理を足す。
-  function updateCharacterDisplay() {}
+  var characterDisplayVersion = 0;
+
+  function updateCharacterDisplay() {
+    if (!window.Character) return;
+    var version = ++characterDisplayVersion;
+    window.Character.applyBackground("top");
+    document.querySelectorAll("img[data-char-slot]").forEach(function (img) {
+      window.Character.currentPhotoURL(img.dataset.charSlot).then(function (url) {
+        // 連続して更新された場合、古い結果は表示せず URL だけ解放する
+        if (version !== characterDisplayVersion) {
+          if (url) window.URL.revokeObjectURL(url);
+          return;
+        }
+        if (img.dataset.charObjectUrl) {
+          window.URL.revokeObjectURL(img.dataset.charObjectUrl);
+          delete img.dataset.charObjectUrl;
+        }
+        if (url) {
+          img.src = url;
+          img.dataset.charObjectUrl = url;
+        } else {
+          img.src = img.dataset.defaultSrc;
+        }
+      });
+    });
+  }
 
   if (window.CharacterSettings) {
     window.CharacterSettings.mount(document.getElementById("characterCard"), {
@@ -178,6 +203,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
       toast: toast
     });
   }
+  updateCharacterDisplay();
 
   if (!(window.ReceiptScan && window.ReceiptScan.available())) return;
   document.getElementById("scanCard").hidden = false;
