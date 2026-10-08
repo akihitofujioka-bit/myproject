@@ -123,3 +123,7 @@ xcrun devicectl list devices
 ## アイコン更新
 
 Web 用（`apps/**/icon-*.png`）と iOS 用（`AppIcon.appiconset` の 15 サイズ）を作り直す手順は、スキル `update-icons` を使う。
+
+## モデルと effort の選び方
+
+仕事ごとのモデルと effort(頑張り度)は `モデルとeffortの使い分け.md` を見る。うまくいかない時は、先に effort を1段上げる。
