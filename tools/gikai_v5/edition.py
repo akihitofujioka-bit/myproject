@@ -599,17 +599,19 @@ class Edition:
         if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
             raise ValueError("写真の部品を選んでください")
         page = self._page(page_no)
+        if page["section"] == layout.COVER:
+            raise ValueError("表紙の写真は、紙面いっぱいの決まった大きさです。大きさは変えられません。")
+        if page["section"] == layout.LAST:
+            raise ValueError("編集後記の写真は、決まった大きさ（小）です。大きさは変えられません。")
         placed = self._placed_part(page, part_no)
         if placed is not None:
             old_rect = _rect(placed[1].get("rect"))
             new_rect = C.photo_rect(self.geometry, size, old_rect.dan, old_rect.line)
-            if page["section"] not in (layout.COVER, layout.LAST) and not self._can_place(
-                    page_no, part_no, new_rect):
+            if not self._can_place(page_no, part_no, new_rect):
                 return False
             before = self._state()
             placed[1]["size"] = size
-            if page["section"] not in (layout.COVER, layout.LAST):
-                placed[1]["rect"] = _rect_data(new_rect)
+            placed[1]["rect"] = _rect_data(new_rect)
             placed[1]["removed"] = False
             self._sync_form_from_placed(page)
             self._update_page_state(page_no)

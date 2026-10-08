@@ -988,7 +988,8 @@ class App:
             self.status.configure(text="そこには置けません。赤い場所は避けてください。")
             return
         self.selected_photo = None
-        self.selected_part = None
+        # 置いた写真を選んだ状態にし、続けて大きさや説明を直せるようにする。
+        self.selected_part = len(self.edition.parts(self.page_no)) - 2
         self.photo_tree.selection_remove(*self.photo_tree.selection())
         self.step = 3
         self._show_step()
@@ -1555,9 +1556,10 @@ class App:
         try:
             changed = self.edition.resize_photo(self.page_no, part, size)
             if not changed:
-                self.status.configure(text="その大きさでは、ほかの部品と重なります。")
+                messagebox.showinfo("写真の大きさ", "その大きさでは、ほかの部品と重なります。"
+                                    "写真を空いている所へ動かしてから、もう一度押してください。")
         except ValueError as error:
-            messagebox.showinfo("写真を選ぶ", str(error))
+            messagebox.showinfo("写真の大きさ", str(error))
         self._draw()
 
     def _remove(self) -> None:

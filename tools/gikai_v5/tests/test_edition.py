@@ -185,6 +185,13 @@ class EditionTest(unittest.TestCase):
         self.assertTrue(self.edition.place_photo(last, photo.name, Rect(0, 8, 1, 1)))
         with self.assertRaisesRegex(ValueError, "2枚まで"):
             self.edition.place_photo(last, photo.name, Rect(0, 16, 1, 1))
+        # 表紙・編集後記の写真は大きさが決まっているので、黙って無視せず理由を返す。
+        cover_photo = len(self.edition.parts(cover)) - 2
+        with self.assertRaisesRegex(ValueError, "表紙の写真"):
+            self.edition.resize_photo(cover, cover_photo, "小")
+        last_photo = len(self.edition.parts(last)) - 2
+        with self.assertRaisesRegex(ValueError, "編集後記の写真"):
+            self.edition.resize_photo(last, last_photo, "大")
         self.assertTrue(self.edition.pages[cover - 1]["form"]["photo"].endswith(photo.name))
         self.assertEqual(len(self.edition.pages[last - 1]["form"]["editorial_photos"]), 2)
         paths = self.edition.export()
