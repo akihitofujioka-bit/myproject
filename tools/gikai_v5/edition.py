@@ -47,7 +47,7 @@ def next_hint(current: Optional["Edition"]) -> str:
         return "左の一覧で ○ のページを選び、右の「ページ」タブの「原稿を入れる」か「書いて直す」を押してください。"
     if any(page["state"] == "あふれ" for page in current.pages):
         return "赤いページを選び、右の「部品」タブで写真を小さくするか、種類を確かめてください。"
-    return "右側のタブの下にある「確かめる」のあと「Word に書き出す」を押してください。"
+    return "必要な写真は右の「写真」タブから置き、「確かめる」のあと「Word に書き出す」を押してください。"
 
 
 class Edition:
@@ -63,6 +63,8 @@ class Edition:
         self.geometry = Geometry()
         self.settings = Settings.load()
         self._ingest_cache = {}
+        for page in self.pages:
+            page.setdefault("placed_photos", [])
 
     @classmethod
     def create(cls, folder: Path, issue: layout.Issue) -> "Edition":
@@ -90,7 +92,7 @@ class Edition:
     def _new_page(slot: layout.PageSlot) -> dict:
         page = {"no": slot.no, "section": slot.section, "index": slot.index,
                 "label": slot.label, "source": None, "overrides": {},
-                "state": "未入力"}
+                "placed_photos": [], "state": "未入力"}
         if slot.section in templates.FORM_SECTIONS:
             page["form"] = templates.default_form(slot.section)
         return page
@@ -262,6 +264,134 @@ class Edition:
             shutil.copy2(str(source), str(target))
         return target.name
 
+    def add_photos(self, sources) -> List[str]:
+        """選んだ写真を号の「写真」へ写し、保存名を返す。"""
+        return [self.keep_writer_photo(Path(source)) for source in sources]
+
+    def photo_files(self) -> List[dict]:
+        """「写真」内のファイルを、一覧表示に必要な情報とともに返す。"""
+        folder = self.folder / "写真"
+        folder.mkdir(exist_ok=True)
+        items = []
+        for path in sorted((p for p in folder.iterdir() if p.is_file()),
+                           key=lambda p: p.name.casefold()):
+            ext = path.suffix.lower().lstrip(".")
+            kind = "jpeg" if ext in ("jpg", "jpeg") else ext
+            pixels = None
+            message = ""
+            if kind in ("png", "jpeg"):
+                try:
+                    pixels = dx.image_size(path.read_bytes(), kind)
+                except (OSError, ValueError):
+                    message = "画像を読み取れません。JPEG か PNG に変えてください"
+            else:
+                message = "JPEG か PNG に変えてください"
+            items.append({"name": path.name, "path": path, "kind": kind,
+                          "pixels": pixels, "message": message})
+        return items
+
+    def _source_parts(self, page: dict) -> List[I.Part]:
+        if not page.get("source"):
+            return []
+        result = self._ingest(page["source"])
+        return C.apply_kind_overrides(result.parts, self._overrides(page))
+
+    def _placed_start(self, page: dict) -> int:
+        return len(self._source_parts(page))
+
+    def _placed_part(self, page: dict, part_no: int):
+        """部品番号が置いた写真なら (一覧番号, 写真データ) を返す。"""
+        offset = part_no - self._placed_start(page)
+        if offset >= 0 and offset % 2 == 0:
+            index = offset // 2
+            photos = page.get("placed_photos", [])
+            if index < len(photos):
+                return index, photos[index]
+        return None
+
+    def _placed_parts(self, page: dict) -> List[I.Part]:
+        parts = []
+        for photo in page.get("placed_photos", []):
+            parts.append(I.Part("写真", sure=True, reason="写真フォルダから配置",
+                                image=photo.get("file"), photo_size=photo.get("size")))
+            parts.append(I.Part("写真説明", str(photo.get("caption", "")), True,
+                                "写真フォルダから配置"))
+        return parts
+
+    def _all_overrides(self, page: dict) -> Dict[int, dict]:
+        overrides = self._overrides(page)
+        start = self._placed_start(page)
+        for index, photo in enumerate(page.get("placed_photos", [])):
+            overrides[start + index * 2] = {
+                "rect": _rect(photo.get("rect")), "size": photo.get("size"),
+                "removed": bool(photo.get("removed", False)), "kind": None}
+        return overrides
+
+    def _all_images(self, page: dict) -> Dict[str, bytes]:
+        images = dict(self._ingest(page["source"]).images) if page.get("source") else {}
+        for photo in page.get("placed_photos", []):
+            name = photo.get("file", "")
+            path = self.folder / "写真" / Path(name).name
+            if name and path.is_file():
+                images[name] = path.read_bytes()
+        return images
+
+    def place_photo(self, page_no: int, filename: str, rect: Rect) -> bool:
+        """写真フォルダの写真を格子位置へ置く。重なる場合は何も変えない。"""
+        page = self._page(page_no)
+        name = Path(filename).name
+        if not (self.folder / "写真" / name).is_file():
+            raise ValueError("写真フォルダに写真が見つかりません: " + name)
+        size = "顔" if page["section"] == layout.IPPAN else "中"
+        target = C.photo_rect(self.geometry, size, rect.dan, rect.line)
+        if page["section"] == layout.COVER:
+            target = Rect(0, 4, 3, 22)
+        elif page["section"] == layout.LAST:
+            photos = [p for p in page["placed_photos"] if not p.get("removed")]
+            if len(photos) >= 2:
+                raise ValueError("編集後記の写真は2枚までです")
+            target = Rect(0, 5 + len(photos) * 8, 1, 7)
+            size = "小"
+        if page["section"] not in (layout.COVER, layout.LAST):
+            if not self._can_place(page_no, -1, target):
+                return False
+        before = self._state()
+        if page["section"] == layout.COVER:
+            page["placed_photos"] = []
+        page["placed_photos"].append({"file": name, "rect": _rect_data(target),
+                                      "size": size, "caption": "", "removed": False})
+        self._sync_form_from_placed(page)
+        self._update_page_state(page_no)
+        self._record(f"{page_no}ページに{name}を置く", before)
+        return True
+
+    def set_photo_caption(self, page_no: int, part_no: int, caption: str) -> None:
+        """置いた写真の説明を保存する。"""
+        page = self._page(page_no)
+        found = self._placed_part(page, part_no)
+        if found is None:
+            raise ValueError("写真フォルダから置いた写真を選んでください")
+        before = self._state()
+        found[1]["caption"] = str(caption)
+        self._sync_form_from_placed(page)
+        self._update_page_state(page_no)
+        self._record(f"{page_no}ページの写真説明を直す", before)
+
+    def _sync_form_from_placed(self, page: dict) -> None:
+        """表紙・編集後記の従来入力欄を、置いた写真と同じ内容にする。"""
+        if "form" not in page:
+            return
+        active = [p for p in page.get("placed_photos", []) if not p.get("removed")]
+        if page["section"] == layout.COVER:
+            photo = active[-1] if active else None
+            page["form"]["photo"] = (str(self.folder / "写真" / photo["file"])
+                                      if photo else "")
+            page["form"]["photo_caption"] = photo.get("caption", "") if photo else ""
+        elif page["section"] == layout.LAST:
+            page["form"]["editorial_photos"] = [
+                {"path": str(self.folder / "写真" / p["file"]),
+                 "caption": p.get("caption", "")} for p in active[:2]]
+
     def _overrides(self, page: dict) -> Dict[int, dict]:
         out = {}
         for key, value in page.get("overrides", {}).items():
@@ -274,19 +404,41 @@ class Edition:
     def parts(self, page_no: int) -> List[I.Part]:
         """画面表示用に、人が直した種類を反映した部品を返す。"""
         page = self._page(page_no)
-        if "form" in page or not page["source"]:
-            return []
-        result = self._ingest(page["source"])
-        return C.apply_kind_overrides(result.parts, self._overrides(page))
+        return self._source_parts(page) + self._placed_parts(page)
 
     def _compose_page(self, page_no: int) -> C.PageResult:
         page = self._page(page_no)
         if "form" in page:
-            return templates.build(page["section"], page["form"], self.issue,
-                                   self.plan, self.settings, self.geometry)
-        result = self._ingest(page["source"])
-        return C.compose_page(page["section"], result.parts, result.images,
-                              self.geometry, self._overrides(page))
+            self._sync_form_from_placed(page)
+            result = templates.build(page["section"], page["form"], self.issue,
+                                     self.plan, self.settings, self.geometry)
+            # 表紙と編集後記は従来の専用枠に入る。選択・写真一覧のため、
+            # 同じ写真を格子上の配置としても返す。
+            start = self._placed_start(page)
+            if page["section"] in (layout.COVER, layout.LAST):
+                for index, photo in enumerate(page.get("placed_photos", [])):
+                    if not photo.get("removed"):
+                        result.placements.append(C.Placement(
+                            self._placed_parts(page)[index * 2], _rect(photo["rect"]),
+                            start + index * 2))
+                return result
+            # 審議ページなどの書き込み式ページでも、選んだ格子へ写真を重ねる。
+            placed = self._placed_parts(page)
+            if placed:
+                overlay = C.compose_page(page["section"], placed,
+                                         self._all_images(page), self.geometry,
+                                         {index: change for index, change in
+                                          ((i - start, v) for i, v in self._all_overrides(page).items())
+                                          if index >= 0})
+                result.page.items.extend(item for item in overlay.page.items
+                                         if isinstance(item, (dx.Picture, dx.Placeholder)))
+                result.placements.extend(C.Placement(p.part, p.rect, p.index + start)
+                                         for p in overlay.placements if p.part.kind == "写真")
+                result.warnings.extend(overlay.warnings)
+            return result
+        parts = self.parts(page_no)
+        return C.compose_page(page["section"], parts, self._all_images(page),
+                              self.geometry, self._all_overrides(page))
 
     def compose(self, page_no: int) -> C.PageResult:
         """指定ページを組み、現在の状態を更新する。"""
@@ -297,7 +449,7 @@ class Edition:
                 "できた" if self._form_has_input(page) else "未入力")
             self.save()
             return result
-        if not page["source"]:
+        if not page["source"] and not page.get("placed_photos"):
             return C.compose_page(page["section"], [], {}, self.geometry)
         result = self._compose_page(page_no)
         page["state"] = "あふれ" if result.overflow_lines else "できた"
@@ -321,10 +473,41 @@ class Edition:
         values = templates.default_form(page["section"])
         values.update(copy.deepcopy(form))
         page["form"] = values
+        self._sync_placed_from_form(page)
         result = self._compose_page(page_no)
         page["state"] = "あふれ" if result.overflow_lines else (
             "できた" if self._form_has_input(page) else "未入力")
         self._record(f"{page_no}ページの入力欄を直す", before)
+
+    def _sync_placed_from_form(self, page: dict) -> None:
+        """従来の写真入力欄で選んだ写真も、置いた写真へ取り込む。"""
+        values = []
+        if page["section"] == layout.COVER and page["form"].get("photo"):
+            values = [(page["form"]["photo"], page["form"].get("photo_caption", ""),
+                       "中", Rect(0, 4, 3, 22))]
+        elif page["section"] == layout.LAST:
+            values = [(p.get("path", ""), p.get("caption", ""), "小",
+                       Rect(0, 5 + index * 8, 1, 7))
+                      for index, p in enumerate(page["form"].get("editorial_photos", [])[:2])]
+        if not values:
+            return
+        current = [(p.get("file"), p.get("caption", ""))
+                   for p in page.get("placed_photos", []) if not p.get("removed")]
+        wanted = [(Path(str(path)).name, str(caption)) for path, caption, _s, _r in values]
+        if current == wanted:
+            self._sync_form_from_placed(page)
+            return
+        photos = []
+        for path_value, caption, size, rect in values:
+            path = Path(str(path_value))
+            if path.is_file():
+                name = self.keep_writer_photo(path)
+            else:
+                name = path.name
+            photos.append({"file": name, "rect": _rect_data(rect), "size": size,
+                           "caption": str(caption), "removed": False})
+        page["placed_photos"] = photos
+        self._sync_form_from_placed(page)
 
     def copy_forms_from(self, other_folder: Path) -> None:
         """前号の書き込み欄を写し、号ごとの内容だけ空に戻す。"""
@@ -345,6 +528,8 @@ class Edition:
         if kind not in I.KINDS:
             raise ValueError("部品の種類が正しくありません: " + kind)
         page = self._page(page_no)
+        if self._placed_part(page, part_no) is not None:
+            raise ValueError("写真フォルダから置いた写真の種類は変更できません")
         if not page["source"]:
             raise ValueError("原稿が未入力です")
         result = self._ingest(page["source"])
@@ -364,7 +549,7 @@ class Edition:
         page = self._page(page_no)
         occupied = list(layout.fixed_areas(page["section"], self.geometry).values())
         # 本文は置いた後に流し直せるが、ほかの写真・大見出しとは重ねない。
-        if page["source"]:
+        if page["source"] or page.get("placed_photos"):
             current = self._compose_page(page_no)
             occupied.extend(p.rect for p in current.placements
                             if p.index != part_no and p.part.kind in ("写真", "大見出し"))
@@ -381,6 +566,14 @@ class Edition:
         if not self._can_place(page_no, part_no, rect):
             return False
         before = self._state()
+        placed = self._placed_part(self._page(page_no), part_no)
+        if placed is not None:
+            placed[1]["rect"] = _rect_data(rect)
+            placed[1]["removed"] = False
+            self._sync_form_from_placed(self._page(page_no))
+            self._update_page_state(page_no)
+            self._record(f"{page_no}ページの写真を動かす", before)
+            return True
         change = self._page(page_no)["overrides"].setdefault(str(part_no), {})
         change["rect"] = _rect_data(rect)
         change.setdefault("size", None)
@@ -401,6 +594,22 @@ class Edition:
         if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
             raise ValueError("写真の部品を選んでください")
         page = self._page(page_no)
+        placed = self._placed_part(page, part_no)
+        if placed is not None:
+            old_rect = _rect(placed[1].get("rect"))
+            new_rect = C.photo_rect(self.geometry, size, old_rect.dan, old_rect.line)
+            if page["section"] not in (layout.COVER, layout.LAST) and not self._can_place(
+                    page_no, part_no, new_rect):
+                return False
+            before = self._state()
+            placed[1]["size"] = size
+            if page["section"] not in (layout.COVER, layout.LAST):
+                placed[1]["rect"] = _rect_data(new_rect)
+            placed[1]["removed"] = False
+            self._sync_form_from_placed(page)
+            self._update_page_state(page_no)
+            self._record(f"{page_no}ページの写真を{size}にする", before)
+            return True
         old = self._overrides(page).get(part_no, {})
         rect = old.get("rect")
         new_rect = C.photo_rect(self.geometry, size, rect.dan, rect.line) if rect else None
@@ -423,6 +632,13 @@ class Edition:
         if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
             raise ValueError("写真の部品を選んでください")
         before = self._state()
+        placed = self._placed_part(self._page(page_no), part_no)
+        if placed is not None:
+            placed[1]["removed"] = True
+            self._sync_form_from_placed(self._page(page_no))
+            self._update_page_state(page_no)
+            self._record(f"{page_no}ページの写真を外す", before)
+            return
         change = self._page(page_no)["overrides"].setdefault(str(part_no), {})
         change["removed"] = True
         self._update_page_state(page_no)
@@ -434,6 +650,13 @@ class Edition:
         if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
             raise ValueError("写真の部品を選んでください")
         before = self._state()
+        placed = self._placed_part(self._page(page_no), part_no)
+        if placed is not None:
+            placed[1]["removed"] = False
+            self._sync_form_from_placed(self._page(page_no))
+            self._update_page_state(page_no)
+            self._record(f"{page_no}ページの写真を戻す", before)
+            return
         change = self._page(page_no)["overrides"].setdefault(str(part_no), {})
         change["removed"] = False
         self._update_page_state(page_no)
@@ -445,7 +668,7 @@ class Edition:
             result = self._compose_page(page_no)
             page["state"] = "あふれ" if result.overflow_lines else (
                 "できた" if self._form_has_input(page) else "未入力")
-        elif page["source"]:
+        elif page["source"] or page.get("placed_photos"):
             page["state"] = "あふれ" if self._compose_page(page_no).overflow_lines else "できた"
 
     def change_issue(self, **changes) -> None:
@@ -466,6 +689,7 @@ class Edition:
             if previous:
                 page["source"] = previous["source"]
                 page["overrides"] = previous["overrides"]
+                page["placed_photos"] = previous.get("placed_photos", [])
                 page["state"] = previous["state"]
                 if "writer_text" in previous:
                     page["writer_text"] = previous["writer_text"]
@@ -539,9 +763,8 @@ class Edition:
                                              caption, item.box, item,
                                              self._photo_position(item.box)))
                 entries = form_entries
-            elif page.get("source"):
-                ingested = self._ingest(page["source"])
-                parts = C.apply_kind_overrides(ingested.parts, self._overrides(page))
+            elif page.get("source") or page.get("placed_photos"):
+                parts = self.parts(page["no"])
                 placed = {place.index: place for place in result.placements
                           if place.part.kind == "写真"}
                 photo_no = 0
@@ -606,16 +829,17 @@ class Edition:
                     messages.append(prefix + f": {result.overflow_lines}行あふれています")
                 messages.extend(prefix + ": " + w for w in result.warnings)
                 continue
-            if not page["source"]:
+            if not page["source"] and not page.get("placed_photos"):
                 messages.append(prefix + ": 原稿が未入力です")
                 continue
-            ingested = self._ingest(page["source"])
+            ingested = self._ingest(page["source"]) if page.get("source") else None
             result = self.compose(page["no"])
             if result.overflow_lines:
                 messages.append(prefix + f": {result.overflow_lines}行あふれています")
             messages.extend(prefix + ": " + w for w in result.warnings)
-            messages.extend(prefix + ": " + w for w in ingested.warnings)
-            if page["section"] == layout.IPPAN:
+            if ingested is not None:
+                messages.extend(prefix + ": " + w for w in ingested.warnings)
+            if page["section"] == layout.IPPAN and ingested is not None:
                 messages.extend(prefix + ": " + w for w in I.check_ippan(ingested.parts))
         records, _written = self._photo_records()
         messages.extend(f"{item.page_no}ページ（{item.section}）: {item.output_name} {item.warning}"
@@ -634,7 +858,7 @@ class Edition:
             if "form" in page_data:
                 pages.append(self.compose(page_data["no"]).page)
                 continue
-            if not page_data["source"]:
+            if not page_data["source"] and not page_data.get("placed_photos"):
                 box = to_box(self.geometry, Rect(0, 0, 1, 10))
                 pages.append(dx.Page([dx.TextBox(box, [page_data["label"]],
                                                   dx.GOTHIC, 18.0, 25.2,

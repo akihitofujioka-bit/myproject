@@ -16,6 +16,7 @@ import edition  # noqa: E402
 import ingest  # noqa: E402
 import layout  # noqa: E402
 import samples  # noqa: E402
+from grid import Rect  # noqa: E402
 
 
 class ThreePhotoEdition:
@@ -37,7 +38,7 @@ class ChatTest(unittest.TestCase):
         root = Path(self.temp.name)
         issue = layout.Issue(999, 4, "令和8年4月30日", questioners=2)
         self.work = edition.Edition.create(root / "第999号", issue)
-        source = samples.make_ippan_docx(root / "見本原稿.docx")
+        source = samples.make_ingest_image_docx(root / "画像取り込み確認原稿.docx")
         self.ippan = [p["no"] for p in self.work.pages
                       if p["section"] == layout.IPPAN]
         self.page_no = self.ippan[0]
@@ -155,6 +156,15 @@ class ChatTest(unittest.TestCase):
         undo = chat.interpret("元に戻して", self.work, self.page_no, None)
         self.assertIn("元に戻しました", chat.execute(undo, self.work))
         self.assertEqual(self.work.history_index, before)
+
+    def test_chat_moves_photo_placed_from_photo_folder(self):
+        page_no = next(p["no"] for p in self.work.pages if p["section"] == layout.GYOSEI)
+        photo = self.work.folder / "写真" / "架空の風景.png"
+        photo.write_bytes(samples._png(400, 300))
+        self.assertTrue(self.work.place_photo(page_no, photo.name, Rect(0, 10, 1, 1)))
+        result = chat.interpret("この写真を2段目の左へ", self.work, page_no, 0)
+        self.assertTrue(result.understood, result.reason)
+        self.assertIn("移動しました", chat.execute(result, self.work))
 
     def test_page_execute_returns_destination_without_changing_paper(self):
         before = self.work.history_index

@@ -26,7 +26,7 @@ class EditionTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.source = samples.make_ippan_docx(self.root / "見本原稿.docx")
+        self.source = samples.make_ingest_image_docx(self.root / "画像取り込み確認原稿.docx")
         self.issue = layout.Issue(999, 4, "令和8年4月30日", questioners=2)
         self.edition = edition.Edition.create(self.root / "第999号", self.issue)
         self.ippan = [p["no"] for p in self.edition.pages
@@ -43,7 +43,7 @@ class EditionTest(unittest.TestCase):
         after = json.loads((self.edition.folder / "紙面.json").read_text(encoding="utf-8"))
         self.assertEqual(before, after)
         self.assertEqual(reopened.issue, self.edition.issue)
-        self.assertTrue((self.edition.folder / "原稿" / "見本原稿.docx").is_file())
+        self.assertTrue((self.edition.folder / "原稿" / "画像取り込み確認原稿.docx").is_file())
         self.assertTrue((self.edition.folder / "写真").is_dir())
 
     def test_actions_undo_and_redo(self):
@@ -83,7 +83,7 @@ class EditionTest(unittest.TestCase):
         self.edition.change_issue(questioners=3)
         pages = [p for p in self.edition.pages if p["section"] == layout.IPPAN]
         self.assertEqual([p["source"] for p in pages],
-                         ["見本原稿.docx", "別の見本原稿.docx", None])
+                         ["画像取り込み確認原稿.docx", "別の見本原稿.docx", None])
         self.assertTrue(self.edition.undo())
         self.assertEqual(len([p for p in self.edition.pages
                               if p["section"] == layout.IPPAN]), 2)
@@ -135,11 +135,58 @@ class EditionTest(unittest.TestCase):
         self.edition.pages[0]["state"] = "できた"
         self.assertIn("Word に書き出す", edition.next_hint(self.edition))
 
+    def test_photo_folder_list_and_placed_photo_lifecycle(self):
+        page_no = next(p["no"] for p in self.edition.pages if p["section"] == layout.GYOSEI)
+        photo = self.edition.folder / "写真" / "架空の風景.png"
+        photo.write_bytes(samples._png(640, 480))
+        jpeg = self.edition.folder / "写真" / "架空の会場.jpg"
+        jpeg.write_bytes(b"\xff\xd8\xff\xc0\x00\x0b\x08\x01\xe0\x02\x80\x03\x01\x11\x00")
+        (self.edition.folder / "写真" / "架空.heic").write_bytes(b"unreadable")
+        listed = {item["name"]: item for item in self.edition.photo_files()}
+        self.assertEqual(listed["架空の風景.png"]["pixels"], (640, 480))
+        self.assertEqual(listed["架空の会場.jpg"]["pixels"], (640, 480))
+        self.assertIn("JPEG か PNG", listed["架空.heic"]["message"])
+
+        target = Rect(2, 12, 1, 1)
+        self.assertTrue(self.edition.place_photo(page_no, photo.name, target))
+        part_no = next(i for i, part in enumerate(self.edition.parts(page_no))
+                       if part.kind == "写真")
+        self.assertFalse(self.edition.place_photo(page_no, photo.name, target))
+        self.assertTrue(self.edition.resize_photo(page_no, part_no, "小"))
+        self.edition.set_photo_caption(page_no, part_no, "架空の催し")
+        self.assertEqual(self.edition.pages[page_no - 1]["placed_photos"][0]["caption"],
+                         "架空の催し")
+        self.edition.remove_photo(page_no, part_no)
+        self.assertFalse(self.edition.compose(page_no).placements)
+        self.assertTrue(self.edition.undo())
+        self.assertTrue(self.edition.compose(page_no).placements)
+        reopened = edition.Edition.open(self.edition.folder)
+        self.assertEqual(reopened.pages[page_no - 1]["placed_photos"][0]["size"], "小")
+
+    def test_placed_photos_on_cover_last_and_export(self):
+        photo = self.edition.folder / "写真" / "架空の会場.png"
+        photo.write_bytes(samples._png(1200, 800))
+        cover = next(p["no"] for p in self.edition.pages if p["section"] == layout.COVER)
+        last = next(p["no"] for p in self.edition.pages if p["section"] == layout.LAST)
+        self.assertTrue(self.edition.place_photo(cover, photo.name, Rect(0, 0, 1, 1)))
+        self.assertTrue(self.edition.place_photo(last, photo.name, Rect(0, 0, 1, 1)))
+        self.assertTrue(self.edition.place_photo(last, photo.name, Rect(0, 8, 1, 1)))
+        with self.assertRaisesRegex(ValueError, "2枚まで"):
+            self.edition.place_photo(last, photo.name, Rect(0, 16, 1, 1))
+        self.assertTrue(self.edition.pages[cover - 1]["form"]["photo"].endswith(photo.name))
+        self.assertEqual(len(self.edition.pages[last - 1]["form"]["editorial_photos"]), 2)
+        paths = self.edition.export()
+        with zipfile.ZipFile(paths[0]) as package:
+            names = package.namelist()
+        self.assertTrue(any(name.startswith("word/media/") for name in names))
+        records, _ = self.edition._photo_records()
+        self.assertEqual(len([r for r in records if r.page_no in (cover, last)]), 3)
+
 
 class ComposeOverrideTest(unittest.TestCase):
     def test_manual_photo_and_bad_overlap(self):
         with tempfile.TemporaryDirectory() as folder:
-            source = samples.make_ippan_docx(Path(folder) / "見本.docx")
+            source = samples.make_ingest_image_docx(Path(folder) / "画像取り込み確認.docx")
             import ingest
             import compose
             from grid import Geometry

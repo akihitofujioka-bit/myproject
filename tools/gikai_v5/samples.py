@@ -84,13 +84,11 @@ def _textbox_p(text: str) -> str:
             '</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>')
 
 
-def _document_xml() -> str:
+def _document_xml(include_image: bool = False) -> str:
     body: List[str] = [
         _p("暮らしを守る防災対策", "MainHeading"),
         '<w:tbl><w:tr><w:tc>' + _p("表の中の段落です。") + '</w:tc></w:tr></w:tbl>',
         _textbox_p("テキストボックスの段落です。"),
-        _image_p(),
-        _p("▲見本　太郎議員"),
         f'<w:p>{_run("避難所の備え", size=14, bold=True)}</w:p>',
         _p("問　避難所の備蓄は十分ですか。"),
         _p("あわせて、期限の確認方法も伺います。"),
@@ -105,6 +103,8 @@ def _document_xml() -> str:
         _p("◎見本の条例改正"),
         _p("2026年度に3地区で進めます。"),
     ]
+    if include_image:
+        body[3:3] = [_image_p(), _p("▲見本　太郎議員")]
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             f'<w:document xmlns:w="{W}" xmlns:r="{R}" xmlns:wp="{WP}" xmlns:a="{A}" '
             f'xmlns:pic="{PIC}" xmlns:v="{V}"><w:body>{"".join(body)}<w:sectPr/></w:body></w:document>')
@@ -124,8 +124,8 @@ def _styles_xml() -> str:
             '</w:styles>')
 
 
-def make_ippan_docx(path: Path) -> Path:
-    """書式・表・テキストボックス・画像を含む見本の .docx を作る。"""
+def _make_ippan_docx(path: Path, include_image: bool) -> Path:
+    """一般質問の見本を作る。画像付きは取り込み機能のテスト専用。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     content_types = ('<?xml version="1.0" encoding="UTF-8"?>'
@@ -142,16 +142,28 @@ def make_ippan_docx(path: Path) -> Path:
     doc_rels = ('<?xml version="1.0" encoding="UTF-8"?>'
                 '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
                 f'<Relationship Id="rIdStyles" Type="{R}/styles" Target="styles.xml"/>'
-                f'<Relationship Id="rIdImage1" Type="{R}/image" Target="media/face.png"/>'
+                + (f'<Relationship Id="rIdImage1" Type="{R}/image" Target="media/face.png"/>'
+                   if include_image else '') +
                 '</Relationships>')
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", content_types)
         z.writestr("_rels/.rels", root_rels)
-        z.writestr("word/document.xml", _document_xml())
+        z.writestr("word/document.xml", _document_xml(include_image))
         z.writestr("word/styles.xml", _styles_xml())
         z.writestr("word/_rels/document.xml.rels", doc_rels)
-        z.writestr("word/media/face.png", _png())
+        if include_image:
+            z.writestr("word/media/face.png", _png())
     return path
+
+
+def make_ippan_docx(path: Path) -> Path:
+    """写真を含まない、実際の受け取り方に沿った一般質問の見本を作る。"""
+    return _make_ippan_docx(path, False)
+
+
+def make_ingest_image_docx(path: Path) -> Path:
+    """Word に貼られた画像の取り込み機能だけを確かめる一時見本を作る。"""
+    return _make_ippan_docx(path, True)
 
 
 def make_ippan_txt(path: Path) -> Path:
@@ -159,7 +171,6 @@ def make_ippan_txt(path: Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     text = """【大見出し】暮らしを守る防災対策
-【写真】face.png｜顔｜▲見本　太郎議員
 【見出し】避難所の備え
 問　避難所の備蓄は十分ですか。
 あわせて、期限の確認方法も伺います。
@@ -216,11 +227,11 @@ def _write_parts_docx(path: Path, body: List[str], images: List[tuple[str, bytes
 
 def make_overflow_ippan_docx(path: Path) -> Path:
     """答弁が 1 ページからあふれる、架空の一般質問原稿を作る。"""
-    body = [_p("地域交通を将来へつなぐ", "MainHeading"), _image_p(), _p("▲架空　花子議員"),
+    body = [_p("地域交通を将来へつなぐ", "MainHeading"),
             _p("移動手段の確保", "MinorHeading"), _p("問　地域の移動手段をどう守りますか。")]
     sentence = "答　町内の状況を丁寧に調べ、利用する人の声を聞きながら持続できる方法を検討します。"
     body.extend(_p(sentence * 5) for _ in range(12))
-    return _write_parts_docx(path, body, [("face.png", _png(60, 80))])
+    return _write_parts_docx(path, body, [])
 
 
 def make_gyosei_two_photos_docx(path: Path) -> Path:

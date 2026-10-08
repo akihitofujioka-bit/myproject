@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import os
+import subprocess
 import sys
 import tkinter as tk
 import tkinter.font as tkfont
@@ -12,18 +14,26 @@ from typing import Dict, List, Optional, Tuple
 
 import docx_out as dx
 import chat
+import compose
 import edition
 import ingest
 import layout
 import templates
 import writer
 from settings import Settings
-from grid import Rect, TATECHUYOKO, mm2pt, to_box
+from grid import Box, Rect, TATECHUYOKO, mm2pt, to_box
 
 
-FONT_SIZE = 12
+FONT_SIZE = 11
 FONT = ("TkDefaultFont", FONT_SIZE)
 SMALL_FONT = ("TkDefaultFont", max(9, FONT_SIZE - 2))
+
+UI = {
+    "background": "#f5f6f8", "card": "#ffffff", "text": "#1f2933",
+    "muted": "#667085", "accent": "#2563eb", "accent_hover": "#1d4ed8",
+    "warning": "#d97706", "error": "#dc2626", "success": "#16a34a",
+    "border": "#d7dce3", "selected": "#dbeafe", "space": 8,
+}
 
 COLORS = {
     "大見出し": "#ffd166", "中見出し": "#ffe8a3", "写真": "#8ecae6",
@@ -38,7 +48,7 @@ HELP_TEXT = """①「新しい号」を押し、号数と月などを入れま�
 
 「書いて直す」では、大見出し・中見出し・問・答・本文・写真のボタンで今の行へ印を付けます。入力中も紙面、あふれ、余りが変わります。保存先は号フォルダの「事務局原稿」です。原稿ファイルを入れたページも、元ファイルを書き換えずに書き直せます。
 
-③ 紙面と、右の「部品」タブの「このページの部品」で内容を確かめます。写真と大見出しはドラッグで動かせます。緑は置ける場所、赤は置けない場所です。写真は同じタブの「大・中・小・顔」で大きさを変えられます。
+③ 写真は号フォルダの「写真」へコピーし、右の「写真」タブで選びます。紙面の置きたい所をクリックするか、一覧から紙面へドラッグします。緑は置ける場所、赤は置けない場所です。置いた写真は「部品」タブで大きさと説明を直せます。表紙と編集後記も同じ手順です。
 
 ④ 種類が違う部品を選び、右の「部品」タブの「種類を直す」で正しい種類を押します。タブの下の「元に戻す」で直前の操作を戻し、「やり直す」で戻す前の状態へ進めます。
 
@@ -50,7 +60,7 @@ HELP_TEXT = """①「新しい号」を押し、号数と月などを入れま�
 
 色と札: 問・答・大見出しなど、部品の種類を色と右上の札で示します。？付きの札と点線の枠は推測された部品です。
 
-保存場所: 選んだ号フォルダの「原稿」「事務局原稿」「写真」「出力」に保存されます。完成した Word、写真配置一覧、確認リストは「出力」に入ります。"""
+保存場所: 写真はすべて号フォルダの「写真」に置きます。完成した Word、写真配置一覧、確認リストは「出力」に入ります。"""
 
 
 class FormEditor:
@@ -67,7 +77,11 @@ class FormEditor:
         self.pending = None
         self.window = tk.Toplevel(app.root)
         self.window.title(self.page["label"] + "の入力欄")
-        self.window.geometry("760x720")
+        # 紙面と右欄を隠さないよう、原稿を書く窓と同じ位置・幅で開く。
+        app.root.update_idletasks()
+        x, y = app.root.winfo_rootx(), app.root.winfo_rooty()
+        height = max(500, min(800, app.root.winfo_height() - 40))
+        self.window.geometry(f"480x{height}+{x}+{y + 20}")
         self.window.protocol("WM_DELETE_WINDOW", self.close)
         outer = ttk.Frame(self.window, padding=10)
         outer.pack(fill="both", expand=True)
@@ -75,7 +89,8 @@ class FormEditor:
         scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
         self.body = ttk.Frame(canvas)
         self.body.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self.body, anchor="nw")
+        body_window = canvas.create_window((0, 0), window=self.body, anchor="nw")
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(body_window, width=event.width))
         canvas.configure(yscrollcommand=scroll.set)
         canvas.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
@@ -100,19 +115,19 @@ class FormEditor:
     def _label(self, field) -> None:
         ttk.Label(self.body, text=field.label, font=(self.app.default_family, FONT_SIZE, "bold")).pack(anchor="w", pady=(8, 0))
         detail = field.description + (("　例：" + field.example) if field.example else "")
-        ttk.Label(self.body, text=detail, font=SMALL_FONT, wraplength=700).pack(anchor="w")
+        ttk.Label(self.body, text=detail, font=SMALL_FONT, wraplength=430).pack(anchor="w")
 
     def _text_field(self, field) -> None:
         self._label(field)
         value = str(self.form.get(field.name, "") or "")
         if field.multiline:
-            widget = tk.Text(self.body, height=5, width=80, font=FONT, wrap="word")
+            widget = tk.Text(self.body, height=5, width=48, font=FONT, wrap="word")
             widget.insert("1.0", value)
             widget.bind("<KeyRelease>", lambda _e, name=field.name, item=widget:
                         self._changed(name, item.get("1.0", "end-1c")))
         else:
             variable = tk.StringVar(value=value)
-            widget = ttk.Entry(self.body, textvariable=variable, width=85, font=FONT)
+            widget = ttk.Entry(self.body, textvariable=variable, width=50, font=FONT)
             variable.trace_add("write", lambda *_a, name=field.name, var=variable:
                                self._changed(name, var.get()))
         widget.pack(fill="x", pady=(2, 3))
@@ -146,7 +161,7 @@ class FormEditor:
     def _counts(self) -> None:
         ttk.Label(self.body, text="議案等の種類と件数", font=(self.app.default_family, FONT_SIZE, "bold")).pack(anchor="w", pady=(8, 0))
         text = "\n".join(f"{item.get('kind', '')}={item.get('count', 0)}" for item in self.form.get("counts", []))
-        widget = tk.Text(self.body, height=4, width=80, font=FONT)
+        widget = tk.Text(self.body, height=4, width=48, font=FONT)
         widget.insert("1.0", text)
         widget.pack(fill="x")
         def changed(_event=None):
@@ -264,8 +279,8 @@ class App:
 
     PAPER_W = 510.0
     PAPER_H = 765.0
-    # 標準は 1366×768 の画面でも紙面が縦に収まる大きさ。字を読みたいときは「大」
-    ZOOMS = (0.72, 0.95, 1.25)
+    # 標準は紙面欄へ自動で合わせ、縮小・拡大はその倍率を基準にする。
+    ZOOMS = (0.80, 1.0, 1.25)
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -275,61 +290,156 @@ class App:
         self.selected_part = None  # type: Optional[int]
         self.part_items = {}  # type: Dict[int, List[Rect]]
         self.caption_items = {}  # type: Dict[int, Rect]
+        # 表紙・最終ページの写真は格子ではなく、テンプレートが決めた実寸で描く。
+        self.fixed_part_boxes = {}  # type: Dict[int, List[Box]]
+        self.fixed_caption_boxes = {}  # type: Dict[int, Box]
+        self.part_drag_rects = {}  # type: Dict[int, Rect]
         self.drag = None
         self.shadow = None
         self.step = 1
-        self.zoom_level = 0
+        self.zoom_level = 1
+        self.fit_scale = 0.72
+        self.fit_after = None
         self.photo_images = []  # type: List[tk.PhotoImage]
+        self.library_images = []  # type: List[tk.PhotoImage]
+        self.photo_rows = []
+        self.selected_photo = None  # type: Optional[str]
+        self.photo_drag = False
         self.form_editor = None  # type: Optional[FormEditor]
         self.writer_editor = None  # type: Optional[writer.WriterEditor]
         self.pending_chat = None  # type: Optional[chat.Interpretation]
-        self.default_family = tkfont.nametofont("TkDefaultFont").actual("family")
         families = set(tkfont.families(root))
+        preferred = (("Meiryo UI", "Yu Gothic UI") if sys.platform.startswith("win")
+                     else ("Hiragino Sans", "Yu Gothic UI", "Meiryo UI"))
+        self.default_family = next((name for name in preferred if name in families),
+                                   tkfont.nametofont("TkDefaultFont").actual("family"))
+        tkfont.nametofont("TkDefaultFont").configure(family=self.default_family, size=FONT_SIZE)
+        tkfont.nametofont("TkTextFont").configure(family=self.default_family, size=FONT_SIZE)
+        global FONT, SMALL_FONT
+        FONT = (self.default_family, FONT_SIZE)
+        SMALL_FONT = (self.default_family, max(9, FONT_SIZE - 2))
         self.gothic_family = next((name for name in
                                    ("ＭＳ ゴシック", "MS Gothic", "Yu Gothic", "Hiragino Sans", "Arial")
                                    if name in families), self.default_family)
         self.mincho_family = next((name for name in
                                    ("ＭＳ 明朝", "MS Mincho", "Yu Mincho", "Hiragino Mincho ProN", "Times New Roman")
                                    if name in families), self.default_family)
+        self._configure_style()
         self._build()
+
+    def _configure_style(self) -> None:
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        self.root.configure(bg=UI["background"])
+        style.configure("TFrame", background=UI["background"])
+        style.configure("Card.TFrame", background=UI["card"], relief="flat")
+        style.configure("TLabel", background=UI["background"], foreground=UI["text"],
+                        font=FONT, padding=2)
+        style.configure("Card.TLabel", background=UI["card"])
+        style.configure("TButton", background=UI["card"], foreground=UI["text"],
+                        font=FONT, padding=(10, 6), borderwidth=1, relief="flat")
+        style.map("TButton", background=[("active", UI["selected"]),
+                                          ("pressed", "#bfdbfe")])
+        style.configure("Accent.TButton", background=UI["accent"], foreground="white")
+        style.map("Accent.TButton", background=[("active", UI["accent_hover"]),
+                                                 ("pressed", "#1e40af")])
+        style.configure("TNotebook", background=UI["background"], borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(12, 7), font=FONT)
+        style.map("TNotebook.Tab", background=[("selected", UI["card"])],
+                  foreground=[("selected", UI["accent"])])
+        # 48px の縮小画像と文字が、隣の行へ重ならず一行に収まる高さ。
+        style.configure("Photo.Treeview", rowheight=54, font=SMALL_FONT)
+        style.configure("Photo.Treeview.Heading", font=SMALL_FONT)
 
     @property
     def scale(self) -> float:
-        return self.ZOOMS[self.zoom_level]
+        return self.fit_scale * self.ZOOMS[self.zoom_level]
+
+    def _scrollable_tab(self, notebook: ttk.Notebook, title: str):
+        """Notebook 内へ、縦にスクロールできる共通の入れ物を作る。"""
+        tab = ttk.Frame(notebook)
+        canvas = tk.Canvas(tab, highlightthickness=0, bg=UI["background"])
+        scroll = ttk.Scrollbar(tab, orient="vertical", command=canvas.yview)
+        body = ttk.Frame(canvas, padding=5)
+        body_window = canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(body_window, width=event.width))
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        notebook.add(tab, text=title)
+        self.tab_scrollers[body] = canvas
+        return tab, body
+
+    def _on_tab_mousewheel(self, event):
+        """Windows・Mac・X11 のホイールで、ポインター下のタブを動かす。"""
+        widget = self.root.winfo_containing(event.x_root, event.y_root)
+        while widget is not None:
+            canvas = self.tab_scrollers.get(widget)
+            if canvas is not None:
+                if getattr(event, "num", None) == 4:
+                    units = -1
+                elif getattr(event, "num", None) == 5:
+                    units = 1
+                else:
+                    units = -1 if event.delta > 0 else 1
+                canvas.yview_scroll(units, "units")
+                return "break"
+            widget = getattr(widget, "master", None)
+        return None
 
     def _build(self) -> None:
         self.root.geometry("1366x740")
         self.root.minsize(1024, 640)
         self.steps = []
-        top = ttk.Frame(self.root, padding=6)
+        header = ttk.Frame(self.root, padding=(10, 7))
+        header.pack(fill="x")
+        ttk.Label(header, text="議会だより編集ツール V5",
+                  font=(self.default_family, FONT_SIZE + 3, "bold")).pack(side="left")
+        self.issue_label = ttk.Label(header, text="号を開いてください", foreground=UI["muted"])
+        self.issue_label.pack(side="left", padx=14)
+        ttk.Button(header, text="使い方", command=self._show_help).pack(side="right", padx=3)
+        ttk.Button(header, text="設定", command=self._settings).pack(side="right", padx=3)
+        ttk.Button(header, text="新しい号", command=self.create_edition).pack(side="right", padx=3)
+        ttk.Button(header, text="号を開く", command=self.open_edition).pack(side="right", padx=3)
+
+        top = ttk.Frame(self.root, padding=(10, 2, 10, 6))
         top.pack(fill="x")
-        for text in ("①号を作る", "②原稿を入れる", "③並べる", "④確かめる", "⑤書き出す"):
-            label = tk.Label(top, text=text, font=FONT, padx=12, pady=5)
+        self.step_names = ("号を作る", "原稿を入れる", "並べる", "確かめる", "書き出す")
+        for number, text in enumerate(self.step_names, 1):
+            label = tk.Label(top, text=f"{number}  {text}", font=FONT, padx=12, pady=5,
+                             bd=0, bg=UI["card"], fg=UI["text"])
             label.pack(side="left")
             self.steps.append(label)
-        ttk.Button(top, text="使い方", command=self._show_help).pack(side="right", padx=3)
-        ttk.Button(top, text="設定", command=self._settings).pack(side="right", padx=3)
-        ttk.Button(top, text="新しい号", command=self.create_edition).pack(side="right", padx=3)
-        ttk.Button(top, text="号を開く", command=self.open_edition).pack(side="right", padx=3)
 
-        hint_frame = ttk.Frame(self.root, padding=(8, 0, 8, 6))
+        hint_frame = tk.Frame(self.root, bg=UI["card"], highlightthickness=1,
+                              highlightbackground=UI["accent"], padx=8, pady=4)
         hint_frame.pack(fill="x")
-        ttk.Label(hint_frame, text="いまやること：",
-                  font=(self.default_family, FONT_SIZE, "bold")).pack(side="left")
-        self.hint = ttk.Label(hint_frame, text=edition.next_hint(None), font=FONT)
+        tk.Label(hint_frame, text="いまやること：", bg=UI["card"], fg=UI["accent"],
+                 font=(self.default_family, FONT_SIZE, "bold")).pack(side="left")
+        self.hint = tk.Label(hint_frame, text=edition.next_hint(None), font=FONT,
+                             bg=UI["card"], fg=UI["text"])
         self.hint.pack(side="left", fill="x", expand=True)
 
-        body = ttk.Panedwindow(self.root, orient="horizontal")
+        body = ttk.Frame(self.root)
         body.pack(fill="both", expand=True, padx=6, pady=(0, 6))
         left = ttk.Frame(body, width=240, padding=5)
         center = ttk.Frame(body, padding=5)
-        right = ttk.Frame(body, width=380, padding=5)
-        body.add(left, weight=1)
-        body.add(center, weight=3)
-        body.add(right, weight=2)
+        right = ttk.Frame(body, width=400, padding=5)
+        left.pack(side="left", fill="y")
+        right.pack(side="right", fill="y")
+        center.pack(side="left", fill="both", expand=True)
+        left.pack_propagate(False)
+        right.pack_propagate(False)
 
         ttk.Label(left, text="ページ一覧", font=FONT).pack(anchor="w")
-        self.page_list = tk.Listbox(left, font=SMALL_FONT, width=28, exportselection=False)
+        self.page_list = tk.Listbox(left, font=SMALL_FONT, width=28, exportselection=False,
+                                    bd=0, highlightthickness=1,
+                                    highlightbackground=UI["border"],
+                                    selectbackground=UI["accent"], selectforeground="white")
         self.page_list.pack(fill="both", expand=True, pady=5)
         ttk.Label(left, text="○ 未入力　✓ できた　！ あふれ", font=SMALL_FONT).pack(anchor="w")
         self.page_list.bind("<<ListboxSelect>>", self._select_page)
@@ -344,9 +454,12 @@ class App:
         ttk.Button(zoom, text="拡大 ＋", command=lambda: self._zoom(1)).pack(side="right", padx=2)
         self.zoom_text = ttk.Label(zoom, text="標準", font=SMALL_FONT)
         self.zoom_text.pack(side="right", padx=5)
-        self.canvas = tk.Canvas(center, bg="white", highlightthickness=1,
-                                highlightbackground="#777777")
+        self.canvas_area = ttk.Frame(center)
+        self.canvas_area.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(self.canvas_area, bg="white", highlightthickness=2,
+                                highlightbackground=UI["border"], relief="flat")
         self.canvas.pack(anchor="n")
+        self.canvas_area.bind("<Configure>", self._schedule_fit_canvas)
         self.canvas.bind("<Button-1>", self._drag_start)
         self.canvas.bind("<B1-Motion>", self._drag_motion)
         self.canvas.bind("<ButtonRelease-1>", self._drag_end)
@@ -358,20 +471,22 @@ class App:
 
         self.right_notebook = ttk.Notebook(right)
         self.right_notebook.pack(fill="both", expand=True)
-        self.parts_tab = ttk.Frame(self.right_notebook, padding=5)
-        self.chat_tab = ttk.Frame(self.right_notebook, padding=5)
-        self.page_tab = ttk.Frame(self.right_notebook, padding=5)
-        self.right_notebook.add(self.parts_tab, text="部品")
-        self.right_notebook.add(self.chat_tab, text="チャット")
-        self.right_notebook.add(self.page_tab, text="ページ")
+        self.tab_scrollers = {}
+        self.parts_tab, parts_body = self._scrollable_tab(self.right_notebook, "部品")
+        self.photos_tab, photos_body = self._scrollable_tab(self.right_notebook, "写真")
+        self.chat_tab, chat_body = self._scrollable_tab(self.right_notebook, "チャット")
+        self.page_tab, page_body = self._scrollable_tab(self.right_notebook, "ページ")
+        self.root.bind_all("<MouseWheel>", self._on_tab_mousewheel, add="+")
+        self.root.bind_all("<Button-4>", self._on_tab_mousewheel, add="+")
+        self.root.bind_all("<Button-5>", self._on_tab_mousewheel, add="+")
 
-        ttk.Label(self.parts_tab, text="このページの部品", font=FONT).pack(anchor="w")
-        self.part_list = tk.Listbox(self.parts_tab, font=SMALL_FONT, width=38, height=7,
+        ttk.Label(parts_body, text="このページの部品", font=FONT).pack(anchor="w")
+        self.part_list = tk.Listbox(parts_body, font=SMALL_FONT, width=38, height=7,
                                     exportselection=False)
         self.part_list.pack(fill="x", pady=(3, 5))
         self.part_list.bind("<<ListboxSelect>>", self._select_part_from_list)
-        ttk.Label(self.parts_tab, text="選んだ部品（全文と理由）", font=FONT).pack(anchor="w")
-        selection_frame = ttk.Frame(self.parts_tab)
+        ttk.Label(parts_body, text="選んだ部品（全文と理由）", font=FONT).pack(anchor="w")
+        selection_frame = ttk.Frame(parts_body)
         selection_frame.pack(fill="both", expand=True, pady=(3, 6))
         self.selection = tk.Text(selection_frame, height=5, width=36, font=SMALL_FONT,
                                  wrap="word", state="disabled")
@@ -382,8 +497,8 @@ class App:
         selection_scroll.pack(side="right", fill="y")
         self._set_selection_text("なし")
 
-        ttk.Label(self.parts_tab, text="種類を直す", font=SMALL_FONT).pack(anchor="w")
-        kinds = ttk.Frame(self.parts_tab)
+        ttk.Label(parts_body, text="種類を直す", font=SMALL_FONT).pack(anchor="w")
+        kinds = ttk.Frame(parts_body)
         kinds.pack(fill="x", pady=(2, 6))
         for number, kind in enumerate(KIND_BUTTONS):
             ttk.Button(kinds, text=kind,
@@ -393,26 +508,58 @@ class App:
         for column in range(3):
             kinds.columnconfigure(column, weight=1)
 
-        ttk.Label(self.parts_tab, text="写真の大きさ", font=SMALL_FONT).pack(anchor="w")
-        size_frame = ttk.Frame(self.parts_tab)
+        ttk.Label(parts_body, text="写真の大きさ", font=SMALL_FONT).pack(anchor="w")
+        size_frame = ttk.Frame(parts_body)
         size_frame.pack(fill="x", pady=(2, 0))
         for size in ("大", "中", "小", "顔"):
             ttk.Button(size_frame, text=size,
                        command=lambda value=size: self._resize(value)).pack(side="left", padx=2)
-        photo_actions = ttk.Frame(self.parts_tab)
+        photo_actions = ttk.Frame(parts_body)
         photo_actions.pack(fill="x", pady=(6, 0))
         ttk.Button(photo_actions, text="写真を外す", command=self._remove).pack(
             side="left", fill="x", expand=True, padx=(0, 1))
         ttk.Button(photo_actions, text="写真を戻す", command=self._restore).pack(
             side="left", fill="x", expand=True, padx=(1, 0))
+        ttk.Label(parts_body, text="写真の説明", font=SMALL_FONT).pack(anchor="w", pady=(7, 0))
+        caption_row = ttk.Frame(parts_body)
+        caption_row.pack(fill="x", pady=(2, 0))
+        self.caption_entry = ttk.Entry(caption_row, font=FONT)
+        self.caption_entry.pack(side="left", fill="x", expand=True)
+        ttk.Button(caption_row, text="保存", command=self._save_caption).pack(side="left", padx=(3, 0))
 
-        ttk.Button(self.page_tab, text="原稿を入れる", command=self._assign).pack(
+        ttk.Label(photos_body, text="写真フォルダ", font=(self.default_family, FONT_SIZE, "bold")).pack(anchor="w")
+        photo_buttons = ttk.Frame(photos_body)
+        photo_buttons.pack(fill="x", pady=(3, 6))
+        ttk.Button(photo_buttons, text="写真フォルダを開く", command=self._open_photo_folder).pack(fill="x")
+        add_reload = ttk.Frame(photos_body)
+        add_reload.pack(fill="x", pady=(0, 6))
+        ttk.Button(add_reload, text="写真を追加", command=self._add_photos).pack(
+            side="left", fill="x", expand=True, padx=(0, 2))
+        ttk.Button(add_reload, text="読み直す", command=self._refresh_photo_library).pack(
+            side="left", fill="x", expand=True, padx=(2, 0))
+        self.photo_tree = ttk.Treeview(photos_body, columns=("detail",), show="tree headings",
+                                       height=8, selectmode="browse", style="Photo.Treeview")
+        self.photo_tree.heading("#0", text="写真")
+        self.photo_tree.heading("detail", text="画素数・お知らせ")
+        self.photo_tree.column("#0", width=135, stretch=True)
+        self.photo_tree.column("detail", width=170, stretch=True)
+        self.photo_tree.pack(fill="both", expand=True)
+        self.photo_tree.bind("<<TreeviewSelect>>", self._select_library_photo)
+        self.photo_tree.bind("<ButtonPress-1>", self._photo_drag_start)
+        self.photo_tree.bind("<B1-Motion>", self._photo_drag_motion)
+        self.photo_tree.bind("<ButtonRelease-1>", self._photo_drag_end)
+        self.photo_help = ttk.Label(
+            photos_body, text="写真を選び、紙面をクリックしてください。\n一覧から紙面へドラッグしても置けます。",
+            font=SMALL_FONT, wraplength=360, justify="left")
+        self.photo_help.pack(fill="x", pady=(6, 0))
+
+        ttk.Button(page_body, text="原稿を入れる", command=self._assign).pack(
             fill="x", pady=(2, 4))
-        ttk.Button(self.page_tab, text="書いて直す", command=self._open_writer).pack(
+        ttk.Button(page_body, text="書いて直す", command=self._open_writer).pack(
             fill="x", pady=4)
-        ttk.Button(self.page_tab, text="入力欄を開く", command=self._open_form).pack(
+        ttk.Button(page_body, text="入力欄を開く", command=self._open_form).pack(
             fill="x", pady=4)
-        ttk.Button(self.page_tab, text="前の号から写す", command=self._copy_forms).pack(
+        ttk.Button(page_body, text="前の号から写す", command=self._copy_forms).pack(
             fill="x", pady=4)
 
         actions = ttk.Frame(right)
@@ -423,7 +570,8 @@ class App:
             row=0, column=1, sticky="ew", padx=1, pady=1)
         ttk.Button(actions, text="確かめる", command=self._check).grid(
             row=1, column=0, sticky="ew", padx=1, pady=1)
-        ttk.Button(actions, text="Word に書き出す", command=self._export).grid(
+        ttk.Button(actions, text="Word に書き出す", command=self._export,
+                   style="Accent.TButton").grid(
             row=1, column=1, sticky="ew", padx=1, pady=1)
         actions.columnconfigure(0, weight=1)
         actions.columnconfigure(1, weight=1)
@@ -432,7 +580,7 @@ class App:
                                wraplength=360)
         self.status.pack(fill="x", pady=(3, 0))
 
-        chat_frame = self.chat_tab
+        chat_frame = chat_body
         self.chat_history = tk.Text(chat_frame, height=5, width=36, font=SMALL_FONT,
                                     wrap="word", state="disabled")
         self.chat_history.pack(fill="both", expand=True)
@@ -543,8 +691,15 @@ class App:
 
     def _show_step(self) -> None:
         for n, label in enumerate(self.steps, 1):
-            label.configure(bg="#ffe08a" if n == self.step else self.root.cget("bg"),
-                            relief="solid" if n == self.step else "flat")
+            if n < self.step:
+                label.configure(text="✓  " + self.step_names[n - 1],
+                                bg="#dcfce7", fg=UI["success"])
+            elif n == self.step:
+                label.configure(text=f"{n}  {self.step_names[n - 1]}",
+                                bg=UI["accent"], fg="white")
+            else:
+                label.configure(text=f"{n}  {self.step_names[n - 1]}",
+                                bg=UI["card"], fg=UI["text"])
 
     def _show_help(self) -> None:
         window = tk.Toplevel(self.root)
@@ -605,19 +760,163 @@ class App:
         if self.page_no:
             self.page_list.selection_set(0)
         self.right_notebook.select(self.parts_tab)
+        self.issue_label.configure(text=self.edition.issue.title if self.edition else "号を開いてください")
+        self._refresh_photo_library()
         self._draw()
         self.status.configure(text=str(self.edition.folder) if self.edition else "")
         self._show_step()
+
+    def _open_photo_folder(self) -> None:
+        if not self.edition:
+            return
+        folder = self.edition.folder / "写真"
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(str(folder))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(folder)])
+            else:
+                subprocess.Popen(["xdg-open", str(folder)])
+        except (OSError, AttributeError) as error:
+            self.status.configure(text="写真フォルダを開けませんでした。エクスプローラーから開いてください。")
+
+    def _add_photos(self) -> None:
+        if not self.edition:
+            return
+        paths = filedialog.askopenfilenames(
+            title="写真を追加", filetypes=[("写真", "*.png *.jpg *.jpeg *.heic *.HEIC"), ("すべて", "*.*")])
+        if not paths:
+            return
+        try:
+            self.edition.add_photos(paths)
+        except OSError as error:
+            messagebox.showerror("写真を追加できませんでした", str(error))
+            return
+        self._refresh_photo_library()
+
+    def _refresh_photo_library(self) -> None:
+        if not hasattr(self, "photo_tree"):
+            return
+        for item in self.photo_tree.get_children():
+            self.photo_tree.delete(item)
+        self.library_images = []
+        self.photo_rows = []
+        if not self.edition:
+            return
+        for index, item in enumerate(self.edition.photo_files()):
+            self.photo_rows.append(item)
+            image = ""
+            kind_label = item["kind"].upper() if item["kind"] else "画像"
+            if item["kind"] == "png" and not item["message"]:
+                try:
+                    thumb = tk.PhotoImage(file=str(item["path"]))
+                    # subsample は縦横へ同じ整数を使い、比率を保ったまま一辺48px以内にする。
+                    sample = max(1, (max(thumb.width(), thumb.height()) + 47) // 48)
+                    if sample > 1:
+                        thumb = thumb.subsample(sample, sample)
+                    self.library_images.append(thumb)
+                    image = thumb
+                except tk.TclError:
+                    item["message"] = "画像を読み取れません。JPEG か PNG に変えてください"
+            pixels = (f"{item['pixels'][0]}×{item['pixels'][1]} px"
+                      if item["pixels"] else item["message"])
+            # Tk が直接表示できない JPEG 等は、空画像の代わりに形式名を短く示す。
+            name = item["name"] if image else f"{kind_label}　{item['name']}"
+            self.photo_tree.insert("", "end", iid=str(index), text=name,
+                                   image=image, values=(pixels,))
+
+    def _select_library_photo(self, _event=None) -> None:
+        selected = self.photo_tree.selection()
+        if not selected:
+            return
+        item = self.photo_rows[int(selected[0])]
+        self.selected_photo = item["name"] if not item["message"] else None
+        self.photo_help.configure(text=(
+            "紙面の置きたい所をクリックするか、ここから紙面へドラッグしてください。"
+            if self.selected_photo else item["message"]))
+
+    def _photo_drag_start(self, event) -> None:
+        row = self.photo_tree.identify_row(event.y)
+        if row:
+            self.photo_tree.selection_set(row)
+            self._select_library_photo()
+            self.photo_drag = bool(self.selected_photo)
+
+    def _canvas_pointer(self):
+        x = self.root.winfo_pointerx() - self.canvas.winfo_rootx()
+        y = self.root.winfo_pointery() - self.canvas.winfo_rooty()
+        inside = 0 <= x <= self.canvas.winfo_width() and 0 <= y <= self.canvas.winfo_height()
+        return x, y, inside
+
+    def _photo_target(self, x: float, y: float) -> Rect:
+        page = self.edition.pages[self.page_no - 1]
+        size = "顔" if page["section"] == layout.IPPAN else "中"
+        sample = compose.photo_rect(self.edition.geometry, size, 0, 0)
+        return self._snap(x, y, sample)
+
+    def _photo_drag_motion(self, _event) -> None:
+        if not self.photo_drag or not self.edition or not self.page_no:
+            return
+        x, y, inside = self._canvas_pointer()
+        if self.shadow:
+            self.canvas.delete(self.shadow)
+            self.shadow = None
+        if not inside:
+            return
+        target = self._photo_target(x, y)
+        page = self.edition.pages[self.page_no - 1]
+        allowed = (page["section"] == layout.COVER
+                   or (page["section"] == layout.LAST and target.dan == 0
+                       and len([p for p in page["placed_photos"] if not p.get("removed")]) < 2)
+                   or (page["section"] != layout.LAST
+                       and self.edition._can_place(self.page_no, -1, target)))
+        color = UI["success"] if allowed else UI["error"]
+        self.shadow = self.canvas.create_rectangle(*self._box(target), outline=color,
+                                                   width=4, dash=(6, 3))
+
+    def _photo_drag_end(self, _event) -> None:
+        if not self.photo_drag:
+            return
+        x, y, inside = self._canvas_pointer()
+        self.photo_drag = False
+        if self.shadow:
+            self.canvas.delete(self.shadow)
+            self.shadow = None
+        if inside:
+            self._place_selected_photo(x, y)
+
+    def _place_selected_photo(self, x: float, y: float) -> None:
+        if not self.edition or not self.page_no or not self.selected_photo:
+            return
+        target = self._photo_target(x, y)
+        page = self.edition.pages[self.page_no - 1]
+        if page["section"] == layout.LAST and target.dan != 0:
+            self.status.configure(text="編集後記の写真は、1段目をクリックして置いてください。")
+            return
+        try:
+            changed = self.edition.place_photo(self.page_no, self.selected_photo, target)
+        except ValueError as error:
+            messagebox.showinfo("写真を置く", str(error))
+            return
+        if not changed:
+            self.status.configure(text="そこには置けません。赤い場所は避けてください。")
+            return
+        self.selected_photo = None
+        self.selected_part = None
+        self.photo_tree.selection_remove(*self.photo_tree.selection())
+        self.step = 3
+        self._show_step()
+        self._draw()
 
     def _refresh_pages(self) -> None:
         self.page_list.delete(0, "end")
         if not self.edition:
             return
         marks = {"未入力": "○", "あふれ": "！", "できた": "✓"}
+        colors = {"未入力": UI["muted"], "あふれ": UI["error"], "できた": UI["success"]}
         for index, page in enumerate(self.edition.pages):
             self.page_list.insert("end", f"{page['no']:>2} {page['label']} {marks[page['state']]}")
-            if page["state"] == "あふれ":
-                self.page_list.itemconfigure(index, foreground="#c1121f")
+            self.page_list.itemconfigure(index, foreground=colors[page["state"]])
 
     def _select_page(self, _event=None) -> None:
         selected = self.page_list.curselection()
@@ -625,8 +924,6 @@ class App:
             self.page_no = selected[0] + 1
             self.selected_part = None
             self._draw()
-            if "form" in self.edition.pages[self.page_no - 1]:
-                self._open_form()
 
     def _open_form(self) -> None:
         if not self.edition or not self.page_no:
@@ -702,6 +999,26 @@ class App:
         self.canvas.configure(width=round(self.PAPER_W * self.scale),
                               height=round(self.PAPER_H * self.scale))
         self.zoom_text.configure(text=("小", "標準", "大")[self.zoom_level])
+
+    def _schedule_fit_canvas(self, event=None) -> None:
+        """紙面欄の大きさが落ち着いてから、標準倍率を合わせ直す。"""
+        if self.fit_after:
+            self.root.after_cancel(self.fit_after)
+        self.fit_after = self.root.after(40, self._fit_canvas)
+
+    def _fit_canvas(self) -> None:
+        self.fit_after = None
+        width = self.canvas_area.winfo_width()
+        height = self.canvas_area.winfo_height()
+        if width < 100 or height < 100:
+            return
+        fitted = min((width - 4) / self.PAPER_W, (height - 4) / self.PAPER_H)
+        fitted = max(0.25, fitted)
+        if abs(fitted - self.fit_scale) < 0.002:
+            return
+        self.fit_scale = fitted
+        self._set_canvas_size()
+        self._draw()
 
     def _zoom(self, change: int) -> None:
         level = max(0, min(len(self.ZOOMS) - 1, self.zoom_level + change))
@@ -852,8 +1169,46 @@ class App:
     def _draw_part_marks(self, parts, result) -> None:
         self.part_items.clear()
         self.caption_items.clear()
+        self.fixed_part_boxes.clear()
+        self.fixed_caption_boxes.clear()
+        self.part_drag_rects.clear()
+        page = self.edition.pages[self.page_no - 1]
+        fixed_photos = "form" in page and page["section"] in (layout.COVER, layout.LAST)
+        fixed_indices = set()
+        if fixed_photos:
+            start = self.edition._placed_start(page)
+            active_number = 0
+            for photo_number, photo in enumerate(page.get("placed_photos", [])):
+                if photo.get("removed"):
+                    continue
+                active_number += 1
+                photo_index = start + photo_number * 2
+                caption_index = photo_index + 1
+                label = ("表紙写真" if page["section"] == layout.COVER
+                         else f"編集後記写真{active_number}")
+                picture = next((item for item in result.page.items
+                                if isinstance(item, (dx.Picture, dx.Placeholder))
+                                and item.name == label), None)
+                if picture is None:
+                    continue
+                fixed_indices.update((photo_index, caption_index))
+                self.fixed_part_boxes[photo_index] = [picture.box]
+                if page["section"] == layout.COVER:
+                    caption = next((item for item in result.page.items
+                                    if isinstance(item, dx.TextBox)
+                                    and item.name == "写真説明"), None)
+                    if caption is not None:
+                        self.fixed_caption_boxes[caption_index] = caption.box
+                else:
+                    # Word と同じく、写真枠の下端 12pt を説明の枠とする。
+                    caption_h = min(12.0, picture.box.h)
+                    self.fixed_caption_boxes[caption_index] = Box(
+                        picture.box.x, picture.box.y + picture.box.h - caption_h,
+                        picture.box.w, caption_h)
         for placement in result.placements:
-            self.part_items.setdefault(placement.index, []).append(placement.rect)
+            self.part_drag_rects.setdefault(placement.index, placement.rect)
+            if placement.index not in fixed_indices:
+                self.part_items.setdefault(placement.index, []).append(placement.rect)
         for index, part in enumerate(parts):
             if (part.kind == "写真説明" and index not in self.part_items and index > 0
                     and parts[index - 1].kind == "写真"):
@@ -893,6 +1248,29 @@ class App:
             label = "写真説明" + ("" if part.sure else "？")
             self.canvas.create_text(x2, y1, text=label, anchor="ne",
                                     font=(self.default_family, -8, "bold"))
+        for index, boxes in self.fixed_part_boxes.items():
+            part = parts[index]
+            for box in boxes:
+                x1, y1, x2, y2 = self._paper_box(box)
+                self.canvas.create_rectangle(
+                    x1, y1, x2, y2, fill="", outline="#111111",
+                    width=4 if index == self.selected_part else 1,
+                    dash=() if part.sure else (5, 3))
+                tag = self.canvas.create_text(
+                    x2 - 1, y1, text="写真" + ("" if part.sure else "？"), anchor="ne",
+                    fill="#222222", font=(self.default_family, -9, "bold"))
+                bg = self.canvas.create_rectangle(*self.canvas.bbox(tag), fill="#ffffff",
+                                                  outline="#888888")
+                self.canvas.tag_lower(bg, tag)
+        for index, box in self.fixed_caption_boxes.items():
+            part = parts[index]
+            x1, y1, x2, y2 = self._paper_box(box)
+            self.canvas.create_rectangle(
+                x1, y1, x2, y2, fill="", outline="#111111",
+                width=4 if index == self.selected_part else 1,
+                dash=() if part.sure else (5, 3))
+            self.canvas.create_text(x2, y1, text="写真説明" + ("" if part.sure else "？"),
+                                    anchor="ne", font=(self.default_family, -8, "bold"))
 
     def _draw(self, preview=None, preview_parts=None) -> None:
         self.canvas.delete("all")
@@ -900,6 +1278,9 @@ class App:
         self.photo_images = []
         self.part_items.clear()
         self.caption_items.clear()
+        self.fixed_part_boxes.clear()
+        self.fixed_caption_boxes.clear()
+        self.part_drag_rects.clear()
         self.hint.configure(text=edition.next_hint(self.edition))
         if not self.edition or not self.page_no:
             self.part_list.delete(0, "end")
@@ -910,7 +1291,8 @@ class App:
                 font=FONT, justify="center", width=self.PAPER_W * self.scale - 30)
             return
         page = self.edition.pages[self.page_no - 1]
-        if preview is None and not page["source"] and "form" not in page:
+        if (preview is None and not page["source"] and "form" not in page
+                and not page.get("placed_photos")):
             self._refresh_parts([])
             self.canvas.create_text(self.PAPER_W * self.scale / 2,
                                     self.PAPER_H * self.scale / 2,
@@ -923,7 +1305,11 @@ class App:
         except (OSError, ValueError) as error:
             messagebox.showerror("紙面を作れませんでした", str(error))
             return
+        fixed_photo_page = ("form" in page
+                            and page["section"] in (layout.COVER, layout.LAST))
         for placement in result.placements:
+            if fixed_photo_page and placement.part.kind in ("写真", "写真説明"):
+                continue
             self.canvas.create_rectangle(*self._box(placement.rect),
                                          fill=COLORS.get(placement.part.kind, "#eeeeee"),
                                          outline="")
@@ -959,6 +1345,11 @@ class App:
         reason = part.reason or "理由なし"
         self._set_selection_text(
             f"{index + 1}. {part.kind} {mark}\n{text}\n理由：{reason}")
+        self.caption_entry.delete(0, "end")
+        if self.edition and self.page_no:
+            found = self.edition._placed_part(self.edition.pages[self.page_no - 1], index)
+            if found is not None:
+                self.caption_entry.insert(0, found[1].get("caption", ""))
 
     def _select_part_from_list(self, _event=None) -> None:
         selected = self.part_list.curselection()
@@ -967,6 +1358,15 @@ class App:
             self._draw()
 
     def _part_at(self, x: float, y: float) -> Optional[int]:
+        for index, box in self.fixed_caption_boxes.items():
+            x1, y1, x2, y2 = self._paper_box(box)
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return index
+        for index, boxes in reversed(list(self.fixed_part_boxes.items())):
+            for box in boxes:
+                x1, y1, x2, y2 = self._paper_box(box)
+                if x1 <= x <= x2 and y1 <= y <= y2:
+                    return index
         for index, rect in self.caption_items.items():
             x1, _, x2, y2 = self._box(rect)
             y1 = y2 - max(14, 22 * self.scale)
@@ -981,14 +1381,17 @@ class App:
 
     def _drag_start(self, event) -> None:
         part = self._part_at(event.x, event.y)
+        if part is None and self.selected_photo:
+            self._place_selected_photo(event.x, event.y)
+            return
         if part is None or not self.edition:
             return
         self.selected_part = part
         parts = self.edition.parts(self.page_no)
         self._show_selection(parts[part], part)
         self._draw()
-        if parts[part].kind in ("写真", "大見出し") and self.part_items.get(part):
-            rect = self.part_items[part][0]
+        if parts[part].kind in ("写真", "大見出し") and self.part_drag_rects.get(part):
+            rect = self.part_drag_rects[part]
             self.drag = (part, rect, event.x, event.y)
 
     def _snap(self, x: float, y: float, rect: Rect) -> Rect:
@@ -1076,6 +1479,17 @@ class App:
             except ValueError as error:
                 messagebox.showinfo("写真を選ぶ", str(error))
             self._draw()
+
+    def _save_caption(self) -> None:
+        part = self._selected()
+        if part is None or not self.edition:
+            return
+        try:
+            self.edition.set_photo_caption(self.page_no, part, self.caption_entry.get())
+        except ValueError as error:
+            messagebox.showinfo("写真の説明", str(error))
+            return
+        self._draw()
 
     def _undo(self) -> None:
         if self.edition and self.edition.undo():

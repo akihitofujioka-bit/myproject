@@ -26,6 +26,7 @@ class DocxReadTest(unittest.TestCase):
 
     def test_style_inheritance_and_direct_run_format(self):
         source = I.read_docx(self.path)
+        self.assertEqual(source.images, {})
         title = next(p for p in source.paragraphs if p.text == "暮らしを守る防災対策")
         heading = next(p for p in source.paragraphs if p.text == "避難所の備え")
         body = next(p for p in source.paragraphs if p.text.startswith("問　"))
@@ -34,7 +35,9 @@ class DocxReadTest(unittest.TestCase):
         self.assertEqual(body.size, 10.5)
 
     def test_table_textbox_image_and_caption(self):
-        result = I.ingest(self.path)
+        # 通常の一般質問見本とは分け、画像取り込み専用の一時原稿で確かめる。
+        image_path = samples.make_ingest_image_docx(Path(self.temp.name) / "image.docx")
+        result = I.ingest(image_path)
         texts = [p.text for p in result.parts]
         self.assertIn("表の中の段落です。", texts)
         self.assertIn("テキストボックスの段落です。", texts)
@@ -83,7 +86,11 @@ class TextReadTest(unittest.TestCase):
 
     def test_txt_marks_are_certain(self):
         with tempfile.TemporaryDirectory() as d:
-            path = samples.make_ippan_txt(Path(d) / "sample.txt")
+            path = Path(d) / "sample.txt"
+            path.write_text(
+                "【大見出し】見本の質問\n【写真】face.png｜顔｜▲見本　太郎議員\n"
+                "【見出し】備え\n問　内容を伺います。\n答　確認します。\n",
+                encoding="utf-8-sig")
             result = I.ingest(path)
         title = result.parts[0]
         photo = next(p for p in result.parts if p.kind == "写真")
