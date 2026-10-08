@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>つながり方チェック</title>
+<style>
+:root {
+  --bg: #f7f7f5; --card: #ffffff; --text: #1d1d1f; --sub: #5b5b60; --line: #e2e2e0;
+  --ok: #1a7f37; --ok-bg: #e8f5ec; --ng: #c62828; --ng-bg: #fdecec; --warn: #9a6700; --warn-bg: #fff6dc;
+  --btn: #1d4ed8; --btn-text: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161618; --card: #202023; --text: #f2f2f2; --sub: #a8a8ad; --line: #33333a;
+    --ok: #4ade80; --ok-bg: #14301f; --ng: #f87171; --ng-bg: #3a1a1a; --warn: #fbbf24; --warn-bg: #3a2f12;
+    --btn: #3b82f6; --btn-text: #fff;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161618; --card: #202023; --text: #f2f2f2; --sub: #a8a8ad; --line: #33333a;
+  --ok: #4ade80; --ok-bg: #14301f; --ng: #f87171; --ng-bg: #3a1a1a; --warn: #fbbf24; --warn-bg: #3a2f12;
+  --btn: #3b82f6; --btn-text: #fff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", sans-serif;
+  line-height: 1.7; }
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.3rem; margin: 0 0 4px; }
+h2 { font-size: 1.05rem; margin: 0 0 8px; }
+p { margin: 0 0 8px; }
+.sub { color: var(--sub); font-size: .9rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 16px; }
+button { font: inherit; font-weight: 600; background: var(--btn); color: var(--btn-text); border: 0;
+  border-radius: 10px; padding: 12px 20px; cursor: pointer; width: 100%; }
+button:disabled { opacity: .6; cursor: default; }
+#verdict { font-size: clamp(1.6rem, 7vw, 2.4rem); font-weight: 800; text-align: center; padding: 20px 12px;
+  border-radius: 12px; margin-top: 16px; }
+#verdict.ok { color: var(--ok); background: var(--ok-bg); }
+#verdict.ng { color: var(--ng); background: var(--ng-bg); }
+#verdict.warn { color: var(--warn); background: var(--warn-bg); }
+ul { margin: 0; padding-left: 1.3em; }
+li { margin-bottom: 6px; }
+.row { display: flex; gap: 8px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.mark { flex: none; width: 1.4em; font-weight: 700; }
+.mark.ok { color: var(--ok); } .mark.ng { color: var(--ng); } .mark.warn { color: var(--warn); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>つながり方チェック</h1>
+  <p class="sub">このパソコンのネットのつながり方が、Claude（Anthropic 社）から見て利用停止されやすい状態かを調べます。</p>
+
+  <section class="card">
+    <h2>調べる前に</h2>
+    <p>ボタンを押すと、ブラウザが外部の判定サービス <b>ipapi.is</b>（api.ipapi.is）に一度だけ問い合わせます。
+      どんなサイトを開いても相手に伝わる「接続元の情報」だけが送られ、ほかのデータは送りません。</p>
+    <p>返ってきた情報のうち、このページが使うのは「国」と「VPN・データセンターかどうか」だけです。
+      IPアドレスの数字や市・県などの地域名は、画面に出さず、保存もしません。</p>
+    <p class="sub">確かめたい回線（家・会社など）につないだ状態で押してください。VPN を使っている場合は、ふだん Claude を使うときと同じ状態で押してください。</p>
+    <button id="run" type="button">調べる</button>
+  </section>
+
+  <div id="verdict" hidden></div>
+
+  <section class="card" id="reasons-card" hidden>
+    <h2>そう判断した理由</h2>
+    <div id="reasons"></div>
+  </section>
+
+  <section class="card" id="todo-card" hidden>
+    <h2>危ない時にやること</h2>
+    <ul id="todo"></ul>
+  </section>
+
+  <section class="card">
+    <h2>判断の基準</h2>
+    <ul>
+      <li><b>国</b>: Anthropic 社の公式ページ「Supported countries and regions」（anthropic.com/supported-countries、2026年10月8日に確認）に載っている国かどうか。日本は対象国です。載っていない国からの利用は利用規約違反で、利用停止の一番大きな理由になります。</li>
+      <li><b>回線の種類</b>: 判定サービスが「VPN」「プロキシ」「Tor」「データセンター（サーバー用の回線）」と判定したかどうか。Anthropic 社は「VPN を使うと停止する」とは公表していませんが、こうした回線は対象外の国からの利用を隠す手段にも使われるため、追加の確認や不正利用の疑いを受けやすくなります。</li>
+      <li class="sub">Anthropic 社は停止の具体的な基準を公開していません。このページは公開情報からの目安で、結果を保証するものではありません。判定サービスの判定にも誤りがあり得ます。</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+// Anthropic 公式「Supported countries and regions」掲載国（2026-10-08 確認）。
+// ウクライナはクリミア・ドネツク・ヘルソン・ルハンスク・ザポリージャを除く。
+const SUPPORTED = new Set(("AL DZ AD AO AG AR AM AU AT AZ BS BH BD BB BE BZ BJ BT BO BA BW BR BN BG BF BI CV KH CM CA CF TD CL CO KM CD CG CR CI HR CY CZ DK DJ DM DO EC EG SV GQ ER EE SZ ET FJ FI FR GA GM GE DE GH GR GD GT GN GW GY HT HN HU IS IN ID IQ IE IL IT JM JP JO KZ KE KI KW KG LA LV LB LS LR LY LI LT LU MG MW MY MV ML MT MH MR MU MX FM MD MC MN ME MA MZ NA NR NP NL NZ NI NE NG MK NO OM PK PW PS PA PG PY PE PH PL PT QA RO RW KN LC VC WS SM ST SA SN RS SC SL SG SK SI SO SB ZA KR SS ES LK SD SR SE CH TW TJ TZ TH TL TG TO TT TN TR TM TV UG UA AE GB US UY UZ VU VA VN ZM ZW").split(" "));
+
+const $ = (id) => document.getElementById(id);
+
+function countryName(code) {
+  try { return new Intl.DisplayNames(["ja"], { type: "region" }).of(code) || code; }
+  catch { return code; }
+}
+
+function addReason(mark, text) {
+  const row = document.createElement("div");
+  row.className = "row";
+  const m = document.createElement("span");
+  m.className = "mark " + mark;
+  m.textContent = mark === "ok" ? "○" : mark === "ng" ? "×" : "△";
+  const t = document.createElement("span");
+  t.textContent = text;
+  row.append(m, t);
+  $("reasons").append(row);
+}
+
+function addTodo(text) {
+  const li = document.createElement("li");
+  li.textContent = text;
+  $("todo").append(li);
+}
+
+function show(kind, text) {
+  const v = $("verdict");
+  v.className = kind;
+  v.textContent = text;
+  v.hidden = false;
+  $("reasons-card").hidden = false;
+  $("todo-card").hidden = kind === "ok";
+}
+
+async function run() {
+  const btn = $("run");
+  btn.disabled = true;
+  btn.textContent = "調べています…";
+  $("reasons").textContent = "";
+  $("todo").textContent = "";
+
+  // 取り出すのは国コードと回線の種類だけ。IP アドレスと地域名は変数にも残さない。
+  let country, flags;
+  try {
+    const res = await fetch("https://api.ipapi.is/", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const d = await res.json();
+    country = (d.location && d.location.country_code) || "";
+    flags = {
+      vpn: !!d.is_vpn,
+      proxy: !!d.is_proxy,
+      tor: !!d.is_tor,
+      datacenter: !!d.is_datacenter || (d.company && d.company.type === "hosting") || (d.asn && d.asn.type === "hosting"),
+    };
+  } catch (e) {
+    show("warn", "調べられませんでした");
+    addReason("warn", "判定サービスにつながりませんでした。広告ブロッカーや会社のフィルター、ネットの切断が原因のことがあります。");
+    $("todo-card").hidden = false;
+    addTodo("広告ブロッカーを一時的に止めるか、別のブラウザで開き直して、もう一度「調べる」を押してください。");
+    btn.disabled = false;
+    btn.textContent = "もう一度調べる";
+    return;
+  }
+
+  let danger = false;
+
+  if (!country) {
+    danger = true;
+    addReason("warn", "つながっている国を判定できませんでした。");
+  } else if (SUPPORTED.has(country)) {
+    addReason("ok", "つながっている国は「" + countryName(country) + "」で、Claude を使える国です。");
+  } else {
+    danger = true;
+    addReason("ng", "つながっている国は「" + countryName(country) + "」で、Claude を使える国の一覧に載っていません。");
+  }
+
+  const kinds = [];
+  if (flags.vpn) kinds.push("VPN");
+  if (flags.proxy) kinds.push("プロキシ");
+  if (flags.tor) kinds.push("Tor");
+  if (flags.datacenter) kinds.push("データセンター（サーバー用の回線）");
+  if (kinds.length) {
+    danger = true;
+    addReason("ng", "回線が " + kinds.join("・") + " と判定されました。家や会社の普通の回線ではありません。");
+  } else {
+    addReason("ok", "回線は家や会社、携帯電話会社などの普通の回線と判定されました（VPN・データセンターではありません）。");
+  }
+
+  if (danger) {
+    show("ng", "危ない");
+    if (country && !SUPPORTED.has(country)) {
+      addTodo("Claude を使える国の一覧（anthropic.com/supported-countries）にない国からは使わないでください。VPN で国を偽って使うのも規約違反です。");
+    }
+    if (kinds.length) {
+      addTodo("VPN・プロキシ・Tor を切って、家や会社の普通の回線（または携帯の回線）でつなぎ直してから、もう一度調べてください。");
+      addTodo("会社の規則で VPN が必須の場合は、出口が日本など対象国になっているか情報システム担当に確認してください。");
+      addTodo("iPhone・Mac の「iCloud プライベートリレー」やブラウザ内蔵の VPN が入っていると、ここで引っかかることがあります。設定を確認してください。");
+    }
+    addTodo("同じアカウントで、短時間に国や回線を何度も切り替えるのは避けてください。");
+    addTodo("もし利用停止になったら、Anthropic 社のサポート（support.anthropic.com）から異議申し立てができます。");
+  } else {
+    show("ok", "大丈夫");
+  }
+
+  btn.disabled = false;
+  btn.textContent = "もう一度調べる";
+}
+
+$("run").addEventListener("click", run);
+</script>
+</body>
+</html>
