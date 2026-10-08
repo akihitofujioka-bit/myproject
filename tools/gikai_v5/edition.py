@@ -637,7 +637,7 @@ class Edition:
             if not page_data["source"]:
                 box = to_box(self.geometry, Rect(0, 0, 1, 10))
                 pages.append(dx.Page([dx.TextBox(box, [page_data["label"]],
-                                                  dx.GOTHIC, 18.0, 22.0,
+                                                  dx.GOTHIC, 18.0, 25.2,
                                                   True, True, "区分名")]))
                 continue
             result = self.compose(page_data["no"])

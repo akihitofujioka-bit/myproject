@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import copy
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -78,7 +79,7 @@ def _htext(page: dx.Page, box: Box, text: str, pt: float, *, font: str = dx.GOTH
            align: str = "左", border: bool = False, name: str = "text",
            warnings: Optional[List[str]] = None, bold: bool = False) -> None:
     """横書き文字を枠幅で分け、枠高に入らない分は警告する。"""
-    pitch = max(pt * 1.35, pt)
+    pitch = dx.effective_pitch(pt, pt)
     lines = _fit_lines(text, int(box.w / pt))
     capacity = max(1, int(box.h / pitch + 1e-9))
     if len(lines) > capacity:
@@ -94,7 +95,7 @@ def _vtext(page: dx.Page, box: Box, text: str, pt: float, *, font: str = dx.GOTH
            name: str = "text", warnings: Optional[List[str]] = None) -> None:
     """縦書き文字を枠高で分け、枠幅に入らない分は警告する。"""
     lines = _fit_lines(text, int(box.h / pt))
-    capacity = max(1, int(box.w / max(pitch, pt) + 1e-9))
+    capacity = max(1, int(box.w / dx.effective_pitch(pt, pitch) + 1e-9))
     if len(lines) > capacity:
         if warnings is not None:
             warnings.append(f"{name}が{len(lines) - capacity}行あふれています。文章または枠を見直してください。")
@@ -102,7 +103,7 @@ def _vtext(page: dx.Page, box: Box, text: str, pt: float, *, font: str = dx.GOTH
     page.items.append(dx.TextBox(box, lines, font, pt, pitch, border, center, name))
 
 
-def _one_line_box(text: str, pt: float, *, height_ratio: float = 1.35) -> tuple[float, float]:
+def _one_line_box(text: str, pt: float, *, height_ratio: float = dx.AT_LEAST_RATIO) -> tuple[float, float]:
     """横書き1行を Word に折り返させない幅・高さを返す。"""
     return text_width(text) * pt + dx.SLACK_PT, max(pt * height_ratio, pt) + dx.SLACK_PT
 
@@ -213,6 +214,7 @@ def _cover(form: dict, issue: layout.Issue, plan: layout.Plan, g: Geometry) -> c
     overflow = max(0, len(toc) - 3)
     if overflow:
         warnings.append(f"特集の目次が{overflow}行あふれています。題名をまとめてください。")
+    warnings.extend(dx.page_textbox_warnings(page))
     return compose.PageResult(page, overflow, 0, warnings, [])
 
 
@@ -253,11 +255,16 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
         pt = 14.0 if heading else 11.0
         chars = max(1, int(g.dan_h_pt / pt))
         lines = split_lines(part.text, chars, indent=part.kind in ("本文", "答弁"))
-        span = max(2, len(lines)) if heading else len(lines)
-        if used >= capacity:
+        span = (max(2, math.ceil(len(lines) * dx.effective_pitch(pt, 17.0)
+                                 / g.line_pitch_pt)) if heading else len(lines))
+        if heading:
+            remaining = g.lines_per_dan - used % g.lines_per_dan
+            if span > remaining:
+                used += remaining
+        if used >= capacity or (heading and used + span > capacity):
             used += span
             continue
-        take_span = min(span, capacity - used)
+        take_span = span if heading else min(span, capacity - used)
         take = min(len(lines), take_span)
         dan, line = 1 + used // g.lines_per_dan, used % g.lines_per_dan
         rect = Rect(dan, line, 1, take_span)
@@ -302,13 +309,14 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
            align="中央", name="別添案内", warnings=warnings)
     if overflow:
         warnings.append(f"審議本文が{overflow}行あふれています。本文を短くするか、表現をまとめてください。")
+    warnings.extend(dx.page_textbox_warnings(page))
     return compose.PageResult(page, overflow, max(0, capacity - used), warnings, placements)
 
 
 def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
     page, warnings = dx.Page(), []
     page.items.append(dx.TextBox(to_box(g, Rect(0, 0, 1, 4)), ["編　集", "後　記"],
-                                 dx.GOTHIC, 20, 22, True, True, "編集後記"))
+                                 dx.GOTHIC, 20, 28, True, True, "編集後記"))
     editorial_lines = split_lines(str(form.get("editorial", "")), g.chars_per_line)
     editorial_capacity = max(0, g.lines_per_dan - 5)
     page.items.append(dx.TextBox(to_box(g, Rect(0, 5, 1, min(editorial_capacity, len(editorial_lines) or 1))),
@@ -330,30 +338,34 @@ def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
                                          dx.GOTHIC, 11, 17, False, False, "自由欄"))
 
     fifth = to_box(g, Rect(4, 0, 1, g.lines_per_dan))
-    hearing = Box(mm2pt(20), fifth.y, mm2pt(112), mm2pt(36))
+    hearing = Box(mm2pt(83), fifth.y, mm2pt(112), mm2pt(36))
     _htext(page, hearing, "", 1, border=True, name="傍聴案内の囲み", warnings=warnings)
-    _htext(page, Box(mm2pt(23), fifth.y + mm2pt(2), mm2pt(106), mm2pt(9)),
+    _htext(page, Box(mm2pt(86), fifth.y + mm2pt(2), mm2pt(106), mm2pt(9)),
            form.get("hearing_title") or "議会を傍聴してみませんか", 16,
            font=dx.GOTHIC, align="中央", name="傍聴案内見出し", warnings=warnings, bold=True)
-    _htext(page, Box(mm2pt(23), fifth.y + mm2pt(12), mm2pt(106), mm2pt(12)),
+    _htext(page, Box(mm2pt(86), fifth.y + mm2pt(12), mm2pt(106), mm2pt(12)),
            form.get("next_meeting", ""), 11,
            align="中央", name="次回定例会", warnings=warnings)
-    _htext(page, Box(mm2pt(23), fifth.y + mm2pt(26), mm2pt(106), mm2pt(8)),
+    _htext(page, Box(mm2pt(86), fifth.y + mm2pt(26), mm2pt(106), mm2pt(8)),
            form.get("invitation") or "お気軽に傍聴に、お越し下さい。", 14,
            font=dx.GOTHIC, align="中央", name="傍聴の呼びかけ", warnings=warnings)
 
     opinion = (form.get("opinion")
                or f"{settings.committee}へのご意見・ご提言を、よろしくお願い申し上げます。")
-    _vtext(page, Box(mm2pt(150), fifth.y, mm2pt(45), fifth.h), opinion, 11,
+    # 縦書きの 2 つは、ページ下端の再生紙のお知らせ（上端 279.8mm）の手前で止める。
+    # 段の高さいっぱいにすると最後の行がお知らせに重なった（Mac の Word で確認）
+    v_height = mm2pt(278.5) - fifth.y
+    _vtext(page, Box(mm2pt(37), fifth.y, mm2pt(45), v_height), opinion, 11,
            name="意見・提言", warnings=warnings)
-    _vtext(page, Box(mm2pt(135), fifth.y, mm2pt(14), fifth.h),
+    _vtext(page, Box(mm2pt(20), fifth.y, mm2pt(14), v_height),
            f"発行責任者\n議　長　{settings.chair}", 11, name="発行責任者", warnings=warnings)
-    _htext(page, _box(15, 279.9, 180, 5.1),
+    _htext(page, _box(15, 279.8, 180, 5.2),
            "「日高村議会だより」は、資源保護のため再生紙を使用しています。", 10.5,
            align="中央", name="再生紙のお知らせ", warnings=warnings)
     overflow = max(0, len(editorial_lines) - editorial_capacity) + max(0, len(free_lines) - free_capacity)
     if overflow:
         warnings.append(f"編集後記・自由欄が{overflow}行あふれています。文章を短くするか、自由欄の構成を見直してください。")
+    warnings.extend(dx.page_textbox_warnings(page))
     return compose.PageResult(page, overflow, max(0, editorial_capacity + free_capacity - len(editorial_lines) - len(free_lines)), warnings, [])
 
 

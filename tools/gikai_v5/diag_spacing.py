@@ -8,11 +8,11 @@
 
 | 段 | 頭の字 | 指定 |
 |---|---|---|
-| 1 | Ａ | 今の作り（本文の行送り 最小値 17pt・枠の下の余裕 6pt。2026-10-08 に固定値から変更） |
-| 2 | Ｂ | 行送り「最小値」17pt（今の作りと同じ） |
-| 3 | Ｃ | 固定値 17pt、枠の下の余裕を 1 字半（17pt）に |
-| 4 | Ｄ | 行送りを指定しない（1 行） |
-| 5 | Ｅ | 固定値 20pt（行送りを広げる） |
+| 1 | Ａ | 今の作り（すべて最小値。実効行送りは max(17pt, 11pt×1.4)、枠の下の余裕 6pt） |
+| 2 | Ｂ | 最小値 17pt、枠の下の余裕なし |
+| 3 | Ｃ | 最小値 17pt、枠の下の余裕 11pt |
+| 4 | Ｄ | 最小値 17pt、枠の下の余裕 17pt |
+| 5 | Ｅ | 最小値 17pt、枠の下の余裕 23pt |
 
 2 ページ目は同じ並びを ＭＳ ゴシックで作る。
 """
@@ -44,22 +44,19 @@ def _page(g: Geometry, font: str) -> dx.Page:
 
 
 def _vary(xml: str) -> str:
-    """枠ごとに、頭の字（Ａ〜Ｅ）に合わせて行送りと枠の高さを書き換える。"""
+    """行送りはすべて最小値のまま、頭の字に合わせて枠末尾の余裕を変える。"""
     parts = xml.split("<w:r><w:drawing>")
     out = [parts[0]]
     for part in parts[1:]:
         letter = next((c for c in LETTERS if c in part), None)
-        if letter == "Ｂ":
-            part = re.sub(r'w:lineRule="\w+"', 'w:lineRule="atLeast"', part)
-        elif letter == "Ｃ":
-            part = re.sub(r'w:lineRule="\w+"', 'w:lineRule="exact"', part)
-            extra = int(round((17 - dx.SLACK_PT) * EMU))
-            part = re.sub(r'(<wp:extent cx="\d+" cy=")(\d+)', lambda m: m.group(1) + str(int(m.group(2)) + extra), part)
-            part = re.sub(r'(<a:ext cx="\d+" cy=")(\d+)', lambda m: m.group(1) + str(int(m.group(2)) + extra), part)
-        elif letter == "Ｄ":
-            part = re.sub(r' w:line="\d+" w:lineRule="\w+"', "", part)
-        elif letter == "Ｅ":
-            part = re.sub(r'w:line="\d+" w:lineRule="\w+"', 'w:line="400" w:lineRule="exact"', part)
+        part = re.sub(r'w:lineRule="\w+"', 'w:lineRule="atLeast"', part)
+        slack = {"Ａ": 6, "Ｂ": 0, "Ｃ": 11, "Ｄ": 17, "Ｅ": 23}.get(letter)
+        if slack is not None:
+            extra = int(round((slack - dx.SLACK_PT) * EMU))
+            part = re.sub(r'(<wp:extent cx="\d+" cy=")(\d+)',
+                          lambda m: m.group(1) + str(int(m.group(2)) + extra), part)
+            part = re.sub(r'(<a:ext cx="\d+" cy=")(\d+)',
+                          lambda m: m.group(1) + str(int(m.group(2)) + extra), part)
         out.append(part)
     return "<w:r><w:drawing>".join(out)
 

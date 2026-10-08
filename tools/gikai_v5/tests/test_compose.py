@@ -61,6 +61,21 @@ class PlacementTest(unittest.TestCase):
         self.assertEqual((heading.rect.dan_span, heading.rect.line_span), (1, 2))
         self.assertEqual((heading.rect.dan, heading.rect.line), (1, 0))
 
+    def test_two_line_middle_heading_uses_three_grid_lines(self):
+        parts = [I.Part("中見出し", "架空の取組を進めるための長い見出しです"),
+                 I.Part("本文", "本文")]
+        result = C.compose_page(layout.GYOSEI, parts, {}, self.g)
+        heading = next(p for p in result.placements if p.part.kind == "中見出し")
+        box = next(item for item in result.page.items
+                   if isinstance(item, dx.TextBox) and item.name == "中見出し")
+        self.assertEqual(len(box.lines), 2)
+        self.assertEqual(heading.rect.line_span, 3)
+        self.assertTrue(box.center)
+        self.assertGreaterEqual(box.box.w,
+                                len(box.lines) * dx.effective_pitch(box.pt, box.pitch_pt))
+        body = next(p for p in result.placements if p.part.kind == "本文")
+        self.assertFalse(heading.rect.overlaps(body.rect))
+
     def test_same_format_is_combined(self):
         parts = [I.Part("本文", "一つ目。"), I.Part("答弁", "答　二つ目。")]
         result = C.compose_page(layout.GYOSEI, parts, {}, self.g)

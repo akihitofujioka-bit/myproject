@@ -231,7 +231,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                 occupied.append(rect)
             placements.append(Placement(title, rect, title_index))
             _add_text(page, g, rect, _heading_lines(title.text, _per_line(g, rect, 18.0)), font=dx.GOTHIC, pt=18.0,
-                      pitch=22.0, border=True, center=True, name="大見出し")
+                      pitch=34.0, border=True, center=True, name="大見出し")
         else:
             warnings.append("大見出しの決まった位置が、区分の固定枠と重なります")
 
@@ -305,17 +305,20 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                            and index + 1 < len(parts) and parts[index + 1].kind == "答弁")
 
         if part.kind == "中見出し" and not standalone_role:
-            # 枠は 2 行ぶんの幅しかない。行送りを本文と同じにしないと 2 行目が枠からはみ出す
+            sample = Rect(0, 0, 1, 2)
+            heading_lines = _heading_lines(part.text, _per_line(g, sample, 16.0))
+            span = 2 if len(heading_lines) == 1 else 3
             target = next((r for r in free_runs(g, whole_page(g), occupied)
-                           if r.line_span >= 2), None)
+                           if r.line_span >= span), None)
             if target is None:
-                overflow += 2
+                overflow += span
                 continue
-            rect = Rect(target.dan, target.line, 1, 2)
+            rect = Rect(target.dan, target.line, 1, span)
             occupied.append(rect)
             placements.append(Placement(part, rect, index))
-            _add_text(page, g, rect, _heading_lines(part.text, _per_line(g, rect, 16.0)), font=dx.GOTHIC,
-                      pt=16.0, pitch=g.line_pitch_pt, name="中見出し")
+            pitch = rect.line_span * g.line_pitch_pt / len(heading_lines)
+            _add_text(page, g, rect, heading_lines, font=dx.GOTHIC,
+                      pt=16.0, pitch=pitch, center=True, name="中見出し")
             last_rect = rect
             continue
 
@@ -344,6 +347,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
 
     capacity = g.dans * g.lines_per_dan
     used = len({cell for rect in occupied for cell in rect.cells()})
+    warnings.extend(dx.page_textbox_warnings(page))
     return PageResult(page, overflow, max(0, capacity - used), warnings, placements)
 
 

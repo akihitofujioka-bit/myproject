@@ -118,20 +118,16 @@ class FlowTest(unittest.TestCase):
 
 
 class LineRuleTest(unittest.TestCase):
-    def test_body_uses_at_least_and_headings_exact(self):
-        # 本文（11pt・行送り 17pt）は最小値。固定値だと Windows の Word で字が欠けた
-        self.assertEqual(dx.line_rule(11, 17), "atLeast")
-        # 行送りに余裕の無い見出しは固定値のまま（最小値だと行が広がり枠からはみ出す）
-        self.assertEqual(dx.line_rule(16, 17), "exact")
-        self.assertEqual(dx.line_rule(18, 22), "exact")
-        # 行送りに余裕があっても見出しは固定値（最小値だと Word が行の位置を変えて本文に重なった）
-        self.assertEqual(dx.line_rule(16, 34), "exact")
-        self.assertEqual(dx.line_rule(18, 27.2), "exact")
+    def test_all_text_uses_at_least(self):
+        for pt, pitch in ((11, 17), (16, 17), (18, 22), (16, 34), (20, 28)):
+            with self.subTest(pt=pt, pitch=pitch):
+                self.assertEqual(dx.line_rule(pt, pitch), "atLeast")
 
     def test_body_xml(self):
         g = Geometry()
         xml = dx.document_xml(g, [dx.Page([dx.TextBox(to_box(g, Rect(0, 0, 1, 2)), ["本文", "です"])])])
         self.assertIn('w:lineRule="atLeast"', xml)
+        self.assertNotIn('w:lineRule="exact"', xml)
 
 
 class DocxTest(unittest.TestCase):

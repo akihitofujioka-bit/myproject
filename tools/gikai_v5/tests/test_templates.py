@@ -17,7 +17,7 @@ import edition  # noqa: E402
 import layout  # noqa: E402
 import samples  # noqa: E402
 import templates  # noqa: E402
-from grid import Box, Geometry, text_width  # noqa: E402
+from grid import Box, Geometry, mm2pt, text_width  # noqa: E402
 from settings import Settings  # noqa: E402
 
 
@@ -105,6 +105,18 @@ class TemplateTest(unittest.TestCase):
         self.assertTrue(all(not item.vertical for item in hearing))
         self.assertTrue(next(item for item in hearing if item.name == "傍聴案内見出し").bold)
 
+    def test_last_page_fifth_band_is_ordered_from_right(self):
+        result = templates.build(layout.LAST, samples.sample_forms()[layout.LAST], self.issue,
+                                 self.plan, self.settings, self.g)
+        boxes = {item.name: item for item in result.page.items if isinstance(item, dx.TextBox)}
+        hearing = boxes["傍聴案内の囲み"]
+        opinion = boxes["意見・提言"]
+        publisher = boxes["発行責任者"]
+        self.assertGreater(hearing.box.x, opinion.box.x)
+        self.assertGreater(opinion.box.x, publisher.box.x)
+        recycled = boxes["再生紙のお知らせ"]
+        self.assertAlmostEqual(recycled.box.y + recycled.box.h, mm2pt(285.0))
+
     def test_overlong_horizontal_and_vertical_text_add_warnings(self):
         result = templates.build(layout.LAST,
                                  {"hearing_title": "見出し" * 30,
@@ -122,13 +134,13 @@ class TemplateTest(unittest.TestCase):
                 if not isinstance(item, dx.TextBox):
                     continue
                 if item.vertical:
-                    self.assertLessEqual(len(item.lines) * max(item.pitch_pt, item.pt),
+                    self.assertLessEqual(len(item.lines) * dx.effective_pitch(item.pt, item.pitch_pt),
                                          item.box.w + 1e-6, item.name)
                     for line in item.lines:
                         self.assertLessEqual(text_width(line) * item.pt,
                                              item.box.h + 1e-6, item.name)
                 else:
-                    self.assertLessEqual(len(item.lines) * item.pitch_pt,
+                    self.assertLessEqual(len(item.lines) * dx.effective_pitch(item.pt, item.pitch_pt),
                                          item.box.h + 1e-6, item.name)
                     for line in item.lines:
                         self.assertLessEqual(text_width(line) * item.pt,

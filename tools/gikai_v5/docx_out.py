@@ -15,8 +15,8 @@
 
 - 枠に `wrap="none"` や `a:normAutofit` を付けると、最後の 1 字が前の字に重なることがあった
   （gikai_editor）。`wrap="square"` にして、枠を字数ぶんより少し長くとる（`SLACK_PT`）
-- 行送りを `exact` にすると、行送りより大きな字が隣の行に重なる。枠ごとに字の大きさが
-  1 つなので、本ツールでは字の大きさに合った行送りを枠ごとに付ける
+- 行送りはすべて `atLeast` にする。Windows の Word は `exact` だと、行からはみ出した
+  字の部分を切り落とすため、字の大きさの 1.4 倍以上になる前提で枠寸法を決める
 """
 
 from __future__ import annotations
@@ -155,21 +155,36 @@ def _line_runs(line: str, font: str, pt: float, ids: list[int], *,
     return out
 
 
-# 行送りに余裕がある（字の大きさの 1.4 倍以上）ときは「最小値」で指定する。
-# 「固定値」だと、役場の Windows の Word が行からはみ出した字の部分を切り落とし、
-# 本文の各行の最後の字が欠けた（2026-10-08、diag_spacing.py の Ｂ・Ｄ だけ欠けなかった）。
-# 見出しのように行送りに余裕が無い字は、最小値にすると Word が行を広げて枠からはみ出すので
-# 固定値のまま（見出しは固定値でも欠けなかった）
+# Windows の Word は「最小値」だと、おおむね字の大きさの 1.4 倍まで行を広げる。
+# 文字枠はこの実効行送りで収まるように作る。
 AT_LEAST_RATIO = 1.4
 
 
-# 最小値にするのは本文の大きさ（12pt 以下）の字だけ。見出し（14pt 以上）を最小値にすると、
-# 行送りに余裕があっても Word が行の位置を変え、本文に重なった（Mac の Word で確認）
-AT_LEAST_MAX_PT = 12.0
+def effective_pitch(pt: float, pitch: float) -> float:
+    """Word の「最小値」で実際に必要になる 1 行ぶんの寸法。"""
+    return max(pitch, pt * AT_LEAST_RATIO)
 
 
 def line_rule(pt: float, pitch: float) -> str:
-    return "atLeast" if pt <= AT_LEAST_MAX_PT and pitch >= pt * AT_LEAST_RATIO else "exact"
+    """文字の大きさや指定行送りにかかわらず、常に「最小値」を使う。"""
+    return "atLeast"
+
+
+def textbox_frame_warning(t: TextBox) -> str:
+    """行数と実効行送りが文字枠に収まらないときの警告。"""
+    needed = len(t.lines) * effective_pitch(t.pt, t.pitch_pt)
+    available = t.box.w if t.vertical else t.box.h
+    if needed <= available + 1e-6:
+        return ""
+    direction = "幅" if t.vertical else "高さ"
+    return (f"{t.name}は、{len(t.lines)}行×実効行送り"
+            f"{effective_pitch(t.pt, t.pitch_pt):g}ptが枠の{direction}{available:.1f}ptに収まりません")
+
+
+def page_textbox_warnings(page: Page) -> list[str]:
+    """ページ内の収まらない文字枠を列挙する。"""
+    return [warning for item in page.items if isinstance(item, TextBox)
+            if (warning := textbox_frame_warning(item))]
 
 
 def _text_para(t: TextBox, ids: list[int]) -> str:
@@ -183,8 +198,7 @@ def _text_para(t: TextBox, ids: list[int]) -> str:
             if text:
                 runs.extend(_line_runs(text, font, t.pt, ids,
                                        vertical=t.vertical, bold=t.bold))
-    # 縦書きの枠では「行送り」が左右の間隔になる。字の大きさより小さくしない
-    pitch = max(t.pitch_pt, t.pt)
+    pitch = t.pitch_pt
     # autoSpaceDE/DN: 日本語と英字・数字のあいだに Word が自動で入れるすき間を止める。
     # 入れられると行が計算より長くなり、最後の字が次の行へ送られる（段階 1 で確認）
     align = {"左": "left", "中央": "center", "右": "right"}.get(t.align, "left")
@@ -392,7 +406,7 @@ def document_xml(g: Geometry, pages: list[Page]) -> str:
         # 枠をつなぎ留める段落。2 ページ目からは pageBreakBefore で必ずページを変える
         # （`w:br type="page"` は続けて使うと読み飛ばされることがあった。gikai_editor）
         ppr = ('<w:pPr>' + ('<w:pageBreakBefore/>' if n else '')
-               + '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr>')
+               + '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="atLeast"/></w:pPr>')
         body.append(f'<w:p>{ppr}{"".join(runs)}</w:p>')
     pw, ph = twip(mm2pt(g.page_w_mm)), twip(mm2pt(g.page_h_mm))
     sect = (f'<w:sectPr><w:pgSz w:w="{pw}" w:h="{ph}"/>'

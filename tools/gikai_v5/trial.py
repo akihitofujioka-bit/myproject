@@ -59,7 +59,7 @@ def page_sample(g: Geometry) -> dx.Page:
     occupied = [big, mid, photo]
 
     page.items.append(dx.TextBox(to_box(g, big), ["大見出しの見本", "囲み・ゴシック１８ポ"],
-                                 font=dx.GOTHIC, pt=18, pitch_pt=g.line_pitch_pt * 4 / 2.5,
+                                 font=dx.GOTHIC, pt=18, pitch_pt=g.line_pitch_pt * 2,
                                  border=True, center=True, name="h1"))
     page.items.append(dx.TextBox(to_box(g, mid), ["中見出し１６ポ"], font=dx.GOTHIC, pt=16,
                                  pitch_pt=g.line_pitch_pt * 2, center=True, name="h2"))
