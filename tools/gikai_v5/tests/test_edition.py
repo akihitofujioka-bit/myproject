@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import sys
 import tempfile
@@ -13,9 +14,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 import edition  # noqa: E402
+import compose  # noqa: E402
+import docx_out  # noqa: E402
+import ingest  # noqa: E402
 import layout  # noqa: E402
 import samples  # noqa: E402
-from grid import Rect  # noqa: E402
+from grid import Geometry, Rect  # noqa: E402
 
 
 class EditionTest(unittest.TestCase):
@@ -100,6 +104,37 @@ class EditionTest(unittest.TestCase):
         text = checklist.read_text(encoding="utf-8")
         self.assertIn("原稿が未入力です", text)
 
+    def test_set_kind_undo_redo_and_reopen(self):
+        page_no = self.ippan[0]
+        self.edition.assign(page_no, self.source)
+        original = self.edition.parts(page_no)
+        part_no = next(n for n, part in enumerate(original) if part.kind == "質問")
+
+        self.edition.set_kind(page_no, part_no, "答弁")
+        changed = self.edition.parts(page_no)[part_no]
+        self.assertEqual(changed.kind, "答弁")
+        self.assertTrue(changed.sure)
+        self.assertEqual(changed.reason, "人が直した")
+        saved = json.loads((self.edition.folder / "紙面.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["pages"][page_no - 1]["overrides"][str(part_no)]["kind"], "答弁")
+
+        self.assertTrue(self.edition.undo())
+        self.assertEqual(self.edition.parts(page_no)[part_no].kind, "質問")
+        self.assertTrue(self.edition.redo())
+        self.assertEqual(self.edition.parts(page_no)[part_no].kind, "答弁")
+        reopened = edition.Edition.open(self.edition.folder)
+        self.assertEqual(reopened.parts(page_no)[part_no].kind, "答弁")
+
+    def test_next_hint_follows_edition_state(self):
+        self.assertIn("新しい号", edition.next_hint(None))
+        self.assertIn("○", edition.next_hint(self.edition))
+        for page in self.edition.pages:
+            page["state"] = "できた"
+        self.edition.pages[0]["state"] = "あふれ"
+        self.assertIn("写真を小さく", edition.next_hint(self.edition))
+        self.edition.pages[0]["state"] = "できた"
+        self.assertIn("Word に書き出す", edition.next_hint(self.edition))
+
 
 class ComposeOverrideTest(unittest.TestCase):
     def test_manual_photo_and_bad_overlap(self):
@@ -122,6 +157,31 @@ class ComposeOverrideTest(unittest.TestCase):
             self.assertTrue(any("自動の位置に戻しました" in w for w in bad.warnings))
             self.assertNotEqual(next(p.rect for p in bad.placements if p.index == photo_no),
                                 Rect(-1, 0, 1, 5))
+
+    def test_kind_override_is_used_for_composition(self):
+        parts = [ingest.Part("本文", "架空の質問です。", False, "推測")]
+        result = compose.compose_page(layout.IPPAN, parts, {}, Geometry(),
+                                      {0: {"kind": "質問"}})
+        self.assertEqual(result.placements[0].part.kind, "質問")
+        self.assertTrue(result.placements[0].part.sure)
+        self.assertEqual(result.placements[0].part.reason, "人が直した")
+        box = next(item for item in result.page.items
+                   if isinstance(item, docx_out.TextBox))
+        self.assertEqual(box.font, docx_out.GOTHIC)
+
+    def test_override_without_kind_keeps_composition_same(self):
+        parts = [ingest.Part("本文", "架空の本文です。", True, "見本")]
+        plain = compose.compose_page(layout.IPPAN, parts, {}, Geometry())
+        legacy = compose.compose_page(
+            layout.IPPAN, parts, {}, Geometry(),
+            {0: {"rect": None, "size": None, "removed": False}})
+        self.assertEqual(plain, legacy)
+
+
+class AppSyntaxTest(unittest.TestCase):
+    def test_app_has_valid_python_syntax(self):
+        source = (HERE.parent / "app.pyw").read_text(encoding="utf-8")
+        ast.parse(source)
 
 
 if __name__ == "__main__":

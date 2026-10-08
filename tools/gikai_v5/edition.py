@@ -31,6 +31,17 @@ def _rect(value) -> Optional[Rect]:
                 value.get("line_span", 1))
 
 
+def next_hint(current: Optional["Edition"]) -> str:
+    """号の状態から、利用者が次にすることを短い一文で返す。"""
+    if current is None:
+        return "「新しい号」を押して、号数と月を入れてください。"
+    if any(page["state"] == "未入力" for page in current.pages):
+        return "左の一覧で ○ のページを選び「原稿を入れる」を押してください。"
+    if any(page["state"] == "あふれ" for page in current.pages):
+        return "赤いページの写真を小さくするか、種類を確かめてください。"
+    return "「確かめる」のあと「Word に書き出す」を押してください。"
+
+
 class Edition:
     """号フォルダと、そこに保存する紙面の状態。"""
 
@@ -165,8 +176,17 @@ class Edition:
         for key, value in page.get("overrides", {}).items():
             out[int(key)] = {"rect": _rect(value.get("rect")),
                              "size": value.get("size"),
-                             "removed": bool(value.get("removed", False))}
+                             "removed": bool(value.get("removed", False)),
+                             "kind": value.get("kind")}
         return out
+
+    def parts(self, page_no: int) -> List[I.Part]:
+        """画面表示用に、人が直した種類を反映した部品を返す。"""
+        page = self._page(page_no)
+        if not page["source"]:
+            return []
+        result = self._ingest(page["source"])
+        return C.apply_kind_overrides(result.parts, self._overrides(page))
 
     def _compose_page(self, page_no: int) -> C.PageResult:
         page = self._page(page_no)
@@ -183,6 +203,22 @@ class Edition:
         page["state"] = "あふれ" if result.overflow_lines else "できた"
         self.save()
         return result
+
+    def set_kind(self, page_no: int, part_no: int, kind: str) -> None:
+        """部品の種類を人の判断で直し、操作履歴へ記録する。"""
+        if kind not in I.KINDS:
+            raise ValueError("部品の種類が正しくありません: " + kind)
+        page = self._page(page_no)
+        if not page["source"]:
+            raise ValueError("原稿が未入力です")
+        result = self._ingest(page["source"])
+        if not 0 <= part_no < len(result.parts):
+            raise ValueError(f"部品番号が正しくありません: {part_no + 1}")
+        before = self._state()
+        change = page["overrides"].setdefault(str(part_no), {})
+        change["kind"] = kind
+        self._update_page_state(page_no)
+        self._record(f"{page_no}ページの部品{part_no + 1}を{kind}にする", before)
 
     def _can_place(self, page_no: int, part_no: int, rect: Rect) -> bool:
         if (rect.dan < 0 or rect.line < 0
@@ -203,8 +239,8 @@ class Edition:
 
     def move_part(self, page_no: int, part_no: int, rect: Rect) -> bool:
         """写真・大見出しを動かす。置けない場所なら変更しない。"""
-        result = self._ingest(self._page(page_no)["source"])
-        if not 0 <= part_no < len(result.parts) or result.parts[part_no].kind not in ("写真", "大見出し"):
+        parts = self.parts(page_no)
+        if not 0 <= part_no < len(parts) or parts[part_no].kind not in ("写真", "大見出し"):
             raise ValueError("動かせるのは写真と大見出しだけです")
         if not self._can_place(page_no, part_no, rect):
             return False
@@ -225,8 +261,8 @@ class Edition:
         """写真の大きさを変える。現在位置で重なる場合は変更しない。"""
         if size not in C.PHOTO_WIDTH_MM:
             raise ValueError("写真の大きさは 大・中・小・顔 のいずれかです")
-        result = self._ingest(self._page(page_no)["source"])
-        if not 0 <= part_no < len(result.parts) or result.parts[part_no].kind != "写真":
+        parts = self.parts(page_no)
+        if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
             raise ValueError("写真の部品を選んでください")
         page = self._page(page_no)
         old = self._overrides(page).get(part_no, {})
@@ -247,8 +283,8 @@ class Edition:
 
     def remove_photo(self, page_no: int, part_no: int) -> None:
         """写真を紙面から外す。元画像は削除しない。"""
-        result = self._ingest(self._page(page_no)["source"])
-        if not 0 <= part_no < len(result.parts) or result.parts[part_no].kind != "写真":
+        parts = self.parts(page_no)
+        if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
             raise ValueError("写真の部品を選んでください")
         before = self._state()
         change = self._page(page_no)["overrides"].setdefault(str(part_no), {})
@@ -258,8 +294,8 @@ class Edition:
 
     def restore_photo(self, page_no: int, part_no: int) -> None:
         """外した写真を紙面へ戻す。"""
-        result = self._ingest(self._page(page_no)["source"])
-        if not 0 <= part_no < len(result.parts) or result.parts[part_no].kind != "写真":
+        parts = self.parts(page_no)
+        if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
             raise ValueError("写真の部品を選んでください")
         before = self._state()
         change = self._page(page_no)["overrides"].setdefault(str(part_no), {})

@@ -9,7 +9,7 @@ import argparse
 import math
 import sys
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
@@ -295,9 +295,24 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
     return PageResult(page, overflow, max(0, capacity - used), warnings, placements)
 
 
+def apply_kind_overrides(parts: List[I.Part],
+                         overrides: Optional[Dict[int, dict]] = None) -> List[I.Part]:
+    """人が直した種類を、元の読み取り結果を変えずに部品へ反映する。"""
+    overrides = overrides or {}
+    if not any(change.get("kind") for change in overrides.values()):
+        return parts
+    out = []
+    for index, part in enumerate(parts):
+        kind = overrides.get(index, {}).get("kind")
+        out.append(replace(part, kind=kind, sure=True, reason="人が直した")
+                   if kind else part)
+    return out
+
+
 def compose_page(section: str, parts: List[I.Part], images: Dict[str, bytes],
                  g: Geometry, overrides: Optional[Dict[int, dict]] = None) -> PageResult:
     """部品を 1 ページへ配置し、あふれ・余りと写真変更の提案を返す。"""
+    parts = apply_kind_overrides(parts, overrides)
     result = _compose(section, parts, images, g, overrides=overrides)
     if result.overflow_lines:
         photos = [n for n, p in enumerate(parts) if p.kind == "写真"]
