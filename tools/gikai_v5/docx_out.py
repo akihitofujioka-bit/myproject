@@ -264,13 +264,21 @@ def image_size(data: bytes, ext: str) -> tuple[int, int]:
     raise ValueError("JPEG の SOF ヘッダーを読めません")
 
 
+def picture_size(item: Picture) -> tuple[float, float]:
+    """Word に実際に置く画像部分の幅と高さを pt で返す。"""
+    px_w, px_h = image_size(item.data, item.ext)
+    caption_h = 12.0 if item.caption else 0.0
+    available_h = max(0.0, item.box.h - caption_h)
+    scale = min(item.box.w / px_w, available_h / px_h)
+    return px_w * scale, px_h * scale
+
+
 def _picture_xml(item: Picture, idx: int, rel_id: str) -> tuple[str, int]:
     """画像を上寄せ・左右中央に置き、必要なら下端へ説明枠を置く。"""
     px_w, px_h = image_size(item.data, item.ext)
     caption_h = 12.0 if item.caption else 0.0
     available_h = max(0.0, item.box.h - caption_h)
-    scale = min(item.box.w / px_w, available_h / px_h)
-    width, height = px_w * scale, px_h * scale
+    width, height = picture_size(item)
     image_box = Box(item.box.x + (item.box.w - width) / 2, item.box.y, width, height)
     graphic = (
         '<pic:pic><pic:nvPicPr>'

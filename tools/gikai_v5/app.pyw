@@ -15,6 +15,7 @@ import edition
 import ingest
 import layout
 import templates
+import writer
 from settings import Settings
 from grid import Rect, TATECHUYOKO, mm2pt, to_box
 
@@ -32,7 +33,9 @@ LABELS = {"質問": "問", "答弁": "答"}
 KIND_BUTTONS = ("大見出し", "中見出し", "質問", "答弁", "本文", "写真説明", "議案")
 HELP_TEXT = """①「新しい号」を押し、号数と月などを入れます。前の号を続けるときは「号を開く」を押します。
 
-② 左のページ一覧で ○ のページを選びます。表紙・審議・最終ページは「入力欄を開く」で書き込み、ほかは「原稿を入れる」を押します。
+② 左のページ一覧で ○ のページを選びます。表紙・審議・最終ページは「入力欄を開く」で書き込みます。ほかは「原稿を入れる」、または「書いて直す」でツールの中に原稿を書きます。
+
+「書いて直す」では、大見出し・中見出し・問・答・本文・写真のボタンで今の行へ印を付けます。入力中も紙面、あふれ、余りが変わります。保存先は号フォルダの「事務局原稿」です。原稿ファイルを入れたページも、元ファイルを書き換えずに書き直せます。
 
 ③ 紙面と「このページの部品」で内容を確かめます。写真と大見出しはドラッグで動かせます。緑は置ける場所、赤は置けない場所です。写真は「大・中・小・顔」で大きさを変えられます。
 
@@ -44,7 +47,7 @@ HELP_TEXT = """①「新しい号」を押し、号数と月などを入れま�
 
 色と札: 問・答・大見出しなど、部品の種類を色と右上の札で示します。？付きの札と点線の枠は推測された部品です。
 
-保存場所: 選んだ号フォルダの「原稿」「写真」「出力」に保存されます。完成した Word は「出力」に入ります。"""
+保存場所: 選んだ号フォルダの「原稿」「事務局原稿」「写真」「出力」に保存されます。完成した Word、写真配置一覧、確認リストは「出力」に入ります。"""
 
 
 class FormEditor:
@@ -275,6 +278,7 @@ class App:
         self.zoom_level = 1
         self.photo_images = []  # type: List[tk.PhotoImage]
         self.form_editor = None  # type: Optional[FormEditor]
+        self.writer_editor = None  # type: Optional[writer.WriterEditor]
         self.default_family = tkfont.nametofont("TkDefaultFont").actual("family")
         self._build()
 
@@ -376,6 +380,7 @@ class App:
         ttk.Button(actions, text="やり直す", command=self._redo).pack(
             side="left", fill="x", expand=True, padx=1)
         ttk.Button(right, text="原稿を入れる", command=self._assign).pack(fill="x", pady=(6, 2))
+        ttk.Button(right, text="書いて直す", command=self._open_writer).pack(fill="x", pady=2)
         ttk.Button(right, text="入力欄を開く", command=self._open_form).pack(fill="x", pady=2)
         ttk.Button(right, text="前の号から写す", command=self._copy_forms).pack(fill="x", pady=2)
         ttk.Button(right, text="確かめる", command=self._check).pack(fill="x", pady=2)
@@ -486,6 +491,20 @@ class App:
                 return
             self.form_editor.close()
         self.form_editor = FormEditor(self, self.page_no)
+
+    def _open_writer(self) -> None:
+        if not self.edition or not self.page_no:
+            return
+        page = self.edition.pages[self.page_no - 1]
+        if "form" in page:
+            messagebox.showinfo("書いて直す", "このページは「入力欄を開く」で書きます。")
+            return
+        if self.writer_editor:
+            if self.writer_editor.page_no == self.page_no:
+                self.writer_editor.window.lift()
+                return
+            self.writer_editor.close()
+        self.writer_editor = writer.WriterEditor(self, self.page_no)
 
     def _copy_forms(self) -> None:
         if not self.edition:
@@ -720,7 +739,7 @@ class App:
             self.canvas.create_text(x2, y1, text=label, anchor="ne",
                                     font=(self.default_family, -8, "bold"))
 
-    def _draw(self) -> None:
+    def _draw(self, preview=None, preview_parts=None) -> None:
         self.canvas.delete("all")
         self.fit_label.configure(text="")
         self.photo_images = []
@@ -736,7 +755,7 @@ class App:
                 font=FONT, justify="center", width=self.PAPER_W * self.scale - 30)
             return
         page = self.edition.pages[self.page_no - 1]
-        if not page["source"] and "form" not in page:
+        if preview is None and not page["source"] and "form" not in page:
             self._refresh_parts([])
             self.canvas.create_text(self.PAPER_W * self.scale / 2,
                                     self.PAPER_H * self.scale / 2,
@@ -744,8 +763,8 @@ class App:
                                     font=FONT, justify="center")
             return
         try:
-            parts = self.edition.parts(self.page_no)
-            result = self.edition.compose(self.page_no)
+            parts = preview_parts if preview_parts is not None else self.edition.parts(self.page_no)
+            result = preview if preview is not None else self.edition.compose(self.page_no)
         except (OSError, ValueError) as error:
             messagebox.showerror("紙面を作れませんでした", str(error))
             return
@@ -949,7 +968,7 @@ class App:
             return
         self.step = 5
         self._show_step()
-        text = "書き出しました。\n" + "\n".join(str(path) for path in paths[:2])
+        text = "書き出しました。\n" + "\n".join(str(path) for path in paths[:3])
         self.status.configure(text=text)
         messagebox.showinfo("書き出し完了", text)
 

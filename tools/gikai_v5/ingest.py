@@ -48,6 +48,7 @@ class Part:
     sure: bool = True
     reason: str = ""
     image: Optional[str] = None
+    photo_size: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.kind not in KINDS:
@@ -327,6 +328,12 @@ def read_txt(path: Path) -> SourceData:
     return SourceData(_plain_paragraphs(text), source=path.name)
 
 
+def ingest_text(text: str, source: str = "事務局原稿.txt") -> IngestResult:
+    """UTF-8 保存前の文章を、.txt と同じ規則で部品へ分ける。"""
+    data = SourceData(_plain_paragraphs(text), source=source)
+    return IngestResult(classify(data.paragraphs, data.has_format), {}, [], data.source)
+
+
 # ---------------------------------------------------------------- 部品分け
 
 
@@ -361,7 +368,8 @@ def _explicit(p: Paragraph) -> Optional[Part]:
         return Part("写真", "", True, "Word に貼られた画像", p.image)
     photo = PHOTO_LINE.match(p.text)
     if photo:
-        return Part("写真", "", True, "【写真】の印", photo.group("file").strip())
+        return Part("写真", "", True, "【写真】の印", photo.group("file").strip(),
+                    photo.group("size") or None)
     heading = HEADING_LINE.match(p.text)
     if heading:
         kind = "大見出し" if heading.group("kind") == "大見出し" else "中見出し"

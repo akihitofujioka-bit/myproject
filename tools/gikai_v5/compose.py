@@ -201,7 +201,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
     skip = {title_index} if title_index is not None else set()
     if first_face is not None:
         change = overrides.get(first_face, {})
-        size = photo_sizes.get(first_face, change.get("size") or "顔")
+        size = photo_sizes.get(first_face, change.get("size") or
+                               parts[first_face].photo_size or "顔")
         if change.get("removed"):
             size = None
         skip.add(first_face)
@@ -227,7 +228,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             continue
         if part.kind == "写真":
             change = overrides.get(index, {})
-            size = photo_sizes.get(index, change.get("size") or "中")
+            size = photo_sizes.get(index, change.get("size") or part.photo_size or "中")
             if change.get("removed"):
                 size = None
             if index + 1 < len(parts) and parts[index + 1].kind == "写真説明":

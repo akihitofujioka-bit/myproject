@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import shutil
 from dataclasses import asdict
 from pathlib import Path
@@ -16,7 +17,9 @@ import compose as C
 import docx_out as dx
 import ingest as I
 import layout
+import photo_list
 import templates
+import writer
 from settings import Settings
 from grid import Geometry, Rect, to_box
 
@@ -41,7 +44,7 @@ def next_hint(current: Optional["Edition"]) -> str:
     if unfilled:
         if "form" in unfilled:
             return "左の一覧で ○ の書き込み式ページを選び、右の入力欄へ書いてください。"
-        return "左の一覧で ○ のページを選び「原稿を入れる」を押してください。"
+        return "左の一覧で ○ のページを選び「原稿を入れる」か「書いて直す」を押してください。"
     if any(page["state"] == "あふれ" for page in current.pages):
         return "赤いページの写真を小さくするか、種類を確かめてください。"
     return "「確かめる」のあと「Word に書き出す」を押してください。"
@@ -66,7 +69,7 @@ class Edition:
         """空の号フォルダを作り、ページ割りを保存する。"""
         folder = Path(folder).resolve()
         folder.mkdir(parents=True, exist_ok=True)
-        for name in ("原稿", "写真", "出力"):
+        for name in ("原稿", "写真", "事務局原稿", "出力"):
             (folder / name).mkdir(exist_ok=True)
         plan = layout.make_plan(issue)
         data = {"pages": [cls._new_page(p) for p in plan.pages],
@@ -108,6 +111,11 @@ class Edition:
         self.plan = layout.make_plan(self.issue)
         self.pages = copy.deepcopy(state["pages"])
         self._ingest_cache.clear()
+        for page in self.pages:
+            if page.get("writer_text") is not None and page.get("source"):
+                path = self._source_path(page["source"])
+                path.parent.mkdir(exist_ok=True)
+                path.write_text(page["writer_text"], encoding="utf-8")
 
     def _record(self, action: str, before: dict) -> None:
         self.history = self.history[:self.history_index]
@@ -165,8 +173,15 @@ class Edition:
             if candidate.is_file() and not target.exists():
                 shutil.copy2(str(candidate), str(target))
 
+    def _source_path(self, filename: str) -> Path:
+        """従来の原稿名と、事務局原稿の相対名を実ファイルへ直す。"""
+        relative = Path(filename)
+        if relative.parts and relative.parts[0] == "事務局原稿":
+            return self.folder / relative
+        return self.folder / "原稿" / filename
+
     def _ingest(self, filename: str) -> I.IngestResult:
-        path = self.folder / "原稿" / filename
+        path = self._source_path(filename)
         stat = path.stat()
         cached = self._ingest_cache.get(filename)
         if cached and cached[:2] == (stat.st_mtime_ns, stat.st_size):
@@ -179,6 +194,73 @@ class Edition:
                     result.images[part.image] = photo.read_bytes()
         self._ingest_cache[filename] = (stat.st_mtime_ns, stat.st_size, result)
         return result
+
+    def writer_text(self, page_no: int) -> str:
+        """書く窓へ出す、現在の原稿を印付き文章で返す。"""
+        page = self._page(page_no)
+        if "form" in page:
+            raise ValueError("書き込み式ページでは、この書く窓は使いません")
+        if page.get("writer_text") is not None:
+            return str(page["writer_text"])
+        if not page.get("source"):
+            return ""
+        result = self._ingest(page["source"])
+        return writer.marked_text(result.parts, page["section"], self._overrides(page))
+
+    def _writer_result(self, page_no: int, text: str) -> tuple:
+        page = self._page(page_no)
+        result = I.ingest_text(text, f"{page_no:02d}_{page['section']}.txt")
+        for part in result.parts:
+            if part.kind == "写真" and part.image:
+                path = self.folder / "写真" / Path(part.image).name
+                if path.is_file():
+                    result.images[part.image] = path.read_bytes()
+        composed = C.compose_page(page["section"], result.parts, result.images,
+                                  self.geometry)
+        return composed, result.parts
+
+    def preview_writer(self, page_no: int, text: str) -> tuple:
+        """保存せずに事務局原稿を組み、書く窓の見本へ返す。"""
+        page = self._page(page_no)
+        if "form" in page:
+            raise ValueError("書き込み式ページでは、この書く窓は使いません")
+        return self._writer_result(page_no, text)
+
+    def save_writer(self, page_no: int, text: str) -> str:
+        """事務局原稿を UTF-8 で保存し、そのページへ割り当てる。"""
+        page = self._page(page_no)
+        if "form" in page:
+            raise ValueError("書き込み式ページでは、この書く窓は使いません")
+        before = self._state()
+        safe_section = re.sub(r"[\\/:*?\"<>|]", "_", page["section"])
+        name = f"{page_no:02d}_{safe_section}.txt"
+        relative = str(Path("事務局原稿") / name)
+        target = self.folder / relative
+        target.parent.mkdir(exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        page["source"] = relative
+        page["writer_text"] = text
+        page["overrides"] = {}
+        self._ingest_cache.pop(relative, None)
+        composed, _parts = self._writer_result(page_no, text)
+        page["state"] = "あふれ" if composed.overflow_lines else "できた"
+        self._record(f"{page_no}ページの事務局原稿を保存する", before)
+        return relative
+
+    def keep_writer_photo(self, source: Path) -> str:
+        """書く窓で選んだ写真を号フォルダへ写し、保存名を返す。"""
+        source = Path(source)
+        if not source.is_file():
+            raise OSError(f"写真が見つかりません: {source}")
+        target = self.folder / "写真" / source.name
+        if target.exists() and target.read_bytes() != source.read_bytes():
+            number = 2
+            while target.exists():
+                target = self.folder / "写真" / f"{source.stem}_{number}{source.suffix}"
+                number += 1
+        if not target.exists():
+            shutil.copy2(str(source), str(target))
+        return target.name
 
     def _overrides(self, page: dict) -> Dict[int, dict]:
         out = {}
@@ -385,6 +467,8 @@ class Edition:
                 page["source"] = previous["source"]
                 page["overrides"] = previous["overrides"]
                 page["state"] = previous["state"]
+                if "writer_text" in previous:
+                    page["writer_text"] = previous["writer_text"]
                 if "form" in previous and "form" in page:
                     page["form"] = previous["form"]
             self.pages.append(page)
@@ -407,6 +491,106 @@ class Edition:
         self.history_index += 1
         self.save()
         return True
+
+    def _photo_position(self, box) -> str:
+        """任意の写真枠を、最も近い段と右端からの行で表す。"""
+        g = self.geometry
+        top = g.margin_top_mm * 72 / 25.4
+        right = (g.page_w_mm - g.margin_right_mm) * 72 / 25.4
+        dan = round((box.y - top) / (g.dan_h_pt + g.gap_pt)) + 1
+        line = round((right - (box.x + box.w)) / g.line_pitch_pt) + 1
+        return f"{max(1, dan)}段目・右から{max(1, line)}行目"
+
+    @staticmethod
+    def _photo_dimensions(item, fallback_box) -> tuple:
+        box = item.box if item is not None else fallback_box
+        try:
+            width, height = dx.picture_size(item) if isinstance(item, dx.Picture) else (box.w, box.h)
+        except ValueError:
+            width, height = box.w, box.h
+        return width * 25.4 / 72, height * 25.4 / 72
+
+    def _photo_records(self, write_files: bool = False) -> tuple:
+        """全ページの配置済み写真を集め、必要なら元画像も出力する。"""
+        records = []
+        written = []
+        photo_output = self.folder / "出力" / "写真"
+        if write_files:
+            photo_output.mkdir(parents=True, exist_ok=True)
+        for page in self.pages:
+            result = self.compose(page["no"])
+            entries = []
+            if "form" in page:
+                if page["section"] == layout.COVER and page["form"].get("photo"):
+                    entries.append((page["form"]["photo"], "表紙",
+                                    str(page["form"].get("photo_caption", "")), "表紙写真"))
+                elif page["section"] == layout.LAST:
+                    for number, value in enumerate(page["form"].get("editorial_photos", []) or [], 1):
+                        entries.append((value, "小", str(value.get("caption", "")),
+                                        f"編集後記写真{number}"))
+                form_entries = []
+                for value, size, caption, label in entries:
+                    path_value = value.get("path", "") if isinstance(value, dict) else value
+                    item = next((part for part in result.page.items
+                                 if isinstance(part, (dx.Picture, dx.Placeholder))
+                                 and part.name == label), None)
+                    if path_value and item is not None:
+                        form_entries.append((Path(path_value).name, Path(path_value), size,
+                                             caption, item.box, item,
+                                             self._photo_position(item.box)))
+                entries = form_entries
+            elif page.get("source"):
+                ingested = self._ingest(page["source"])
+                parts = C.apply_kind_overrides(ingested.parts, self._overrides(page))
+                placed = {place.index: place for place in result.placements
+                          if place.part.kind == "写真"}
+                photo_no = 0
+                normal_entries = []
+                for index, part in enumerate(parts):
+                    if part.kind != "写真":
+                        continue
+                    photo_no += 1
+                    if index not in placed or not part.image:
+                        continue
+                    change = self._overrides(page).get(index, {})
+                    size = change.get("size") or part.photo_size or (
+                        "顔" if page["section"] == layout.IPPAN and photo_no == 1 else "中")
+                    box = to_box(self.geometry, placed[index].rect)
+                    item = next((value for value in result.page.items
+                                 if isinstance(value, (dx.Picture, dx.Placeholder))
+                                 and value.name == f"写真{photo_no}"), None)
+                    source_path = self.folder / "写真" / Path(part.image).name
+                    caption = C._caption(parts, index)
+                    position = (f"{placed[index].rect.dan + 1}段目・"
+                                f"右から{placed[index].rect.line + 1}行目")
+                    normal_entries.append((Path(part.image).name, source_path, size,
+                                           caption, box, item, position))
+                entries = normal_entries
+            for number, (original, source_path, size, caption, box, item, position) in enumerate(entries, 1):
+                data = None
+                ext = None
+                try:
+                    data = item.data if isinstance(item, dx.Picture) else source_path.read_bytes()
+                    ext = C._image_ext(original, data)
+                except (OSError, ValueError):
+                    pass
+                suffix = ".jpg" if ext == "jpeg" else ".png" if ext == "png" else Path(original).suffix
+                output_name = f"p{page['no']:02d}_写真{number}{suffix}"
+                pixels = None
+                if data is not None and ext is not None:
+                    try:
+                        pixels = dx.image_size(data, ext)
+                    except ValueError:
+                        pass
+                    if write_files:
+                        target = photo_output / output_name
+                        target.write_bytes(data)
+                        written.append(target.resolve())
+                width, height = self._photo_dimensions(item, box)
+                records.append(photo_list.PhotoRecord(
+                    page["no"], page["section"], output_name, original, size,
+                    width, height, position, caption, pixels))
+        return records, written
 
     def check(self) -> List[str]:
         """号全体で直す点・知らせる点を一覧にする。"""
@@ -433,6 +617,9 @@ class Edition:
             messages.extend(prefix + ": " + w for w in ingested.warnings)
             if page["section"] == layout.IPPAN:
                 messages.extend(prefix + ": " + w for w in I.check_ippan(ingested.parts))
+        records, _written = self._photo_records()
+        messages.extend(f"{item.page_no}ページ（{item.section}）: {item.output_name} {item.warning}"
+                        for item in records if item.warning)
         return messages
 
     def export(self) -> List[Path]:
@@ -453,30 +640,15 @@ class Edition:
                                                   dx.GOTHIC, 18.0, 22.0,
                                                   True, True, "区分名")]))
                 continue
-            ingested = self._ingest(page_data["source"])
             result = self.compose(page_data["no"])
             pages.append(result.page)
-            placed = {p.index for p in result.placements if p.part.kind == "写真"}
-            number = 0
-            for index, part in enumerate(ingested.parts):
-                if part.kind != "写真":
-                    continue
-                number += 1
-                if index not in placed or not part.image or part.image not in ingested.images:
-                    continue
-                data = ingested.images[part.image]
-                try:
-                    ext = C._image_ext(part.image, data)
-                except ValueError:
-                    continue
-                suffix = ".jpg" if ext == "jpeg" else ".png"
-                target = photo_output / f"p{page_data['no']:02d}_写真{number}{suffix}"
-                target.write_bytes(data)
-                written_photos.append(target.resolve())
         docx = (output / f"第{self.issue.number}号.docx").resolve()
         dx.write_docx(docx, self.geometry, pages)
+        records, written_photos = self._photo_records(write_files=True)
+        photo_docx = (output / "写真配置一覧.docx").resolve()
+        photo_list.write_photo_list(photo_docx, records, self.geometry)
         checklist = (output / "確認リスト.txt").resolve()
         messages = self.check()
         checklist.write_text("\n".join(messages) + ("\n" if messages else "問題はありません。\n"),
                              encoding="utf-8")
-        return [docx, checklist] + written_photos
+        return [docx, checklist, photo_docx] + written_photos

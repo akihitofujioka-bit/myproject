@@ -1,4 +1,4 @@
-"""架空の見本で第999号を作り、一般質問 2 ページを書き出す。"""
+"""架空の見本で第999号を作り、事務局原稿を含めて書き出す。"""
 
 from pathlib import Path
 
@@ -23,6 +23,12 @@ def main() -> int:
         if page["section"] in forms:
             work.set_form(page["no"], forms[page["section"]])
     pages = [page["no"] for page in work.pages if page["section"] == layout.IPPAN]
+    office_page = next(page["no"] for page in work.pages
+                       if page["section"] == layout.GYOSEI)
+    work.save_writer(office_page,
+                     "【大見出し】架空の行政報告\n"
+                     "【見出し】見本事業の進み具合\n"
+                     "本文として、架空の取り組みを報告します。")
     work.assign(pages[0], first)
     work.assign(pages[1], second)
     paths = work.export()
