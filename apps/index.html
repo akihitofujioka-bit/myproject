@@ -118,6 +118,12 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
     </span>
   </a>
 
+  <!-- 写真の登録欄は 6 枠あって長いので、ふだんは畳んでおく -->
+  <details class="card" id="characterCard">
+    <summary>キャラクター写真の設定</summary>
+    <p class="note">トップの背景と、機能ごとの写真を登録します。写真はこの端末の中だけに保存されます。</p>
+  </details>
+
   <!-- data-web-only: ブラウザで開いたときだけ意味がある案内。
        アプリ版では mobile/scripts/build-www.mjs が取り除く。 -->
   <section data-web-only>
@@ -146,6 +152,8 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 <script src="shared/meeting.js"></script>
 <script src="shared/planner.js"></script>
 <script src="shared/camerapref.js"></script>
+<script src="shared/character.js"></script>
+<script src="shared/character-settings.js"></script>
 <script src="shared/receiptscan.js"></script>
 <script src="shared/scanrouter.js"></script>
 <script src="shared/deeplink.js"></script>
@@ -160,6 +168,16 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
     var el = document.activeElement;
     if (el && el !== document.body && typeof el.blur === "function") el.blur();
   });
+
+  // Task 3 で、背景と各機能のアイコンを更新する処理を足す。
+  function updateCharacterDisplay() {}
+
+  if (window.CharacterSettings) {
+    window.CharacterSettings.mount(document.getElementById("characterCard"), {
+      onChange: updateCharacterDisplay,
+      toast: toast
+    });
+  }
 
   if (!(window.ReceiptScan && window.ReceiptScan.available())) return;
   document.getElementById("scanCard").hidden = false;
