@@ -21,10 +21,12 @@ if not defined PYFOUND (
 )
 %PY% demo_edition.py
 %PY% trial.py
+%PY% diag_spacing.py
 echo.
-echo  できました。開いたフォルダの中の次の 2 つを Word で開いてください。
+echo  できました。開いたフォルダの中の次の 3 つを Word で開いてください。
 echo    段階1_格子の確認.docx  … どの行も「終」の字が段の下の端に来ていれば計算どおり
 echo    第999号\出力\第999号.docx … 文字が枠からはみ出していないか
+echo    行送りの確かめ.docx … Ａ～Ｅのどの段なら「終」が欠けないか
 echo.
 start "" explorer "%~dp0試し出力"
 pause
