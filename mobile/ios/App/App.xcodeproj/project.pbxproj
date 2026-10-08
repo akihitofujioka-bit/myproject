@@ -41,6 +41,7 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		B94C93F625E50D3B33F93159 /* DailyAppsWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607E95DE886257AE57E3296B /* DailyAppsWatchApp.swift */; };
 		CE2147F1B5E9F903940FE5FA /* WatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2F563FC6B160E963ECF379 /* WatchStore.swift */; };
+		A1C0FFEE0000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000012 /* Assets.xcassets */; };
 		D04BCA140C04704692BC01CF /* WatchWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FD600EE43BD985CD9DB1ABD5 /* WatchWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeaderOnCopy, ); }; };
 		DE0DE0CD036E49C0017E80EF /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
 		E7D0C38FE69626AABB82EDFC /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
@@ -144,6 +145,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		A44AE15940A8D9ED379B0EA0 /* WatchWidgetExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = WatchWidgetExtension.entitlements; sourceTree = "<group>"; };
 		AC2F563FC6B160E963ECF379 /* WatchStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchStore.swift; sourceTree = "<group>"; };
+		A1C0FFEE0000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B73E718DBDCF55ADFF4A39C3 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		D00B639C754BBD25B2D1DE75 /* WatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4B6CBD59DD11F3958745022 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -198,6 +200,7 @@
 				607E95DE886257AE57E3296B /* DailyAppsWatchApp.swift */,
 				415B60332CAD09296F351F12 /* ContentView.swift */,
 				AC2F563FC6B160E963ECF379 /* WatchStore.swift */,
+				A1C0FFEE0000000000000012 /* Assets.xcassets */,
 				6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */,
 				F07A62F74C8E035A000749C1 /* SharedDefaults.swift */,
 				36A65E078DFA7C4947AA2458 /* WatchApp.entitlements */,
@@ -459,6 +462,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1C0FFEE0000000000000011 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
