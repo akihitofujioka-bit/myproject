@@ -165,7 +165,7 @@ git commit -m "feat: トップ画面にキャラクター写真の登録欄を�
 - [ ] **Step 1: トップ画面**
 
 - 画面を開いたときと `onChange` のときに、`Character.applyBackground("top")` を呼ぶ。また、`[data-char-slot]` の各 `<img>` を `currentPhotoURL(slot)` の写真に差し替える（`object-fit: cover`。枠の形は今のまま）
-- 写真が無い枠は、元の `src`（`data-default-src` に控えておく）に戻す。`onChange("top")` で写真が 0 枚になったときは、`#charBg` を取り除き、`has-char-bg` も外す
+- 写真が無い枠は、元の `src`（`data-default-src` に控えておく）に戻す。写真が 0 枚になったときの背景の片付けは `applyBackground` が行う（Task 1 で実装済み）
 
 - [ ] **Step 2: 5 機能の画面**
 
