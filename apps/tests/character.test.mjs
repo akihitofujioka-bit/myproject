@@ -105,6 +105,11 @@ ok(C.watchMark(watchRecord, d("2026-10-08")) === C.watchMark(watchRecord, d("202
   ok(C.pickIndex(1, "day", "2026-10-09", days(3), "random") === 0 && C.pickIndex(0, "day", "2026-10-09", days(3), "random") === -1, "random: 1 枚は 0、0 枚は -1");
   const two = []; for (let i = 0; i < 10; i++) two.push(C.pickIndex(2, "week", "2026-10-09", days(i * 7), "random"));
   ok(two.every((v, i) => i === 0 || v !== two[i - 1]), "random: 2 枚なら毎週交互");
+  // 項目（スロット）が違えば、同じ設定でもランダムの並びは別になる（全項目ランダムで同じ写真になる不具合の再発防止）
+  const bySlot = (slot) => { const r = []; for (let i = 0; i < 20; i++) r.push(C.pickIndex(10, "day", "2026-10-09", days(i), "random", slot)); return r.join(); };
+  ok(bySlot("top") !== bySlot("docs") && bySlot("docs") !== bySlot("fridge") && bySlot("top") !== bySlot("fridge"), "random: 項目ごとに並びが違う");
+  ok(bySlot("top") === bySlot("top"), "random: 同じ項目なら、いつ選んでも同じ並び");
+  ok(C.pickIndex(5, "day", "2026-10-09", days(3), "random") === C.pickIndex(5, "day", "2026-10-09", days(3), "random", undefined), "random: スロット省略でも動く");
   ok(C.normalize({ order: "xxx" }, "top").order === "sequential" && C.normalize({ order: "random" }, "top").order === "random", "normalize: order を埋める");
 }
 
