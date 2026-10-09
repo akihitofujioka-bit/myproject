@@ -254,7 +254,13 @@
       if (!style) {
         style = global.document.createElement("style");
         style.id = "charBgStyle";
-        style.textContent = "html.has-char-bg body { background: transparent; }";
+        // 写真の上に直接のる文字（戻るリンク・見出し・説明文・版表記）は読みにくいので、
+        // 背景があるときだけ白い半透明の帯を敷く
+        style.textContent = "html.has-char-bg body { background: transparent; }" +
+          "html.has-char-bg .backlink, html.has-char-bg header, html.has-char-bg .wrap > h1," +
+          " html.has-char-bg .wrap > .lead, html.has-char-bg .version" +
+          " { background: rgba(255,255,255,0.88); border-radius: 10px; padding: 6px 10px; }" +
+          "html.has-char-bg .backlink, html.has-char-bg .wrap > h1 { display: table; }";
         global.document.head.appendChild(style);
       }
       global.document.documentElement.classList.add("has-char-bg");
