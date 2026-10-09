@@ -49,7 +49,7 @@
     return Math.round((b - a) / 86400000);
   }
 
-  // 会議のメモから開始時刻と懇親会の有無を取り出す（書式は docs-tracker の meetingNote）
+  // 会議のメモから開始時刻と懇親会の有無を取り出す（予定アプリの meetingNote の書式）
   function meetingDetail(note) {
     var time = "", social = "";
     String(note || "").split("\n").forEach(function (line) {
@@ -62,29 +62,31 @@
 
   function isOpen(item) { return OPEN_STATUSES.indexOf(item && item.status) >= 0; }
 
-  function docsLists(today) {
-    var data = read("docs-tracker.v1");
-    var items = (data && data.items) || [];
+  function scheduleAndDocsLists(today) {
+    var schedule = read("schedule.v1");
+    var docs = read("docs-tracker.v1");
     var meetings = [], deadlines = [];
-    items.forEach(function (it) {
+    ((schedule && schedule.items) || []).forEach(function (it) {
       if (!isOpen(it)) return;
       var days = daysUntil(today, it.dueOn);
       if (days === null) return;
-      // 手帳から入れた「予定」も、会議と同じく日時のある予定として扱う（過ぎたら出さない）
-      if (it.kind === "会議" || it.kind === "予定") {
-        if (days < 0 || days > MEETING_DAYS) return;
-        var d = meetingDetail(it.note);
-        meetings.push({
-          id: it.id,
-          title: it.title,
-          date: it.dueOn,
-          days: days,
-          time: d.time,
-          place: it.dest || "",
-          social: d.social
-        });
-        return;
-      }
+      if (it.kind !== "会議" && it.kind !== "予定") return;
+      if (days < 0 || days > MEETING_DAYS) return;
+      var d = meetingDetail(it.note);
+      meetings.push({
+        id: it.id,
+        title: it.title,
+        date: it.dueOn,
+        days: days,
+        time: d.time,
+        place: it.dest || "",
+        social: d.social
+      });
+    });
+    ((docs && docs.items) || []).forEach(function (it) {
+      if (!isOpen(it) || it.kind === "会議" || it.kind === "予定") return;
+      var days = daysUntil(today, it.dueOn);
+      if (days === null) return;
       if (days > DEADLINE_DAYS) return;   // 期限切れ（マイナス）は残す。まだ終わっていないため
       deadlines.push({
         id: it.id,
@@ -126,7 +128,7 @@
     var opts = options || {};
     var now = opts.now || Date.now();
     var today = opts.today || ymd(new Date(now));
-    var lists = docsLists(today);
+    var lists = scheduleAndDocsLists(today);
     return {
       version: 1,
       today: today,
