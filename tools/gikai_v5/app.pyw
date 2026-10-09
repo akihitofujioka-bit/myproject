@@ -29,6 +29,9 @@ from grid import Box, Rect, TATECHUYOKO, mm2pt, to_box
 FONT_SIZE = 11
 FONT = ("TkDefaultFont", FONT_SIZE)
 SMALL_FONT = ("TkDefaultFont", max(9, FONT_SIZE - 2))
+# 縦書きで向きが変わる字（伸ばし棒・ダッシュ・波線・括弧）。画面では回して描く。
+VERTICAL_ROTATE = set("ー―‐－～〜…‥（）「」『』【】〔〕〈〉《》［］｛｝＝")
+VERTICAL_DASHES = set("ー―‐－")
 
 UI = {
     "background": "#f5f6f8", "card": "#ffffff", "text": "#1f2933",
@@ -303,6 +306,8 @@ class App:
         self.fit_scale = 0.72
         self.fit_after = None
         self.photo_images = []  # type: List[tk.PhotoImage]
+        # 字を回して描けるか（Tk 8.6 以上）。Windows の Python 3.9 は 8.6。
+        self.can_rotate_text = tk.TkVersion >= 8.6
         self.library_images = {}  # type: Dict[int, tk.PhotoImage]
         self.photo_rows = []
         self.photo_preview_image = None  # type: Optional[tk.PhotoImage]
@@ -1152,8 +1157,22 @@ class App:
                 font = (family, -size, "bold" if item.bold else "normal")
                 for cell in self._vertical_cells(text):
                     y = y1 + 2 + row * advance + advance / 2
-                    self.canvas.create_text(x, y, text=cell, font=font, anchor="center")
+                    self._draw_vertical_cell(x, y, cell, font, size)
                     row += 1
+
+    def _draw_vertical_cell(self, x: float, y: float, cell: str, font, size: int) -> None:
+        """縦書きの 1 マスを描く。伸ばし棒・括弧などは Word と同じく縦向きにする。"""
+        if cell not in VERTICAL_ROTATE:
+            self.canvas.create_text(x, y, text=cell, font=font, anchor="center")
+            return
+        if self.can_rotate_text:
+            self.canvas.create_text(x, y, text=cell, font=font, anchor="center", angle=-90)
+        elif cell in VERTICAL_DASHES:
+            # 古い Tk（8.5）は字を回せないので、伸ばし棒は縦の線で描く。
+            self.canvas.create_line(x, y - size * 0.4, x, y + size * 0.4,
+                                    width=max(1, round(size / 12)))
+        else:
+            self.canvas.create_text(x, y, text=cell, font=font, anchor="center")
 
     def _draw_horizontal(self, item: dx.TextBox) -> None:
         x1, y1, x2, y2 = self._paper_box(item.box)
