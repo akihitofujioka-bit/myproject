@@ -124,12 +124,55 @@
     });
   }
 
+  // iPhone のアプリ（WebKit）では、IndexedDB に Blob のまま保存すると、別の画面から
+  // 読み直したときに中身を読めないことがある（2026-10-09、書類の画面で背景が出なかった）。
+  // そこで写真は { type, data: ArrayBuffer } の形で保存し、読み出すときに Blob に戻す
+  function toStored(photo) {
+    if (!photo || typeof photo.arrayBuffer !== "function") return Promise.resolve(photo);
+    return photo.arrayBuffer().then(function (data) {
+      return { type: photo.type || "image/jpeg", data: data };
+    });
+  }
+
+  function fromStored(entry) {
+    if (entry && entry.data instanceof ArrayBuffer) {
+      return new global.Blob([entry.data], { type: entry.type || "image/jpeg" });
+    }
+    return entry; // 以前の版で Blob のまま保存したもの
+  }
+
+  // 読めない写真（以前の版で Blob のまま保存し、読めなくなったもの）は null にする
+  function toStoredOrNull(photo) {
+    return toStored(photo).catch(function () { return null; });
+  }
+
+  function toStoredRecord(record) {
+    return Promise.all([
+      Promise.all(record.photos.map(toStoredOrNull)),
+      Promise.all(record.manualPhotos.map(toStoredOrNull))
+    ]).then(function (lists) {
+      var copy = {};
+      Object.keys(record).forEach(function (key) { copy[key] = record[key]; });
+      // 読めなかった写真は捨てる。アルバムの写真なら番号も外し、次の同期で取り込み直す
+      copy.photos = lists[0].filter(function (photo) { return photo; });
+      copy.albumIds = record.albumIds.filter(function (id, index) { return lists[0][index]; });
+      copy.manualPhotos = lists[1].filter(function (photo) { return photo; });
+      return copy;
+    });
+  }
+
+  function fromStoredRecord(record) {
+    record.photos = record.photos.map(fromStored);
+    record.manualPhotos = record.manualPhotos.map(fromStored);
+    return record;
+  }
+
   function load(slot) {
     return openDatabase().then(function (db) {
       return new Promise(function (resolve, reject) {
         var transaction = db.transaction(STORE_NAME, "readonly");
         var request = transaction.objectStore(STORE_NAME).get(slot);
-        request.onsuccess = function () { resolve(normalize(request.result, slot)); };
+        request.onsuccess = function () { resolve(fromStoredRecord(normalize(request.result, slot))); };
         request.onerror = function () { reject(request.error || new Error("写真を読み込めません")); };
         transaction.oncomplete = function () { db.close(); };
         transaction.onabort = function () { db.close(); };
@@ -138,8 +181,11 @@
   }
 
   function save(record) {
-    var value = normalize(record, record && record.slot);
-    return openDatabase().then(function (db) {
+    var value;
+    return toStoredRecord(normalize(record, record && record.slot)).then(function (stored) {
+      value = stored;
+      return openDatabase();
+    }).then(function (db) {
       return new Promise(function (resolve, reject) {
         var transaction = db.transaction(STORE_NAME, "readwrite");
         transaction.objectStore(STORE_NAME).put(value);
@@ -284,6 +330,9 @@
     watchMark: watchMark,
     currentPhotoURL: currentPhotoURL,
     applyBackground: applyBackground,
+    toStored: toStored,
+    toStoredRecord: toStoredRecord,
+    fromStored: fromStored,
     _store: { load: load, save: save }
   };
 

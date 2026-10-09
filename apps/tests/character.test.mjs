@@ -80,5 +80,18 @@ ok(C.watchMark({ photos: [] }, d("2026-10-08")) === "clear", "watchMark: 写真 
 const watchRecord = { photos: [{}, {}], interval: "day", startDate: "2026-10-08" };
 ok(C.watchMark(watchRecord, d("2026-10-08")) === C.watchMark(watchRecord, d("2026-10-08")), "watchMark: 同じ日は同じ印");
 
+// 写真は ArrayBuffer の形で保存し、読み出すと元の Blob に戻る（WebKit 対策）
+{
+  const src = new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" });
+  const stored = await C.toStored(src);
+  ok(stored.data instanceof ArrayBuffer && stored.type === "image/jpeg", "toStored: ArrayBuffer にする");
+  const back = C.fromStored(stored);
+  ok(back instanceof Blob && back.size === 3 && back.type === "image/jpeg", "fromStored: Blob に戻る");
+  ok(C.fromStored(src) === src, "fromStored: 以前の Blob はそのまま");
+  const broken = { type: "image/jpeg", arrayBuffer: () => Promise.reject(new Error("読めない")) };
+  const rec = await C.toStoredRecord(C.normalize({ photos: [src, broken], albumIds: ["a", "b"], manualPhotos: [broken] }, "top"));
+  ok(rec.photos.length === 1 && rec.albumIds.join() === "a" && rec.manualPhotos.length === 0, "toStoredRecord: 読めない写真と番号は捨てる");
+}
+
 console.log(failures ? `\n${failures} 件失敗` : "\nすべて成功");
 process.exit(failures ? 1 : 0);
