@@ -7,7 +7,7 @@ const context = { window: {} };
 vm.createContext(context);
 vm.runInContext(source, context);
 
-const { groupForList, monthGrid, itemsOn } = context.window.ScheduleView;
+const { groupForList, monthGrid, itemsOn, hideDuplicateExternal } = context.window.ScheduleView;
 
 function item(id, dueOn, note = "") {
   return { id, title: `架空の予定${id}`, dueOn, note };
@@ -66,6 +66,23 @@ function item(id, dueOn, note = "") {
     { ...item("early", "2026-10-05"), startTime: "09:00" }
   ], "2026-10-05");
   assert.deepEqual(Array.from(sorted, (x) => x.id), ["early", "late", "none"]);
+}
+
+// iPhone のカレンダーの予定のうち、予定アプリの予定と同じものは出さない（表示の重なりを防ぐ）
+{
+  const appItems = [
+    { id: "a1", kind: "会議", title: "星空委員会", dueOn: "2026-10-12", note: "13:30〜15:00 開始" },
+    { id: "a2", kind: "予定", title: "若葉公園の下見", dueOn: "2026-10-13", note: "" }
+  ];
+  const external = [
+    { id: "external-E1", eventId: "E1", title: "別の名前に変えた会議", dueOn: "2026-10-20", startTime: "10:00" },
+    { id: "external-E2", eventId: "E2", title: "星空委員会", dueOn: "2026-10-12", startTime: "13:30" },
+    { id: "external-E3", eventId: "E3", title: "星空委員会", dueOn: "2026-10-12", startTime: "18:00" },
+    { id: "external-E4", eventId: "E4", title: "若葉公園の下見", dueOn: "2026-10-13", startTime: "" },
+    { id: "external-E5", eventId: "E5", title: "虹色まつり", dueOn: "2026-10-14", startTime: "" }
+  ];
+  const shown = hideDuplicateExternal(appItems, external, { "meeting-a1": "E1" });
+  assert.deepEqual(Array.from(shown, (x) => x.id), ["external-E3", "external-E5"]);
 }
 
 console.log("schedule.test.mjs: OK");

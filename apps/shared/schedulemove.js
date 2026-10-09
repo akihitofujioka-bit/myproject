@@ -74,11 +74,29 @@
       }
     }
 
+    // 何度もカレンダーから取り込んで重なった予定を見分けるための鍵。
+    // 種別・件名・日付・開始時刻・場所がすべて同じなら、同じ予定とみなす
+    function sameKey(item) {
+      var time = item.startTime || item.time || "";
+      if (!time) {
+        var m = String(item.note || "").match(/(?:^|\n)\s*(\d{1,2}:\d{2})/);
+        time = m ? m[1] : "";
+      }
+      return [item.kind, item.title, item.dueOn, time, item.dest || ""].join("|");
+    }
+    var seen = {};
+
     var scheduleItems = [];
     var docsItems = [];
     docs.items.forEach(function (item) {
-      if (item && (item.kind === "会議" || item.kind === "予定")) scheduleItems.push(item);
-      else docsItems.push(item);
+      if (item && (item.kind === "会議" || item.kind === "予定")) {
+        // 重なった予定は最初の 1 件だけ移す（残りは控えにだけ残る）
+        if (seen[sameKey(item)]) return;
+        seen[sameKey(item)] = true;
+        scheduleItems.push(item);
+      } else {
+        docsItems.push(item);
+      }
     });
 
     // カレンダーに書き込んだ予定との対応表（calIds）も写す。写さないと、予定アプリで

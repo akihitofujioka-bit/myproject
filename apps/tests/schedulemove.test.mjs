@@ -105,6 +105,24 @@ console.log("== 元データが無い・壊れている ==");
   ok(storage.values["docs-tracker.v1"] === broken, "壊れた docs-tracker.v1 には触れない");
 }
 
+console.log("== 何度も取り込んで重なった予定は 1 件にまとめる ==");
+{
+  const meeting = (id, note) => ({ id, kind: "会議", title: "星空委員会", dest: "若葉会館", dueOn: "2026-10-12", note });
+  const original = { v: 1, items: [
+    meeting("m1", "13:30〜15:00 開始\n（カレンダーから登録）"),
+    meeting("m2", "13:30〜15:00 開始\n（カレンダーから登録）"),
+    meeting("m3", "10:00 開始"),
+    { id: "p1", kind: "予定", title: "星空委員会", dest: "若葉会館", dueOn: "2026-10-12", note: "13:30 開始" },
+    meeting("m4", "13:30〜15:00 開始\n（カレンダーから登録）")
+  ] };
+  const storage = fakeStorage({ "docs-tracker.v1": json(original) });
+  const result = Move.run(storage);
+  const schedule = JSON.parse(storage.values["schedule.v1"]);
+  ok(schedule.items.map((item) => item.id).join(",") === "m1,m3,p1", "種別・件名・日付・開始時刻・場所が同じものは最初の 1 件だけ残す");
+  ok(result.moved === 3, "まとめたあとの件数を返す");
+  ok(JSON.parse(storage.values["docs-tracker.v1.backup-2026-10"]).items.length === 5, "控えには重なった予定も残る");
+}
+
 console.log("== 保存に失敗したときに元へ戻す ==");
 {
   const original = json({ version: 1, items: [{ id: "p2", kind: "予定", title: "夕凪広場の点検" }] });

@@ -91,7 +91,24 @@
     }).slice().sort(compareItems);
   }
 
+  // iPhone のカレンダーの予定のうち、予定アプリの予定と同じものを除く（表示の重なりを防ぐ）。
+  // 同じとみなすのは、予定アプリが書き込んだ予定（calIds の値と一致）か、
+  // 件名・日付・開始時刻がそろうもの（以前にカレンダーから取り込んだ予定など）
+  function hideDuplicateExternal(appItems, externalItems, calIds) {
+    var written = {};
+    Object.keys(calIds || {}).forEach(function (key) { written[calIds[key]] = true; });
+    var keys = {};
+    (appItems || []).forEach(function (item) {
+      keys[[item.title, item.dueOn, timeOf(item)].join("|")] = true;
+    });
+    return (externalItems || []).filter(function (item) {
+      if (item.eventId && written[item.eventId]) return false;
+      return !keys[[item.title, item.dueOn, timeOf(item)].join("|")];
+    });
+  }
+
   global.ScheduleView = {
+    hideDuplicateExternal: hideDuplicateExternal,
     groupForList: groupForList,
     monthGrid: monthGrid,
     itemsOn: itemsOn

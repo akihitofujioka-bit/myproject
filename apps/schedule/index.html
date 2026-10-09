@@ -561,7 +561,8 @@ function save() {
 }
 
 function allItems() {
-  return state.items.concat(externalItems);
+  // 予定アプリで登録した予定と同じカレンダーの予定は、重ねて出さない
+  return state.items.concat(window.ScheduleView.hideDuplicateExternal(state.items, externalItems, state.calIds));
 }
 
 function timeOf(item) {
@@ -898,6 +899,7 @@ function loadPhoneCalendar() {
     }).map(function (event, index) {
       return {
         id: "external-" + (event.id || index),
+        eventId: event.id || "",
         title: event.title || "（件名なし）",
         kind: "予定",
         dueOn: event.date,
