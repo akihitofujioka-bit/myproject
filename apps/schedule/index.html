@@ -13,64 +13,348 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <style>
-:root { color-scheme:light dark; --bg:#f5f6f8; --surface:#fff; --border:#dfe3e8; --text:#1c1f24; --muted:#667080; --accent:#2f6fed; --accent-weak:#e8f0ff; --calendar:#a24c88; --danger:#c0362c; --warn:#96610a; --radius:10px; }
-@media (prefers-color-scheme:dark) { :root { --bg:#16181c; --surface:#1f2229; --border:#333842; --text:#e8eaed; --muted:#9aa3b0; --accent:#6d9bff; --accent-weak:#22304d; --calendar:#e78aca; --danger:#ff8a80; --warn:#e5b567; } }
-* { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--text); font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif; font-size:15px; line-height:1.6; padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
-.wrap { max-width:880px; margin:0 auto; padding:16px 16px calc(72px + env(safe-area-inset-bottom)); }
-.backlink { margin:0 0 4px; font-size:14px; }
-.backlink a { color:var(--muted); text-decoration:none; display:inline-block; padding:6px 0; }
-h1 { font-size:22px; margin:8px 0 4px; }
-h2 { font-size:16px; margin:0 0 10px; }
-h3 { font-size:15px; margin:18px 0 8px; }
-.lead,.footnote { color:var(--muted); font-size:13px; }
-.lead { margin:0 0 12px; }
-.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:14px; }
-.row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
-.field { flex:1 1 130px; min-width:0; }
-.field.wide { flex:2 1 220px; }
-label { display:block; color:var(--muted); font-size:12px; margin-bottom:2px; }
-input,select,textarea,button { font:inherit; color:var(--text); }
-input,select,textarea { width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:7px; background:var(--bg); font-size:16px; }
-textarea { min-height:58px; resize:vertical; }
-button { padding:8px 12px; border:1px solid var(--border); border-radius:7px; background:var(--surface); cursor:pointer; }
-button.primary { color:#fff; background:var(--accent); border-color:var(--accent); }
-button.link { color:var(--accent); border:0; background:none; }
-button.small { padding:5px 9px; font-size:13px; }
-.chips { display:flex; flex-wrap:wrap; gap:7px; }
-.view-switch { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:14px; }
-.view-switch button { min-height:44px; font-weight:700; }
-.view-switch button[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
-[hidden] { display:none !important; }
-.items { list-style:none; margin:0; padding:0; }
-.item { border:1px solid var(--border); border-left:5px solid var(--accent); border-radius:var(--radius); background:var(--surface); padding:10px 12px; margin-bottom:8px; }
-.item.external { border-left:4px solid var(--calendar); }
-.item-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:7px; }
-.item-title { font-weight:700; }
-.badge { border:1px solid var(--border); border-radius:999px; padding:1px 7px; color:var(--muted); background:var(--bg); font-size:12px; }
-.when { color:var(--accent); font-size:13px; font-variant-numeric:tabular-nums; }
-.item.external .when { color:var(--calendar); }
-.item-detail { color:var(--muted); font-size:13px; white-space:pre-wrap; margin-top:2px; }
-.actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.empty { color:var(--muted); text-align:center; padding:22px 8px; }
-.calendar-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
-.calendar-head strong { font-size:17px; }
-.weekdays,.month-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
-.weekdays div { text-align:center; color:var(--muted); font-size:12px; }
-.day { min-height:58px; padding:5px 3px; position:relative; text-align:left; border-color:transparent; background:var(--surface); }
-.day.other { color:var(--muted); opacity:.55; }
-.day.today { border-color:var(--accent); }
-.day.selected { background:var(--accent-weak); border-color:var(--accent); }
-.dots { display:flex; gap:3px; position:absolute; left:5px; bottom:5px; }
-.dot { width:6px; height:6px; border-radius:50%; background:var(--accent); }
-.dot.external { background:var(--calendar); }
-.scan-result { border:1px solid var(--border); border-left:5px solid var(--accent); border-radius:var(--radius); padding:10px; margin-bottom:8px; background:var(--bg); }
-.scan-result.plan { border-left-color:var(--warn); }
-.check { display:flex; align-items:center; gap:8px; color:var(--text); font-size:15px; }
-.check input { width:22px; height:22px; flex:none; }
-.toast { position:fixed; left:50%; bottom:20px; z-index:50; transform:translateX(-50%); background:var(--text); color:var(--bg); padding:8px 16px; border-radius:999px; opacity:0; pointer-events:none; transition:opacity .2s; white-space:nowrap; max-width:calc(100vw - 24px); overflow:hidden; text-overflow:ellipsis; }
-.toast.show { opacity:1; }
-@media (max-width:640px) { .wrap { padding-left:12px; padding-right:12px; } button { min-height:44px; } .field.date { flex-basis:100%; } .day { min-height:50px; } }
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --surface: #fff;
+  --border: #dfe3e8;
+  --text: #1c1f24;
+  --muted: #667080;
+  --accent: #2f6fed;
+  --accent-weak: #e8f0ff;
+  --calendar: #a24c88;
+  --danger: #c0362c;
+  --warn: #96610a;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --surface: #1f2229;
+    --border: #333842;
+    --text: #e8eaed;
+    --muted: #9aa3b0;
+    --accent: #6d9bff;
+    --accent-weak: #22304d;
+    --calendar: #e78aca;
+    --danger: #ff8a80;
+    --warn: #e5b567;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 16px 16px calc(72px + env(safe-area-inset-bottom));
+}
+.backlink {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.backlink a {
+  color: var(--muted);
+  text-decoration: none;
+  display: inline-block;
+  padding: 6px 0;
+}
+h1 {
+  font-size: 22px;
+  margin: 8px 0 4px;
+}
+h2 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+h3 {
+  font-size: 15px;
+  margin: 18px 0 8px;
+}
+.lead, .footnote {
+  color: var(--muted);
+  font-size: 13px;
+}
+.lead {
+  margin: 0 0 12px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.field {
+  flex: 1 1 130px;
+  min-width: 0;
+}
+.field.wide {
+  flex: 2 1 220px;
+}
+label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+input, select, textarea, button {
+  font: inherit;
+  color: var(--text);
+}
+input, select, textarea {
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  font-size: 16px;
+}
+textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+button {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  cursor: pointer;
+}
+button.primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+button.link {
+  color: var(--accent);
+  border: 0;
+  background: none;
+}
+button.small {
+  padding: 5px 9px;
+  font-size: 13px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.view-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.view-switch button {
+  min-height: 44px;
+  font-weight: 700;
+}
+.view-switch button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+[hidden] {
+  display: none !important;
+}
+.items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.item {
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.item.external {
+  border-left: 4px solid var(--calendar);
+}
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px;
+}
+.item-title {
+  font-weight: 700;
+}
+.badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: var(--muted);
+  background: var(--bg);
+  font-size: 12px;
+}
+.when {
+  color: var(--accent);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.item.external .when {
+  color: var(--calendar);
+}
+.item-detail {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: pre-wrap;
+  margin-top: 2px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 22px 8px;
+}
+.calendar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.calendar-head strong {
+  font-size: 17px;
+}
+.weekdays, .month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.weekdays div {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.day {
+  min-height: 58px;
+  padding: 5px 3px;
+  position: relative;
+  text-align: left;
+  border-color: transparent;
+  background: var(--surface);
+}
+.day.other {
+  color: var(--muted);
+  opacity: .55;
+}
+.day.today {
+  border-color: var(--accent);
+}
+.day.selected {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+}
+.dots {
+  display: flex;
+  gap: 3px;
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.dot.external {
+  background: var(--calendar);
+}
+.scan-result {
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px;
+  margin-bottom: 8px;
+  background: var(--bg);
+}
+.scan-result.plan {
+  border-left-color: var(--warn);
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 15px;
+}
+.check input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 50;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--bg);
+  padding: 8px 16px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s;
+  white-space: nowrap;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toast.show {
+  opacity: 1;
+}
+@media (max-width: 640px) {
+  .wrap {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  button {
+    min-height: 44px;
+  }
+  .field.date {
+    flex-basis: 100%;
+  }
+  .day {
+    min-height: 50px;
+  }
+}
+/* ---- 画面下の操作バー（ほかのアプリと同じ形） ---- */
+.actionbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; gap: 8px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+.actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
+.actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+.wrap { padding-bottom: 104px; }
 </style>
 </head>
 <body>
@@ -86,7 +370,54 @@ button.small { padding:5px 9px; font-size:13px; }
     <button type="button" id="calendarViewBtn" data-view="calendar">カレンダー</button>
   </div>
 
-  <section class="card">
+
+  <main id="listView"><div id="listGroups"></div></main>
+
+  <main id="calendarView" hidden>
+    <section class="card">
+      <div class="calendar-head">
+        <button type="button" id="prevMonth" aria-label="前の月">← 前の月</button>
+        <strong id="monthTitle"></strong>
+        <button type="button" id="nextMonth" aria-label="次の月">次の月 →</button>
+      </div>
+      <div class="weekdays" aria-hidden="true"><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div><div>日</div></div>
+      <div class="month-grid" id="monthGrid"></div>
+    </section>
+    <section class="card"><h2 id="selectedTitle">選んだ日の予定</h2><ul class="items" id="dayItems"></ul></section>
+  </main>
+
+  <section class="card" id="scanCard" hidden>
+    <h2>会議の通知・手帳を読み取る</h2>
+    <p class="footnote">読み取り結果は必ず確かめてから登録してください。</p>
+    <div class="chips">
+      <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
+      <button type="button" class="primary" id="plannerScanBtn">📒 手帳を撮る</button>
+      <button type="button" id="meetingManualBtn">＋ 会議を手入力</button>
+    </div>
+  </section>
+
+  <section class="card" id="meetingConfirm" hidden>
+    <h2>読み取った会議（確認して登録）</h2><div id="meetingForms"></div>
+    <div class="chips">
+      <button type="button" class="primary" data-meeting-mode="both">カレンダーとアプリに登録</button>
+      <button type="button" data-meeting-mode="calendar">カレンダーだけ</button>
+      <button type="button" data-meeting-mode="app">アプリだけ</button>
+      <button type="button" class="link" id="meetingCancel">やめる</button>
+    </div>
+  </section>
+
+  <section class="card" id="plannerConfirm" hidden>
+    <h2>手帳から読み取った予定（確認して登録）</h2><p class="footnote" id="plannerSummary"></p><div id="plannerForms"></div>
+    <div class="chips"><button type="button" id="plannerAddRow">＋ 1件足す</button><button type="button" id="plannerToggleAll">全部外す</button></div>
+    <div class="chips" style="margin-top:10px">
+      <button type="button" class="primary" data-planner-mode="both">カレンダーとアプリに登録</button>
+      <button type="button" data-planner-mode="calendar">カレンダーだけ</button>
+      <button type="button" data-planner-mode="app">アプリだけ</button>
+      <button type="button" class="link" id="plannerCancel">やめる</button>
+    </div>
+  </section>
+
+  <section class="card" id="addCard">
     <h2 id="formTitle">予定を登録</h2>
     <form id="itemForm">
       <div class="row">
@@ -106,34 +437,6 @@ button.small { padding:5px 9px; font-size:13px; }
       </div>
     </form>
   </section>
-
-  <main id="listView"><div id="listGroups"></div></main>
-
-  <main id="calendarView" hidden>
-    <section class="card">
-      <div class="calendar-head"><button type="button" id="prevMonth" aria-label="前の月">← 前の月</button><strong id="monthTitle"></strong><button type="button" id="nextMonth" aria-label="次の月">次の月 →</button></div>
-      <div class="weekdays" aria-hidden="true"><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div><div>日</div></div>
-      <div class="month-grid" id="monthGrid"></div>
-    </section>
-    <section class="card"><h2 id="selectedTitle">選んだ日の予定</h2><ul class="items" id="dayItems"></ul></section>
-  </main>
-
-  <section class="card" id="scanCard" hidden>
-    <h2>会議の通知・手帳を読み取る</h2>
-    <p class="footnote">読み取り結果は必ず確かめてから登録してください。</p>
-    <div class="chips"><button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button><button type="button" class="primary" id="plannerScanBtn">📒 手帳を撮る</button><button type="button" id="meetingManualBtn">＋ 会議を手入力</button></div>
-  </section>
-
-  <section class="card" id="meetingConfirm" hidden>
-    <h2>読み取った会議（確認して登録）</h2><div id="meetingForms"></div>
-    <div class="chips"><button type="button" class="primary" data-meeting-mode="both">カレンダーとアプリに登録</button><button type="button" data-meeting-mode="calendar">カレンダーだけ</button><button type="button" data-meeting-mode="app">アプリだけ</button><button type="button" class="link" id="meetingCancel">やめる</button></div>
-  </section>
-
-  <section class="card" id="plannerConfirm" hidden>
-    <h2>手帳から読み取った予定（確認して登録）</h2><p class="footnote" id="plannerSummary"></p><div id="plannerForms"></div>
-    <div class="chips"><button type="button" id="plannerAddRow">＋ 1件足す</button><button type="button" id="plannerToggleAll">全部外す</button></div>
-    <div class="chips" style="margin-top:10px"><button type="button" class="primary" data-planner-mode="both">カレンダーとアプリに登録</button><button type="button" data-planner-mode="calendar">カレンダーだけ</button><button type="button" data-planner-mode="app">アプリだけ</button><button type="button" class="link" id="plannerCancel">やめる</button></div>
-  </section>
 </div>
 <div class="toast" id="toast" role="status"></div>
 
@@ -146,6 +449,12 @@ button.small { padding:5px 9px; font-size:13px; }
 <script src="../shared/scanrouter.js"></script>
 <script src="../shared/calendarread.js"></script>
 <script src="../shared/calendarwrite.js"></script>
+<div class="actionbar">
+  <div>
+    <button type="button" class="primary" id="jumpAdd">予定を登録する</button>
+    <button type="button" id="jumpToday">今日の予定へ</button>
+  </div>
+</div>
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
 <script src="../shared/watch.js"></script>
@@ -155,10 +464,16 @@ button.small { padding:5px 9px; font-size:13px; }
 (function () {
 "use strict";
 
+/* ---------- 初期設定と保存 ---------- */
+
 var STORAGE_KEY = "schedule.v1";
 var VIEW_KEY = "schedule.view";
-if (window.ScheduleMove) window.ScheduleMove.run(localStorage);
-if (window.Character) window.Character.applyBackground("schedule");
+if (window.ScheduleMove) {
+  window.ScheduleMove.run(localStorage);
+}
+if (window.Character) {
+  window.Character.applyBackground("schedule");
+}
 
 var state = load();
 var externalItems = [];
@@ -170,44 +485,122 @@ var currentView = localStorage.getItem(VIEW_KEY) === "calendar" ? "calendar" : "
 var scannedMeetings = [];
 var plannerResult = null;
 
-function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-function pad(n) { return String(n).padStart(2, "0"); }
-function ymd(date) { return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()); }
-function esc(value) { return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) { return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; }); }
-function toast(message) { var el = document.getElementById("toast"); el.textContent = message; el.classList.add("show"); clearTimeout(toast.timer); toast.timer = setTimeout(function () { el.classList.remove("show"); }, 2400); }
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+function ymd(date) {
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+}
+
+function esc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function toast(message) {
+  var el = document.getElementById("toast");
+  el.textContent = message;
+  el.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(function () {
+    el.classList.remove("show");
+  }, 2400);
+}
 
 function load() {
   try {
     var parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
     var items = parsed && Array.isArray(parsed.items) ? parsed.items : [];
-    return { version:1, items:items.filter(function (item) { return item && item.title; }).map(normalizeItem), calIds:parsed && parsed.calIds && typeof parsed.calIds === "object" ? parsed.calIds : {} };
-  } catch (e) { return { version:1, items:[], calIds:{} }; }
+    return {
+      version: 1,
+      items: items.filter(function (item) {
+        return item && item.title;
+      }).map(normalizeItem),
+      calIds: parsed && parsed.calIds && typeof parsed.calIds === "object" ? parsed.calIds : {}
+    };
+  } catch (e) {
+    return { version: 1, items: [], calIds: {} };
+  }
 }
+
 function normalizeItem(item) {
   var copy = {};
-  Object.keys(item).forEach(function (key) { copy[key] = item[key]; });
-  copy.id = copy.id || uid(); copy.title = String(copy.title || ""); copy.kind = copy.kind === "会議" ? "会議" : "予定";
-  copy.dest = copy.dest || ""; copy.dueOn = copy.dueOn || ""; copy.note = copy.note || ""; copy.createdAt = copy.createdAt || new Date().toISOString(); copy.icsSeq = Number(copy.icsSeq) || 0;
+  Object.keys(item).forEach(function (key) {
+    copy[key] = item[key];
+  });
+  copy.id = copy.id || uid();
+  copy.title = String(copy.title || "");
+  copy.kind = copy.kind === "会議" ? "会議" : "予定";
+  copy.dest = copy.dest || "";
+  copy.dueOn = copy.dueOn || "";
+  copy.note = copy.note || "";
+  copy.createdAt = copy.createdAt || new Date().toISOString();
+  copy.icsSeq = Number(copy.icsSeq) || 0;
   return copy;
 }
+
 function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ version:1, items:state.items, calIds:state.calIds })); }
-  catch (e) { toast("保存できませんでした（端末の空き容量を確認してください）"); }
-  if (window.Watch) window.Watch.push();
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: 1,
+      items: state.items,
+      calIds: state.calIds
+    }));
+  } catch (e) {
+    toast("保存できませんでした（端末の空き容量を確認してください）");
+  }
+  if (window.Watch) {
+    window.Watch.push();
+  }
 }
-function allItems() { return state.items.concat(externalItems); }
-function timeOf(item) { var direct = item.startTime || item.time || ""; if (direct) return direct; var m = String(item.note || "").match(/(?:^|\n)\s*(\d{1,2}:\d{2})(?:〜(\d{1,2}:\d{2}))?/); return m ? m[1] : ""; }
-function endTimeOfItem(item) { var m = String(item.note || "").match(/(?:^|\n)\s*\d{1,2}:\d{2}〜(\d{1,2}:\d{2})/); return item.endTime || (m ? m[1] : ""); }
-function cleanNote(item) { return String(item.note || "").replace(/^\s*\d{1,2}:\d{2}(?:〜\d{1,2}:\d{2})?\s*開始\s*\n?/, ""); }
-function makeNote(start, end, note) { return (start ? start + (end ? "〜" + end : "") + " 開始\n" : "") + String(note || "").trim(); }
-function dateLabel(item) { return item.dueOn + (timeOf(item) ? " " + timeOf(item) : " 終日"); }
+
+function allItems() {
+  return state.items.concat(externalItems);
+}
+
+function timeOf(item) {
+  var direct = item.startTime || item.time || "";
+  if (direct) return direct;
+  var m = String(item.note || "").match(/(?:^|\n)\s*(\d{1,2}:\d{2})(?:〜(\d{1,2}:\d{2}))?/);
+  return m ? m[1] : "";
+}
+
+function endTimeOfItem(item) {
+  var m = String(item.note || "").match(/(?:^|\n)\s*\d{1,2}:\d{2}〜(\d{1,2}:\d{2})/);
+  return item.endTime || (m ? m[1] : "");
+}
+
+function cleanNote(item) {
+  return String(item.note || "").replace(/^\s*\d{1,2}:\d{2}(?:〜\d{1,2}:\d{2})?\s*開始\s*\n?/, "");
+}
+
+function makeNote(start, end, note) {
+  return (start ? start + (end ? "〜" + end : "") + " 開始\n" : "") + String(note || "").trim();
+}
+
+function dateLabel(item) {
+  return item.dueOn + (timeOf(item) ? " " + timeOf(item) : " 終日");
+}
+
+/* ---------- 一覧とカレンダーの描画 ---------- */
 
 function itemHtml(item) {
   var external = !!item.external;
   return '<li class="item' + (external ? ' external' : '') + '" data-id="' + esc(item.id) + '">' +
-    '<div class="item-head"><span class="item-title">' + esc(item.title) + '</span><span class="badge">' + esc(external ? "iPhoneカレンダー" : item.kind) + '</span><span class="when">' + esc(dateLabel(item)) + '</span></div>' +
+    '<div class="item-head"><span class="item-title">' + esc(item.title) + '</span>' +
+      '<span class="badge">' + esc(external ? "iPhoneカレンダー" : item.kind) + '</span>' +
+      '<span class="when">' + esc(dateLabel(item)) + '</span></div>' +
     (item.dest ? '<div class="item-detail">場所：' + esc(item.dest) + '</div>' : '') + (cleanNote(item) ? '<div class="item-detail">' + esc(cleanNote(item)) + '</div>' : '') +
-    (external ? '' : '<div class="actions"><button type="button" class="small" data-action="calendar">カレンダーに入れる</button><button type="button" class="small link" data-action="edit">編集</button><button type="button" class="small link" data-action="delete">削除</button></div>') + '</li>';
+    (external ? '' : '<div class="actions">' +
+      '<button type="button" class="small" data-action="calendar">カレンダーに入れる</button>' +
+      '<button type="button" class="small link" data-action="edit">編集</button>' +
+      '<button type="button" class="small link" data-action="delete">削除</button></div>') + '</li>';
 }
 function renderList() {
   var groups = window.ScheduleView.groupForList(allItems(), new Date());
@@ -216,13 +609,29 @@ function renderList() {
   }).join("") : '<section class="card empty">予定はありません。</section>';
 }
 function renderCalendar() {
-  var year = shownMonth.getFullYear(), month = shownMonth.getMonth();
+  var year = shownMonth.getFullYear();
+  var month = shownMonth.getMonth();
   document.getElementById("monthTitle").textContent = year + "年" + (month + 1) + "月";
   var items = allItems();
-  document.getElementById("monthGrid").innerHTML = window.ScheduleView.monthGrid(year, month).reduce(function (out, week) { return out.concat(week); }, []).map(function (date) {
-    var key = ymd(date), onDay = window.ScheduleView.itemsOn(items, key);
-    var own = onDay.some(function (item) { return !item.external; }), external = onDay.some(function (item) { return item.external; });
-    return '<button type="button" class="day' + (date.getMonth() !== month ? ' other' : '') + (key === ymd(new Date()) ? ' today' : '') + (key === selectedYmd ? ' selected' : '') + '" data-date="' + key + '" aria-label="' + (date.getMonth() + 1) + '月' + date.getDate() + '日">' + date.getDate() + '<span class="dots">' + (own ? '<span class="dot"></span>' : '') + (external ? '<span class="dot external"></span>' : '') + '</span></button>';
+  document.getElementById("monthGrid").innerHTML = window.ScheduleView.monthGrid(year, month).reduce(function (out, week) {
+    return out.concat(week);
+  }, []).map(function (date) {
+    var key = ymd(date);
+    var onDay = window.ScheduleView.itemsOn(items, key);
+    var own = onDay.some(function (item) {
+      return !item.external;
+    });
+    var external = onDay.some(function (item) {
+      return item.external;
+    });
+    return '<button type="button" class="day' +
+      (date.getMonth() !== month ? ' other' : '') +
+      (key === ymd(new Date()) ? ' today' : '') +
+      (key === selectedYmd ? ' selected' : '') +
+      '" data-date="' + key + '" aria-label="' +
+      (date.getMonth() + 1) + '月' + date.getDate() + '日">' + date.getDate() +
+      '<span class="dots">' + (own ? '<span class="dot"></span>' : '') +
+      (external ? '<span class="dot external"></span>' : '') + '</span></button>';
   }).join("");
   renderSelectedDay();
 }
@@ -232,45 +641,148 @@ function renderSelectedDay() {
   var items = window.ScheduleView.itemsOn(allItems(), selectedYmd);
   document.getElementById("dayItems").innerHTML = items.length ? items.map(itemHtml).join("") : '<li class="empty">この日の予定はありません。</li>';
 }
-function render() { renderList(); renderCalendar(); }
+function render() {
+  renderList();
+  renderCalendar();
+}
+
 function setView(view) {
   currentView = view === "calendar" ? "calendar" : "list";
   document.getElementById("listView").hidden = currentView !== "list";
   document.getElementById("calendarView").hidden = currentView !== "calendar";
   document.getElementById("listViewBtn").setAttribute("aria-pressed", String(currentView === "list"));
   document.getElementById("calendarViewBtn").setAttribute("aria-pressed", String(currentView === "calendar"));
-  try { localStorage.setItem(VIEW_KEY, currentView); } catch (e) { /* 表示の選択を保存できなくても利用は続けられる */ }
-  if (currentView === "calendar") renderCalendar();
+  try {
+    localStorage.setItem(VIEW_KEY, currentView);
+  } catch (e) {
+    /* 表示の選択を保存できなくても利用は続けられる */
+  }
+  if (currentView === "calendar") {
+    renderCalendar();
+  }
 }
 
-document.querySelector(".view-switch").addEventListener("click", function (event) { var view = event.target.getAttribute("data-view"); if (view) setView(view); });
-document.getElementById("prevMonth").addEventListener("click", function () { shownMonth = new Date(shownMonth.getFullYear(), shownMonth.getMonth() - 1, 1); selectedYmd = ymd(shownMonth); renderCalendar(); });
-document.getElementById("nextMonth").addEventListener("click", function () { shownMonth = new Date(shownMonth.getFullYear(), shownMonth.getMonth() + 1, 1); selectedYmd = ymd(shownMonth); renderCalendar(); });
-document.getElementById("monthGrid").addEventListener("click", function (event) { var button = event.target.closest("button[data-date]"); if (!button) return; selectedYmd = button.getAttribute("data-date"); var d = selectedYmd.split("-").map(Number); shownMonth = new Date(d[0], d[1] - 1, 1); renderCalendar(); });
+document.querySelector(".view-switch").addEventListener("click", function (event) {
+  var view = event.target.getAttribute("data-view");
+  if (view) setView(view);
+});
+document.getElementById("prevMonth").addEventListener("click", function () {
+  shownMonth = new Date(shownMonth.getFullYear(), shownMonth.getMonth() - 1, 1);
+  selectedYmd = ymd(shownMonth);
+  renderCalendar();
+});
+document.getElementById("nextMonth").addEventListener("click", function () {
+  shownMonth = new Date(shownMonth.getFullYear(), shownMonth.getMonth() + 1, 1);
+  selectedYmd = ymd(shownMonth);
+  renderCalendar();
+});
+document.getElementById("monthGrid").addEventListener("click", function (event) {
+  var button = event.target.closest("button[data-date]");
+  if (!button) return;
+  selectedYmd = button.getAttribute("data-date");
+  var d = selectedYmd.split("-").map(Number);
+  shownMonth = new Date(d[0], d[1] - 1, 1);
+  renderCalendar();
+});
+
+/* ---------- 予定の登録・編集・削除 ---------- */
 
 var form = document.getElementById("itemForm");
 form.addEventListener("submit", function (event) {
-  event.preventDefault(); var data = new FormData(form); var title = String(data.get("title") || "").trim(); var dueOn = String(data.get("dueOn") || ""); if (!title || !dueOn) return;
-  var values = { title:title, kind:String(data.get("kind") || "予定"), dueOn:dueOn, dest:String(data.get("dest") || "").trim(), note:makeNote(String(data.get("startTime") || ""), String(data.get("endTime") || ""), data.get("note")) };
-  if (editingId) { var target = state.items.find(function (item) { return item.id === editingId; }); if (target) Object.assign(target, values); toast("更新しました"); }
-  else { values.id = uid(); values.status = "未着手"; values.priority = "中"; values.createdAt = new Date().toISOString(); values.doneAt = ""; values.icsSeq = 0; state.items.push(values); toast("登録しました"); }
-  save(); stopEditing(); selectedYmd = dueOn; render();
+  event.preventDefault();
+  var data = new FormData(form);
+  var title = String(data.get("title") || "").trim();
+  var dueOn = String(data.get("dueOn") || "");
+  if (!title || !dueOn) return;
+  var values = {
+    title: title,
+    kind: String(data.get("kind") || "予定"),
+    dueOn: dueOn,
+    dest: String(data.get("dest") || "").trim(),
+    note: makeNote(
+      String(data.get("startTime") || ""),
+      String(data.get("endTime") || ""),
+      data.get("note")
+    )
+  };
+  if (editingId) {
+    var target = state.items.find(function (item) {
+      return item.id === editingId;
+    });
+    if (target) Object.assign(target, values);
+    toast("更新しました");
+  } else {
+    values.id = uid();
+    values.status = "未着手";
+    values.priority = "中";
+    values.createdAt = new Date().toISOString();
+    values.doneAt = "";
+    values.icsSeq = 0;
+    state.items.push(values);
+    toast("登録しました");
+  }
+  save();
+  stopEditing();
+  selectedYmd = dueOn;
+  render();
 });
 function startEditing(item) {
-  editingId = item.id; document.getElementById("f-title").value = item.title; document.getElementById("f-kind").value = item.kind; document.getElementById("f-date").value = item.dueOn; document.getElementById("f-start").value = timeOf(item); document.getElementById("f-end").value = endTimeOfItem(item); document.getElementById("f-place").value = item.dest; document.getElementById("f-note").value = cleanNote(item); document.getElementById("formTitle").textContent = "予定を編集"; document.getElementById("submitBtn").textContent = "更新する"; document.getElementById("cancelEdit").hidden = false; window.scrollTo({ top:0, behavior:"smooth" });
+  editingId = item.id;
+  document.getElementById("f-title").value = item.title;
+  document.getElementById("f-kind").value = item.kind;
+  document.getElementById("f-date").value = item.dueOn;
+  document.getElementById("f-start").value = timeOf(item);
+  document.getElementById("f-end").value = endTimeOfItem(item);
+  document.getElementById("f-place").value = item.dest;
+  document.getElementById("f-note").value = cleanNote(item);
+  document.getElementById("formTitle").textContent = "予定を編集";
+  document.getElementById("submitBtn").textContent = "更新する";
+  document.getElementById("cancelEdit").hidden = false;
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
-function stopEditing() { editingId = null; form.reset(); document.getElementById("formTitle").textContent = "予定を登録"; document.getElementById("submitBtn").textContent = "登録する"; document.getElementById("cancelEdit").hidden = true; }
+function stopEditing() {
+  editingId = null;
+  form.reset();
+  document.getElementById("formTitle").textContent = "予定を登録";
+  document.getElementById("submitBtn").textContent = "登録する";
+  document.getElementById("cancelEdit").hidden = true;
+}
 document.getElementById("cancelEdit").addEventListener("click", stopEditing);
 function itemAction(event) {
-  var button = event.target.closest("button[data-action]"); if (!button) return; var row = event.target.closest("li[data-id]"); var item = row && state.items.find(function (candidate) { return candidate.id === row.getAttribute("data-id"); }); if (!item) return;
+  var button = event.target.closest("button[data-action]");
+  if (!button) return;
+  var row = event.target.closest("li[data-id]");
+  var item = row && state.items.find(function (candidate) {
+    return candidate.id === row.getAttribute("data-id");
+  });
+  if (!item) return;
   var action = button.getAttribute("data-action");
-  if (action === "edit") startEditing(item);
-  else if (action === "delete") { if (!confirm("「" + item.title + "」を削除しますか？")) return; state.items = state.items.filter(function (candidate) { return candidate.id !== item.id; }); save(); render(); toast("削除しました"); }
-  else if (action === "calendar") writeItemsToCalendar([item]);
+  if (action === "edit") {
+    startEditing(item);
+  } else if (action === "delete") {
+    if (!confirm("「" + item.title + "」を削除しますか？")) return;
+    state.items = state.items.filter(function (candidate) {
+      return candidate.id !== item.id;
+    });
+    save();
+    render();
+    toast("削除しました");
+  } else if (action === "calendar") {
+    writeItemsToCalendar([item]);
+  }
 }
-document.getElementById("listGroups").addEventListener("click", itemAction); document.getElementById("dayItems").addEventListener("click", itemAction);
+document.getElementById("listGroups").addEventListener("click", itemAction);
+document.getElementById("dayItems").addEventListener("click", itemAction);
 
-function durationMinutes(start, end) { if (!start || !end) return 60; var a = start.split(":").map(Number), b = end.split(":").map(Number); var diff = b[0] * 60 + b[1] - a[0] * 60 - a[1]; return diff > 0 ? diff : 60; }
+/* ---------- カレンダーへの書き込み ---------- */
+
+function durationMinutes(start, end) {
+  if (!start || !end) return 60;
+  var a = start.split(":").map(Number);
+  var b = end.split(":").map(Number);
+  var diff = b[0] * 60 + b[1] - a[0] * 60 - a[1];
+  return diff > 0 ? diff : 60;
+}
 function calendarUid(item) {
   if (item.planKey) return item.planKey;
   var oldItemKey = item.id + "@docs-tracker";
@@ -279,67 +791,463 @@ function calendarUid(item) {
   if (item.kind === "会議" && state.calIds[oldMeetingKey]) return oldMeetingKey;
   return item.id + "@schedule";
 }
-function calendarEvent(item) { var start = timeOf(item), end = endTimeOfItem(item); return { uid:calendarUid(item), title:item.title, date:item.dueOn, time:start || "", allDay:!start, durationMinutes:durationMinutes(start, end), location:item.dest || "", description:cleanNote(item) + "\n（予定アプリから登録）", alarms:start ? [30] : [], sequence:item.icsSeq || 0, sourceItem:item }; }
-function eventEnd(ev) { var start = (ev.time || "09:00").split(":").map(Number), minutes = start[0] * 60 + (start[1] || 0) + (ev.durationMinutes || 30); return pad(Math.floor(minutes / 60) % 24) + ":" + pad(minutes % 60); }
+function calendarEvent(item) {
+  var start = timeOf(item);
+  var end = endTimeOfItem(item);
+  return {
+    uid: calendarUid(item),
+    title: item.title,
+    date: item.dueOn,
+    time: start || "",
+    allDay: !start,
+    durationMinutes: durationMinutes(start, end),
+    location: item.dest || "",
+    description: cleanNote(item) + "\n（予定アプリから登録）",
+    alarms: start ? [30] : [],
+    sequence: item.icsSeq || 0,
+    sourceItem: item
+  };
+}
+function eventEnd(ev) {
+  var start = (ev.time || "09:00").split(":").map(Number);
+  var minutes = start[0] * 60 + (start[1] || 0) + (ev.durationMinutes || 30);
+  return pad(Math.floor(minutes / 60) % 24) + ":" + pad(minutes % 60);
+}
 function writeEvents(events, name, prefix) {
   if (window.CalendarWrite && window.CalendarWrite.available()) {
-    return window.CalendarWrite.save(events.map(function (ev) { return { key:ev.uid, eventId:state.calIds[ev.uid] || "", title:ev.title, date:ev.date, startTime:ev.allDay ? "" : ev.time, endTime:ev.allDay ? "" : eventEnd(ev), location:ev.location || "", notes:ev.description || "", alarms:ev.alarms || [] }; })).then(function (result) {
-      var keys = Object.keys(result.ids || {}); if (!keys.length) return writeIcs(events, name, prefix); keys.forEach(function (key) { state.calIds[key] = result.ids[key]; }); save(); return { how:"direct", count:keys.length };
+    var entries = events.map(function (ev) {
+      return {
+        key: ev.uid,
+        eventId: state.calIds[ev.uid] || "",
+        title: ev.title,
+        date: ev.date,
+        startTime: ev.allDay ? "" : ev.time,
+        endTime: ev.allDay ? "" : eventEnd(ev),
+        location: ev.location || "",
+        notes: ev.description || "",
+        alarms: ev.alarms || []
+      };
+    });
+    return window.CalendarWrite.save(entries).then(function (result) {
+      var keys = Object.keys(result.ids || {});
+      if (!keys.length) return writeIcs(events, name, prefix);
+      keys.forEach(function (key) {
+        state.calIds[key] = result.ids[key];
+      });
+      save();
+      return { how: "direct", count: keys.length };
     });
   }
   return writeIcs(events, name, prefix);
 }
-function writeIcs(events, name, prefix) { return window.ICS.deliver(window.ICS.build(events, { calendarName:name }), window.ICS.filename(prefix)).then(function (how) { return { how:how, count:events.length }; }); }
-function writeItemsToCalendar(items) {
-  var valid = items.filter(function (item) { return item.dueOn; }); if (!valid.length) { toast("日付が入った予定がありません"); return Promise.resolve(); }
-  var events = valid.map(calendarEvent); return writeEvents(events, "予定", "schedule").then(function (result) { if (result.how === "cancelled") return; if (result.how !== "direct") { valid.forEach(function (item) { item.icsSeq = (item.icsSeq || 0) + 1; }); save(); } toast(result.how === "direct" ? "カレンダーに登録しました（" + result.count + "件）" : result.how === "shared" ? "カレンダーアプリを選んでください" : "予定ファイルを保存しました"); });
+function writeIcs(events, name, prefix) {
+  return window.ICS.deliver(
+    window.ICS.build(events, { calendarName: name }),
+    window.ICS.filename(prefix)
+  ).then(function (how) {
+    return { how: how, count: events.length };
+  });
 }
+function writeItemsToCalendar(items) {
+  var valid = items.filter(function (item) {
+    return item.dueOn;
+  });
+  if (!valid.length) {
+    toast("日付が入った予定がありません");
+    return Promise.resolve();
+  }
+  var events = valid.map(calendarEvent);
+  return writeEvents(events, "予定", "schedule").then(function (result) {
+    if (result.how === "cancelled") return;
+    if (result.how !== "direct") {
+      valid.forEach(function (item) {
+        item.icsSeq = (item.icsSeq || 0) + 1;
+      });
+      save();
+    }
+    toast(result.how === "direct"
+      ? "カレンダーに登録しました（" + result.count + "件）"
+      : result.how === "shared"
+        ? "カレンダーアプリを選んでください"
+        : "予定ファイルを保存しました");
+  });
+}
+
+/* ---------- iPhoneカレンダーの読み込み ---------- */
 
 function loadPhoneCalendar() {
   if (!window.CalendarRead || !window.CalendarRead.available()) return;
-  window.CalendarRead.isSupported().then(function (result) { return result && result.authorized ? { granted:true } : window.CalendarRead.requestAccess(); }).then(function (result) {
-    if (!result || !result.granted) return null; return window.CalendarRead.listCalendars();
+  window.CalendarRead.isSupported().then(function (result) {
+    return result && result.authorized
+      ? { granted: true }
+      : window.CalendarRead.requestAccess();
   }).then(function (result) {
-    if (!result) return null; var ids = (result.calendars || []).map(function (calendar) { return calendar.id; }); if (!ids.length) return null; return window.CalendarRead.listEvents(ids, 60);
+    if (!result || !result.granted) return null;
+    return window.CalendarRead.listCalendars();
   }).then(function (result) {
-    if (!result) return; externalItems = (result.events || []).filter(function (event) { return event && event.date; }).map(function (event, index) { return { id:"external-" + (event.id || index), title:event.title || "（件名なし）", kind:"予定", dueOn:event.date, startTime:event.startTime || "", endTime:event.endTime || "", dest:event.place || "", note:event.notes || "", external:true }; }); render();
-  }).catch(function () { /* 読めない場合も、予定アプリ内の予定だけで使い続ける */ });
+    if (!result) return null;
+    var ids = (result.calendars || []).map(function (calendar) {
+      return calendar.id;
+    });
+    if (!ids.length) return null;
+    return window.CalendarRead.listEvents(ids, 60);
+  }).then(function (result) {
+    if (!result) return;
+    externalItems = (result.events || []).filter(function (event) {
+      return event && event.date;
+    }).map(function (event, index) {
+      return {
+        id: "external-" + (event.id || index),
+        title: event.title || "（件名なし）",
+        kind: "予定",
+        dueOn: event.date,
+        startTime: event.startTime || "",
+        endTime: event.endTime || "",
+        dest: event.place || "",
+        note: event.notes || "",
+        external: true
+      };
+    });
+    render();
+  }).catch(function () {
+    /* 読めない場合も、予定アプリ内の予定だけで使い続ける */
+  });
 }
 
-function meetingNote(meeting) { var lines = []; if (meeting.startTime) lines.push(meeting.startTime + (meeting.endTime ? "〜" + meeting.endTime : "") + " 開始"); if (meeting.social && meeting.social.has) lines.push("懇親会あり" + (meeting.social.fee ? "（会費 " + meeting.social.fee + "円）" : "")); lines.push(meeting.source === "manual" ? "（手入力で登録）" : "（会議の通知から登録）"); return lines.join("\n"); }
+/* ---------- 会議通知の読み取り ---------- */
+
+function meetingNote(meeting) {
+  var lines = [];
+  if (meeting.startTime) {
+    lines.push(meeting.startTime + (meeting.endTime ? "〜" + meeting.endTime : "") + " 開始");
+  }
+  if (meeting.social && meeting.social.has) {
+    lines.push("懇親会あり" + (meeting.social.fee ? "（会費 " + meeting.social.fee + "円）" : ""));
+  }
+  lines.push(meeting.source === "manual" ? "（手入力で登録）" : "（会議の通知から登録）");
+  return lines.join("\n");
+}
 function renderMeetings(list) {
-  scannedMeetings = list || []; var box = document.getElementById("meetingConfirm"); box.hidden = !scannedMeetings.length; document.getElementById("meetingForms").innerHTML = scannedMeetings.map(function (meeting, index) { return '<div class="scan-result" data-index="' + index + '"><label class="check"><input type="checkbox" class="m-use" checked> ' + (index + 1) + '件目</label><div class="row"><div class="field wide"><label>会議名</label><input class="m-title" value="' + esc(meeting.title) + '"></div><div class="field date"><label>日付</label><input type="date" class="m-date" value="' + esc(meeting.date) + '"></div></div><div class="row"><div class="field"><label>開始</label><input type="time" class="m-start" value="' + esc(meeting.startTime) + '"></div><div class="field"><label>終了</label><input type="time" class="m-end" value="' + esc(meeting.endTime) + '"></div><div class="field wide"><label>場所</label><input class="m-place" value="' + esc(meeting.place) + '"></div></div><label class="check"><input type="checkbox" class="m-social"' + (meeting.social && meeting.social.has ? ' checked' : '') + '> 懇親会あり</label></div>'; }).join("");
+  scannedMeetings = list || [];
+  var box = document.getElementById("meetingConfirm");
+  box.hidden = !scannedMeetings.length;
+  document.getElementById("meetingForms").innerHTML = scannedMeetings.map(function (meeting, index) {
+    return '<div class="scan-result" data-index="' + index + '">' +
+      '<label class="check"><input type="checkbox" class="m-use" checked> ' +
+        (index + 1) + '件目</label>' +
+      '<div class="row"><div class="field wide"><label>会議名</label>' +
+        '<input class="m-title" value="' + esc(meeting.title) + '"></div>' +
+      '<div class="field date"><label>日付</label>' +
+        '<input type="date" class="m-date" value="' + esc(meeting.date) + '"></div></div>' +
+      '<div class="row"><div class="field"><label>開始</label>' +
+        '<input type="time" class="m-start" value="' + esc(meeting.startTime) + '"></div>' +
+      '<div class="field"><label>終了</label>' +
+        '<input type="time" class="m-end" value="' + esc(meeting.endTime) + '"></div>' +
+      '<div class="field wide"><label>場所</label>' +
+        '<input class="m-place" value="' + esc(meeting.place) + '"></div></div>' +
+      '<label class="check"><input type="checkbox" class="m-social"' +
+        (meeting.social && meeting.social.has ? ' checked' : '') + '> 懇親会あり</label></div>';
+  }).join("");
 }
-function collectMeetings() { return Array.prototype.map.call(document.querySelectorAll("#meetingForms .scan-result"), function (row) { var get = function (name) { return row.querySelector("." + name).value.trim(); }; return row.querySelector(".m-use").checked ? { title:get("m-title") || "会議", date:get("m-date"), startTime:get("m-start"), endTime:get("m-end"), place:get("m-place"), social:{ has:row.querySelector(".m-social").checked, fee:null }, source:(scannedMeetings[Number(row.getAttribute("data-index"))] || {}).source || "" } : null; }).filter(Boolean); }
-function meetingItems(list) { return list.map(function (meeting) { return normalizeItem({ id:uid(), title:meeting.title, kind:"会議", dest:meeting.place, dueOn:meeting.date, note:meetingNote(meeting), status:"未着手", priority:"中", createdAt:new Date().toISOString(), doneAt:"", icsSeq:0 }); }); }
-function applyMeetingScan(lines) { var rows = window.Receipt.rowsFromLines(lines).map(function (row) { return row.text; }); var found = window.Meeting.parse(rows, {}); renderMeetings(found); toast(found.length ? found.length + "件を読み取りました" : "会議を見つけられませんでした"); return found; }
-function registerMeetingMode(mode, button) { var list = collectMeetings().filter(function (meeting) { return meeting.date; }); if (!list.length) { toast("日付の入った会議を選んでください"); return; } var items = meetingItems(list); if (mode !== "calendar") { items.forEach(function (item) { if (!state.items.some(function (old) { return old.kind === "会議" && old.dueOn === item.dueOn && old.title === item.title; })) state.items.push(item); }); save(); render(); } if (mode === "app") { renderMeetings([]); toast("アプリに登録しました"); return; } button.disabled = true; writeEvents(items.map(calendarEvent), "会議", "meetings").then(function (result) { button.disabled = false; renderMeetings([]); toast(result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました"); }, function () { button.disabled = false; toast("カレンダーに登録できませんでした"); }); }
+function collectMeetings() {
+  return Array.prototype.map.call(
+    document.querySelectorAll("#meetingForms .scan-result"),
+    function (row) {
+      var get = function (name) {
+        return row.querySelector("." + name).value.trim();
+      };
+      return row.querySelector(".m-use").checked ? {
+        title: get("m-title") || "会議",
+        date: get("m-date"),
+        startTime: get("m-start"),
+        endTime: get("m-end"),
+        place: get("m-place"),
+        social: { has: row.querySelector(".m-social").checked, fee: null },
+        source: (scannedMeetings[Number(row.getAttribute("data-index"))] || {}).source || ""
+      } : null;
+    }
+  ).filter(Boolean);
+}
+function meetingItems(list) {
+  return list.map(function (meeting) {
+    return normalizeItem({
+      id: uid(),
+      title: meeting.title,
+      kind: "会議",
+      dest: meeting.place,
+      dueOn: meeting.date,
+      note: meetingNote(meeting),
+      status: "未着手",
+      priority: "中",
+      createdAt: new Date().toISOString(),
+      doneAt: "",
+      icsSeq: 0
+    });
+  });
+}
+function applyMeetingScan(lines) {
+  var rows = window.Receipt.rowsFromLines(lines).map(function (row) {
+    return row.text;
+  });
+  var found = window.Meeting.parse(rows, {});
+  renderMeetings(found);
+  toast(found.length ? found.length + "件を読み取りました" : "会議を見つけられませんでした");
+  return found;
+}
+function registerMeetingMode(mode, button) {
+  var list = collectMeetings().filter(function (meeting) {
+    return meeting.date;
+  });
+  if (!list.length) {
+    toast("日付の入った会議を選んでください");
+    return;
+  }
+  var items = meetingItems(list);
+  if (mode !== "calendar") {
+    items.forEach(function (item) {
+      var exists = state.items.some(function (old) {
+        return old.kind === "会議" && old.dueOn === item.dueOn && old.title === item.title;
+      });
+      if (!exists) state.items.push(item);
+    });
+    save();
+    render();
+  }
+  if (mode === "app") {
+    renderMeetings([]);
+    toast("アプリに登録しました");
+    return;
+  }
+  button.disabled = true;
+  writeEvents(items.map(calendarEvent), "会議", "meetings").then(function (result) {
+    button.disabled = false;
+    renderMeetings([]);
+    toast(result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました");
+  }, function () {
+    button.disabled = false;
+    toast("カレンダーに登録できませんでした");
+  });
+}
 
-function renderPlanner(result) { plannerResult = result && result.kind ? result : null; var box = document.getElementById("plannerConfirm"); box.hidden = !plannerResult; document.getElementById("plannerSummary").textContent = plannerResult ? plannerResult.entries.length + "件を読み取りました。内容を確認してください。" : ""; drawPlannerRows(plannerResult ? plannerResult.entries : []); }
-function drawPlannerRows(entries) { document.getElementById("plannerForms").innerHTML = entries.map(function (entry, index) { return '<div class="scan-result plan"><label class="check"><input type="checkbox" class="p-use" checked> ' + (index + 1) + '件目</label><div class="row"><div class="field wide"><label>件名</label><input class="p-title" value="' + esc(entry.title) + '"></div><div class="field date"><label>日付</label><input type="date" class="p-date" value="' + esc(entry.date) + '"></div><div class="field"><label>開始</label><input type="time" class="p-start" value="' + esc(entry.startTime) + '"></div><div class="field"><label>終了</label><input type="time" class="p-end" value="' + esc(entry.endTime) + '"></div></div></div>'; }).join(""); document.getElementById("plannerToggleAll").textContent = "全部外す"; }
-function collectPlanner() { return Array.prototype.map.call(document.querySelectorAll("#plannerForms .scan-result"), function (row) { return row.querySelector(".p-use").checked ? { title:row.querySelector(".p-title").value.trim(), date:row.querySelector(".p-date").value, startTime:row.querySelector(".p-start").value, endTime:row.querySelector(".p-end").value } : null; }).filter(Boolean); }
-function plannerItems(list) { return list.map(function (entry) { return normalizeItem({ id:uid(), title:entry.title, kind:"予定", dest:"", dueOn:entry.date, note:makeNote(entry.startTime, entry.endTime, "（手帳から登録）"), planKey:"plan-" + window.Native.idFrom(entry.date + "/" + entry.title) + "@schedule", status:"未着手", priority:"中", createdAt:new Date().toISOString(), doneAt:"", icsSeq:0 }); }); }
-function applyPlannerScan(lines) { var result = window.Planner.parse(lines); renderPlanner(result); toast(result.kind ? result.entries.length + "件を読み取りました" : "手帳の日付を見つけられませんでした"); return result; }
-function registerPlannerMode(mode, button) { var list = collectPlanner().filter(function (entry) { return entry.title && entry.date; }); if (!list.length) { toast("件名と日付の入った予定を選んでください"); return; } var items = plannerItems(list); if (mode !== "calendar") { items.forEach(function (item) { var found = state.items.find(function (old) { return old.planKey === item.planKey; }); if (found) { found.dueOn = item.dueOn; found.note = item.note; } else state.items.push(item); }); save(); render(); } if (mode === "app") { renderPlanner(null); toast("アプリに登録しました"); return; } button.disabled = true; writeEvents(items.map(calendarEvent), "手帳", "planner").then(function (result) { button.disabled = false; renderPlanner(null); toast(result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました"); }, function () { button.disabled = false; toast("カレンダーに登録できませんでした"); }); }
+/* ---------- 手帳の読み取り ---------- */
 
-function scan(button, options, apply) { button.disabled = true; var original = button.textContent; button.textContent = "カメラを起動しています…"; window.ReceiptScan.scan(options || {}).then(function (result) { button.disabled = false; button.textContent = original; if (!result.cancelled) apply(result.lines); }, function (error) { button.disabled = false; button.textContent = original; toast("読み取れませんでした：" + (error && error.message ? error.message : "原因不明")); }); }
-if (window.ReceiptScan && window.ReceiptScan.available()) { document.getElementById("scanCard").hidden = false; }
-document.getElementById("meetingScanBtn").addEventListener("click", function () { scan(this, {}, applyMeetingScan); });
-document.getElementById("plannerScanBtn").addEventListener("click", function () { scan(this, { purpose:"planner" }, applyPlannerScan); });
-document.getElementById("meetingManualBtn").addEventListener("click", function () { renderMeetings(scannedMeetings.concat([{ title:"", date:"", startTime:"", endTime:"", place:"", social:{ has:false, fee:null }, source:"manual" }])); document.getElementById("meetingConfirm").scrollIntoView({ behavior:"smooth" }); });
-document.getElementById("meetingConfirm").addEventListener("click", function (event) { var mode = event.target.getAttribute("data-meeting-mode"); if (mode) registerMeetingMode(mode, event.target); });
-document.getElementById("meetingCancel").addEventListener("click", function () { renderMeetings([]); });
-document.getElementById("plannerConfirm").addEventListener("click", function (event) { var mode = event.target.getAttribute("data-planner-mode"); if (mode) registerPlannerMode(mode, event.target); });
-document.getElementById("plannerCancel").addEventListener("click", function () { renderPlanner(null); });
-document.getElementById("plannerAddRow").addEventListener("click", function () { var entries = collectPlanner(); entries.push({ title:"", date:entries.length ? entries[entries.length - 1].date : "", startTime:"", endTime:"" }); if (!plannerResult) plannerResult = { kind:"manual", entries:entries }; else plannerResult.entries = entries; document.getElementById("plannerConfirm").hidden = false; drawPlannerRows(entries); });
-document.getElementById("plannerToggleAll").addEventListener("click", function () { var turnOn = this.textContent === "全部選ぶ"; Array.prototype.forEach.call(document.querySelectorAll("#plannerForms .p-use"), function (box) { box.checked = turnOn; }); this.textContent = turnOn ? "全部外す" : "全部選ぶ"; });
+function renderPlanner(result) {
+  plannerResult = result && result.kind ? result : null;
+  var box = document.getElementById("plannerConfirm");
+  box.hidden = !plannerResult;
+  document.getElementById("plannerSummary").textContent = plannerResult
+    ? plannerResult.entries.length + "件を読み取りました。内容を確認してください。"
+    : "";
+  drawPlannerRows(plannerResult ? plannerResult.entries : []);
+}
+function drawPlannerRows(entries) {
+  document.getElementById("plannerForms").innerHTML = entries.map(function (entry, index) {
+    return '<div class="scan-result plan"><label class="check">' +
+      '<input type="checkbox" class="p-use" checked> ' + (index + 1) + '件目</label>' +
+      '<div class="row"><div class="field wide"><label>件名</label>' +
+        '<input class="p-title" value="' + esc(entry.title) + '"></div>' +
+      '<div class="field date"><label>日付</label>' +
+        '<input type="date" class="p-date" value="' + esc(entry.date) + '"></div>' +
+      '<div class="field"><label>開始</label>' +
+        '<input type="time" class="p-start" value="' + esc(entry.startTime) + '"></div>' +
+      '<div class="field"><label>終了</label>' +
+        '<input type="time" class="p-end" value="' + esc(entry.endTime) + '"></div></div></div>';
+  }).join("");
+  document.getElementById("plannerToggleAll").textContent = "全部外す";
+}
+function collectPlanner() {
+  return Array.prototype.map.call(
+    document.querySelectorAll("#plannerForms .scan-result"),
+    function (row) {
+      return row.querySelector(".p-use").checked ? {
+        title: row.querySelector(".p-title").value.trim(),
+        date: row.querySelector(".p-date").value,
+        startTime: row.querySelector(".p-start").value,
+        endTime: row.querySelector(".p-end").value
+      } : null;
+    }
+  ).filter(Boolean);
+}
+function plannerItems(list) {
+  return list.map(function (entry) {
+    return normalizeItem({
+      id: uid(),
+      title: entry.title,
+      kind: "予定",
+      dest: "",
+      dueOn: entry.date,
+      note: makeNote(entry.startTime, entry.endTime, "（手帳から登録）"),
+      planKey: "plan-" + window.Native.idFrom(entry.date + "/" + entry.title) + "@schedule",
+      status: "未着手",
+      priority: "中",
+      createdAt: new Date().toISOString(),
+      doneAt: "",
+      icsSeq: 0
+    });
+  });
+}
+function applyPlannerScan(lines) {
+  var result = window.Planner.parse(lines);
+  renderPlanner(result);
+  toast(result.kind
+    ? result.entries.length + "件を読み取りました"
+    : "手帳の日付を見つけられませんでした");
+  return result;
+}
+function registerPlannerMode(mode, button) {
+  var list = collectPlanner().filter(function (entry) {
+    return entry.title && entry.date;
+  });
+  if (!list.length) {
+    toast("件名と日付の入った予定を選んでください");
+    return;
+  }
+  var items = plannerItems(list);
+  if (mode !== "calendar") {
+    items.forEach(function (item) {
+      var found = state.items.find(function (old) {
+        return old.planKey === item.planKey;
+      });
+      if (found) {
+        found.dueOn = item.dueOn;
+        found.note = item.note;
+      } else {
+        state.items.push(item);
+      }
+    });
+    save();
+    render();
+  }
+  if (mode === "app") {
+    renderPlanner(null);
+    toast("アプリに登録しました");
+    return;
+  }
+  button.disabled = true;
+  writeEvents(items.map(calendarEvent), "手帳", "planner").then(function (result) {
+    button.disabled = false;
+    renderPlanner(null);
+    toast(result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました");
+  }, function () {
+    button.disabled = false;
+    toast("カレンダーに登録できませんでした");
+  });
+}
 
-var pendingMeeting = window.ScanRouter && window.ScanRouter.takeHandoff("meeting"); if (pendingMeeting && pendingMeeting.length) applyMeetingScan(pendingMeeting);
-var pendingPlanner = window.ScanRouter && window.ScanRouter.takeHandoff("planner"); if (pendingPlanner && pendingPlanner.length) applyPlannerScan(pendingPlanner);
+/* ---------- カメラと確認画面の操作 ---------- */
 
-window.scheduleApp = { applyMeetingScan:applyMeetingScan, collectMeetings:collectMeetings, applyPlannerScan:applyPlannerScan, collectPlanner:collectPlanner };
-setView(currentView); render(); loadPhoneCalendar();
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+function scan(button, options, apply) {
+  button.disabled = true;
+  var original = button.textContent;
+  button.textContent = "カメラを起動しています…";
+  window.ReceiptScan.scan(options || {}).then(function (result) {
+    button.disabled = false;
+    button.textContent = original;
+    if (!result.cancelled) apply(result.lines);
+  }, function (error) {
+    button.disabled = false;
+    button.textContent = original;
+    toast("読み取れませんでした：" + (error && error.message ? error.message : "原因不明"));
+  });
+}
+if (window.ReceiptScan && window.ReceiptScan.available()) {
+  document.getElementById("scanCard").hidden = false;
+}
+document.getElementById("meetingScanBtn").addEventListener("click", function () {
+  scan(this, {}, applyMeetingScan);
+});
+document.getElementById("plannerScanBtn").addEventListener("click", function () {
+  scan(this, { purpose: "planner" }, applyPlannerScan);
+});
+document.getElementById("meetingManualBtn").addEventListener("click", function () {
+  renderMeetings(scannedMeetings.concat([{
+    title: "",
+    date: "",
+    startTime: "",
+    endTime: "",
+    place: "",
+    social: { has: false, fee: null },
+    source: "manual"
+  }]));
+  document.getElementById("meetingConfirm").scrollIntoView({ behavior: "smooth" });
+});
+document.getElementById("meetingConfirm").addEventListener("click", function (event) {
+  var mode = event.target.getAttribute("data-meeting-mode");
+  if (mode) registerMeetingMode(mode, event.target);
+});
+document.getElementById("meetingCancel").addEventListener("click", function () {
+  renderMeetings([]);
+});
+document.getElementById("plannerConfirm").addEventListener("click", function (event) {
+  var mode = event.target.getAttribute("data-planner-mode");
+  if (mode) registerPlannerMode(mode, event.target);
+});
+document.getElementById("plannerCancel").addEventListener("click", function () {
+  renderPlanner(null);
+});
+document.getElementById("plannerAddRow").addEventListener("click", function () {
+  var entries = collectPlanner();
+  entries.push({
+    title: "",
+    date: entries.length ? entries[entries.length - 1].date : "",
+    startTime: "",
+    endTime: ""
+  });
+  if (!plannerResult) {
+    plannerResult = { kind: "manual", entries: entries };
+  } else {
+    plannerResult.entries = entries;
+  }
+  document.getElementById("plannerConfirm").hidden = false;
+  drawPlannerRows(entries);
+});
+document.getElementById("plannerToggleAll").addEventListener("click", function () {
+  var turnOn = this.textContent === "全部選ぶ";
+  Array.prototype.forEach.call(
+    document.querySelectorAll("#plannerForms .p-use"),
+    function (box) {
+      box.checked = turnOn;
+    }
+  );
+  this.textContent = turnOn ? "全部外す" : "全部選ぶ";
+});
+
+/* ---------- 起動時の処理 ---------- */
+
+var pendingMeeting = window.ScanRouter && window.ScanRouter.takeHandoff("meeting");
+if (pendingMeeting && pendingMeeting.length) {
+  applyMeetingScan(pendingMeeting);
+}
+var pendingPlanner = window.ScanRouter && window.ScanRouter.takeHandoff("planner");
+if (pendingPlanner && pendingPlanner.length) {
+  applyPlannerScan(pendingPlanner);
+}
+
+window.scheduleApp = {
+  applyMeetingScan: applyMeetingScan,
+  collectMeetings: collectMeetings,
+  applyPlannerScan: applyPlannerScan,
+  collectPlanner: collectPlanner
+};
+setView(currentView);
+render();
+loadPhoneCalendar();
+// 画面下の操作バー: 「予定を登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
+document.getElementById("jumpAdd").addEventListener("click", function () {
+  var card = document.getElementById("addCard");
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  var first = card.querySelector("input");
+  if (first) first.focus({ preventScroll: true });
+});
+document.getElementById("jumpToday").addEventListener("click", function () {
+  document.getElementById("listViewBtn").click();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+// オフラインで開けるようにする。https など使える環境のときだけ登録し、失敗しても通常動作に影響はない
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register("sw.js").catch(function () { /* 使えなくても通常動作に影響はない */ });
+}
 })();
 </script>
 </body>
