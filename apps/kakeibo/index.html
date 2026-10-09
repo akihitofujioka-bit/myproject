@@ -283,9 +283,6 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <ul class="picklist" id="itemList"></ul>
       <div class="chips" style="margin-top:8px">
         <button type="button" class="small" id="sendFridge">冷蔵庫へ</button>
-        <button type="button" class="small" id="sendHousehold">日用品へ</button>
-        <button type="button" class="small" id="sendMedicine">医薬品へ</button>
-        <button type="button" class="small" id="sendStock">備蓄へ</button>
         <button type="button" class="small link" id="sendNote">メモに残す</button>
         <button type="button" class="small link" id="toggleAll">全部外す</button>
       </div>
@@ -393,7 +390,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <li><strong>「よく行く店」のボタンを押すと、店名と費目がまとめて入ります。</strong>金額と日付だけ入れれば記録できます。</li>
       <li><strong>カードや電子マネーの明細は CSV で取り込めます。</strong>「明細を取り込む」でファイルを選び、日付・内容・金額がどの列かを指定してください。同じ内容が二重に入らないよう確認してから取り込みます。</li>
       <li><strong>iPhone アプリでは「レシートを撮る」で合計・日付・店名を自動で入れられます。</strong>iPhone 標準の文字認識を使い、写真も文字も端末の外には出しません。読み取り結果は必ず確認してから「記録する」を押してください。うまく読めないときは、明るい場所でレシートを平らにし、枠いっぱいに収めて撮り直してください。</li>
-      <li><strong>買ったものは、冷蔵庫や備蓄アプリに送れます。</strong>レシートを撮ると品目の一覧が出るので、送るものにチェックを付けて「冷蔵庫へ」「備蓄へ」を押してください。品名がそのまま在庫に入るため、バーコードで1つずつ登録する手間が省けます。賞味期限はレシートに載らないので、送った先のアプリで入れてください。「メモに残す」を押すと、品名を家計簿の記録のメモ欄に入れます。</li>
+      <li><strong>買ったものは、冷蔵庫アプリに送れます。</strong>レシートを撮ると品目の一覧が出るので、送るものにチェックを付けて「冷蔵庫へ」を押してください。品名がそのまま在庫に入るため、バーコードで1つずつ登録する手間が省けます。賞味期限はレシートに載らないので、冷蔵庫アプリで入れてください。「メモに残す」を押すと、品名を家計簿の記録のメモ欄に入れます。</li>
       <li><strong>レシートのバーコードからは金額を読み取れません。</strong>レシートに印字されているのは取引番号で、金額や品目は含まれていないためです。</li>
       <li><strong>データはこの端末の中だけに残ります。</strong>サーバーには送りません。アプリを削除したとき、またはブラウザのサイトデータを消したときは一緒に消えるため、「JSONで保存」で控えを取り、別の端末へ移すときは「JSONから読み込み」を使ってください。</li>
     </ul>
@@ -1267,7 +1264,7 @@ function checkedReceiptItems() {
     .filter(Boolean);
 }
 
-// 冷蔵庫・備蓄へ送る。送り先の台帳に足すだけで、既にある項目には触れない
+// 冷蔵庫へ送る。送り先の台帳に足すだけで、既にある項目には触れない
 function sendReceiptItems(target) {
   var picked = checkedReceiptItems();
   if (!picked.length) { toast("送るものにチェックを付けてください"); return; }
@@ -1280,9 +1277,6 @@ function sendReceiptItems(target) {
 }
 
 document.getElementById("sendFridge").addEventListener("click", function () { sendReceiptItems("fridge"); });
-document.getElementById("sendHousehold").addEventListener("click", function () { sendReceiptItems("household"); });
-document.getElementById("sendMedicine").addEventListener("click", function () { sendReceiptItems("medicine"); });
-document.getElementById("sendStock").addEventListener("click", function () { sendReceiptItems("stock"); });
 document.getElementById("sendNote").addEventListener("click", function () {
   var picked = checkedReceiptItems();
   if (!picked.length) { toast("残すものにチェックを付けてください"); return; }

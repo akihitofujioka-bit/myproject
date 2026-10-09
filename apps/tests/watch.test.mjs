@@ -36,7 +36,7 @@ console.log("== 通知の文面（Apple Watch の1行目・2行目）==");
   ok(N.whenLabel(180) === "3時間後", "180分前 → 3時間後");
   ok(N.whenLabel(1440) === "明日", "1440分前 → 明日");
   ok(N.whenLabel(4320) === "3日後", "4320分前 → 3日後");
-  ok(N.whenLabel(43200) === "1か月後", "43200分前 → 1か月後（備蓄の早出し通知）");
+  ok(N.whenLabel(43200) === "1か月後", "43200分前 → 1か月後");
 
   const doc = {
     title: "【回覧】○○協議会の回答",
@@ -156,13 +156,6 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
         { name: "たまご", action: "consume", at: new Date(NOW - 1 * 86400000).toISOString() },
         { name: "味噌", action: "consume", at: new Date(NOW - 40 * 86400000).toISOString() }
       ]
-    },
-    "stock.v1": {
-      items: [
-        { id: "s1", name: "コピー用紙", qty: 1, unit: "箱", minQty: 5 },
-        { id: "s2", name: "保存水", qty: 24, unit: "本", minQty: 12 },
-        { id: "s3", name: "乾電池", qty: 0, unit: "本", minQty: null }
-      ]
     }
   };
   const win = {
@@ -192,9 +185,7 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
   ok(!shopping.includes("食パン"), "買い物：廃棄したものは送らない");
   ok(!shopping.includes("たまご"), "買い物：在庫があるものは送らない");
   ok(!shopping.includes("味噌"), "買い物：2週間より前に使い切ったものは送らない");
-  ok(shopping.includes("コピー用紙 あと4箱"), "買い物：備蓄の不足分を添える");
-  ok(shopping.includes("乾電池"), "買い物：最低在庫数が未設定でも、残り0なら送る");
-  ok(!shopping.some((n) => n.indexOf("保存水") === 0), "買い物：足りている備蓄は送らない");
+  ok(shopping.length === 1, "買い物：冷蔵庫から必要なものだけを送る");
 
   ok(win.Watch.available() === false, "ブラウザでは送信しない判定になる");
 }

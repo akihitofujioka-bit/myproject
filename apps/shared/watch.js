@@ -118,27 +118,6 @@
     return out;
   }
 
-  // 備蓄：最低在庫数を下回ったもの（最低在庫数が未設定でも、残り0なら対象）
-  function stockShopping() {
-    var data = read("stock.v1");
-    if (!data) return [];
-    var out = [];
-    (data.items || []).forEach(function (it) {
-      var have = Number(it.qty);
-      if (isNaN(have)) have = 0;
-      var min = it.minQty === null || it.minQty === undefined || it.minQty === "" ? null : Number(it.minQty);
-      var gap = 0;
-      if (min !== null && !isNaN(min) && have < min) gap = min - have;
-      else if (have === 0) gap = 1;
-      if (gap <= 0) return;
-      out.push({
-        name: it.name + (min !== null && !isNaN(min) ? " あと" + gap + (it.unit || "") : ""),
-        from: "備蓄"
-      });
-    });
-    return out;
-  }
-
   /**
    * Apple Watch に送る一覧を作る。
    * options: { today: "YYYY-MM-DD", now: ミリ秒 }（テスト用。省略すると今の時刻）
@@ -154,7 +133,7 @@
       updatedAt: new Date(now).toISOString(),
       meetings: lists.meetings,
       deadlines: lists.deadlines,
-      shopping: fridgeShopping(now).concat(stockShopping()).slice(0, MAX)
+      shopping: fridgeShopping(now).slice(0, MAX)
     };
   }
 

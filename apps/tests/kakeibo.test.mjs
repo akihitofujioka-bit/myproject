@@ -355,30 +355,11 @@ console.log("== 買ったものの振り分け ==");
   ok(fridge.items[0].note === "レシートから登録", "どこから来たか分かるようにする");
   ok(!!fridge.items[0].id && !!fridge.items[0].createdAt, "冷蔵庫アプリと同じ形で入る");
 
-  // チェックを外したものは送らない
+  // チェックを外したものはメモに残さない
   await page.uncheck("#rcpt0");
   await page.uncheck("#rcpt1");
-  await page.click("#sendStock");
-  const stock = await page.evaluate(() => JSON.parse(localStorage.getItem("stock.v1") || "null"));
-  ok(!!stock && stock.items.length === 2, "チェックを付けた2件だけ備蓄に入る");
-  ok(stock.items.map((i) => i.name).join("/") === "鶏むね肉/食パン", "外したものは送られない");
-  ok(stock.items[0].minQty === null, "備蓄の形（最低在庫数）に合わせて入る");
-
-  // 日用品・医薬品（どちらも備蓄アプリの台帳に、保管場所を分けて入る）
-  await page.evaluate(() => localStorage.removeItem("stock.v1"));
-  await page.click("#toggleAll");
-  await page.click("#toggleAll");   // 全部にチェックを戻す
-  await page.click("#sendHousehold");
-  let s2 = await page.evaluate(() => JSON.parse(localStorage.getItem("stock.v1")));
-  ok(s2.items.length === 4 && s2.items.every((i) => i.place === "日用品"),
-    "「日用品へ」は保管場所を日用品にして入れる");
-  await page.click("#sendMedicine");
-  s2 = await page.evaluate(() => JSON.parse(localStorage.getItem("stock.v1")));
-  ok(s2.items.slice(4).every((i) => i.place === "医薬品"), "「医薬品へ」は保管場所を医薬品にして入れる");
-  ok(s2.items.length === 8, "同じ台帳に足していく（前の分は消えない）");
-  await page.evaluate(() => localStorage.removeItem("stock.v1"));
-  await page.uncheck("#rcpt0");
-  await page.uncheck("#rcpt1");
+  ok((await page.locator("#itemsBox button:not(.link)").evaluateAll((els) => els.map((e) => e.textContent))).join() === "冷蔵庫へ",
+    "在庫の送り先は冷蔵庫だけ");
 
   // メモに残す
   await page.click("#sendNote");
@@ -399,11 +380,11 @@ console.log("== 買ったものの振り分け ==");
   ok(stillFour === 4, "何も選ばなければ送り先は変わらない");
 
   // 送り先のデータが壊れているときは上書きしない
-  await page.evaluate(() => localStorage.setItem("stock.v1", "こわれたデータ"));
+  await page.evaluate(() => localStorage.setItem("fridge.v1", "こわれたデータ"));
   await page.click("#toggleAll");
-  await page.click("#sendStock");
+  await page.click("#sendFridge");
   ok((await page.locator("#toast").textContent()).includes("上書きを避ける"), "壊れた送り先には書き込まず知らせる");
-  ok((await page.evaluate(() => localStorage.getItem("stock.v1"))) === "こわれたデータ", "壊れたデータを上書きしない");
+  ok((await page.evaluate(() => localStorage.getItem("fridge.v1"))) === "こわれたデータ", "壊れたデータを上書きしない");
 
   // 記録すると一覧は片付く
   await page.fill("#f-amount", "1205");

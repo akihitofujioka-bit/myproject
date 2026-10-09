@@ -10,7 +10,7 @@
     top: "トップ",
     fridge: "冷蔵庫",
     "docs-tracker": "書類",
-    stock: "備蓄",
+    schedule: "予定",
     kakeibo: "家計簿",
     cards: "ポイントカード"
   };

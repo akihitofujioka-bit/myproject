@@ -31,6 +31,7 @@ ok(/id="characterCard"/.test(index), "ブラウザ専用の案内の前にある
 for (const f of ["shared/meeting.js", "shared/planner.js", "shared/inbox.js", "shared/receipt.js", "cards/icon-192.png"]) {
   ok(fs.existsSync(path.join(WWW, f)), f + " が含まれる");
 }
+ok(!fs.existsSync(path.join(WWW, "stock")), "備蓄アプリは含まれない");
 ok(!fs.existsSync(path.join(WWW, "fridge/sw.js")), "Service Worker は含まれない");
 
 console.log(failures ? `\n${failures} 件失敗` : "\nすべて通過");

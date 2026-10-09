@@ -310,6 +310,16 @@ console.log("== apps/index.html（トップページ）==");
   ok(hrefs.every((h) => h && !h.startsWith("/") && !/^https?:/.test(h)),
     "リンク先がすべて相対パス（公開後もそのまま動く）");
   ok(hrefs.includes("fridge/index.html") || hrefs.includes("fridge/"), "冷蔵庫へのリンクがある");
+  ok(!hrefs.some((h) => h.includes("stock")), "備蓄へのリンクが無い");
+  await lpage.evaluate(() => {
+    localStorage.removeItem("migration.stock-removed-2026-10");
+    localStorage.setItem("stock.v1", JSON.stringify({ items: [] }));
+  });
+  await lpage.reload();
+  ok(await lpage.evaluate(() => localStorage.getItem("stock.v1") === null), "備蓄の端末内データを初回に消す");
+  await lpage.evaluate(() => localStorage.setItem("stock.v1", "再作成した値"));
+  await lpage.reload();
+  ok(await lpage.evaluate(() => localStorage.getItem("stock.v1") === "再作成した値"), "備蓄の端末内データを消すのは1回だけ");
   ok((await lpage.locator("a.app img").count()) === hrefs.length, "すべてにアイコンが表示される");
   const iconOk = await lpage.locator("a.app img").first().evaluate((el) => el.naturalWidth > 0);
   ok(iconOk, "アイコン画像が実際に読み込める");
@@ -770,25 +780,6 @@ console.log("== 買い物リスト（リマインダーへ送る）==");
   await sp.locator("li.item", { hasText: "牛乳" }).locator('button[data-action="consume"]').click();
   await sp.click("#shopList");
   ok((await sp.locator("#toast").textContent()).length > 0, "冷蔵庫：押すと結果が表示される");
-
-  /* 備蓄：最低在庫数を下回ったものを選ぶ */
-  await sp.goto("file://" + path.join(ROOT, "apps/stock/index.html"));
-  ok((await sp.locator("#shopList").count()) === 1, "備蓄：買い物リストのボタンがある");
-  await sp.fill("#f-name", "コピー用紙");
-  await sp.fill("#f-qty", "1");
-  await sp.fill("#f-unit", "箱");
-  await sp.fill("#f-min", "5");
-  await sp.click("#submitBtn");
-  await sp.fill("#f-name", "保存水 500ml");
-  await sp.fill("#f-qty", "24");
-  await sp.fill("#f-unit", "本");
-  await sp.fill("#f-min", "12");
-  await sp.click("#submitBtn");
-  const low = await sp.evaluate(() => window.shoppingNames());
-  ok(low.join(",") === "コピー用紙 あと4箱", "備蓄：不足分を添えて選ぶ（" + low.join(",") + "）");
-  ok(!low.join(",").includes("保存水"), "備蓄：足りているものは入れない");
-  await sp.click("#shopList");
-  ok((await sp.locator("#toast").textContent()).length > 0, "備蓄：押すと結果が表示される");
 
   ok(serrs.length === 0, "JSエラーなし" + (serrs.length ? " → " + serrs.join(" / ") : ""));
   await sctx.close();

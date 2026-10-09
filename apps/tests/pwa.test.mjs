@@ -61,7 +61,6 @@ const browser = await chromium.launch(launchOptions);
 const APPS = [
   { name: "fridge", barcode: true, calendar: true },
   { name: "docs-tracker", calendar: true },
-  { name: "stock", barcode: true, calendar: true },
   { name: "kakeibo", receipt: true },
   { name: "cards", barcode: true },
 ];

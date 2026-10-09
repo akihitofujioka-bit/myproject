@@ -6,7 +6,6 @@
 | --- | --- | --- |
 | 冷蔵庫の在庫・賞味期限管理 | 食材の期限管理、バーコードでの登録、食品ロスの記録 | `apps/fridge/` |
 | 書類・回覧・会議の期限トラッカー | 提出期限のある書類・回覧・申請と会議の予定の管理 | `apps/docs-tracker/` |
-| 備蓄・消耗品の管理 | 在庫が少なくなったものと期限が近いものの通知 | `apps/stock/` |
 | 家計簿 | レシートの合計額の記録、費目別の内訳、明細CSVの取り込み | `apps/kakeibo/` |
 | ポイントカード | カード・会員証の撮影保管、バーコードの画面表示 | `apps/cards/` |
 
@@ -31,7 +30,6 @@
 | トップページ | `https://akihitofujioka-bit.github.io/myproject/` |
 | 冷蔵庫 | `https://akihitofujioka-bit.github.io/myproject/fridge/` |
 | 書類トラッカー | `https://akihitofujioka-bit.github.io/myproject/docs-tracker/` |
-| 備蓄・消耗品 | `https://akihitofujioka-bit.github.io/myproject/stock/` |
 | 家計簿 | `https://akihitofujioka-bit.github.io/myproject/kakeibo/` |
 | ポイントカード | `https://akihitofujioka-bit.github.io/myproject/cards/` |
 
@@ -146,7 +144,7 @@ iPhone アプリとして動いているときは、カレンダーではなく*
 
 1行目は `apps/shared/native.js` の `whenLabel()`（本日／明日／3日後／1か月後…）と件名、
 2行目は各アプリが渡す `summaryLine`（書類は提出先と状態、会議は時刻・場所・懇親会、
-食材と備蓄は残数と置き場所）。設定手順は `docs/apple-watch-event-haptics.md` にまとめてある。
+食材は残数と置き場所）。設定手順は `docs/apple-watch-event-haptics.md` にまとめてある。
 
 ## Apple Watch へ送る一覧
 
@@ -160,13 +158,12 @@ WatchBridge プラグイン経由で Apple Watch に渡す（ブラウザで開�
 
 ## 買い物リスト（リマインダー経由）
 
-冷蔵庫の「使い切ったものを買い物リストへ」と、備蓄の「補充が必要なものを買い物リストへ」は、
-iPhone の**リマインダー**に品名を送る。Apple Watch のリマインダー App で消し込めるようにするため。
+冷蔵庫の「使い切ったものを買い物リストへ」は、iPhone の**リマインダー**に品名を送る。
+Apple Watch のリマインダー App で消し込めるようにするため。
 
 - Web からリマインダーへ直接書き込む方法は無いため、**ショートカット App を経由する**（`apps/shared/reminders.js`）。利用者が一度だけショートカットを作る必要がある（手順は `docs/apple-watch-shopping-list.md`）
 - ショートカットが無い環境（パソコンのブラウザ）では、品名をクリップボードにコピーするだけに切り替わる
 - 冷蔵庫が送るのは「直近2週間で使い切り、いま在庫に無いもの」。**廃棄したものは送らない**（買い直すとは限らないため）
-- 備蓄が送るのは「最低在庫数を下回ったもの」で、「品名 あと○個」の形にする
 - 送るのは品名だけで、外部への通信は行わない
 
 ## 家計簿の考え方
@@ -184,7 +181,7 @@ iPhone の**リマインダー**に品名を送る。Apple Watch のリマイン
 ### レシートから買ったものを送る
 
 家計簿でレシートを撮ると、合計・日付・店名に加えて**買ったものの一覧**（品名と値段）が出る。
-送るものにチェックを付けて「冷蔵庫へ」「備蓄へ」を押すと、そのアプリの在庫として登録される。
+送るものにチェックを付けて「冷蔵庫へ」を押すと、冷蔵庫の在庫として登録される。
 
 - 送り先の台帳には**足すだけ**で、既にある項目には触れない
 - 送り先のデータが読めない形になっている場合は、**何も書かずに中止する**（上書きで台帳を壊さないため）
