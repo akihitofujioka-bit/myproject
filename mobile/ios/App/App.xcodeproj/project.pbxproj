@@ -14,6 +14,7 @@
 		0CB97B323C0240D9BEA3CE93 /* SilentCameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */; };
 		0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54417C08DED3D9DAECF1E66F /* ViewController.swift */; };
 		17760D73051BA4D18EB031D0 /* ReceiptScannerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */; };
+		A1C0FFEE0000000000000001 /* PhotoAlbumPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000002 /* PhotoAlbumPlugin.swift */; };
 		18116FD2CD499F7966E25B6B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 529B5B4D26CECC53B1B3D50D /* Foundation.framework */; };
 		235C5733D1550F19C53E8B4F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B73E718DBDCF55ADFF4A39C3 /* SwiftUI.framework */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -40,6 +41,7 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		B94C93F625E50D3B33F93159 /* DailyAppsWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607E95DE886257AE57E3296B /* DailyAppsWatchApp.swift */; };
 		CE2147F1B5E9F903940FE5FA /* WatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2F563FC6B160E963ECF379 /* WatchStore.swift */; };
+		A1C0FFEE0000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000012 /* Assets.xcassets */; };
 		D04BCA140C04704692BC01CF /* WatchWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FD600EE43BD985CD9DB1ABD5 /* WatchWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeaderOnCopy, ); }; };
 		DE0DE0CD036E49C0017E80EF /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
 		E7D0C38FE69626AABB82EDFC /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
@@ -138,10 +140,12 @@
 		6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
 		7045F2DF81C04599D469D577 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptScannerPlugin.swift; sourceTree = "<group>"; };
+		A1C0FFEE0000000000000002 /* PhotoAlbumPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAlbumPlugin.swift; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		A44AE15940A8D9ED379B0EA0 /* WatchWidgetExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = WatchWidgetExtension.entitlements; sourceTree = "<group>"; };
 		AC2F563FC6B160E963ECF379 /* WatchStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchStore.swift; sourceTree = "<group>"; };
+		A1C0FFEE0000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B73E718DBDCF55ADFF4A39C3 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		D00B639C754BBD25B2D1DE75 /* WatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4B6CBD59DD11F3958745022 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -196,6 +200,7 @@
 				607E95DE886257AE57E3296B /* DailyAppsWatchApp.swift */,
 				415B60332CAD09296F351F12 /* ContentView.swift */,
 				AC2F563FC6B160E963ECF379 /* WatchStore.swift */,
+				A1C0FFEE0000000000000012 /* Assets.xcassets */,
 				6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */,
 				F07A62F74C8E035A000749C1 /* SharedDefaults.swift */,
 				36A65E078DFA7C4947AA2458 /* WatchApp.entitlements */,
@@ -249,6 +254,7 @@
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */,
+				A1C0FFEE0000000000000002 /* PhotoAlbumPlugin.swift */,
 				6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */,
 				16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */,
 				11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */,
@@ -456,6 +462,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1C0FFEE0000000000000011 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -513,6 +520,7 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				17760D73051BA4D18EB031D0 /* ReceiptScannerPlugin.swift in Sources */,
+				A1C0FFEE0000000000000001 /* PhotoAlbumPlugin.swift in Sources */,
 				0CB97B323C0240D9BEA3CE93 /* SilentCameraViewController.swift in Sources */,
 				689B9E964FC64B47BCD87A3C /* WatchBridgePlugin.swift in Sources */,
 				05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */,

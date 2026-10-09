@@ -22,6 +22,19 @@ struct ContentView: View {
                     }
                     footer
                 }
+                .scrollContentBackground(.hidden)
+                .background {
+                    if let background = store.background {
+                        ZStack {
+                            Image(uiImage: background)
+                                .resizable()
+                                .scaledToFill()
+                            Color.black.opacity(0.55)
+                        }
+                        .clipped()
+                        .ignoresSafeArea()
+                    }
+                }
                 .navigationTitle("日常")
                 .onChange(of: store.focusedId) { id in
                     guard let id = id else { return }

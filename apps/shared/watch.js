@@ -190,10 +190,45 @@
       });
   }
 
+  function readBlob(blob) {
+    return new Promise(function (resolve, reject) {
+      var reader = new global.FileReader();
+      reader.onload = function () {
+        var result = String(reader.result || "");
+        var comma = result.indexOf(",");
+        resolve(comma >= 0 ? result.slice(comma + 1) : result);
+      };
+      reader.onerror = function () { reject(reader.error || new Error("background-read-failed")); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * キャラクター写真を Apple Watch の背景へ送る。
+   * blob が null のときは、Watch に保存されている背景を消す。
+   */
+  function setBackground(blob) {
+    if (!available()) return Promise.resolve({ ok: false, reason: "not-supported" });
+    var args = blob === null ? Promise.resolve({ clear: true }) : readBlob(blob).then(function (data) {
+      return { data: data };
+    });
+    return args.then(function (value) {
+      return global.Capacitor.nativePromise(PLUGIN, "setBackground", value);
+    }).then(function (res) {
+      return { ok: !!(res && res.ok), reason: (res && res.reason) || "" };
+    }, function (e) {
+      return { ok: false, reason: (e && e.message) || "background-failed" };
+    });
+  }
+
   global.Watch = {
     snapshot: snapshot,
     push: push,
     available: available
+  };
+
+  global.WatchSync = {
+    setBackground: setBackground
   };
 
   // 画面を開いたときと閉じるときに送る。アプリ内の保存時は各アプリの save() から呼ぶ

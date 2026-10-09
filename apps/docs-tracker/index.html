@@ -511,8 +511,10 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/ics.js"></script>
 <script src="../shared/native.js"></script>
 <script src="../shared/watch.js"></script>
+<script src="../shared/character.js"></script>
 <script>
 "use strict";
+if (window.Character) window.Character.applyBackground("docs-tracker");
 
 var STORAGE_KEY = "docs-tracker.v1";
 var STATUSES = ["未着手", "対応中", "提出済", "完了"];

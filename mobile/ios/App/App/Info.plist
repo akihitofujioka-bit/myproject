@@ -43,6 +43,8 @@
 	<string>商品のバーコードを読み取るためにカメラを使用します。撮影した映像は端末の中だけで処理され、どこにも送信しません。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>撮影した書類を写真アプリに保存するために使用します。既存の写真を読み取ることはありません。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>キャラクター写真に使うアルバムを読み込みます。写真はこの端末の中だけで使い、外部へは送りません。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

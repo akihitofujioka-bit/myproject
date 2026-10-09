@@ -362,8 +362,10 @@ ul.help li { margin-bottom: 6px; }
 <script src="../shared/barcode.js"></script>
 <script src="../fridge/ean.js"></script>
 <script src="../shared/nativescan.js"></script>
+<script src="../shared/character.js"></script>
 <script>
 "use strict";
+if (window.Character) window.Character.applyBackground("cards");
 
 /* =========================================================
  * 保存（IndexedDB）

@@ -36,6 +36,7 @@ a.app {
 }
 a.app:hover, a.app:focus-visible { border-color: var(--accent); background: var(--accent-weak); }
 a.app img { width: 52px; height: 52px; border-radius: 12px; flex: none; }
+a.app img[data-char-slot] { object-fit: cover; }
 a.app .name { font-weight: 700; }
 a.app .desc { font-size: 13px; color: var(--muted); }
 section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 20px; }
@@ -79,7 +80,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </section>
 
   <a class="app" href="fridge/index.html">
-    <img src="fridge/icon-192.png" alt="">
+    <img src="fridge/icon-192.png" data-default-src="fridge/icon-192.png" data-char-slot="fridge" alt="">
     <span>
       <span class="name">冷蔵庫の在庫・賞味期限管理</span><br>
       <span class="desc">バーコードで食材を登録し、期限が近い順に並べます</span>
@@ -87,7 +88,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </a>
 
   <a class="app" href="docs-tracker/index.html">
-    <img src="docs-tracker/icon-192.png" alt="">
+    <img src="docs-tracker/icon-192.png" data-default-src="docs-tracker/icon-192.png" data-char-slot="docs-tracker" alt="">
     <span>
       <span class="name">書類・回覧・会議の期限トラッカー</span><br>
       <span class="desc">提出期限のある書類と、会議の予定を状態とともに管理します</span>
@@ -95,7 +96,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </a>
 
   <a class="app" href="stock/index.html">
-    <img src="stock/icon-192.png" alt="">
+    <img src="stock/icon-192.png" data-default-src="stock/icon-192.png" data-char-slot="stock" alt="">
     <span>
       <span class="name">備蓄・消耗品の管理</span><br>
       <span class="desc">残りが少なくなったものと、期限が近いものを知らせます</span>
@@ -103,7 +104,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </a>
 
   <a class="app" href="kakeibo/index.html">
-    <img src="kakeibo/icon-192.png" alt="">
+    <img src="kakeibo/icon-192.png" data-default-src="kakeibo/icon-192.png" data-char-slot="kakeibo" alt="">
     <span>
       <span class="name">家計簿</span><br>
       <span class="desc">レシートの合計額を記録し、費目ごとの内訳と月の推移を見ます</span>
@@ -111,12 +112,18 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   </a>
 
   <a class="app" href="cards/index.html">
-    <img src="cards/icon-192.png" alt="">
+    <img src="cards/icon-192.png" data-default-src="cards/icon-192.png" data-char-slot="cards" alt="">
     <span>
       <span class="name">ポイントカード</span><br>
       <span class="desc">カードを撮影して保管し、レジで画面のバーコードや写真を見せます</span>
     </span>
   </a>
+
+  <!-- 写真の登録欄は 6 枠あって長いので、ふだんは畳んでおく -->
+  <details class="card" id="characterCard">
+    <summary>キャラクター写真の設定</summary>
+    <p class="note">トップの背景と、機能ごとの写真を登録します。写真はこの端末の中だけに保存されます。</p>
+  </details>
 
   <!-- data-web-only: ブラウザで開いたときだけ意味がある案内。
        アプリ版では mobile/scripts/build-www.mjs が取り除く。 -->
@@ -146,6 +153,9 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 <script src="shared/meeting.js"></script>
 <script src="shared/planner.js"></script>
 <script src="shared/camerapref.js"></script>
+<script src="shared/character.js"></script>
+<script src="shared/character-settings.js"></script>
+<script src="shared/watch.js"></script>
 <script src="shared/receiptscan.js"></script>
 <script src="shared/scanrouter.js"></script>
 <script src="shared/deeplink.js"></script>
@@ -160,6 +170,91 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
     var el = document.activeElement;
     if (el && el !== document.body && typeof el.blur === "function") el.blur();
   });
+
+  var characterDisplayVersion = 0;
+  var characterWatchSending = "";
+
+  function updateWatchBackground() {
+    if (!window.WatchSync || (window.Watch && !window.Watch.available())) return;
+    window.Character.load("top").then(function (record) {
+      var today = new Date();
+      var mark = window.Character.watchMark(record, today);
+      var sent = "";
+      try { sent = window.localStorage.getItem("character.watchSent") || ""; } catch (e) { /* 送信は続ける */ }
+      if (mark === sent || mark === characterWatchSending) return;
+      characterWatchSending = mark;
+
+      var sending;
+      if (mark === "clear") {
+        sending = window.WatchSync.setBackground(null);
+      } else {
+        var index = window.Character.pickIndex(record.photos.length, record.interval, record.startDate, today);
+        sending = window.Character.resize(record.photos[index], 400).then(function (blob) {
+          return window.WatchSync.setBackground(blob);
+        });
+      }
+      return sending.then(function (result) {
+        if (result && result.ok) {
+          try { window.localStorage.setItem("character.watchSent", mark); } catch (e) { /* 次回また送る */ }
+        }
+      }).finally(function () {
+        if (characterWatchSending === mark) characterWatchSending = "";
+      });
+    }).catch(function () {
+      characterWatchSending = "";
+    });
+  }
+
+  function updateCharacterDisplay() {
+    if (!window.Character) return;
+    var version = ++characterDisplayVersion;
+    window.Character.applyBackground("top");
+    document.querySelectorAll("img[data-char-slot]").forEach(function (img) {
+      window.Character.currentPhotoURL(img.dataset.charSlot).then(function (url) {
+        // 連続して更新された場合、古い結果は表示せず URL だけ解放する
+        if (version !== characterDisplayVersion) {
+          if (url) window.URL.revokeObjectURL(url);
+          return;
+        }
+        if (img.dataset.charObjectUrl) {
+          window.URL.revokeObjectURL(img.dataset.charObjectUrl);
+          delete img.dataset.charObjectUrl;
+        }
+        if (url) {
+          img.src = url;
+          img.dataset.charObjectUrl = url;
+        } else {
+          img.src = img.dataset.defaultSrc;
+        }
+      });
+    });
+    updateWatchBackground();
+  }
+
+  function startCharacter() {
+    if (window.CharacterSettings) {
+      window.CharacterSettings.mount(document.getElementById("characterCard"), {
+        onChange: updateCharacterDisplay,
+        toast: toast
+      });
+    }
+    updateCharacterDisplay();
+  }
+
+  var photoAlbum = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PhotoAlbum;
+  if (window.Character && photoAlbum) {
+    var albumSync = Promise.resolve();
+    window.Character.SLOTS.forEach(function (slot) {
+      albumSync = albumSync.then(function () {
+        return window.Character.syncAlbum(slot, photoAlbum).catch(function () {
+          // 1枠を読めなくても、残りの枠の同期と画面表示は続ける
+        });
+      });
+    });
+    albumSync.then(startCharacter, startCharacter);
+  } else {
+    startCharacter();
+  }
 
   if (!(window.ReceiptScan && window.ReceiptScan.available())) return;
   document.getElementById("scanCard").hidden = false;

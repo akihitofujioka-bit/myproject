@@ -30,7 +30,9 @@ for (const file of ["fridge/sw.js", "docs-tracker/sw.js", "stock/sw.js", "kakeib
 {
   const indexPath = path.join(WWW, "index.html");
   const before = fs.readFileSync(indexPath, "utf8");
-  const after = before.replace(/\n*[ \t]*<!--[^]*?data-web-only[^]*?-->\n*[ \t]*<section data-web-only>[^]*?<\/section>/g, "");
+  // コメントの中身は「-->」を含まない範囲に限る。そうしないと、手前にある別のコメントから
+  // 取り除き始め、間にある節（キャラクター写真の設定など）まで消してしまう
+  const after = before.replace(/\n*[ \t]*<!--(?:(?!-->)[^])*?data-web-only(?:(?!-->)[^])*-->\n*[ \t]*<section data-web-only>[^]*?<\/section>/g, "");
   if (after === before) throw new Error("data-web-only の節が見つかりませんでした");
   fs.writeFileSync(indexPath, after);
   console.log("アプリでは不要な案内（data-web-only）を取り除きました");

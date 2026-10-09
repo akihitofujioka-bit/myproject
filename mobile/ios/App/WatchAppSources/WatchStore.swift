@@ -8,6 +8,7 @@
 //  ・外部のサーバーとは通信しない。iPhone との直接通信だけ
 //
 import Foundation
+import WatchKit
 import WatchConnectivity
 import WidgetKit
 
@@ -15,6 +16,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     @Published var snapshot: Snapshot = .empty
     @Published var receivedAt: Date?
     @Published var isRequesting = false
+    @Published var background: UIImage?
     /// コンプリケーションをタップして開いたときに、その項目までスクロールするための印
     @Published var focusedId: String?
 
@@ -25,6 +27,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     override init() {
         super.init()
         loadCached()
+        loadBackground()
         guard WCSession.isSupported() else { return }
         let session = WCSession.default
         session.delegate = self
@@ -38,6 +41,54 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
         }
         let t = store.double(forKey: receivedKey)
         if t > 0 { receivedAt = Date(timeIntervalSince1970: t) }
+    }
+
+    private func backgroundURL(createDirectory: Bool) -> URL? {
+        let manager = FileManager.default
+        guard let directory = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        if createDirectory {
+            do {
+                try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+            } catch {
+                return nil
+            }
+        }
+        return directory.appendingPathComponent("background.jpg")
+    }
+
+    private func loadBackground() {
+        guard let url = backgroundURL(createDirectory: false) else { return }
+        background = UIImage(contentsOfFile: url.path)
+    }
+
+    private func receiveBackground(_ file: WCSessionFile) {
+        guard file.metadata?["kind"] as? String == "background",
+              let destination = backgroundURL(createDirectory: true) else { return }
+        do {
+            let manager = FileManager.default
+            if manager.fileExists(atPath: destination.path) {
+                _ = try manager.replaceItemAt(destination, withItemAt: file.fileURL)
+            } else {
+                try manager.moveItem(at: file.fileURL, to: destination)
+            }
+            let image = UIImage(contentsOfFile: destination.path)
+            DispatchQueue.main.async {
+                self.background = image
+            }
+        } catch {
+            // 一覧の表示は止めず、次の背景送信を待つ
+        }
+    }
+
+    private func clearBackground() {
+        if let url = backgroundURL(createDirectory: false) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        DispatchQueue.main.async {
+            self.background = nil
+        }
     }
 
     private func apply(_ json: String) {
@@ -82,6 +133,16 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         if let json = applicationContext["payload"] as? String, !json.isEmpty {
             apply(json)
+        }
+    }
+
+    func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        receiveBackground(file)
+    }
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        if userInfo["kind"] as? String == "background-clear" {
+            clearBackground()
         }
     }
 }

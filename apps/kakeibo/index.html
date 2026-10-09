@@ -417,8 +417,10 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/camerapref.js"></script>
 <script src="../shared/receiptscan.js"></script>
 <script src="../shared/scanrouter.js"></script>
+<script src="../shared/character.js"></script>
 <script>
 "use strict";
+if (window.Character) window.Character.applyBackground("kakeibo");
 
 var STORAGE_KEY = "kakeibo.v1";
 var DEFAULT_CATEGORIES = ["食費", "日用品", "交通費", "水道光熱費", "通信費", "医療費", "交際費", "その他"];

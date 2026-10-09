@@ -136,13 +136,13 @@ struct NextUpEntryView: View {
 
     private var cornerView: some View {
         // 角の本文は1行に収め、折れて「日」が消えないようにする。
-        // 日数と件名は曲線のラベル側にまとめて出す
+        // 日数は本文に出すので、曲線のラベル側は件名だけにする（日数が2箇所に出ないように）
         Text(entry.hasItem ? entry.dayLabel : "―")
             .font(.system(size: 15, weight: .semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.5)
             .widgetLabel {
-                Text(entry.hasItem ? "\(entry.dayLabel)・\(entry.title)" : "予定なし")
+                Text(entry.hasItem ? entry.title : "予定なし")
             }
             .widgetBackground()
     }

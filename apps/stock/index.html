@@ -381,8 +381,10 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/watch.js"></script>
 <script src="../fridge/ean.js"></script>
 <script src="../shared/nativescan.js"></script>
+<script src="../shared/character.js"></script>
 <script>
 "use strict";
+if (window.Character) window.Character.applyBackground("stock");
 
 var STORAGE_KEY = "stock.v1";
 // 保管場所の候補。実際に使われている場所は、これに足して絞り込みボタンを作る
