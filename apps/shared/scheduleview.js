@@ -91,20 +91,37 @@
     }).slice().sort(compareItems);
   }
 
+  // カレンダーの予定が、予定アプリにすでに登録されているかを調べる。
+  function isAlreadyRegistered(appItems, event, calIds) {
+    var eventId = String((event && event.id) || "");
+    var written = Object.keys(calIds || {}).some(function (key) {
+      return eventId && String(calIds[key] || "") === eventId;
+    });
+    if (written) return true;
+    return (appItems || []).some(function (item) {
+      if (eventId && String((item && item.calEventId) || "") === eventId) return true;
+      return String((item && item.title) || "") === String((event && event.title) || "") &&
+        String((item && (item.dueOn || item.date)) || "") === String((event && (event.date || event.dueOn)) || "") &&
+        timeOf(item) === timeOf(event);
+    });
+  }
+
   // iPhone のカレンダーの予定のうち、予定アプリの予定と同じものを除く（表示の重なりを防ぐ）。
   // 同じとみなすのは、予定アプリが書き込んだ予定（calIds の値と一致）か、
   // 件名・日付・開始時刻がそろうもの（以前にカレンダーから取り込んだ予定など）。
   function hideDuplicateExternal(appItems, externalItems, calIds) {
-    var written = {};
-    Object.keys(calIds || {}).forEach(function (key) { written[calIds[key]] = true; });
     var keys = {};
-    (appItems || []).forEach(function (item) {
-      keys[[item.title, item.dueOn, timeOf(item)].join("|")] = true;
-    });
     // カレンダーの予定どうしでも、同じものは最初の 1 つだけ出す
     // （「日本の祝日」のカレンダーを 2 つ表示している場合など）
     return (externalItems || []).filter(function (item) {
-      if (item.eventId && written[item.eventId]) return false;
+      if (isAlreadyRegistered(appItems, {
+        id: item.eventId,
+        title: item.title,
+        date: item.dueOn || item.date,
+        startTime: item.startTime,
+        time: item.time,
+        note: item.note
+      }, calIds)) return false;
       var key = [item.title, item.dueOn, timeOf(item)].join("|");
       if (keys[key]) return false;
       keys[key] = true;
@@ -115,6 +132,7 @@
   global.ScheduleView = {
     hideDuplicateExternal: hideDuplicateExternal,
     groupForList: groupForList,
+    isAlreadyRegistered: isAlreadyRegistered,
     monthGrid: monthGrid,
     itemsOn: itemsOn
   };

@@ -7,7 +7,7 @@ const context = { window: {} };
 vm.createContext(context);
 vm.runInContext(source, context);
 
-const { groupForList, monthGrid, itemsOn, hideDuplicateExternal } = context.window.ScheduleView;
+const { groupForList, monthGrid, itemsOn, hideDuplicateExternal, isAlreadyRegistered } = context.window.ScheduleView;
 
 function item(id, dueOn, note = "") {
   return { id, title: `架空の予定${id}`, dueOn, note };
@@ -94,6 +94,39 @@ function item(id, dueOn, note = "") {
   ];
   const shown = hideDuplicateExternal([], external, {});
   assert.deepEqual(Array.from(shown, (x) => x.id), ["external-H1", "external-X1"]);
+}
+
+// 予定アプリからカレンダーへ書き込んだ予定は、カレンダーの予定番号で登録済みと判断する
+{
+  const event = { id: "CAL-A", title: "架空の青空会議", date: "2026-10-20", startTime: "10:00" };
+  assert.equal(isAlreadyRegistered([], event, { "item-a": "CAL-A" }), true);
+}
+
+// カレンダーから取り込んだ予定は、保存した取り込み元の予定番号で登録済みと判断する
+{
+  const appItems = [
+    { title: "架空の若葉会議", dueOn: "2026-10-21", startTime: "13:00", calEventId: "CAL-B" }
+  ];
+  const event = { id: "CAL-B", title: "変更後の件名", date: "2026-10-22", startTime: "15:00" };
+  assert.equal(isAlreadyRegistered(appItems, event, {}), true);
+}
+
+// 予定番号が違っても、件名・日付・開始時刻が同じ予定は登録済みと判断する
+{
+  const appItems = [
+    { title: "架空の虹色会議", dueOn: "2026-10-23", note: "09:30〜10:30 開始" }
+  ];
+  const event = { id: "CAL-C", title: "架空の虹色会議", date: "2026-10-23", startTime: "09:30" };
+  assert.equal(isAlreadyRegistered(appItems, event, {}), true);
+}
+
+// どの条件にも当てはまらない予定は未登録と判断する
+{
+  const appItems = [
+    { title: "架空の星空会議", dueOn: "2026-10-24", startTime: "11:00", calEventId: "CAL-D" }
+  ];
+  const event = { id: "CAL-E", title: "架空の月明かり会議", date: "2026-10-25", startTime: "14:00" };
+  assert.equal(isAlreadyRegistered(appItems, event, { "item-d": "CAL-F" }), false);
 }
 
 console.log("schedule.test.mjs: OK");

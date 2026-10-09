@@ -393,6 +393,30 @@ button.small {
       <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
       <button type="button" class="primary" id="plannerScanBtn">📒 手帳を撮る</button>
       <button type="button" id="meetingManualBtn">＋ 会議を手入力</button>
+      <button type="button" id="calendarFindBtn" hidden>📅 カレンダーから探す</button>
+    </div>
+  </section>
+
+  <section class="card" id="calendarPickCard" hidden>
+    <h2>カレンダーから探す</h2>
+    <p class="footnote">
+      使うカレンダーを選んでください。
+      今日から60日以内の予定が対象です。
+    </p>
+    <div id="calendarList"></div>
+    <div class="chips" style="margin-top:10px">
+      <button type="button" class="primary" id="calendarSearchBtn">この中から探す</button>
+      <button type="button" class="link" id="calendarPickCancel">やめる</button>
+    </div>
+  </section>
+
+  <section class="card" id="calendarCandidates" hidden>
+    <h2>カレンダーの予定</h2>
+    <p class="footnote" id="calendarCandidatesSummary"></p>
+    <ul class="items" id="calendarCandidatesList"></ul>
+    <div class="chips" style="margin-top:10px">
+      <button type="button" class="primary" id="calendarRegisterBtn">選んだものを会議として登録</button>
+      <button type="button" class="link" id="calendarCandidatesCancel">やめる</button>
     </div>
   </section>
 
@@ -485,6 +509,8 @@ var selectedYmd = ymd(today);
 var currentView = localStorage.getItem(VIEW_KEY) === "calendar" ? "calendar" : "list";
 var scannedMeetings = [];
 var plannerResult = null;
+var calendarCandidates = [];
+var CALENDAR_PICK_IDS_KEY = "schedule.calendarPickIds";
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -927,6 +953,66 @@ function loadPhoneCalendar() {
   });
 }
 
+/* ---------- カレンダーから会議を探す ---------- */
+
+function loadCalendarPickIds() {
+  try {
+    return JSON.parse(localStorage.getItem(CALENDAR_PICK_IDS_KEY) || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveCalendarPickIds(ids) {
+  try {
+    localStorage.setItem(CALENDAR_PICK_IDS_KEY, JSON.stringify(ids));
+  } catch (e) {
+    /* 選択を保存できなくても、カレンダーから探す機能は使い続けられる。 */
+  }
+}
+
+function showCalendarPicker(result) {
+  var calendars = (result && result.calendars) || [];
+  if (!calendars.length) {
+    toast("使えるカレンダーが見つかりませんでした");
+    return;
+  }
+  var saved = loadCalendarPickIds();
+  document.getElementById("calendarList").innerHTML = calendars.map(function (calendar) {
+    var checked = saved.indexOf(calendar.id) !== -1 ? " checked" : "";
+    return '<label class="check" style="margin-bottom:6px">' +
+      '<input type="checkbox" class="cal-id" value="' + esc(calendar.id) + '"' + checked + '> ' +
+      '<span>' + esc(calendar.title) + (calendar.source ? ' <span class="footnote">／ ' + esc(calendar.source) + '</span>' : '') + '</span></label>';
+  }).join("");
+  document.getElementById("calendarPickCard").hidden = false;
+  document.getElementById("calendarPickCard").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function showCalendarCandidates(events) {
+  calendarCandidates = events || [];
+  if (!calendarCandidates.length) {
+    toast("選んだカレンダーに、今日から60日以内の予定は見つかりませんでした");
+    return;
+  }
+  var registeredCount = calendarCandidates.filter(function (event) {
+    return window.ScheduleView.isAlreadyRegistered(state.items, event, state.calIds);
+  }).length;
+  document.getElementById("calendarCandidatesSummary").textContent =
+    calendarCandidates.length + "件見つかりました。" +
+    "登録する会議を選んでください。" +
+    (registeredCount ? "登録済みは" + registeredCount + "件です。" : "");
+  document.getElementById("calendarCandidatesList").innerHTML = calendarCandidates.map(function (event, index) {
+    var registered = window.ScheduleView.isAlreadyRegistered(state.items, event, state.calIds);
+    var when = [event.date, event.startTime].filter(Boolean).join(" ");
+    return '<li class="item"><label class="check">' +
+      '<input type="checkbox" data-index="' + index + '"' + (registered ? ' disabled' : ' checked') + '> ' +
+      '<span><strong>' + esc(event.title || "（件名なし）") + '</strong><br><span class="when">' + esc(when) + '</span></span>' +
+      (registered ? '<span class="badge">登録済み</span>' : '') + '</label></li>';
+  }).join("");
+  document.getElementById("calendarCandidates").hidden = false;
+  document.getElementById("calendarCandidates").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 /* ---------- 会議通知の読み取り ---------- */
 
 function meetingNote(meeting) {
@@ -937,7 +1023,7 @@ function meetingNote(meeting) {
   if (meeting.social && meeting.social.has) {
     lines.push("懇親会あり" + (meeting.social.fee ? "（会費 " + meeting.social.fee + "円）" : ""));
   }
-  lines.push(meeting.source === "manual" ? "（手入力で登録）" : "（会議の通知から登録）");
+  lines.push(meeting.source === "calendar" ? "（カレンダーから登録）" : meeting.source === "manual" ? "（手入力で登録）" : "（会議の通知から登録）");
   return lines.join("\n");
 }
 function renderMeetings(list) {
@@ -976,7 +1062,8 @@ function collectMeetings() {
         endTime: get("m-end"),
         place: get("m-place"),
         social: { has: row.querySelector(".m-social").checked, fee: null },
-        source: (scannedMeetings[Number(row.getAttribute("data-index"))] || {}).source || ""
+        source: (scannedMeetings[Number(row.getAttribute("data-index"))] || {}).source || "",
+        calEventId: (scannedMeetings[Number(row.getAttribute("data-index"))] || {}).calEventId || ""
       } : null;
     }
   ).filter(Boolean);
@@ -994,7 +1081,8 @@ function meetingItems(list) {
       priority: "中",
       createdAt: new Date().toISOString(),
       doneAt: "",
-      icsSeq: 0
+      icsSeq: 0,
+      calEventId: meeting.calEventId || ""
     });
   });
 }
@@ -1166,6 +1254,88 @@ function scan(button, options, apply) {
 if (window.ReceiptScan && window.ReceiptScan.available()) {
   document.getElementById("scanCard").hidden = false;
 }
+if (window.CalendarRead && window.CalendarRead.available()) {
+  document.getElementById("scanCard").hidden = false;
+  document.getElementById("calendarFindBtn").hidden = false;
+}
+document.getElementById("calendarFindBtn").addEventListener("click", function () {
+  var button = this;
+  var original = button.textContent;
+  button.disabled = true;
+  button.textContent = "確認しています…";
+  window.CalendarRead.isSupported().then(function (result) {
+    return result && result.authorized ? { granted: true } : window.CalendarRead.requestAccess();
+  }).then(function (result) {
+    if (!result || !result.granted) {
+      toast("カレンダーへのアクセスが許可されていません。設定アプリで許可してください");
+      return null;
+    }
+    return window.CalendarRead.listCalendars();
+  }).then(function (result) {
+    if (result) showCalendarPicker(result);
+  }).catch(function (error) {
+    toast("カレンダーを確認できませんでした：" + (error && error.message ? error.message : "原因不明"));
+  }).then(function () {
+    button.disabled = false;
+    button.textContent = original;
+  });
+});
+document.getElementById("calendarPickCancel").addEventListener("click", function () {
+  document.getElementById("calendarPickCard").hidden = true;
+});
+document.getElementById("calendarSearchBtn").addEventListener("click", function () {
+  var ids = Array.prototype.map.call(document.querySelectorAll("#calendarList .cal-id:checked"), function (input) {
+    return input.value;
+  });
+  if (!ids.length) {
+    toast("カレンダーを1つ以上選んでください");
+    return;
+  }
+  saveCalendarPickIds(ids);
+  var button = this;
+  button.disabled = true;
+  button.textContent = "探しています…";
+  window.CalendarRead.listEvents(ids, 60).then(function (result) {
+    document.getElementById("calendarPickCard").hidden = true;
+    showCalendarCandidates((result && result.events) || []);
+  }).catch(function (error) {
+    toast("予定を読み取れませんでした：" + (error && error.message ? error.message : "原因不明"));
+  }).then(function () {
+    button.disabled = false;
+    button.textContent = "この中から探す";
+  });
+});
+document.getElementById("calendarCandidatesCancel").addEventListener("click", function () {
+  document.getElementById("calendarCandidates").hidden = true;
+  calendarCandidates = [];
+});
+document.getElementById("calendarRegisterBtn").addEventListener("click", function () {
+  var selected = Array.prototype.map.call(
+    document.querySelectorAll("#calendarCandidatesList input[type=checkbox]:checked"),
+    function (input) {
+      return calendarCandidates[Number(input.getAttribute("data-index"))];
+    }
+  ).filter(function (event) {
+    return event && !window.ScheduleView.isAlreadyRegistered(state.items, event, state.calIds);
+  });
+  if (!selected.length) {
+    toast("登録する予定を選んでください");
+    return;
+  }
+  var meetings = selected.map(function (event) {
+    var meeting = window.CalendarRead.toMeeting(event);
+    meeting.calEventId = event.id || "";
+    return meeting;
+  });
+  meetingItems(meetings).forEach(function (item) {
+    state.items.push(item);
+  });
+  save();
+  render();
+  document.getElementById("calendarCandidates").hidden = true;
+  calendarCandidates = [];
+  toast(meetings.length + "件を会議として登録しました");
+});
 document.getElementById("meetingScanBtn").addEventListener("click", function () {
   scan(this, {}, applyMeetingScan);
 });
