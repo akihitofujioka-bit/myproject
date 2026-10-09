@@ -50,7 +50,7 @@
 
 ### データ
 
-- 保存場所: localStorage の `schedule.v1`。形は `{ version: 1, items: [...] }`
+- 保存場所: localStorage の `schedule.v1`。形は `{ version: 1, items: [...], calIds: {...} }`（`calIds` はカレンダーに書き込んだ予定との対応表。書類トラッカーから写す）
 - 1 件の形は、今の書類トラッカーの会議・予定の項目をそのまま使う（`id`・`kind`（"会議" または "予定"）・`title`・`dest`（場所）・`dueOn`（日付）・`note`・`planKey`・`icsSeq`・`createdAt` など）。書類にしか使わない `status`・`priority`・`doneAt` も、引っ越しの間違いを防ぐため、そのまま持たせる
 
 ### 引っ越し（1 回だけ）
