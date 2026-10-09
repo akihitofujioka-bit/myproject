@@ -93,5 +93,20 @@ ok(C.watchMark(watchRecord, d("2026-10-08")) === C.watchMark(watchRecord, d("202
   ok(rec.photos.length === 1 && rec.albumIds.join() === "a" && rec.manualPhotos.length === 0, "toStoredRecord: 読めない写真と番号は捨てる");
 }
 
+// ランダム（シャッフル方式）: 1 周のうちに全部の写真が 1 回ずつ出て、境目でも同じ写真が続かない
+{
+  const days = (n) => { const x = new Date(2026, 9, 9); x.setDate(x.getDate() + n); return x; };
+  const seq = []; for (let i = 0; i < 40; i++) seq.push(C.pickIndex(5, "day", "2026-10-09", days(i), "random"));
+  let fair = true; for (let c = 0; c < 8; c++) { const s = seq.slice(c * 5, c * 5 + 5).sort().join(); if (s !== "0,1,2,3,4") fair = false; }
+  ok(fair, "random: 1 周 5 日で 5 枚が 1 回ずつ出る");
+  ok(seq.every((v, i) => i === 0 || v !== seq[i - 1]), "random: 同じ写真が 2 回続かない");
+  ok(seq.join() !== "0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4", "random: 順番どおりではない");
+  ok(C.pickIndex(5, "day", "2026-10-09", days(3), "random") === seq[3], "random: 同じ日は何度選んでも同じ写真");
+  ok(C.pickIndex(1, "day", "2026-10-09", days(3), "random") === 0 && C.pickIndex(0, "day", "2026-10-09", days(3), "random") === -1, "random: 1 枚は 0、0 枚は -1");
+  const two = []; for (let i = 0; i < 10; i++) two.push(C.pickIndex(2, "week", "2026-10-09", days(i * 7), "random"));
+  ok(two.every((v, i) => i === 0 || v !== two[i - 1]), "random: 2 枚なら毎週交互");
+  ok(C.normalize({ order: "xxx" }, "top").order === "sequential" && C.normalize({ order: "random" }, "top").order === "random", "normalize: order を埋める");
+}
+
 console.log(failures ? `\n${failures} 件失敗` : "\nすべて成功");
 process.exit(failures ? 1 : 0);

@@ -21,6 +21,11 @@
     { value: "month", label: "毎月" }
   ];
 
+  var ORDERS = [
+    { value: "sequential", label: "順番" },
+    { value: "random", label: "ランダム" }
+  ];
+
   var VEILS = [
     { value: "light", label: "薄い" },
     { value: "normal", label: "普通" },
@@ -73,6 +78,7 @@
       return {
         slot: slot,
         interval: "day",
+        order: "sequential",
         veil: "normal",
         startDate: global.Character.todayString(new Date()),
         photos: [],
@@ -228,6 +234,9 @@
         addSelect(settings, "切り替え", INTERVALS, editor.record.interval, function (value) {
           update({ interval: value }, true);
         });
+        addSelect(settings, "選び方", ORDERS, editor.record.order, function (value) {
+          update({ order: value }, true);
+        });
         addSelect(settings, "膜の濃さ", VEILS, editor.record.veil, function (value) {
           update({ veil: value }, false);
         });
@@ -250,6 +259,7 @@
         return {
           slot: editor.record.slot,
           interval: editor.record.interval,
+          order: editor.record.order,
           veil: editor.record.veil,
           startDate: global.Character.todayString(new Date()),
           photos: editor.record.photos.slice(),

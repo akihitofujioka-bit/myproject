@@ -200,7 +200,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
       if (mark === "clear") {
         sending = window.WatchSync.setBackground(null);
       } else {
-        var index = window.Character.pickIndex(record.photos.length, record.interval, record.startDate, today);
+        var index = window.Character.pickIndex(record.photos.length, record.interval, record.startDate, today, record.order);
         sending = window.Character.resize(record.photos[index], 400).then(function (blob) {
           return window.WatchSync.setBackground(blob);
         });

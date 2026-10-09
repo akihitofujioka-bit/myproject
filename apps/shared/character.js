@@ -32,7 +32,7 @@
     return Date.UTC(parts.year, parts.month, parts.day) / 86400000;
   }
 
-  function pickIndex(count, interval, startDate, today) {
+  function pickIndex(count, interval, startDate, today, order) {
     if (count <= 0) return -1;
     if (count === 1) return 0;
 
@@ -54,7 +54,53 @@
     } else {
       elapsed = currentDay - startDay;
     }
-    return elapsed < 0 ? 0 : elapsed % count;
+    if (elapsed < 0) return 0;
+    return order === "random" ? shuffledIndex(count, elapsed, startDate) : elapsed % count;
+  }
+
+  // 0〜1 の疑似乱数を返す小さな関数（mulberry32）。同じ種からはいつも同じ並びになるので、
+  // 同じ日に何度開いても、トップのアイコンと機能の画面の背景が同じ写真になる
+  function seededRandom(seed) {
+    return function () {
+      seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // 1 周ぶん（写真の枚数）の並びを、周ごとに切り直す（トランプを切るのと同じ）
+  function shuffleRound(count, round, startDate) {
+    var seed = round * 2654435761;
+    String(startDate).split("").forEach(function (ch) { seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0; });
+    var random = seededRandom(seed);
+    var order = [];
+    for (var i = 0; i < count; i++) order.push(i);
+    for (var j = count - 1; j > 0; j--) {
+      var k = Math.floor(random() * (j + 1));
+      var tmp = order[j]; order[j] = order[k]; order[k] = tmp;
+    }
+    return order;
+  }
+
+  // ランダム（シャッフル方式）: 1 周のうちに全部の写真が 1 回ずつ出る。
+  // 周の境目で同じ写真が続かないよう、前の周の最後と同じなら先頭の 2 枚を入れ替える
+  function shuffledRound(count, round, startDate) {
+    var order = shuffleRound(count, round, startDate);
+    if (round > 0) {
+      var previous = shuffleRound(count, round - 1, startDate);
+      // 入れ替えるのは先頭の 2 枚だけなので、3 枚以上なら前の周の最後は入れ替えの影響を受けない
+      if (order[0] === previous[count - 1]) {
+        var tmp = order[0]; order[0] = order[1]; order[1] = tmp;
+      }
+    }
+    return order;
+  }
+
+  function shuffledIndex(count, elapsed, startDate) {
+    // 2 枚のときは、同じ写真を続けないなら交互に出すしかない
+    if (count === 2) return elapsed % 2;
+    return shuffledRound(count, Math.floor(elapsed / count), startDate)[elapsed % count];
   }
 
   function veilAlpha(veil) {
@@ -71,6 +117,7 @@
     return {
       slot: slot,
       interval: record.interval === "week" || record.interval === "month" ? record.interval : "day",
+      order: record.order === "random" ? "random" : "sequential",
       veil: record.veil === "light" || record.veil === "strong" ? record.veil : "normal",
       startDate: dateParts(record.startDate) ? record.startDate : todayString(new Date()),
       photos: Array.isArray(record.photos) ? record.photos : [],
@@ -255,12 +302,12 @@
   function watchMark(record, today) {
     record = normalize(record, record && record.slot);
     if (!record.photos.length) return "clear";
-    return todayString(today) + ":" + pickIndex(record.photos.length, record.interval, record.startDate, today) + ":" + record.photos.length;
+    return todayString(today) + ":" + pickIndex(record.photos.length, record.interval, record.startDate, today, record.order) + ":" + record.photos.length;
   }
 
   function currentPhotoURL(slot) {
     return load(slot).then(function (record) {
-      var index = pickIndex(record.photos.length, record.interval, record.startDate, new Date());
+      var index = pickIndex(record.photos.length, record.interval, record.startDate, new Date(), record.order);
       return index < 0 ? null : global.URL.createObjectURL(record.photos[index]);
     }).catch(function () {
       return null;
@@ -269,7 +316,7 @@
 
   function applyBackground(slot) {
     return load(slot).then(function (record) {
-      var index = pickIndex(record.photos.length, record.interval, record.startDate, new Date());
+      var index = pickIndex(record.photos.length, record.interval, record.startDate, new Date(), record.order);
       if (!global.document || !global.document.body) return;
 
       var background = global.document.getElementById("charBg");
