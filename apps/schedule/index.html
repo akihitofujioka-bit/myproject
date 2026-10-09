@@ -477,6 +477,7 @@ if (window.Character) {
 
 var state = load();
 var externalItems = [];
+var calendarInfo = {};
 var editingId = null;
 var today = new Date();
 var shownMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -593,9 +594,12 @@ function dateLabel(item) {
 
 function itemHtml(item) {
   var external = !!item.external;
-  return '<li class="item' + (external ? ' external' : '') + '" data-id="' + esc(item.id) + '">' +
+  // iPhone のカレンダーの予定は、カレンダーアプリと同じ色と名前で見分けられるようにする
+  var color = external && /^#[0-9A-F]{6}$/i.test(item.calendarColor || "") ? item.calendarColor : "";
+  return '<li class="item' + (external ? ' external' : '') + '" data-id="' + esc(item.id) + '"' +
+    (color ? ' style="border-left-color:' + color + '"' : '') + '>' +
     '<div class="item-head"><span class="item-title">' + esc(item.title) + '</span>' +
-      '<span class="badge">' + esc(external ? "iPhoneカレンダー" : item.kind) + '</span>' +
+      '<span class="badge">' + esc(external ? (item.calendarTitle || "iPhoneカレンダー") : item.kind) + '</span>' +
       '<span class="when">' + esc(dateLabel(item)) + '</span></div>' +
     (item.dest ? '<div class="item-detail">場所：' + esc(item.dest) + '</div>' : '') + (cleanNote(item) ? '<div class="item-detail">' + esc(cleanNote(item)) + '</div>' : '') +
     (external ? '' : '<div class="actions">' +
@@ -887,6 +891,11 @@ function loadPhoneCalendar() {
     return window.CalendarRead.listCalendars();
   }).then(function (result) {
     if (!result) return null;
+    // カレンダーごとの名前と色（予定の印と色の帯に使う）
+    calendarInfo = {};
+    (result.calendars || []).forEach(function (calendar) {
+      calendarInfo[calendar.id] = { title: calendar.title || "", color: calendar.color || "" };
+    });
     var ids = (result.calendars || []).map(function (calendar) {
       return calendar.id;
     });
@@ -900,6 +909,8 @@ function loadPhoneCalendar() {
       return {
         id: "external-" + (event.id || index),
         eventId: event.id || "",
+        calendarTitle: (calendarInfo[event.calendarId] || {}).title || "",
+        calendarColor: (calendarInfo[event.calendarId] || {}).color || "",
         title: event.title || "（件名なし）",
         kind: "予定",
         dueOn: event.date,

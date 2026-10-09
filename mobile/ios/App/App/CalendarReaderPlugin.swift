@@ -60,7 +60,9 @@ public class CalendarReaderPlugin: CAPPlugin, CAPBridgedPlugin {
             [
                 "id": cal.calendarIdentifier,
                 "title": cal.title,
-                "source": cal.source?.title ?? ""
+                "source": cal.source?.title ?? "",
+                // カレンダーアプリで設定している色（予定アプリでカレンダーごとに色分けするため）
+                "color": Self.hexColor(cal.cgColor)
             ]
         }
         call.resolve(["calendars": calendars])
@@ -103,6 +105,8 @@ public class CalendarReaderPlugin: CAPPlugin, CAPBridgedPlugin {
             .map { ev -> [String: Any] in
                 [
                     "id": ev.eventIdentifier ?? "",
+                    // どのカレンダーの予定か（予定アプリで色と名前を出すため）
+                    "calendarId": ev.calendar?.calendarIdentifier ?? "",
                     "title": ev.title ?? "",
                     "date": dateFmt.string(from: ev.startDate),
                     "startTime": ev.isAllDay ? "" : timeFmt.string(from: ev.startDate),
@@ -111,5 +115,14 @@ public class CalendarReaderPlugin: CAPPlugin, CAPBridgedPlugin {
                 ]
             }
         call.resolve(["events": events])
+    }
+
+    /// CGColor を "#RRGGBB" の文字列にする。読めないときは空文字
+    static func hexColor(_ color: CGColor?) -> String {
+        guard let color = color,
+              let rgb = color.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil),
+              let c = rgb.components, c.count >= 3 else { return "" }
+        func byte(_ v: CGFloat) -> Int { max(0, min(255, Int((v * 255).rounded()))) }
+        return String(format: "#%02X%02X%02X", byte(c[0]), byte(c[1]), byte(c[2]))
     }
 }
