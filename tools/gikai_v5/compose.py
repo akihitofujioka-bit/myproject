@@ -40,6 +40,7 @@ class PageResult:
     free_lines: int
     warnings: List[str] = field(default_factory=list)
     placements: List[Placement] = field(default_factory=list)
+    overflow_parts: List[I.Part] = field(default_factory=list)
 
 
 def photo_rect(g: Geometry, size: str, dan: int, line: int) -> Rect:
@@ -203,11 +204,26 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
     placements: List[Placement] = []
     warnings: List[str] = []
     overflow = 0
+    overflow_by_index: Dict[int, I.Part] = {}
     photo_sizes = photo_sizes or {}
     overrides = overrides or {}
     manual: Dict[int, Rect] = {}
+    flow_stopped = False
     for name, rect in fixed.items():
         page.items.append(dx.Placeholder(to_box(g, rect), name, name))
+
+    def reserve_space(index: int) -> None:
+        """部品の直前に指定された空き行を、本文と同じ読む順で確保する。"""
+        nonlocal overflow
+        count = max(0, int(overrides.get(index, {}).get("space_before") or 0))
+        left = count
+        for run in free_runs(g, whole_page(g), occupied):
+            if left <= 0:
+                break
+            take = min(left, run.line_span)
+            occupied.append(Rect(run.dan, run.line, 1, take))
+            left -= take
+        overflow += left
 
     # 人が場所を決めた写真・大見出しを先に確保する。置けない指定だけを
     # 退け、後の自動配置へ戻す。
@@ -222,8 +238,11 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
         occupied.append(rect)
         manual[index] = rect
 
-    title_index = next((n for n, p in enumerate(parts) if p.kind == "大見出し"), None)
+    # ページ先頭の大見出しだけを定位置へ置く。前ページからの続きが先にある場合、
+    # このページ自身の大見出しは本文の順番どおり後で置く。
+    title_index = 0 if parts and parts[0].kind == "大見出し" else None
     if title_index is not None and not overrides.get(title_index, {}).get("removed"):
+        reserve_space(title_index)
         title = parts[title_index]
         rect = manual.get(title_index, Rect(0, 0, 2, 4))
         if title_index in manual or _fits(g, rect, occupied):
@@ -234,11 +253,13 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                       pitch=34.0, border=True, center=True, name="大見出し")
         else:
             warnings.append("大見出しの決まった位置が、区分の固定枠と重なります")
+            overflow_by_index[title_index] = title
 
     photo_indices = [n for n, p in enumerate(parts) if p.kind == "写真"]
     first_face = photo_indices[0] if section == layout.IPPAN and photo_indices else None
     skip = {title_index} if title_index is not None else set()
     if first_face is not None:
+        reserve_space(first_face)
         change = overrides.get(first_face, {})
         size = photo_sizes.get(first_face, change.get("size") or
                                parts[first_face].photo_size or "顔")
@@ -257,13 +278,55 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                                _caption(parts, first_face), 1, size, warnings)
             else:
                 warnings.append("顔写真を大見出しの左へ置けませんでした")
+                overflow_by_index[first_face] = parts[first_face]
 
     last_rect: Optional[Rect] = None
     photo_number = 0
     for index, part in enumerate(parts):
         if part.kind == "写真":
             photo_number += 1
-        if index in skip or part.kind in ("大見出し", "写真説明"):
+        if index in skip or part.kind == "写真説明":
+            continue
+        if overrides.get(index, {}).get("removed"):
+            continue
+        if flow_stopped:
+            overflow_by_index[index] = part
+            overflow += max(0, int(overrides.get(index, {}).get("space_before") or 0))
+            if part.kind == "大見出し":
+                overflow += 8
+            elif part.kind == "中見出し":
+                sample = Rect(0, 0, 1, 2)
+                overflow += 2 if len(_heading_lines(
+                    part.text, _per_line(g, sample, 16.0))) == 1 else 3
+            elif part.kind == "写真":
+                size = overrides.get(index, {}).get("size") or part.photo_size or "中"
+                overflow += photo_rect(g, size, 0, 0).line_span
+            else:
+                overflow += len(split_lines(part.text, g.chars_per_line,
+                                            indent=part.reason != "前ページからの続き"))
+            continue
+        reserve_space(index)
+        if part.kind == "大見出し":
+            rect = manual.get(index)
+            if rect is None:
+                for target in free_runs(g, whole_page(g), occupied):
+                    candidate = Rect(target.dan, target.line, 2, 4)
+                    if target.line_span >= 4 and _fits(g, candidate, occupied):
+                        rect = candidate
+                        break
+            if rect is None:
+                overflow += 8
+                overflow_by_index[index] = part
+                flow_stopped = True
+                continue
+            if index not in manual:
+                occupied.append(rect)
+            placements.append(Placement(part, rect, index))
+            _add_text(page, g, rect,
+                      _heading_lines(part.text, _per_line(g, rect, 18.0)),
+                      font=dx.GOTHIC, pt=18.0, pitch=34.0, border=True,
+                      center=True, name="大見出し")
+            last_rect = rect
             continue
         if part.kind == "写真":
             change = overrides.get(index, {})
@@ -291,6 +354,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                     break
             if rect is None:
                 warnings.append(f"写真{photo_number}を置ける空きがありません")
+                overflow_by_index[index] = part
+                flow_stopped = True
                 continue
             occupied.append(rect)
             placements.append(Placement(part, rect, index))
@@ -312,6 +377,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                            if r.line_span >= span), None)
             if target is None:
                 overflow += span
+                overflow_by_index[index] = part
+                flow_stopped = True
                 continue
             rect = Rect(target.dan, target.line, 1, span)
             occupied.append(rect)
@@ -322,7 +389,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             last_rect = rect
             continue
 
-        lines = split_lines(part.text, g.chars_per_line)
+        lines = split_lines(part.text, g.chars_per_line,
+                            indent=part.reason != "前ページからの続き")
         pos = 0
         font, pt, pitch = _format(section, part.kind)
         if standalone_role:
@@ -344,11 +412,24 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             last_rect = rect
             pos += take
         overflow += len(lines) - pos
+        if pos < len(lines):
+            overflow_by_index[index] = (part if pos == 0 else replace(
+                part, text="".join(lines[pos:]), reason="前ページからの続き"))
+            flow_stopped = True
 
     capacity = g.dans * g.lines_per_dan
     used = len({cell for rect in occupied for cell in rect.cells()})
     warnings.extend(dx.page_textbox_warnings(page))
-    return PageResult(page, overflow, max(0, capacity - used), warnings, placements)
+    overflow_parts = []
+    for index, part in enumerate(parts):
+        pending = overflow_by_index.get(index)
+        if pending is not None:
+            overflow_parts.append(pending)
+            if (part.kind == "写真" and index + 1 < len(parts)
+                    and parts[index + 1].kind == "写真説明"):
+                overflow_parts.append(parts[index + 1])
+    return PageResult(page, overflow, max(0, capacity - used), warnings, placements,
+                      overflow_parts)
 
 
 def apply_kind_overrides(parts: List[I.Part],

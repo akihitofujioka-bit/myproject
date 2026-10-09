@@ -25,6 +25,10 @@ from settings import Settings
 from grid import Geometry, Rect, to_box
 
 
+FLOW_SECTIONS = frozenset((layout.GYOSEI, layout.YOSAN, layout.KESSAN,
+                           layout.IINKAI, layout.TOKUSHU))
+
+
 def _rect_data(rect: Rect) -> dict:
     return {"dan": rect.dan, "line": rect.line,
             "dan_span": rect.dan_span, "line_span": rect.line_span}
@@ -47,7 +51,8 @@ def next_hint(current: Optional["Edition"]) -> str:
             return "左の一覧で ○ のページを選び、右の「ページ」タブの「入力欄を開く」を押してください。"
         return "左の一覧で ○ のページを選び、右の「ページ」タブの「原稿を入れる」か「書いて直す」を押してください。"
     if any(page["state"] == "あふれ" for page in current.pages):
-        return "赤いページを選び、右の「部品」タブで写真を小さくするか、種類を確かめてください。"
+        return ("赤いページを選び、写真を小さくする・種類を直す、または"
+                "「ページ」タブで次のページへ送ってください。")
     return "必要な写真は右の「写真」タブから置き、「確かめる」のあと「Word に書き出す」を押してください。"
 
 
@@ -66,6 +71,7 @@ class Edition:
         self._ingest_cache = {}
         for page in self.pages:
             page.setdefault("placed_photos", [])
+            page.setdefault("flow_to_next", False)
 
     @classmethod
     def create(cls, folder: Path, issue: layout.Issue) -> "Edition":
@@ -93,7 +99,7 @@ class Edition:
     def _new_page(slot: layout.PageSlot) -> dict:
         page = {"no": slot.no, "section": slot.section, "index": slot.index,
                 "label": slot.label, "source": None, "overrides": {},
-                "placed_photos": [], "state": "未入力"}
+                "placed_photos": [], "flow_to_next": False, "state": "未入力"}
         if slot.section in templates.FORM_SECTIONS:
             page["form"] = templates.default_form(slot.section)
         return page
@@ -155,8 +161,7 @@ class Edition:
         page = self._page(page_no)
         page["source"] = target.name
         page["overrides"] = {}
-        composed = self._compose_page(page_no)
-        page["state"] = "あふれ" if composed.overflow_lines else "できた"
+        self._update_page_state(page_no)
         self._record(f"{page_no}ページに原稿を入れる", before)
         return target.name
 
@@ -245,8 +250,7 @@ class Edition:
         page["writer_text"] = text
         page["overrides"] = {}
         self._ingest_cache.pop(relative, None)
-        composed, _parts = self._writer_result(page_no, text)
-        page["state"] = "あふれ" if composed.overflow_lines else "できた"
+        self._update_page_state(page_no)
         self._record(f"{page_no}ページの事務局原稿を保存する", before)
         return relative
 
@@ -327,9 +331,11 @@ class Edition:
         overrides = self._overrides(page)
         start = self._placed_start(page)
         for index, photo in enumerate(page.get("placed_photos", [])):
+            existing = overrides.get(start + index * 2, {})
             overrides[start + index * 2] = {
                 "rect": _rect(photo.get("rect")), "size": photo.get("size"),
-                "removed": bool(photo.get("removed", False)), "kind": None}
+                "removed": bool(photo.get("removed", False)), "kind": None,
+                "space_before": existing.get("space_before", 0)}
         return overrides
 
     def _all_images(self, page: dict) -> Dict[str, bytes]:
@@ -403,7 +409,8 @@ class Edition:
             out[int(key)] = {"rect": _rect(value.get("rect")),
                              "size": value.get("size"),
                              "removed": bool(value.get("removed", False)),
-                             "kind": value.get("kind")}
+                             "kind": value.get("kind"),
+                             "space_before": max(0, int(value.get("space_before", 0) or 0))}
         return out
 
     def parts(self, page_no: int) -> List[I.Part]:
@@ -441,9 +448,76 @@ class Edition:
                                          for p in overlay.placements if p.part.kind == "写真")
                 result.warnings.extend(overlay.warnings)
             return result
+        incoming = self._incoming_parts(page_no)
+        parts = incoming + self.parts(page_no)
+        shift = len(incoming)
+        overrides = {index + shift: value
+                     for index, value in self._all_overrides(page).items()}
+        images = self._all_images(page)
+        for part in incoming:
+            if part.image and part.image not in images:
+                path = self.folder / "写真" / Path(part.image).name
+                if path.is_file():
+                    images[part.image] = path.read_bytes()
+        result = C.compose_page(page["section"], parts, images,
+                                self.geometry, overrides)
+        # 前ページから来た部品は選択対象にせず、このページ自身の番号は従来どおりに保つ。
+        for placement in result.placements:
+            placement.index = placement.index - shift if placement.index >= shift else -1
+        return result
+
+    def _incoming_parts(self, page_no: int) -> List[I.Part]:
+        """直前ページから送られた、まだ紙面に入っていない部品・行を返す。"""
+        if page_no <= 1:
+            return []
+        previous = self._page(page_no - 1)
+        current = self._page(page_no)
+        if (not previous.get("flow_to_next")
+                or previous["section"] != current["section"]):
+            return []
+        return self._compose_page(page_no - 1).overflow_parts
+
+    def can_flow_to_next(self, page_no: int) -> tuple:
+        """次ページ送りを選べるかを、理由とともに返す。"""
+        page = self._page(page_no)
+        if page["section"] not in FLOW_SECTIONS:
+            return False, f"{page['section']}は次のページへ送れません。"
+        if page_no >= len(self.pages):
+            return False, "次のページがありません。"
+        following = self._page(page_no + 1)
+        if following["section"] != page["section"]:
+            return False, (f"次のページは「{following['section']}」です。"
+                           "同じ区分のページにだけ送れます。")
+        return True, ""
+
+    def set_flow_to_next(self, page_no: int, enabled: bool) -> None:
+        """このページのあふれを、同じ区分の次ページへ送るか保存する。"""
+        page = self._page(page_no)
+        if enabled:
+            allowed, reason = self.can_flow_to_next(page_no)
+            if not allowed:
+                raise ValueError(reason)
+        before = self._state()
+        page["flow_to_next"] = bool(enabled)
+        self._update_page_state(page_no)
+        self._record(f"{page_no}ページの次ページ送りを{'入' if enabled else '切'}にする", before)
+
+    def change_space_before(self, page_no: int, part_no: int, delta: int) -> int:
+        """部品前の空き行を増減し、現在値を返す。"""
         parts = self.parts(page_no)
-        return C.compose_page(page["section"], parts, self._all_images(page),
-                              self.geometry, self._all_overrides(page))
+        if not 0 <= part_no < len(parts):
+            raise ValueError(f"部品番号が正しくありません: {part_no + 1}")
+        page = self._page(page_no)
+        before = self._state()
+        change = page["overrides"].setdefault(str(part_no), {})
+        old = max(0, int(change.get("space_before", 0) or 0))
+        new = max(0, old + int(delta))
+        if new == old:
+            return old
+        change["space_before"] = new
+        self._update_page_state(page_no)
+        self._record(f"{page_no}ページの部品{part_no + 1}前の空きを{new}行にする", before)
+        return new
 
     def compose(self, page_no: int) -> C.PageResult:
         """指定ページを組み、現在の状態を更新する。"""
@@ -454,10 +528,12 @@ class Edition:
                 "できた" if self._form_has_input(page) else "未入力")
             self.save()
             return result
-        if not page["source"] and not page.get("placed_photos"):
+        if (not page["source"] and not page.get("placed_photos")
+                and not self._incoming_parts(page_no)):
             return C.compose_page(page["section"], [], {}, self.geometry)
         result = self._compose_page(page_no)
-        page["state"] = "あふれ" if result.overflow_lines else "できた"
+        page["state"] = ("できた" if page.get("flow_to_next") and result.overflow_lines
+                         else "あふれ" if result.overflow_lines else "できた")
         self.save()
         return result
 
@@ -670,13 +746,22 @@ class Edition:
         self._record(f"{page_no}ページの写真{part_no + 1}を戻す", before)
 
     def _update_page_state(self, page_no: int) -> None:
-        page = self._page(page_no)
-        if "form" in page:
-            result = self._compose_page(page_no)
-            page["state"] = "あふれ" if result.overflow_lines else (
-                "できた" if self._form_has_input(page) else "未入力")
-        elif page["source"] or page.get("placed_photos"):
-            page["state"] = "あふれ" if self._compose_page(page_no).overflow_lines else "できた"
+        section = self._page(page_no)["section"]
+        for current_no in range(page_no, len(self.pages) + 1):
+            page = self._page(current_no)
+            if page["section"] != section:
+                break
+            incoming = self._incoming_parts(current_no)
+            if "form" in page:
+                result = self._compose_page(current_no)
+                page["state"] = "あふれ" if result.overflow_lines else (
+                    "できた" if self._form_has_input(page) else "未入力")
+            elif page["source"] or page.get("placed_photos") or incoming:
+                result = self._compose_page(current_no)
+                page["state"] = ("できた" if page.get("flow_to_next") and result.overflow_lines
+                                 else "あふれ" if result.overflow_lines else "できた")
+            else:
+                page["state"] = "未入力"
 
     def change_issue(self, **changes) -> None:
         """号情報を変え、同じ区分・順番の原稿を新しいページへ引き継ぐ。"""
@@ -697,6 +782,7 @@ class Edition:
                 page["source"] = previous["source"]
                 page["overrides"] = previous["overrides"]
                 page["placed_photos"] = previous.get("placed_photos", [])
+                page["flow_to_next"] = previous.get("flow_to_next", False)
                 page["state"] = previous["state"]
                 if "writer_text" in previous:
                     page["writer_text"] = previous["writer_text"]
@@ -836,12 +922,13 @@ class Edition:
                     messages.append(prefix + f": {result.overflow_lines}行あふれています")
                 messages.extend(prefix + ": " + w for w in result.warnings)
                 continue
-            if not page["source"] and not page.get("placed_photos"):
+            incoming = self._incoming_parts(page["no"])
+            if not page["source"] and not page.get("placed_photos") and not incoming:
                 messages.append(prefix + ": 原稿が未入力です")
                 continue
             ingested = self._ingest(page["source"]) if page.get("source") else None
             result = self.compose(page["no"])
-            if result.overflow_lines:
+            if result.overflow_lines and not page.get("flow_to_next"):
                 messages.append(prefix + f": {result.overflow_lines}行あふれています")
             messages.extend(prefix + ": " + w for w in result.warnings)
             if ingested is not None:

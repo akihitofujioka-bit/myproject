@@ -16,12 +16,14 @@ import layout
 from grid import Rect
 
 
-EXAMPLES = ["写真2を小さく", "一般質問の2人目", "元に戻して"]
+EXAMPLES = ["次のページへ送る", "3番の前を1行あける", "元に戻して"]
 HELP = """次のように入力できます。
 ・次のページ／前のページ／5ページ／一般質問の2人目／表紙／最終ページ
 ・写真2を小さく（大・中・小・顔）、写真2を外す／戻す
 ・この写真を小さく（紙面または部品一覧で写真を選んでから）
 ・3番を答弁に／この部品を質問に／7番は中見出し
+・次のページへ送る／送るのをやめる
+・3番の前を1行あける／3番の前を詰める
 ・写真1を2段目の左へ／写真1を3段目の右端へ
 ・元に戻して／やり直し
 ・確かめて／Word に書き出して
@@ -214,6 +216,30 @@ def interpret(text: str, edition, page_no: int,
     if required:
         return required
 
+    if value in ("次のページへ送る", "次ページへ送る"):
+        allowed, reason = edition.can_flow_to_next(page_no)
+        if not allowed:
+            return _failed(reason)
+        return Interpretation([Operation("flow", page_no, value="入")],
+                              "このページのあふれた続きから、同じ区分の次ページへ送ります。")
+    if value in ("送るのをやめる", "次のページへ送るのをやめる"):
+        return Interpretation([Operation("flow", page_no, value="切")],
+                              "このページから次ページへ送る設定を切ります。")
+
+    spacing = re.fullmatch(
+        rf"(?:(?P<number>{NUMBER})番|この部品)の前を(?:(?P<open>1行あける)|(?P<close>詰める))",
+        value)
+    if spacing:
+        try:
+            number = _number(spacing.group("number")) if spacing.group("number") else None
+            part_no = _part(edition, page_no, selected_part, number, False)
+        except (OSError, ValueError) as error:
+            return _failed(str(error))
+        delta = 1 if spacing.group("open") else -1
+        wording = "1行あけます" if delta > 0 else "1行詰めます"
+        return Interpretation([Operation("space", page_no, part_no, str(delta))],
+                              f"{part_no + 1}番の部品の前を{wording}。")
+
     photo_head = rf"(?:(?:写真(?:の)?(?P<photo>{NUMBER}))|(?:(?P<before>{NUMBER})番(?:の)?写真)|(?:この)?写真)"
     move = re.fullmatch(photo_head + rf"(?:を|は)?(?P<dan>{NUMBER})段目(?:の)?(?P<side>左|右端|右)(?:へ|に)?(?:動かして|移動して|動かす|移動する)?", value)
     if move:
@@ -290,6 +316,14 @@ def execute(interpretation: Interpretation, edition) -> str:
                                             operation.rect)
                 results.append("写真を移動しました。" if changed else
                                "その場所には置けないため、写真を移動しませんでした。")
+            elif operation.kind == "flow":
+                edition.set_flow_to_next(operation.page_no, operation.value == "入")
+                results.append("次のページへ送る設定を入れました。" if operation.value == "入" else
+                               "次のページへ送る設定を切りました。")
+            elif operation.kind == "space":
+                value = edition.change_space_before(operation.page_no, operation.part_no,
+                                                    int(operation.value))
+                results.append(f"部品の前の空きを{value}行にしました。")
             elif operation.kind == "undo":
                 results.append("直前の操作を元に戻しました。" if edition.undo() else
                                "元に戻せる操作はありません。")

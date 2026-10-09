@@ -57,6 +57,8 @@ HELP_TEXT = """①「新しい号」を押し、号数と月などを入れま�
 
 ④ 種類が違う部品を選び、右の「部品」タブの「種類を直す」で正しい種類を押します。タブの下の「元に戻す」で直前の操作を戻し、「やり直す」で戻す前の状態へ進めます。
 
+部品の前をあけるときは「部品」タブの「前に 1 行あける」「1 行詰める」を使います。行政報告・予算・決算・委員会報告・特集は、「ページ」タブであふれた続きだけを同じ区分の次ページへ送れます。
+
 ⑤ 右側のタブの下にある「確かめる」で未入力やあふれを確認し、「Word に書き出す」を押します。
 
 右の「チャット」タブには「次のページ」「写真2を小さく」「3番を答弁に」などと入力できます。内容を読み取ると「こうします」と表示します。[実行]を押すまでは紙面を変えません。読み取れないときは、推測せず言い方の例を表示します。
@@ -319,6 +321,7 @@ class App:
         self.form_editor = None  # type: Optional[FormEditor]
         self.writer_editor = None  # type: Optional[writer.WriterEditor]
         self.pending_chat = None  # type: Optional[chat.Interpretation]
+        self.flow_var = tk.BooleanVar(value=False)
         families = set(tkfont.families(root))
         preferred = (("Meiryo UI", "Yu Gothic UI") if sys.platform.startswith("win")
                      else ("Hiragino Sans", "Yu Gothic UI", "Meiryo UI"))
@@ -519,6 +522,16 @@ class App:
         for column in range(3):
             kinds.columnconfigure(column, weight=1)
 
+        ttk.Label(parts_body, text="部品の前の空き", font=SMALL_FONT).pack(anchor="w")
+        spacing_actions = ttk.Frame(parts_body)
+        spacing_actions.pack(fill="x", pady=(2, 6))
+        ttk.Button(spacing_actions, text="前に 1 行あける",
+                   command=lambda: self._change_space(1)).pack(
+                       side="left", fill="x", expand=True, padx=(0, 1))
+        ttk.Button(spacing_actions, text="1 行詰める",
+                   command=lambda: self._change_space(-1)).pack(
+                       side="left", fill="x", expand=True, padx=(1, 0))
+
         ttk.Label(parts_body, text="写真の大きさ", font=SMALL_FONT).pack(anchor="w")
         size_frame = ttk.Frame(parts_body)
         size_frame.pack(fill="x", pady=(2, 0))
@@ -579,6 +592,13 @@ class App:
             fill="x", pady=4)
         ttk.Button(page_body, text="前の号から写す", command=self._copy_forms).pack(
             fill="x", pady=4)
+        self.flow_check = ttk.Checkbutton(
+            page_body, text="あふれた分を次のページへ送る",
+            variable=self.flow_var, command=self._toggle_flow)
+        self.flow_check.pack(fill="x", pady=(10, 4))
+        self.flow_reason = ttk.Label(page_body, text="", font=SMALL_FONT,
+                                     wraplength=340, justify="left")
+        self.flow_reason.pack(fill="x")
 
         actions = ttk.Frame(right)
         actions.pack(fill="x", pady=(5, 0))
@@ -1324,6 +1344,8 @@ class App:
                         picture.box.x, picture.box.y + picture.box.h - caption_h,
                         picture.box.w, caption_h)
         for placement in result.placements:
+            if placement.index < 0:
+                continue
             self.part_drag_rects.setdefault(placement.index, placement.rect)
             if placement.index not in fixed_indices:
                 self.part_items.setdefault(placement.index, []).append(placement.rect)
@@ -1410,7 +1432,8 @@ class App:
             return
         page = self.edition.pages[self.page_no - 1]
         if (preview is None and not page["source"] and "form" not in page
-                and not page.get("placed_photos")):
+                and not page.get("placed_photos")
+                and not self.edition._incoming_parts(self.page_no)):
             self._refresh_parts([])
             self.canvas.create_text(self.PAPER_W * self.scale / 2,
                                     self.PAPER_H * self.scale / 2,
@@ -1436,10 +1459,20 @@ class App:
                 self._draw_page_item(item, result)
         self._draw_part_marks(parts, result)
         self._refresh_parts(parts)
-        color = "#d62828" if result.overflow_lines else "#946200"
-        text = (f"あふれ {result.overflow_lines} 行" if result.overflow_lines
+        color = ("#26834a" if result.overflow_lines and page.get("flow_to_next")
+                 else "#d62828" if result.overflow_lines else "#946200")
+        can_flow = self.edition.can_flow_to_next(self.page_no)[0]
+        hint = "（次ページ送りも選べます）" if can_flow else ""
+        text = (f"次ページへ {result.overflow_lines} 行" if result.overflow_lines
+                and page.get("flow_to_next") else
+                f"あふれ {result.overflow_lines} 行{hint}" if result.overflow_lines
                 else f"余り {result.free_lines} 行")
         self.fit_label.configure(text=text, fg=color)
+        self.flow_var.set(bool(page.get("flow_to_next")))
+        allowed, reason = self.edition.can_flow_to_next(self.page_no)
+        self.flow_check.configure(state="normal" if allowed or page.get("flow_to_next") else "disabled")
+        self.flow_reason.configure(text=reason if not allowed else
+                                   "入にすると、続きが次ページの原稿より先に入ります。")
         self._refresh_pages()
         self.hint.configure(text=edition.next_hint(self.edition))
 
@@ -1566,6 +1599,27 @@ class App:
             return
         self.step = 3
         self._show_step()
+        self._draw()
+
+    def _change_space(self, delta: int) -> None:
+        part = self._selected()
+        if part is None or not self.edition:
+            return
+        try:
+            value = self.edition.change_space_before(self.page_no, part, delta)
+            self.status.configure(text=f"選んだ部品の前の空きは {value} 行です。")
+        except ValueError as error:
+            messagebox.showinfo("部品の前の空き", str(error))
+        self._draw()
+
+    def _toggle_flow(self) -> None:
+        if not self.edition or not self.page_no:
+            return
+        try:
+            self.edition.set_flow_to_next(self.page_no, self.flow_var.get())
+        except ValueError as error:
+            self.flow_var.set(False)
+            messagebox.showinfo("次のページへ送る", str(error))
         self._draw()
 
     def _resize(self, size: str) -> None:
