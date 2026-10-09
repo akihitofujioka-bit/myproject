@@ -32,7 +32,7 @@
     return Date.UTC(parts.year, parts.month, parts.day) / 86400000;
   }
 
-  function pickIndex(count, interval, startDate, today) {
+  function pickIndex(count, interval, startDate, today, order, slot) {
     if (count <= 0) return -1;
     if (count === 1) return 0;
 
@@ -54,7 +54,54 @@
     } else {
       elapsed = currentDay - startDay;
     }
-    return elapsed < 0 ? 0 : elapsed % count;
+    if (elapsed < 0) return 0;
+    return order === "random" ? shuffledIndex(count, elapsed, startDate, slot) : elapsed % count;
+  }
+
+  // 0〜1 の疑似乱数を返す小さな関数（mulberry32）。同じ種からはいつも同じ並びになるので、
+  // 同じ日に何度開いても、トップのアイコンと機能の画面の背景が同じ写真になる
+  function seededRandom(seed) {
+    return function () {
+      seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // 1 周ぶん（写真の枚数）の並びを、周ごとに切り直す（トランプを切るのと同じ）。
+  // 項目（スロット）の名前も種に混ぜる。混ぜないと、同じ日に設定した同じ枚数の項目が全部同じ写真になる
+  function shuffleRound(count, round, startDate, slot) {
+    var seed = round * 2654435761;
+    (String(startDate) + "|" + String(slot || "")).split("").forEach(function (ch) { seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0; });
+    var random = seededRandom(seed);
+    var order = [];
+    for (var i = 0; i < count; i++) order.push(i);
+    for (var j = count - 1; j > 0; j--) {
+      var k = Math.floor(random() * (j + 1));
+      var tmp = order[j]; order[j] = order[k]; order[k] = tmp;
+    }
+    return order;
+  }
+
+  // ランダム（シャッフル方式）: 1 周のうちに全部の写真が 1 回ずつ出る。
+  // 周の境目で同じ写真が続かないよう、前の周の最後と同じなら先頭の 2 枚を入れ替える
+  function shuffledRound(count, round, startDate, slot) {
+    var order = shuffleRound(count, round, startDate, slot);
+    if (round > 0) {
+      var previous = shuffleRound(count, round - 1, startDate, slot);
+      // 入れ替えるのは先頭の 2 枚だけなので、3 枚以上なら前の周の最後は入れ替えの影響を受けない
+      if (order[0] === previous[count - 1]) {
+        var tmp = order[0]; order[0] = order[1]; order[1] = tmp;
+      }
+    }
+    return order;
+  }
+
+  function shuffledIndex(count, elapsed, startDate, slot) {
+    // 2 枚のときは、同じ写真を続けないなら交互に出すしかない
+    if (count === 2) return elapsed % 2;
+    return shuffledRound(count, Math.floor(elapsed / count), startDate, slot)[elapsed % count];
   }
 
   function veilAlpha(veil) {
@@ -71,6 +118,7 @@
     return {
       slot: slot,
       interval: record.interval === "week" || record.interval === "month" ? record.interval : "day",
+      order: record.order === "random" ? "random" : "sequential",
       veil: record.veil === "light" || record.veil === "strong" ? record.veil : "normal",
       startDate: dateParts(record.startDate) ? record.startDate : todayString(new Date()),
       photos: Array.isArray(record.photos) ? record.photos : [],
@@ -124,12 +172,55 @@
     });
   }
 
+  // iPhone のアプリ（WebKit）では、IndexedDB に Blob のまま保存すると、別の画面から
+  // 読み直したときに中身を読めないことがある（2026-10-09、書類の画面で背景が出なかった）。
+  // そこで写真は { type, data: ArrayBuffer } の形で保存し、読み出すときに Blob に戻す
+  function toStored(photo) {
+    if (!photo || typeof photo.arrayBuffer !== "function") return Promise.resolve(photo);
+    return photo.arrayBuffer().then(function (data) {
+      return { type: photo.type || "image/jpeg", data: data };
+    });
+  }
+
+  function fromStored(entry) {
+    if (entry && entry.data instanceof ArrayBuffer) {
+      return new global.Blob([entry.data], { type: entry.type || "image/jpeg" });
+    }
+    return entry; // 以前の版で Blob のまま保存したもの
+  }
+
+  // 読めない写真（以前の版で Blob のまま保存し、読めなくなったもの）は null にする
+  function toStoredOrNull(photo) {
+    return toStored(photo).catch(function () { return null; });
+  }
+
+  function toStoredRecord(record) {
+    return Promise.all([
+      Promise.all(record.photos.map(toStoredOrNull)),
+      Promise.all(record.manualPhotos.map(toStoredOrNull))
+    ]).then(function (lists) {
+      var copy = {};
+      Object.keys(record).forEach(function (key) { copy[key] = record[key]; });
+      // 読めなかった写真は捨てる。アルバムの写真なら番号も外し、次の同期で取り込み直す
+      copy.photos = lists[0].filter(function (photo) { return photo; });
+      copy.albumIds = record.albumIds.filter(function (id, index) { return lists[0][index]; });
+      copy.manualPhotos = lists[1].filter(function (photo) { return photo; });
+      return copy;
+    });
+  }
+
+  function fromStoredRecord(record) {
+    record.photos = record.photos.map(fromStored);
+    record.manualPhotos = record.manualPhotos.map(fromStored);
+    return record;
+  }
+
   function load(slot) {
     return openDatabase().then(function (db) {
       return new Promise(function (resolve, reject) {
         var transaction = db.transaction(STORE_NAME, "readonly");
         var request = transaction.objectStore(STORE_NAME).get(slot);
-        request.onsuccess = function () { resolve(normalize(request.result, slot)); };
+        request.onsuccess = function () { resolve(fromStoredRecord(normalize(request.result, slot))); };
         request.onerror = function () { reject(request.error || new Error("写真を読み込めません")); };
         transaction.oncomplete = function () { db.close(); };
         transaction.onabort = function () { db.close(); };
@@ -138,8 +229,11 @@
   }
 
   function save(record) {
-    var value = normalize(record, record && record.slot);
-    return openDatabase().then(function (db) {
+    var value;
+    return toStoredRecord(normalize(record, record && record.slot)).then(function (stored) {
+      value = stored;
+      return openDatabase();
+    }).then(function (db) {
       return new Promise(function (resolve, reject) {
         var transaction = db.transaction(STORE_NAME, "readwrite");
         transaction.objectStore(STORE_NAME).put(value);
@@ -209,12 +303,12 @@
   function watchMark(record, today) {
     record = normalize(record, record && record.slot);
     if (!record.photos.length) return "clear";
-    return todayString(today) + ":" + pickIndex(record.photos.length, record.interval, record.startDate, today) + ":" + record.photos.length;
+    return todayString(today) + ":" + pickIndex(record.photos.length, record.interval, record.startDate, today, record.order, record.slot) + ":" + record.photos.length;
   }
 
   function currentPhotoURL(slot) {
     return load(slot).then(function (record) {
-      var index = pickIndex(record.photos.length, record.interval, record.startDate, new Date());
+      var index = pickIndex(record.photos.length, record.interval, record.startDate, new Date(), record.order, record.slot);
       return index < 0 ? null : global.URL.createObjectURL(record.photos[index]);
     }).catch(function () {
       return null;
@@ -223,7 +317,7 @@
 
   function applyBackground(slot) {
     return load(slot).then(function (record) {
-      var index = pickIndex(record.photos.length, record.interval, record.startDate, new Date());
+      var index = pickIndex(record.photos.length, record.interval, record.startDate, new Date(), record.order, record.slot);
       if (!global.document || !global.document.body) return;
 
       var background = global.document.getElementById("charBg");
@@ -254,7 +348,13 @@
       if (!style) {
         style = global.document.createElement("style");
         style.id = "charBgStyle";
-        style.textContent = "html.has-char-bg body { background: transparent; }";
+        // 写真の上に直接のる文字（戻るリンク・見出し・説明文・版表記）は読みにくいので、
+        // 背景があるときだけ白い半透明の帯を敷く
+        style.textContent = "html.has-char-bg body { background: transparent; }" +
+          "html.has-char-bg .backlink, html.has-char-bg header, html.has-char-bg .wrap > h1," +
+          " html.has-char-bg .wrap > .lead, html.has-char-bg .version" +
+          " { background: rgba(255,255,255,0.88); border-radius: 10px; padding: 6px 10px; }" +
+          "html.has-char-bg .backlink, html.has-char-bg .wrap > h1 { display: table; }";
         global.document.head.appendChild(style);
       }
       global.document.documentElement.classList.add("has-char-bg");
@@ -278,6 +378,9 @@
     watchMark: watchMark,
     currentPhotoURL: currentPhotoURL,
     applyBackground: applyBackground,
+    toStored: toStored,
+    toStoredRecord: toStoredRecord,
+    fromStored: fromStored,
     _store: { load: load, save: save }
   };
 

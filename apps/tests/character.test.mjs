@@ -80,5 +80,38 @@ ok(C.watchMark({ photos: [] }, d("2026-10-08")) === "clear", "watchMark: 写真 
 const watchRecord = { photos: [{}, {}], interval: "day", startDate: "2026-10-08" };
 ok(C.watchMark(watchRecord, d("2026-10-08")) === C.watchMark(watchRecord, d("2026-10-08")), "watchMark: 同じ日は同じ印");
 
+// 写真は ArrayBuffer の形で保存し、読み出すと元の Blob に戻る（WebKit 対策）
+{
+  const src = new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" });
+  const stored = await C.toStored(src);
+  ok(stored.data instanceof ArrayBuffer && stored.type === "image/jpeg", "toStored: ArrayBuffer にする");
+  const back = C.fromStored(stored);
+  ok(back instanceof Blob && back.size === 3 && back.type === "image/jpeg", "fromStored: Blob に戻る");
+  ok(C.fromStored(src) === src, "fromStored: 以前の Blob はそのまま");
+  const broken = { type: "image/jpeg", arrayBuffer: () => Promise.reject(new Error("読めない")) };
+  const rec = await C.toStoredRecord(C.normalize({ photos: [src, broken], albumIds: ["a", "b"], manualPhotos: [broken] }, "top"));
+  ok(rec.photos.length === 1 && rec.albumIds.join() === "a" && rec.manualPhotos.length === 0, "toStoredRecord: 読めない写真と番号は捨てる");
+}
+
+// ランダム（シャッフル方式）: 1 周のうちに全部の写真が 1 回ずつ出て、境目でも同じ写真が続かない
+{
+  const days = (n) => { const x = new Date(2026, 9, 9); x.setDate(x.getDate() + n); return x; };
+  const seq = []; for (let i = 0; i < 40; i++) seq.push(C.pickIndex(5, "day", "2026-10-09", days(i), "random"));
+  let fair = true; for (let c = 0; c < 8; c++) { const s = seq.slice(c * 5, c * 5 + 5).sort().join(); if (s !== "0,1,2,3,4") fair = false; }
+  ok(fair, "random: 1 周 5 日で 5 枚が 1 回ずつ出る");
+  ok(seq.every((v, i) => i === 0 || v !== seq[i - 1]), "random: 同じ写真が 2 回続かない");
+  ok(seq.join() !== "0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4", "random: 順番どおりではない");
+  ok(C.pickIndex(5, "day", "2026-10-09", days(3), "random") === seq[3], "random: 同じ日は何度選んでも同じ写真");
+  ok(C.pickIndex(1, "day", "2026-10-09", days(3), "random") === 0 && C.pickIndex(0, "day", "2026-10-09", days(3), "random") === -1, "random: 1 枚は 0、0 枚は -1");
+  const two = []; for (let i = 0; i < 10; i++) two.push(C.pickIndex(2, "week", "2026-10-09", days(i * 7), "random"));
+  ok(two.every((v, i) => i === 0 || v !== two[i - 1]), "random: 2 枚なら毎週交互");
+  // 項目（スロット）が違えば、同じ設定でもランダムの並びは別になる（全項目ランダムで同じ写真になる不具合の再発防止）
+  const bySlot = (slot) => { const r = []; for (let i = 0; i < 20; i++) r.push(C.pickIndex(10, "day", "2026-10-09", days(i), "random", slot)); return r.join(); };
+  ok(bySlot("top") !== bySlot("docs") && bySlot("docs") !== bySlot("fridge") && bySlot("top") !== bySlot("fridge"), "random: 項目ごとに並びが違う");
+  ok(bySlot("top") === bySlot("top"), "random: 同じ項目なら、いつ選んでも同じ並び");
+  ok(C.pickIndex(5, "day", "2026-10-09", days(3), "random") === C.pickIndex(5, "day", "2026-10-09", days(3), "random", undefined), "random: スロット省略でも動く");
+  ok(C.normalize({ order: "xxx" }, "top").order === "sequential" && C.normalize({ order: "random" }, "top").order === "random", "normalize: order を埋める");
+}
+
 console.log(failures ? `\n${failures} 件失敗` : "\nすべて成功");
 process.exit(failures ? 1 : 0);

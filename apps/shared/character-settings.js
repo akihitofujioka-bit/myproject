@@ -21,6 +21,11 @@
     { value: "month", label: "毎月" }
   ];
 
+  var ORDERS = [
+    { value: "sequential", label: "順番" },
+    { value: "random", label: "ランダム" }
+  ];
+
   var VEILS = [
     { value: "light", label: "薄い" },
     { value: "normal", label: "普通" },
@@ -73,6 +78,7 @@
       return {
         slot: slot,
         interval: "day",
+        order: "sequential",
         veil: "normal",
         startDate: global.Character.todayString(new Date()),
         photos: [],
@@ -83,11 +89,18 @@
     }
 
     function createEditor(slot) {
-      var box = global.document.createElement("div");
+      var box = global.document.createElement("details");
       box.style.cssText = "border-top:1px solid var(--border);padding-top:14px;margin-top:14px";
       container.appendChild(box);
 
-      var editor = { slot: slot, box: box, record: emptyRecord(slot), urls: [], albumStatus: "ok" };
+      var editor = {
+        slot: slot,
+        box: box,
+        record: emptyRecord(slot),
+        urls: [],
+        albumStatus: "ok",
+        selectedPhoto: null
+      };
       editors.push(editor);
 
       function clearURLs() {
@@ -96,13 +109,21 @@
       }
 
       function render() {
+        var wasOpen = box.open;
         clearURLs();
         box.innerHTML = "";
 
-        var heading = global.document.createElement("h3");
-        heading.style.cssText = "font-size:15px;margin:0 0 10px";
-        heading.textContent = SLOT_LABELS[slot];
-        box.appendChild(heading);
+        var summary = global.document.createElement("summary");
+        summary.style.cssText = "font-size:15px;font-weight:bold;cursor:pointer;margin-bottom:10px";
+        if (!editor.record.photos.length) {
+          summary.textContent = SLOT_LABELS[slot] + "（未登録）";
+        } else if (editor.record.album) {
+          summary.textContent = SLOT_LABELS[slot] + "（" + editor.record.photos.length
+            + " 枚・アルバム『" + editor.record.album.title + "』）";
+        } else {
+          summary.textContent = SLOT_LABELS[slot] + "（" + editor.record.photos.length + " 枚）";
+        }
+        box.appendChild(summary);
 
         var noticeText = global.Character.albumNotice(
           editor.albumStatus,
@@ -117,7 +138,7 @@
         }
 
         var photos = global.document.createElement("div");
-        photos.style.cssText = "display:grid;gap:10px;margin-bottom:10px";
+        photos.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px";
         if (!editor.record.photos.length) {
           var empty = global.document.createElement("p");
           empty.className = "note";
@@ -126,30 +147,58 @@
           photos.appendChild(empty);
         }
 
-        editor.record.photos.forEach(function (photo, index) {
-          var row = global.document.createElement("div");
-          row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
-
+        var visiblePhotos = editor.record.album
+          ? editor.record.photos.slice(0, 8)
+          : editor.record.photos;
+        visiblePhotos.forEach(function (photo, index) {
           var url = global.URL.createObjectURL(photo);
           editor.urls.push(url);
           var image = global.document.createElement("img");
           image.src = url;
           image.alt = SLOT_LABELS[slot] + "の写真 " + (index + 1);
-          image.style.cssText = "width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)";
-          row.appendChild(image);
+          image.style.cssText = "display:block;width:48px;height:48px;box-sizing:border-box;object-fit:cover;border-radius:7px;border:1px solid var(--border)";
 
           if (!editor.record.album) {
-            var up = makeButton("上へ", function () { move(index, -1); });
-            up.disabled = index === 0;
-            row.appendChild(up);
-            var down = makeButton("下へ", function () { move(index, 1); });
-            down.disabled = index === editor.record.photos.length - 1;
-            row.appendChild(down);
-            row.appendChild(makeButton("削除", function () { remove(index); }));
+            var preview = global.document.createElement("button");
+            preview.type = "button";
+            preview.style.cssText = "display:block;padding:0;border:0;background:none;border-radius:7px";
+            preview.setAttribute("aria-pressed", editor.selectedPhoto === photo ? "true" : "false");
+            preview.addEventListener("click", function () {
+              editor.selectedPhoto = photo;
+              render();
+            });
+            if (editor.selectedPhoto === photo) {
+              image.style.border = "3px solid var(--accent)";
+            }
+            preview.appendChild(image);
+            photos.appendChild(preview);
+          } else {
+            photos.appendChild(image);
           }
-          photos.appendChild(row);
         });
+        if (editor.record.album && editor.record.photos.length > 8) {
+          var remainder = global.document.createElement("span");
+          remainder.className = "note";
+          remainder.textContent = "ほか " + (editor.record.photos.length - 8) + " 枚";
+          photos.appendChild(remainder);
+        }
         box.appendChild(photos);
+
+        var selectedIndex = editor.record.photos.indexOf(editor.selectedPhoto);
+        if (!editor.record.album && selectedIndex !== -1) {
+          var controls = global.document.createElement("div");
+          controls.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px";
+          var previous = makeButton("← 前へ", function () { move(selectedIndex, -1); });
+          previous.disabled = selectedIndex === 0;
+          controls.appendChild(previous);
+          var next = makeButton("次へ →", function () { move(selectedIndex, 1); });
+          next.disabled = selectedIndex === editor.record.photos.length - 1;
+          controls.appendChild(next);
+          controls.appendChild(makeButton("削除", function () { remove(selectedIndex); }));
+          box.appendChild(controls);
+        } else if (selectedIndex === -1) {
+          editor.selectedPhoto = null;
+        }
 
         if (editor.record.album) {
           var connected = global.document.createElement("p");
@@ -185,10 +234,14 @@
         addSelect(settings, "切り替え", INTERVALS, editor.record.interval, function (value) {
           update({ interval: value }, true);
         });
+        addSelect(settings, "選び方", ORDERS, editor.record.order, function (value) {
+          update({ order: value }, true);
+        });
         addSelect(settings, "膜の濃さ", VEILS, editor.record.veil, function (value) {
           update({ veil: value }, false);
         });
         box.appendChild(settings);
+        box.open = wasOpen;
       }
 
       function save(next) {
@@ -206,6 +259,7 @@
         return {
           slot: editor.record.slot,
           interval: editor.record.interval,
+          order: editor.record.order,
           veil: editor.record.veil,
           startDate: global.Character.todayString(new Date()),
           photos: editor.record.photos.slice(),
@@ -235,6 +289,7 @@
         if (!global.confirm("この写真を削除しますか？")) return;
         var next = changedRecord();
         next.photos.splice(index, 1);
+        editor.selectedPhoto = null;
         save(next);
       }
 

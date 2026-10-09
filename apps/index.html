@@ -118,6 +118,18 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
       <span class="desc">カードを撮影して保管し、レジで画面のバーコードや写真を見せます</span>
     </span>
   </a>
+  <script>
+  // 前回表示したキャラクター写真のアイコンを、画面を描く前に出す。
+  // 写真はデータベースから非同期で読むため、これが無いと一瞬元のアイコンが見えてしまう
+  (function () {
+    try {
+      document.querySelectorAll("img[data-char-slot]").forEach(function (img) {
+        var cached = localStorage.getItem("character.icon." + img.dataset.charSlot);
+        if (cached) img.src = cached;
+      });
+    } catch (e) { /* 控えが無くても元のアイコンで続ける */ }
+  })();
+  </script>
 
   <!-- 写真の登録欄は 6 枠あって長いので、ふだんは畳んでおく -->
   <details class="card" id="characterCard">
@@ -188,7 +200,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
       if (mark === "clear") {
         sending = window.WatchSync.setBackground(null);
       } else {
-        var index = window.Character.pickIndex(record.photos.length, record.interval, record.startDate, today);
+        var index = window.Character.pickIndex(record.photos.length, record.interval, record.startDate, today, record.order);
         sending = window.Character.resize(record.photos[index], 400).then(function (blob) {
           return window.WatchSync.setBackground(blob);
         });
@@ -203,6 +215,22 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
     }).catch(function () {
       characterWatchSending = "";
     });
+  }
+
+  // 次に開いたとき描画前に出せるよう、アイコンの小さな写し（104 ピクセル四方）を控える
+  function cacheIcon(slot, url) {
+    var image = new Image();
+    image.onload = function () {
+      var size = 104;
+      var canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      var side = Math.min(image.naturalWidth, image.naturalHeight);
+      canvas.getContext("2d").drawImage(image,
+        (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      try { window.localStorage.setItem("character.icon." + slot, canvas.toDataURL("image/jpeg", 0.8)); } catch (e) { /* 控えられなくても表示は続ける */ }
+    };
+    image.src = url;
   }
 
   function updateCharacterDisplay() {
@@ -223,8 +251,10 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
         if (url) {
           img.src = url;
           img.dataset.charObjectUrl = url;
+          cacheIcon(img.dataset.charSlot, url);
         } else {
           img.src = img.dataset.defaultSrc;
+          try { window.localStorage.removeItem("character.icon." + img.dataset.charSlot); } catch (e) { /* 無視 */ }
         }
       });
     });
@@ -243,6 +273,8 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 
   var photoAlbum = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PhotoAlbum;
   if (window.Character && photoAlbum) {
+    // まず保存済みの写真で表示し、アルバムの読み直しが終わったら必要なぶんだけ差し替える
+    updateCharacterDisplay();
     var albumSync = Promise.resolve();
     window.Character.SLOTS.forEach(function (slot) {
       albumSync = albumSync.then(function () {
