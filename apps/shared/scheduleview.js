@@ -93,7 +93,7 @@
 
   // iPhone のカレンダーの予定のうち、予定アプリの予定と同じものを除く（表示の重なりを防ぐ）。
   // 同じとみなすのは、予定アプリが書き込んだ予定（calIds の値と一致）か、
-  // 件名・日付・開始時刻がそろうもの（以前にカレンダーから取り込んだ予定など）
+  // 件名・日付・開始時刻がそろうもの（以前にカレンダーから取り込んだ予定など）。
   function hideDuplicateExternal(appItems, externalItems, calIds) {
     var written = {};
     Object.keys(calIds || {}).forEach(function (key) { written[calIds[key]] = true; });
@@ -101,9 +101,14 @@
     (appItems || []).forEach(function (item) {
       keys[[item.title, item.dueOn, timeOf(item)].join("|")] = true;
     });
+    // カレンダーの予定どうしでも、同じものは最初の 1 つだけ出す
+    // （「日本の祝日」のカレンダーを 2 つ表示している場合など）
     return (externalItems || []).filter(function (item) {
       if (item.eventId && written[item.eventId]) return false;
-      return !keys[[item.title, item.dueOn, timeOf(item)].join("|")];
+      var key = [item.title, item.dueOn, timeOf(item)].join("|");
+      if (keys[key]) return false;
+      keys[key] = true;
+      return true;
     });
   }
 

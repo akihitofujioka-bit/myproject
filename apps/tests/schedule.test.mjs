@@ -85,4 +85,15 @@ function item(id, dueOn, note = "") {
   assert.deepEqual(Array.from(shown, (x) => x.id), ["external-E3", "external-E5"]);
 }
 
+// 別々のカレンダーに入った同じ予定（祝日のカレンダーが 2 つある場合など）は 1 つだけ出す
+{
+  const external = [
+    { id: "external-H1", eventId: "H1", title: "体育の日", dueOn: "2026-10-12", startTime: "" },
+    { id: "external-H2", eventId: "H2", title: "体育の日", dueOn: "2026-10-12", startTime: "" },
+    { id: "external-X1", eventId: "X1", title: "体育の日", dueOn: "2027-10-11", startTime: "" }
+  ];
+  const shown = hideDuplicateExternal([], external, {});
+  assert.deepEqual(Array.from(shown, (x) => x.id), ["external-H1", "external-X1"]);
+}
+
 console.log("schedule.test.mjs: OK");
