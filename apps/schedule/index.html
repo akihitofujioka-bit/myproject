@@ -769,7 +769,9 @@ function startEditing(item) {
   document.getElementById("formTitle").textContent = "予定を編集";
   document.getElementById("submitBtn").textContent = "更新する";
   document.getElementById("cancelEdit").hidden = false;
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  // 登録の欄は一覧・カレンダーの下にあるので、そこまで移動して件名の欄にカーソルを置く
+  document.getElementById("addCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("f-title").focus({ preventScroll: true });
 }
 function stopEditing() {
   editingId = null;

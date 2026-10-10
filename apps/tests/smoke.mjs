@@ -574,6 +574,26 @@ console.log("== 会議の通知（apps/schedule）==");
   const docs = await mp.evaluate(() => localStorage.getItem("docs-tracker.v1"));
   ok(docs === null, "会議を書類の保存先へ戻さない");
 
+  // 「編集」を押すと、画面の下にある登録の欄まで移動して中身が入る（押しても反応しないように見えた不具合の確認）
+  await mp.setViewportSize({ width: 390, height: 844 });
+  await mp.evaluate(() => {
+    const data = JSON.parse(localStorage.getItem("schedule.v1"));
+    data.items[0].dueOn = new Date().toISOString().slice(0, 10);
+    // 一覧を長くして、登録の欄が最初は画面の外にある状態にする
+    for (let i = 1; i <= 15; i++) {
+      data.items.push({ ...data.items[0], id: "long-" + i, title: "架空の打合せ " + i });
+    }
+    localStorage.setItem("schedule.v1", JSON.stringify(data));
+  });
+  await mp.reload();
+  await mp.click('#listView li[data-id="' + items[0].id + '"] button[data-action="edit"]');
+  await mp.waitForTimeout(800);
+  ok(await mp.inputValue("#f-title") === items[0].title, "編集：登録の欄に中身が入る");
+  ok(await mp.evaluate(() => {
+    const r = document.getElementById("addCard").getBoundingClientRect();
+    return window.scrollY > 0 && r.top > -10 && r.top < window.innerHeight / 2;
+  }), "編集：登録の欄まで画面が移動する");
+
   ok(merrs.length === 0, "JSエラーなし" + (merrs.length ? " → " + merrs.join(" / ") : ""));
   await mctx.close();
 }
