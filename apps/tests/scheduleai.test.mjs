@@ -42,7 +42,20 @@ const ok = (condition, label) => {
 };
 
 const fakeNative = reason => {
-  window.__ai = { calls: [], alertCount: 0 };
+  const RealDate = Date;
+  // 2026-10-13 10:00 から実際の経過時間だけ進む時計（止めると履歴の更新日時がそろい、新しい順が決まらない）
+  const fixedStart = new RealDate("2026-10-13T10:00:00+09:00").getTime();
+  const realStart = RealDate.now();
+  const fixedNow = () => fixedStart + (RealDate.now() - realStart);
+  function FixedDate(...args) {
+    if (!new.target) return RealDate(...args);
+    return new RealDate(...(args.length ? args : [fixedNow()]));
+  }
+  Object.setPrototypeOf(FixedDate, RealDate);
+  FixedDate.prototype = RealDate.prototype;
+  FixedDate.now = fixedNow;
+  window.Date = FixedDate;
+  window.__ai = { calls: [], alertCount: 0, reason, refusedCount: 0 };
   window.alert = () => { window.__ai.alertCount++; };
   const codedError = code => {
     const error = new Error("にせ AI の失敗");
@@ -61,7 +74,7 @@ const fakeNative = reason => {
     if (options.prompt.includes("遅い答え")) {
       return new Promise(resolve => { window.__ai.resolveDelayed = () => resolve({ text: "遅れて届いた架空の答え" }); });
     }
-    if (options.prompt.includes("拒否して")) return Promise.reject(codedError("refused"));
+    if (options.prompt.includes("拒否して") && window.__ai.refusedCount++ === 0) return Promise.reject(codedError("refused"));
     if (options.prompt.includes("危険な文字")) return Promise.resolve({ text: "<script>alert(1)</script>" });
     return Promise.resolve({ text: "架空の答えです" });
   };
@@ -69,7 +82,7 @@ const fakeNative = reason => {
     isNativePlatform: () => true,
     Plugins: {
       OnDeviceAI: {
-        status: () => Promise.resolve(reason ? { available: false, reason } : { available: true, reason: "" }),
+        status: () => Promise.resolve(window.__ai.reason ? { available: false, reason: window.__ai.reason } : { available: true, reason: "" }),
         respond
       }
     },
@@ -95,6 +108,18 @@ try {
   await unavailable("unsupported", "この端末では端末内 AI を使えません（iOS 26 以降の Apple Intelligence 対応機が必要です）");
   await unavailable("oldOS", "iOS 26 以降にすると使えます");
 
+  const statusPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await statusPage.addInitScript(fakeNative, "disabled");
+  await statusPage.goto(base);
+  await statusPage.click("#aiViewBtn");
+  await statusPage.waitForFunction(() => !document.getElementById("aiUnavailable").hidden);
+  await statusPage.evaluate(() => { window.__ai.reason = ""; });
+  await statusPage.click("#listViewBtn");
+  await statusPage.click("#aiViewBtn");
+  await statusPage.waitForFunction(() => !document.getElementById("aiWorkspace").hidden);
+  ok(await statusPage.locator("#aiQuestion").isVisible(), "AI タブを開き直したとき利用可否を確かめ直す");
+  await statusPage.close();
+
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -117,6 +142,13 @@ try {
     });
   });
   await page.reload();
+  const fixedDate = await page.evaluate(() => ({
+    now: new Date().toISOString(),
+    timestamp: Date.now(),
+    withArgument: new Date("2027-01-02T03:04:05Z").toISOString()
+  }));
+  ok(fixedDate.now.startsWith("2026-10-13T01:") && fixedDate.timestamp >= 1791853200000 && fixedDate.timestamp < 1791853200000 + 3600000, "画面テストの現在日時を2026年10月13日10時台にそろえる");
+  ok(fixedDate.withArgument === "2027-01-02T03:04:05.000Z", "引数ありの new Date はそのまま動く");
   await page.click("#aiViewBtn");
   await page.waitForFunction(() => !document.getElementById("aiWorkspace").hidden);
 
@@ -226,7 +258,15 @@ try {
   await page.click("#aiSend");
   await page.waitForFunction(() => document.getElementById("toast").textContent.includes("言い方を変えて"));
   ok(await page.locator("#aiQuestion").inputValue() === "拒否して", "拒否時も入力欄を消さない");
-  ok((await page.locator("#aiConversation").innerText()).includes("拒否して"), "拒否時も会話を消さない");
+  ok(await page.locator("#aiConversation .ai-bubble.user").count() === 0, "拒否された質問を画面の会話から外す");
+  ok((await page.locator("#aiConversation").innerText()).includes("答えを作れませんでした。言い方を変えてみてください"), "失敗の案内を会話の中にも表示する");
+  await page.waitForFunction(async () => {
+    const chat = (await window.AIHistory.list({ kind: "chat" }))[0];
+    return chat && chat.messages.at(-1).text === "（答えを作れませんでした）";
+  });
+  await page.click("#aiSend");
+  await page.waitForFunction(() => document.getElementById("aiConversation").textContent.includes("架空の答えです"));
+  ok(await page.locator("#aiConversation .ai-bubble.user").count() === 1, "拒否後に同じ質問を送り直しても利用者の吹き出しは1つにする");
 
   await page.click("#aiNewChat");
   await page.fill("#aiQuestion", "危険な文字を返して");

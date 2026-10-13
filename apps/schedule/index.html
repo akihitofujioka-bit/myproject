@@ -1051,6 +1051,8 @@ var aiSourceLabel = "";
 var aiSessionNumber = 0;
 var aiAppendQueues = {};
 var pendingTodoDraft = null;
+var aiErrorMessage = "";
+var aiStatusRequestNumber = 0;
 
 function aiToday() {
   return ymd(new Date());
@@ -1082,24 +1084,28 @@ function renderAISource() {
 
 function renderAIConversation() {
   var conversation = document.getElementById("aiConversation");
-  conversation.innerHTML = aiMessages.map(function (message, index) {
+  var html = aiMessages.map(function (message, index) {
     var role = message.role === "user" ? "user" : "ai";
-    var html = '<div class="ai-bubble ' + role + '">' + esc(message.text || "").replace(/\n/g, "<br>");
+    var bubble = '<div class="ai-bubble ' + role + '">' + esc(message.text || "").replace(/\n/g, "<br>");
     if (role === "ai" && message.draft) {
       if (message.draft.invalid) {
-        html += '<div class="footnote">' + esc("下書きを作れませんでした。登録画面を空で開きますか？") + '</div>' +
+        bubble += '<div class="footnote">' + esc("下書きを作れませんでした。登録画面を空で開きますか？") + '</div>' +
           '<button type="button" class="small" data-ai-empty-draft="' + index + '">' + esc("予定の登録画面を空で開く") + '</button>';
       } else if (message.draft.kind === "todo") {
-        html += '<div><button type="button" class="small" data-ai-todo-draft="' + index + '">' + esc("やることとして開く") + '</button></div>';
+        bubble += '<div><button type="button" class="small" data-ai-todo-draft="' + index + '">' + esc("やることとして開く") + '</button></div>';
       } else {
-        html += '<div><button type="button" class="small" data-ai-event-draft="' + index + '">' + esc("予定の登録画面で開く") + '</button></div>';
+        bubble += '<div><button type="button" class="small" data-ai-event-draft="' + index + '">' + esc("予定の登録画面で開く") + '</button></div>';
       }
     }
     if (role === "ai") {
-      html += '<span class="footnote">' + esc("端末内 AI の答えです。日時は予定一覧で確かめてください") + '</span>';
+      bubble += '<span class="footnote">' + esc("端末内 AI の答えです。日時は予定一覧で確かめてください") + '</span>';
     }
-    return html + "</div>";
+    return bubble + "</div>";
   }).join("");
+  if (aiErrorMessage) {
+    html += '<div class="footnote ai-conversation-error" role="status">' + esc(aiErrorMessage) + '</div>';
+  }
+  conversation.innerHTML = html;
 }
 
 function selectAIMode(mode) {
@@ -1115,6 +1121,7 @@ function newAIConversation(clearSource) {
   aiMessages = [];
   aiConversationId = null;
   pendingTodoDraft = null;
+  aiErrorMessage = "";
   document.getElementById("aiTodoConfirm").hidden = true;
   document.getElementById("aiQuestion").value = "";
   document.getElementById("aiSend").disabled = false;
@@ -1213,7 +1220,9 @@ function sendAIQuestion() {
   var earlierMessages = requestMessages.slice();
   var sessionNumber = aiSessionNumber;
   var sendButton = document.getElementById("aiSend");
-  requestMessages.push({ role: "user", text: question });
+  var userMessage = { role: "user", text: question };
+  aiErrorMessage = "";
+  requestMessages.push(userMessage);
   renderAIConversation();
   sendButton.disabled = true;
 
@@ -1240,9 +1249,15 @@ function sendAIQuestion() {
         }
         return aiAppend(conversationId, { role: "ai", text: message.text }).catch(historyError);
       }).catch(function (error) {
+        var messageIndex = requestMessages.indexOf(userMessage);
+        if (messageIndex !== -1) requestMessages.splice(messageIndex, 1);
+        var errorText = window.AIChat.errorMessage(error && error.code) || window.AIChat.errorMessage("failed");
         if (aiMessages === requestMessages) {
-          toast(window.AIChat.errorMessage(error && error.code) || window.AIChat.errorMessage("failed"));
+          aiErrorMessage = errorText;
+          renderAIConversation();
+          toast(errorText);
         }
+        return aiAppend(conversationId, { role: "ai", text: "（答えを作れませんでした）" }).catch(historyError);
       });
     });
   }).then(function () {
@@ -1276,15 +1291,32 @@ function showTodoDraft(draft) {
 
 function startAIWithSource(mode, entry) {
   newAIConversation(true);
+  var sessionNumber = aiSessionNumber;
+  document.getElementById("aiSend").disabled = true;
   selectAIMode(mode);
-  aiSource = entry || null;
-  aiSourceLabel = entry ? entry.title || "題名なし" : "";
-  renderAISource();
   setView("ai");
+  var sourcePromise = entry && entry.id && window.AIHistory
+    ? window.AIHistory.get(entry.id)
+    : Promise.resolve(entry || null);
+  sourcePromise.then(function (source) {
+    if (aiSessionNumber !== sessionNumber) return;
+    aiSource = source;
+    aiSourceLabel = source ? source.title || "題名なし" : "削除された資料";
+    renderAISource();
+    document.getElementById("aiSend").disabled = false;
+  }).catch(function () {
+    if (aiSessionNumber !== sessionNumber) return;
+    aiSource = null;
+    aiSourceLabel = "削除された資料";
+    renderAISource();
+    document.getElementById("aiSend").disabled = false;
+  });
 }
 
 function continueAIChat(entry) {
   newAIConversation(true);
+  var sessionNumber = aiSessionNumber;
+  document.getElementById("aiSend").disabled = true;
   selectAIMode(entry && entry.mode);
   aiConversationId = entry && entry.id;
   aiMessages = (entry && entry.messages || []).map(function (message) {
@@ -1294,14 +1326,20 @@ function continueAIChat(entry) {
   setView("ai");
   if (entry && entry.sourceId && window.AIHistory) {
     window.AIHistory.get(entry.sourceId).then(function (source) {
+      if (aiSessionNumber !== sessionNumber) return;
       aiSource = source;
       aiSourceLabel = source ? source.title || "題名なし" : "削除された資料";
       renderAISource();
+      document.getElementById("aiSend").disabled = false;
     }).catch(function () {
+      if (aiSessionNumber !== sessionNumber) return;
       aiSource = null;
       aiSourceLabel = "削除された資料";
       renderAISource();
+      document.getElementById("aiSend").disabled = false;
     });
+  } else {
+    document.getElementById("aiSend").disabled = false;
   }
 }
 
@@ -1389,16 +1427,24 @@ document.getElementById("aiTodoCancel").addEventListener("click", function () {
 
 selectAIMode(aiMode);
 newAIConversation(false);
-window.OnDeviceAI.status().then(function (status) {
-  var available = !!(status && status.available);
-  document.getElementById("aiWorkspace").hidden = !available;
-  document.getElementById("aiUnavailable").hidden = available;
-  if (!available) document.getElementById("aiUnavailable").innerHTML = esc(window.AIChat.errorMessage(status && status.reason));
-}).catch(function () {
-  document.getElementById("aiWorkspace").hidden = true;
-  document.getElementById("aiUnavailable").hidden = false;
-  document.getElementById("aiUnavailable").innerHTML = esc(window.AIChat.errorMessage("unsupported"));
-});
+
+function refreshAIStatus() {
+  var requestNumber = ++aiStatusRequestNumber;
+  return window.OnDeviceAI.status().then(function (status) {
+    if (requestNumber !== aiStatusRequestNumber) return;
+    var available = !!(status && status.available);
+    document.getElementById("aiWorkspace").hidden = !available;
+    document.getElementById("aiUnavailable").hidden = available;
+    if (!available) document.getElementById("aiUnavailable").innerHTML = esc(window.AIChat.errorMessage(status && status.reason));
+  }).catch(function () {
+    if (requestNumber !== aiStatusRequestNumber) return;
+    document.getElementById("aiWorkspace").hidden = true;
+    document.getElementById("aiUnavailable").hidden = false;
+    document.getElementById("aiUnavailable").innerHTML = esc(window.AIChat.errorMessage("unsupported"));
+  });
+}
+
+refreshAIStatus();
 
 function setView(view) {
   currentView = ["list", "calendar", "ai", "history"].indexOf(view) !== -1 ? view : "list";
@@ -1419,6 +1465,8 @@ function setView(view) {
   }
   if (currentView === "calendar") {
     renderCalendar();
+  } else if (currentView === "ai") {
+    refreshAIStatus();
   } else if (currentView === "history") {
     renderHistory();
   }
@@ -2465,7 +2513,10 @@ loadPhoneCalendar();
 // ほかのアプリ（カレンダーアプリなど）から戻ってきたときも読み直す。
 // 読み直さないと、カレンダーアプリで消した予定がオレンジで残ってしまう
 document.addEventListener("visibilitychange", function () {
-  if (document.visibilityState === "visible") loadPhoneCalendar();
+  if (document.visibilityState === "visible") {
+    loadPhoneCalendar();
+    refreshAIStatus();
+  }
 });
 // 画面下の操作バー: 「予定を登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
 document.getElementById("jumpAdd").addEventListener("click", function () {
