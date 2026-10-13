@@ -51,6 +51,24 @@ if (!A) {
   ok(sparring.includes("問いを 1 つ返す") && sparring.includes("資料: 架空の検討資料\n架空の本文"), "壁打ちの指示と資料を組み立てる");
   ok(brainstorm.includes("8〜10 個"), "ブレストの指示を組み立てる");
   ok(secretary.includes("分かりません") && secretary.includes("2026-10-13（火）") && secretary.includes("架空の予定一覧"), "秘書の指示に日付・曜日・一覧を含める");
+  const invalidToday = A.instructions("secretary", { today: "不正な日付", context: "", source: null });
+  ok(invalidToday.includes("今日は 不正な日付") && !invalidToday.includes("（"), "不正な今日の日付には曜日を付けない");
+  const unknownMode = A.instructions("unknown", { today: "2026-10-13", context: "架空の予定一覧", source: null });
+  ok(unknownMode.includes("あなたは議員の秘書") && unknownMode.includes("架空の予定一覧"), "不明なモードは秘書として扱う");
+
+  const multilineCalls = [];
+  await A.ask({ respond(options) { multilineCalls.push(options); return Promise.resolve({ text: "確認しました" }); } }, {
+    mode: "secretary",
+    today: "2026-10-13",
+    context: "架空の一覧",
+    source: null,
+    messages: [
+      { role: "user", text: "一行目\n二行目" },
+      { role: "ai", text: "回答一行目\n回答二行目" }
+    ],
+    question: "今回一行目\n今回二行目"
+  });
+  ok(multilineCalls[0].prompt === "利用者: 一行目\n  二行目\n秘書: 回答一行目\n  回答二行目\n利用者: 今回一行目\n  今回二行目", "複数行の発言は話者名を増やさず2行目以降を字下げする");
 
   const calls = [];
   const retryingAI = {
@@ -61,17 +79,19 @@ if (!A) {
     }
   };
   const retried = await A.ask(retryingAI, {
-    mode: "sparring",
+    mode: "secretary",
     today: "2026-10-13",
     context: "",
+    retryContext: "短い架空の一覧",
     source: { title: "架空の長い資料", body: "資".repeat(3200) },
     messages,
     question: "架空の企画をどう考えますか"
   });
-  const secondHistoryLines = calls[1].prompt.split("\n").filter(line => /^(利用者|相手):/.test(line)).length - 1;
+  const secondHistoryLines = calls[1].prompt.split("\n").filter(line => /^(利用者|秘書):/.test(line)).length - 1;
   const secondSourceBody = calls[1].instructions.split("\n").at(-1);
   ok(retried.text === "考えを整理できました" && retried.retried === true && calls.length === 2, "上限超過なら1回だけ減らしてやり直す");
   ok(secondHistoryLines <= 4 && secondSourceBody.length <= 1500, "やり直しは直近2往復・資料1,500字に減らす");
+  ok(calls[0].instructions !== calls[1].instructions && calls[1].instructions.includes("短い架空の一覧"), "やり直しでは指定された短い一覧を使う");
   ok(calls[0].prompt.includes("利用者: 架空の会話8") && calls[0].prompt.endsWith("利用者: 架空の企画をどう考えますか"), "履歴と今回の質問に話者名を付ける");
 
   let twiceError;

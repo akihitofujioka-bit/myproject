@@ -33,7 +33,7 @@
   function instructions(mode, options) {
     options = options || {};
     var text;
-    if (mode === "secretary") {
+    if (mode === "secretary" || !MODES[mode]) {
       var dayName = weekday(options.today);
       text = "あなたは議員の秘書。渡した一覧だけを根拠に、短く日本語で答える。一覧に無いことは『分かりません』と言う。今日は " +
         String(options.today || "") + (dayName ? "（" + dayName + "）" : "");
@@ -79,12 +79,15 @@
   }
 
   function prompt(mode, messages, question, turns) {
-    var aiName = mode === "secretary" ? "秘書" : "相手";
+    var aiName = mode === "secretary" || !MODES[mode] ? "秘書" : "相手";
+    function speech(name, value) {
+      return name + ": " + String(value == null ? "" : value).replace(/\r?\n/g, "\n  ");
+    }
     var lines = recent(messages, turns).map(function (message) {
       var name = message && message.role === "user" ? "利用者" : aiName;
-      return name + ": " + String(message && message.text != null ? message.text : "");
+      return speech(name, message && message.text != null ? message.text : "");
     });
-    lines.push("利用者: " + String(question == null ? "" : question));
+    lines.push(speech("利用者", question));
     return lines.join("\n");
   }
 
@@ -96,11 +99,11 @@
     return result;
   }
 
-  function respond(ai, options, turns, sourceLimit) {
+  function respond(ai, options, turns, sourceLimit, context) {
     var request = {
       instructions: instructions(options.mode, {
         today: options.today,
-        context: options.context,
+        context: context,
         source: clippedSource(options.source, sourceLimit)
       }),
       prompt: prompt(options.mode, options.messages, options.question, turns)
@@ -112,12 +115,13 @@
 
   function ask(ai, options) {
     options = options || {};
-    return respond(ai, options, 6, 3000).then(function (answer) {
+    return respond(ai, options, 6, 3000, options.context).then(function (answer) {
       return { text: String(answer && answer.text != null ? answer.text : ""), retried: false };
     }).catch(function (error) {
       var firstError = asCodedError(error);
       if (firstError.code !== "tooLong") throw firstError;
-      return respond(ai, options, 2, 1500).then(function (answer) {
+      var retryContext = typeof options.retryContext === "string" ? options.retryContext : options.context;
+      return respond(ai, options, 2, 1500, retryContext).then(function (answer) {
         return { text: String(answer && answer.text != null ? answer.text : ""), retried: true };
       }).catch(function (retryError) {
         throw asCodedError(retryError);

@@ -47,6 +47,11 @@ if (!S) {
   ok(sameRange("来週の火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "来週と曜日の間の助詞を許す");
   ok(sameRange("来週は火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "来週と曜日の間の別の助詞も許す");
   ok(sameRange("来週の朝火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "来週と曜日の間の2字を許す");
+  ok(sameRange("来週、火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "来週と曜日の間の読点を許す");
+  ok(sameRange("来週の午後の火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "来週と曜日の間の4字を許す");
+  ok(sameRange("来週の午後、火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "4字までの語の後にある読点も許す");
+  ok(sameRange("来週。火曜", "2026-10-13", "2026-10-13", "2026-10-13"), "句点をまたいだ曜日は来週として読まない");
+  ok(sameRange("来週\n火曜", "2026-10-13", "2026-10-13", "2026-10-13"), "改行をまたいだ曜日は来週として読まない");
   ok(sameRange("予定を教えて", "2026-10-13", "2026-10-13", "2026-10-26", false), "期間なしは今日から14日間");
   ok(sameRange("来月", "2026-12-20", "2027-01-01", "2027-01-31"), "年末の来月は翌年");
   ok(sameRange("1月5日", "2026-12-20", "2027-01-05", "2027-01-05"), "過ぎた月日は翌年");
@@ -85,6 +90,22 @@ if (!S) {
   );
   ok(many.cut && many.count === 60 && many.text.split("\n").length === 60, "61件は先頭60件で切る");
 
+  const multiDayEvents = [{
+    id: "cal-multi", title: "架空の研修", date: "2026-10-20", endDate: "2026-10-22",
+    startTime: "10:00", endTime: "15:00", place: "架空の研修所"
+  }];
+  const multiDay = S.lines(
+    { from: "2026-10-20", to: "2026-10-22" },
+    { items: [], calendarEvents: multiDayEvents, todos: [] }
+  );
+  ok(multiDay.count === 3 && multiDay.text.split("\n").length === 3, "複数日の予定を重なる各日に展開する");
+  ok(multiDay.text.includes("10/20(火) 10:00 架空の研修 @架空の研修所"), "複数日予定の開始時刻は初日だけに書く");
+  ok(multiDay.text.includes("10/21(水) 架空の研修（続き） @架空の研修所"), "複数日予定の中日は続きとして終日扱いで書く");
+  ok(multiDay.text.includes("10/22(木) -15:00 架空の研修（続き） @架空の研修所"), "複数日予定の終了時刻は最終日だけに書く");
+
+  const expanded = S.expandEvents({ from: "2026-10-20", to: "2026-10-22" }, multiDayEvents);
+  ok(expanded.length === 3 && expanded[1].allDay && expanded[0].continuesAfter && expanded[2].continuesBefore, "空き時間用にも複数日予定を日ごとに展開する");
+
   const free = S.freeSlots(
     { from: "2026-10-20", to: "2026-10-21" },
     [
@@ -96,8 +117,37 @@ if (!S) {
     ]
   );
   ok(free === "10/20(火) 空き 8:30-10:00, 13:00-17:15\n10/21(水) 終日の予定あり", "重なる予定をまとめ、勤務時間内の空きを出す");
+  const multiDayFree = S.freeSlots({ from: "2026-10-20", to: "2026-10-22" }, expanded);
+  ok(multiDayFree === "10/20(火) 空き 8:30-10:00\n10/21(水) 終日の予定あり\n10/22(木) 空き 15:00-17:15", "複数日予定を初日は開始後、最終日は終了前まで埋まった時間として扱う");
+  ok(S.freeSlots(
+    { from: "2026-10-20", to: "2026-10-22" },
+    expanded,
+    { compact: true }
+  ) === "10/20(火) 空きあり\n10/22(木) 空きあり", "短縮時は空きのある日だけを書く");
   ok(S.wantsFree("来週は空いていますか") && !S.wantsFree("来週の予定"), "空き時間を求める言葉を判定する");
-  ok(S.wantsDraft("予定にして") && S.wantsDraft("やることを追加") && !S.wantsDraft("予定を教えて"), "下書きを求める言葉を判定する");
+  ok(!S.wantsDraft("今日のやることを教えて"), "やることを尋ねるだけなら下書きにしない");
+  ok(!S.wantsDraft("やることある？"), "やることの有無を尋ねるだけなら下書きにしない");
+  ok(S.wantsDraft("金曜までに資料提出をやることに追加して"), "やることへの追加依頼を下書きにする");
+  ok(S.wantsDraft("来週火曜10時に打合せを入れて"), "予定への追加依頼を下書きにする");
+
+  const charLimitedSource = S.lines(
+    { from: "2026-10-20", to: "2026-10-20" },
+    { items: [
+      { title: "架空の予定一", dueOn: "2026-10-20" },
+      { title: "架空の予定二", dueOn: "2026-10-20" }
+    ], calendarEvents: [], todos: [] }
+  );
+  const firstLimitedLine = charLimitedSource.text.split("\n")[0];
+  const charLimited = S.lines(
+    { from: "2026-10-20", to: "2026-10-20" },
+    { items: [
+      { title: "架空の予定一", dueOn: "2026-10-20" },
+      { title: "架空の予定二", dueOn: "2026-10-20" }
+    ], calendarEvents: [], todos: [] },
+    {},
+    { maxChars: firstLimitedLine.length }
+  );
+  ok(charLimited.text === firstLimitedLine && charLimited.count === 1 && charLimited.cut, "一覧は文字数上限を超える行の前で切る");
 
   const fenced = S.checkDraft(
     "説明です。\n```json\n{\"kind\":\"event\",\"title\":\"架空の打合せ\",\"date\":\"2026-10-21\",\"start\":\"10:00\"}\n```\n以上です。",

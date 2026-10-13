@@ -66,10 +66,10 @@
     });
     var match;
 
-    match = text.match(/来週\s*[^\s、。,.!?！？]{0,2}?\s*([日月火水木金土])曜/);
-    if (match) {
+    match = text.match(/来週([^。\r\n]*?)([日月火水木金土])曜/);
+    if (match && Array.from(match[1].replace(/[\s、,]/g, "")).length <= 4) {
       var nextMonday = addDays(today, 7 - ((today.getDay() + 6) % 7));
-      var wanted = DAY_NAMES.indexOf(match[1]);
+      var wanted = DAY_NAMES.indexOf(match[2]);
       return oneDay(addDays(nextMonday, (wanted + 6) % 7));
     }
 
@@ -147,9 +147,62 @@
     return date && date >= String(selectedRange.from || "") && date <= String(selectedRange.to || "");
   }
 
-  function lines(selectedRange, data, helpers) {
+  // 複数日にまたがるカレンダー予定を、指定期間内の日ごとの予定へ展開する。
+  function expandEvents(selectedRange, calendarEvents) {
+    var rangeFrom = parseDate(selectedRange && selectedRange.from);
+    var rangeTo = parseDate(selectedRange && selectedRange.to);
+    if (!rangeFrom || !rangeTo || rangeFrom > rangeTo) return [];
+    var expanded = [];
+
+    (calendarEvents || []).forEach(function (event, index) {
+      if (!event) return;
+      var first = parseDate(String(event.date || ""));
+      if (!first) return;
+      var last = parseDate(String(event.endDate || ""));
+      if (!last || last < first) last = first;
+      if (last < rangeFrom || first > rangeTo) return;
+      var visibleFirst = first < rangeFrom ? rangeFrom : first;
+      var visibleLast = last > rangeTo ? rangeTo : last;
+      var days = Math.round((Date.UTC(visibleLast.getFullYear(), visibleLast.getMonth(), visibleLast.getDate()) -
+        Date.UTC(visibleFirst.getFullYear(), visibleFirst.getMonth(), visibleFirst.getDate())) / DAY_MS);
+      var firstValue = ymd(first), lastValue = ymd(last);
+      var eventStart = cleanTime(event.startTime), eventEnd = cleanTime(event.endTime);
+      var timed = Boolean(eventStart || eventEnd);
+
+      for (var offset = 0; offset <= days; offset++) {
+        var dateValue = ymd(addDays(visibleFirst, offset));
+        var isFirst = dateValue === firstValue;
+        var isLast = dateValue === lastValue;
+        expanded.push({
+          id: event.id,
+          date: dateValue,
+          start: isFirst ? eventStart : "",
+          end: isLast ? eventEnd : "",
+          title: String(event.title || "").trim() + (isFirst ? "" : "（続き）"),
+          place: String(event.place || "").trim(),
+          allDay: !timed || (!isFirst && !isLast),
+          continuesBefore: !isFirst,
+          continuesAfter: !isLast,
+          order: index
+        });
+      }
+    });
+    return expanded;
+  }
+
+  function rowText(row) {
+    var parts = [displayDate(row.date)];
+    if (row.todo) parts.push("期限");
+    else if (row.start || row.end) parts.push((row.start || "") + (row.end ? "-" + row.end : ""));
+    parts.push(row.title + (row.todo ? "（やること）" : ""));
+    if (row.place) parts.push("@" + row.place);
+    return parts.filter(Boolean).join(" ");
+  }
+
+  function lines(selectedRange, data, helpers, options) {
     data = data || {};
     helpers = helpers || {};
+    options = options || {};
     var rows = [];
     var linkedIds = {};
 
@@ -169,18 +222,16 @@
       });
     });
 
-    (data.calendarEvents || []).forEach(function (event, index) {
+    expandEvents(selectedRange || {}, data.calendarEvents).forEach(function (event) {
       if (!event || linkedIds[String(event.id || "")]) return;
-      var date = parseDate(String(event.date || "")) ? String(event.date) : "";
-      if (!inRange(date, selectedRange || {})) return;
       rows.push({
-        date: date,
-        start: cleanTime(event.startTime),
-        end: cleanTime(event.endTime),
-        title: String(event.title || "").trim(),
-        place: String(event.place || "").trim(),
+        date: event.date,
+        start: event.start,
+        end: event.end,
+        title: event.title,
+        place: event.place,
         todo: false,
-        order: 100000 + index
+        order: 100000 + event.order
       });
     });
 
@@ -207,16 +258,22 @@
 
     var cut = rows.length > 60;
     rows = rows.slice(0, 60);
+    var maxChars = options.maxChars == null ? 1800 : Math.max(0, Math.floor(Number(options.maxChars) || 0));
+    var output = [], usedRows = [];
+    rows.some(function (row) {
+      var line = rowText(row);
+      var nextLength = output.length ? output.join("\n").length + 1 + line.length : line.length;
+      if (nextLength > maxChars) {
+        cut = true;
+        return true;
+      }
+      output.push(line);
+      usedRows.push(row);
+      return false;
+    });
     return {
-      text: rows.map(function (row) {
-        var parts = [displayDate(row.date)];
-        if (row.todo) parts.push("期限");
-        else if (row.start) parts.push(row.start + (row.end ? "-" + row.end : ""));
-        parts.push(row.title + (row.todo ? "（やること）" : ""));
-        if (row.place) parts.push("@" + row.place);
-        return parts.filter(Boolean).join(" ");
-      }).join("\n"),
-      count: rows.length,
+      text: output.join("\n"),
+      count: usedRows.length,
       cut: cut
     };
   }
@@ -236,7 +293,8 @@
     return Math.floor(value / 60) + ":" + pad(value % 60);
   }
 
-  function freeSlots(selectedRange, busy) {
+  function freeSlots(selectedRange, busy, options) {
+    options = options || {};
     var from = parseDate(selectedRange && selectedRange.from);
     var to = parseDate(selectedRange && selectedRange.to);
     if (!from || !to || from > to) return "";
@@ -249,11 +307,13 @@
       var dateValue = ymd(date);
       var sameDay = (busy || []).filter(function (entry) { return entry && entry.date === dateValue; });
       if (sameDay.some(function (entry) { return entry.allDay; })) {
-        output.push(displayDate(dateValue) + " 終日の予定あり");
+        if (!options.compact) output.push(displayDate(dateValue) + " 終日の予定あり");
         continue;
       }
       var periods = sameDay.map(function (entry) {
         var start = minutes(entry.start), end = minutes(entry.end);
+        if (start === null && entry.continuesBefore) start = 8 * 60 + 30;
+        if (end === null && entry.continuesAfter) end = 17 * 60 + 15;
         if (start === null || end === null || end <= start) return null;
         start = Math.max(start, 8 * 60 + 30);
         end = Math.min(end, 17 * 60 + 15);
@@ -271,16 +331,20 @@
         cursor = Math.max(cursor, period[1]);
       });
       if (cursor < 17 * 60 + 15) free.push(clock(cursor) + "-17:15");
-      output.push(displayDate(dateValue) + " 空き" + (free.length ? " " + free.join(", ") : "なし"));
+      if (options.compact) {
+        if (free.length) output.push(displayDate(dateValue) + " 空きあり");
+      } else {
+        output.push(displayDate(dateValue) + " 空き" + (free.length ? " " + free.join(", ") : "なし"));
+      }
     }
     return output.join("\n");
   }
 
   function wantsDraft(question) {
     var text = String(question || "");
-    return ["入れて", "登録", "追加", "やること", "忘れないように", "予定にして"].some(function (word) {
+    return ["入れて", "登録", "追加", "忘れないように", "予定にして"].some(function (word) {
       return text.indexOf(word) >= 0;
-    });
+    }) || /やることに(?:追加|入れ|して)/.test(text);
   }
 
   function draftInstructions(today) {
@@ -343,6 +407,7 @@
 
   global.Secretary = {
     range: range,
+    expandEvents: expandEvents,
     lines: lines,
     wantsFree: wantsFree,
     freeSlots: freeSlots,
