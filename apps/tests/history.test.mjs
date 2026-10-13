@@ -21,15 +21,22 @@ const ok = (cond, label) => {
   if (!cond) failures++;
 };
 
-function request(run) {
+function request(run, transaction) {
   const req = {};
   queueMicrotask(() => {
     try {
       req.result = run();
       if (req.onsuccess) req.onsuccess({ target: req });
+      if (transaction) queueMicrotask(() => {
+        if (transaction.oncomplete) transaction.oncomplete({ target: transaction });
+      });
     } catch (error) {
       req.error = error;
       if (req.onerror) req.onerror({ target: req });
+      if (transaction) {
+        transaction.error = error;
+        if (transaction.onerror) transaction.onerror({ target: transaction });
+      }
     }
   });
   return req;
@@ -37,32 +44,36 @@ function request(run) {
 
 function fakeIndexedDB() {
   const records = new Map();
-  const store = {
+  const store = transaction => ({
     put(value) {
       return request(() => {
         const saved = structuredClone(value);
         records.set(saved.id, saved);
         return saved.id;
-      });
+      }, transaction);
     },
     get(id) {
       return request(() => records.has(id) ? structuredClone(records.get(id)) : undefined);
     },
     delete(id) {
-      return request(() => { records.delete(id); });
+      return request(() => { records.delete(id); }, transaction);
     },
     clear() {
-      return request(() => { records.clear(); });
+      return request(() => { records.clear(); }, transaction);
     },
     getAll() {
       return request(() => Array.from(records.values(), value => structuredClone(value)));
     },
     createIndex() {}
-  };
+  });
   const db = {
     objectStoreNames: { contains: name => name === "entries" },
-    createObjectStore() { return store; },
-    transaction() { return { objectStore: () => store }; }
+    createObjectStore() { return store(null); },
+    transaction() {
+      const transaction = {};
+      transaction.objectStore = () => store(transaction);
+      return transaction;
+    }
   };
   return {
     open(name, version) {
@@ -77,15 +88,15 @@ function fakeIndexedDB() {
 function reconnectingIndexedDB() {
   const records = new Map();
   let openCount = 0;
-  const store = {
+  const store = transaction => ({
     put(value) {
       return request(() => {
         const saved = structuredClone(value);
         records.set(saved.id, saved);
         return saved.id;
-      });
+      }, transaction);
     }
-  };
+  });
   return {
     get openCount() { return openCount; },
     open() {
@@ -99,7 +110,9 @@ function reconnectingIndexedDB() {
             error.name = "InvalidStateError";
             throw error;
           }
-          return { objectStore: () => store };
+          const transaction = {};
+          transaction.objectStore = () => store(transaction);
+          return transaction;
         }
       }));
     }
@@ -146,10 +159,44 @@ if (!H) {
   const updated = await H.update(document.id, { title: "架空の開催通知（更新）" });
   ok(updated.title === "架空の開催通知（更新）" && updated.body === document.body, "指定した項目だけを更新する");
 
+  let missingUpdate = false;
+  try { await H.update("存在しない架空ID", { title: "更新しない" }); } catch (error) { missingUpdate = error.message === "履歴が見つかりません"; }
+  ok(missingUpdate, "存在しない ID の更新は失敗する");
+  let missingAppend = false;
+  try { await H.appendMessage("存在しない架空ID", { role: "user", text: "追記しない" }); } catch (error) { missingAppend = error.message === "履歴が見つかりません"; }
+  ok(missingAppend, "存在しない ID への会話追記は失敗する");
+
   await H.remove(document.id);
   ok(await H.get(document.id) === null, "1 件を削除する");
   await H.clear();
   ok((await H.list()).length === 0, "すべて削除する");
+
+  let finishWrite;
+  await H.open({
+    open() {
+      return request(() => ({
+        objectStoreNames: { contains: () => true },
+        transaction() {
+          const transaction = {};
+          transaction.objectStore = () => ({
+            put() {
+              finishWrite = () => transaction.oncomplete();
+              return {};
+            }
+          });
+          return transaction;
+        }
+      }));
+    }
+  });
+  let writeResolved = false;
+  const pendingWrite = H.add({ kind: "document", title: "架空の確定待ち", body: "保存中" }).then(() => { writeResolved = true; });
+  await Promise.resolve();
+  await Promise.resolve();
+  ok(!writeResolved && typeof finishWrite === "function", "request の後も transaction 完了までは書き込み成功にしない");
+  finishWrite();
+  await pendingWrite;
+  ok(writeResolved, "transaction 完了で書き込み成功にする");
 
   let failOldOpen;
   const oldOpen = H.open({

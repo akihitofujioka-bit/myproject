@@ -9,6 +9,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
+// Playwright の waitForFunction は async の条件を「すぐ満たした」と扱うため、読み込みを待ってから判定し直す
+const waitAsync = async (target, predicate, arg, timeout = 30000) => {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    if (await target.evaluate(predicate, arg)) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error("waitAsync: 条件を満たすまで待てませんでした");
+};
+
+
 const require = createRequire(import.meta.url);
 let chromium;
 try {
@@ -55,7 +66,7 @@ const fakeNative = reason => {
   FixedDate.prototype = RealDate.prototype;
   FixedDate.now = fixedNow;
   window.Date = FixedDate;
-  window.__ai = { calls: [], alertCount: 0, reason, refusedCount: 0 };
+  window.__ai = { calls: [], alertCount: 0, reason, refusedCount: 0, statusCalls: 0 };
   window.alert = () => { window.__ai.alertCount++; };
   const codedError = code => {
     const error = new Error("にせ AI の失敗");
@@ -65,6 +76,11 @@ const fakeNative = reason => {
   const respond = options => {
     window.__ai.calls.push(options);
     if (options.instructions.includes("登録用の下書き")) {
+      if (options.prompt.includes("順番を確かめる")) {
+        return new Promise(resolve => {
+          window.__ai.resolveDraft = () => resolve({ text: JSON.stringify({ kind: "event", title: "順番確認の架空予定", date: "2026-10-20", start: "10:00", end: "11:00", place: "", memo: "" }) });
+        });
+      }
       if (options.prompt.includes("JSON失敗")) return Promise.resolve({ text: "JSONではありません" });
       if (options.prompt.includes("やること")) {
         return Promise.resolve({ text: JSON.stringify({ kind: "todo", title: "架空の資料を出す", date: "2026-10-16", start: "", end: "", place: "", memo: "" }) });
@@ -74,6 +90,7 @@ const fakeNative = reason => {
     if (options.prompt.includes("遅い答え")) {
       return new Promise(resolve => { window.__ai.resolveDelayed = () => resolve({ text: "遅れて届いた架空の答え" }); });
     }
+    if (options.prompt.includes("答え失敗で下書きなし")) return Promise.reject(codedError("refused"));
     if (options.prompt.includes("拒否して") && window.__ai.refusedCount++ === 0) return Promise.reject(codedError("refused"));
     if (options.prompt.includes("危険な文字")) return Promise.resolve({ text: "<script>alert(1)</script>" });
     return Promise.resolve({ text: "架空の答えです" });
@@ -82,7 +99,10 @@ const fakeNative = reason => {
     isNativePlatform: () => true,
     Plugins: {
       OnDeviceAI: {
-        status: () => Promise.resolve(window.__ai.reason ? { available: false, reason: window.__ai.reason } : { available: true, reason: "" }),
+        status: () => {
+          window.__ai.statusCalls++;
+          return Promise.resolve(window.__ai.reason ? { available: false, reason: window.__ai.reason } : { available: true, reason: "" });
+        },
         respond
       }
     },
@@ -118,6 +138,13 @@ try {
   await statusPage.click("#aiViewBtn");
   await statusPage.waitForFunction(() => !document.getElementById("aiWorkspace").hidden);
   ok(await statusPage.locator("#aiQuestion").isVisible(), "AI タブを開き直したとき利用可否を確かめ直す");
+  const statusCallsBeforeVisible = await statusPage.evaluate(() => window.__ai.statusCalls);
+  await statusPage.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await statusPage.waitForFunction(count => window.__ai.statusCalls > count, statusCallsBeforeVisible);
+  ok(true, "アプリに戻ったとき利用可否を確かめ直す");
   await statusPage.close();
 
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -155,7 +182,7 @@ try {
   await page.fill("#aiQuestion", "来週の予定は？");
   await page.click("#aiSend");
   await page.waitForFunction(() => document.getElementById("aiConversation").textContent.includes("架空の答えです"));
-  await page.waitForFunction(async () => {
+  await waitAsync(page, async () => {
     const chats = await window.AIHistory.list({ kind: "chat" });
     return chats[0] && chats[0].messages.length === 2;
   });
@@ -165,6 +192,25 @@ try {
   const firstChat = await page.evaluate(async () => (await window.AIHistory.list({ kind: "chat" }))[0]);
   ok(firstChat.title === "来週の予定は？" && firstChat.mode === "secretary" && firstChat.sourceId === "", "最初の送信で題名・モード・資料IDを履歴へ保存する");
   ok(firstChat.messages.length === 2 && firstChat.messages[0].role === "user" && firstChat.messages[1].role === "ai", "質問を先に保存してから回答を追記する");
+
+  await page.click("#aiNewChat");
+  const callsBeforeOrderedDraft = await page.evaluate(() => window.__ai.calls.length);
+  await page.fill("#aiQuestion", "順番を確かめる架空予定を入れて");
+  await page.click("#aiSend");
+  await page.waitForFunction(() => document.getElementById("aiConversation").textContent.includes("下書きを作っています…"));
+  const orderedCalls = await page.evaluate(start => window.__ai.calls.slice(start).map(call => call.instructions.includes("登録用の下書き") ? "draft" : "answer"), callsBeforeOrderedDraft);
+  ok(orderedCalls.join(",") === "answer,draft", "秘書の答えのあとに下書きを呼ぶ");
+  ok((await page.locator("#aiConversation").innerText()).includes("架空の答えです\n下書きを作っています…"), "下書き中は答えの吹き出しに案内を出す");
+  await page.evaluate(() => window.__ai.resolveDraft());
+  await page.waitForFunction(() => document.querySelector("[data-ai-event-draft]") && !document.getElementById("aiConversation").textContent.includes("下書きを作っています…"));
+
+  await page.click("#aiNewChat");
+  const draftsBeforeFailedAnswer = await page.evaluate(() => window.__ai.calls.filter(call => call.instructions.includes("登録用の下書き")).length);
+  await page.fill("#aiQuestion", "答え失敗で下書きなしの架空予定を入れて");
+  await page.click("#aiSend");
+  await page.waitForFunction(() => document.getElementById("toast").textContent.includes("言い方を変えて"));
+  const draftsAfterFailedAnswer = await page.evaluate(() => window.__ai.calls.filter(call => call.instructions.includes("登録用の下書き")).length);
+  ok(draftsAfterFailedAnswer === draftsBeforeFailedAnswer, "秘書の答えが失敗したら下書きを呼ばない");
 
   await page.click("#aiNewChat");
   await page.fill("#aiQuestion", "来週火曜10時に架空の打合せを入れて");
@@ -204,7 +250,7 @@ try {
   await page.fill("#aiQuestion", "この資料を考えたい");
   await page.click("#aiSend");
   await page.waitForFunction(() => document.getElementById("aiConversation").textContent.includes("架空の答えです"));
-  await page.waitForFunction(async id => {
+  await waitAsync(page, async id => {
     const chats = await window.AIHistory.list({ kind: "chat" });
     return chats.some(chat => chat.sourceId === id && chat.messages.length === 2);
   }, source.id);
@@ -245,7 +291,7 @@ try {
   ok(await page.locator("#aiConversation .ai-bubble.user").count() === 1, "回答待ち中の再送でも利用者の吹き出しは1つにする");
   await page.click("#aiNewChat");
   await page.evaluate(() => window.__ai.resolveDelayed());
-  await page.waitForFunction(async id => {
+  await waitAsync(page, async id => {
     const entry = await window.AIHistory.get(id);
     return entry && entry.messages.length === 2 && entry.messages.some(message => message.text.includes("遅れて届いた"));
   }, delayedId);
@@ -275,7 +321,7 @@ try {
   await page.evaluate(entry => window.continueAIChat(entry), continuing);
   await page.fill("#aiQuestion", "続きを出して");
   await page.click("#aiSend");
-  await page.waitForFunction(async id => (await window.AIHistory.get(id)).messages.length === 4, continuing.id);
+  await waitAsync(page, async id => (await window.AIHistory.get(id)).messages.length === 4, continuing.id);
   const continuedEntry = await page.evaluate(id => window.AIHistory.get(id), continuing.id);
   const continuedSummary = continuedEntry.messages.map(message => message.role + ":" + String(message.text || "").slice(0, 20)).join(" / ");
   ok(continuedEntry.messages.length === 4, "続きから同じ会話へ質問と回答を追記する（messages=" + continuedEntry.messages.length + "、内容=" + continuedSummary + "）");
@@ -287,7 +333,7 @@ try {
   ok(await page.locator("#aiQuestion").inputValue() === "拒否して", "拒否時も入力欄を消さない");
   ok(await page.locator("#aiConversation .ai-bubble.user").count() === 0, "拒否された質問を画面の会話から外す");
   ok((await page.locator("#aiConversation").innerText()).includes("答えを作れませんでした。言い方を変えてみてください"), "失敗の案内を会話の中にも表示する");
-  await page.waitForFunction(async () => {
+  await waitAsync(page, async () => {
     const chat = (await window.AIHistory.list({ kind: "chat" }))[0];
     return chat && chat.messages.at(-1).text === "（答えを作れませんでした）";
   });
@@ -308,7 +354,7 @@ try {
   ok(!(await page.locator("#aiConversation").innerText()).includes("答えの無い架空質問"), "答えの無い質問を過去の会話から外す");
   await page.fill("#aiQuestion", "失敗を除いて続ける架空質問");
   await page.click("#aiSend");
-  await page.waitForFunction(async id => (await window.AIHistory.get(id)).messages.length === 6, failedPast.id);
+  await waitAsync(page, async id => (await window.AIHistory.get(id)).messages.length === 6, failedPast.id);
   const resumedCall = await page.evaluate(() => window.__ai.calls.at(-1));
   ok(resumedCall.prompt.includes("残す架空質問") && !resumedCall.prompt.includes("答えの無い架空質問") && !resumedCall.prompt.includes("答えを作れませんでした"), "AIへ渡す過去の会話から失敗した一往復を外す");
 
@@ -324,22 +370,22 @@ try {
   }, deletedCurrent);
   await page.waitForFunction(id => document.querySelector(`[data-history-id="${id}"] [data-history-remove]`), deletedCurrent.id);
   await page.click(`[data-history-id="${deletedCurrent.id}"] [data-history-remove]`);
-  await page.waitForFunction(async id => !(await window.AIHistory.get(id)), deletedCurrent.id);
+  await waitAsync(page, async id => !(await window.AIHistory.get(id)), deletedCurrent.id);
   await page.click("#aiViewBtn");
   ok(await page.locator("#aiConversation .ai-bubble").count() === 0, "今使っている会話を削除したらAI画面を新しい会話にする");
   await page.fill("#aiQuestion", "一件削除後の架空質問");
   await page.click("#aiSend");
-  await page.waitForFunction(async () => (await window.AIHistory.list({ kind: "chat" })).some(entry => entry.title === "一件削除後の架空質問" && entry.messages.length === 2));
+  await waitAsync(page, async () => (await window.AIHistory.list({ kind: "chat" })).some(entry => entry.title === "一件削除後の架空質問" && entry.messages.length === 2));
   ok(!(await page.locator("#toast").innerText()).includes("履歴を保存できません"), "今の会話を削除した後も新しい会話を保存できる");
 
   await page.click("#historyViewBtn");
   await page.click("#historyClearBtn");
-  await page.waitForFunction(async () => (await window.AIHistory.list({})).length === 0);
+  await waitAsync(page, async () => (await window.AIHistory.list({})).length === 0);
   await page.click("#aiViewBtn");
   ok(await page.locator("#aiConversation .ai-bubble").count() === 0, "履歴をすべて削除したらAI画面を新しい会話にする");
   await page.fill("#aiQuestion", "全削除後の架空質問");
   await page.click("#aiSend");
-  await page.waitForFunction(async () => {
+  await waitAsync(page, async () => {
     const chats = await window.AIHistory.list({ kind: "chat" });
     return chats.length === 1 && chats[0].messages.length === 2;
   });

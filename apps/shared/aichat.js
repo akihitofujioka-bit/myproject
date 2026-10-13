@@ -33,7 +33,7 @@
   function instructions(mode, options) {
     options = options || {};
     var text;
-    if (mode === "secretary" || !MODES[mode]) {
+    if (mode === "secretary" || !Object.prototype.hasOwnProperty.call(MODES, mode)) {
       var dayName = weekday(options.today);
       text = "あなたは議員の秘書。渡した一覧だけを根拠に、短く日本語で答える。一覧に無いことは『分かりません』と言う。今日は " +
         String(options.today || "") + (dayName ? "（" + dayName + "）" : "");
@@ -79,7 +79,7 @@
   }
 
   function prompt(mode, messages, question, turns) {
-    var aiName = mode === "secretary" || !MODES[mode] ? "秘書" : "相手";
+    var aiName = mode === "secretary" || !Object.prototype.hasOwnProperty.call(MODES, mode) ? "秘書" : "相手";
     function speech(name, value) {
       return name + ": " + String(value == null ? "" : value).replace(/\r?\n/g, "\n  ");
     }

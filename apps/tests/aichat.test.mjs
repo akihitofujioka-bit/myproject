@@ -55,6 +55,8 @@ if (!A) {
   ok(invalidToday.includes("今日は 不正な日付") && !invalidToday.includes("（"), "不正な今日の日付には曜日を付けない");
   const unknownMode = A.instructions("unknown", { today: "2026-10-13", context: "架空の予定一覧", source: null });
   ok(unknownMode.includes("あなたは議員の秘書") && unknownMode.includes("架空の予定一覧"), "不明なモードは秘書として扱う");
+  const inheritedMode = A.instructions("constructor", { today: "2026-10-13", context: "架空の予定一覧", source: null });
+  ok(inheritedMode.includes("あなたは議員の秘書") && inheritedMode.includes("架空の予定一覧"), "Object のプロパティ名と同じ不明なモードも秘書として扱う");
 
   const multilineCalls = [];
   await A.ask({ respond(options) { multilineCalls.push(options); return Promise.resolve({ text: "確認しました" }); } }, {

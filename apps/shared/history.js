@@ -66,15 +66,23 @@
     var connection = open();
     return connection.then(function (db) {
       return new Promise(function (resolve, reject) {
-        var request;
+        var request, transaction;
+        var readOnly = method === "get" || method === "getAll";
         try {
-          var store = db.transaction(STORE_NAME, method === "get" || method === "getAll" ? "readonly" : "readwrite").objectStore(STORE_NAME);
+          transaction = db.transaction(STORE_NAME, readOnly ? "readonly" : "readwrite");
+          var store = transaction.objectStore(STORE_NAME);
           request = hasValue ? store[method](value) : store[method]();
         } catch (error) {
           reject(error);
           return;
         }
-        request.onsuccess = function () { resolve(request.result); };
+        if (readOnly) {
+          request.onsuccess = function () { resolve(request.result); };
+        } else {
+          transaction.oncomplete = function () { resolve(request.result); };
+          transaction.onerror = function () { reject(transaction.error || request.error || new Error("履歴を操作できませんでした")); };
+          transaction.onabort = function () { reject(transaction.error || request.error || new Error("履歴を操作できませんでした")); };
+        }
         request.onerror = function () { reject(request.error || new Error("履歴を操作できませんでした")); };
       });
     }).catch(function (error) {

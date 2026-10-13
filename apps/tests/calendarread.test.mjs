@@ -22,9 +22,10 @@ const ok = (cond, label) => {
 
 console.log("== toMeeting ==");
 {
-  const m = C.toMeeting({ id: "abc", title: "○○委員会", date: "2026-10-15", startTime: "13:30", endTime: "15:00", place: "本庁舎3階" });
+  const m = C.toMeeting({ id: "abc", title: "○○委員会", date: "2026-10-15", endDate: "2026-10-16", startTime: "13:30", endTime: "15:00", place: "本庁舎3階" });
   ok(m.title === "○○委員会", "会議名を写す");
   ok(m.date === "2026-10-15", "日付を写す");
+  ok(m.endDate === "2026-10-16", "終了日を落とさず写す");
   ok(m.startTime === "13:30" && m.endTime === "15:00", "開始・終了時刻を写す");
   ok(m.place === "本庁舎3階", "場所を写す");
   ok(m.social.has === false && m.social.fee === null, "懇親会の有無はカレンダーに無いため false で始まる");

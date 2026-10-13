@@ -9,6 +9,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
+// Playwright の waitForFunction は async の条件を「すぐ満たした」と扱うため、読み込みを待ってから判定し直す
+const waitAsync = async (target, predicate, arg, timeout = 30000) => {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    if (await target.evaluate(predicate, arg)) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error("waitAsync: 条件を満たすまで待てませんでした");
+};
+
+
 const require = createRequire(import.meta.url);
 let chromium;
 try {
@@ -93,7 +104,7 @@ try {
     });
   });
   await pg.goto(base + "schedule/index.html?shared=1");
-  await pg.waitForFunction(async () => (await window.AIHistory.list({})).length === 1);
+  await waitAsync(pg, async () => (await window.AIHistory.list({})).length === 1);
 
   await pg.click("#historyViewBtn");
   await pg.waitForFunction(() => document.getElementById("historyList").textContent.includes("架空通知.pdf"));
@@ -105,22 +116,23 @@ try {
 
   await pg.click("#listViewBtn");
   await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 1);
-  await pg.click('[data-meeting-mode="app"]');
-  await pg.waitForFunction(async () => {
-    const entries = await window.AIHistory.list({ kind: "document" });
-    return entries[0] && entries[0].eventTitles && entries[0].eventTitles.includes("架空検討会");
-  });
-  ok(true, "書類から登録した予定の件名が履歴に残る");
-  const documentId = await pg.evaluate(async () => (await window.AIHistory.list({ kind: "document" }))[0].id);
-
+  ok(await pg.locator('#meetingForms .scan-result[data-origin="document"]').count() === 1, "書類から読んだ確認行に出所を付ける");
   await pg.click("#meetingManualBtn");
-  await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 1);
-  await pg.fill("#meetingForms .m-title", "架空の手入力予定");
-  await pg.fill("#meetingForms .m-date", "2026-10-23");
+  await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 2);
+  ok(await pg.locator('#meetingForms .scan-result[data-origin="manual"]').count() === 1, "手入力の確認行に出所を付ける");
+  // 件名の欄が空のまま登録すると、予定アプリは既定の件名「会議」で登録する
+  const documentRowTitle = (await pg.locator("#meetingForms .m-title").nth(0).inputValue()) || "会議";
+  await pg.locator("#meetingForms .m-title").nth(1).fill("架空の手入力予定");
+  await pg.locator("#meetingForms .m-date").nth(1).fill("2026-10-23");
   await pg.click('[data-meeting-mode="app"]');
-  await pg.waitForFunction(() => document.getElementById("meetingConfirm").hidden);
+  await waitAsync(pg, async title => {
+    const entries = await window.AIHistory.list({ kind: "document" });
+    return entries[0] && entries[0].eventTitles && entries[0].eventTitles.includes(title);
+  }, documentRowTitle);
+  ok(true, "書類と手入力を一緒に登録しても書類の件名が履歴に残る");
+  const documentId = await pg.evaluate(async () => (await window.AIHistory.list({ kind: "document" }))[0].id);
   const documentAfterManual = await pg.evaluate(id => window.AIHistory.get(id), documentId);
-  ok(!documentAfterManual.eventTitles.includes("架空の手入力予定"), "書類の後の手入力予定は書類の登録予定に入らない");
+  ok(documentRowTitle && documentAfterManual.eventTitles.join("/") === documentRowTitle, "書類の履歴には書類から読んだ行の件名だけを残す");
 
   await pg.click("#historyViewBtn");
   await pg.waitForFunction(() => document.querySelectorAll("#historyList [data-history-id]").length === 1);
@@ -130,7 +142,7 @@ try {
   await pg.fill("#handwrittenBody", "架空メモの一行目\n<b>架空</b>に修正");
   await pg.fill("#handwrittenTitle", "");
   await pg.click("#handwrittenSaveBtn");
-  await pg.waitForFunction(async () => (await window.AIHistory.list({ kind: "handwritten" })).length === 1);
+  await waitAsync(pg, async () => (await window.AIHistory.list({ kind: "handwritten" })).length === 1);
   const handwritten = await pg.evaluate(async () => (await window.AIHistory.list({ kind: "handwritten" }))[0]);
   ok(handwritten.title === "架空メモの一行目", "題名が空なら本文の一行目になる");
 
@@ -180,9 +192,64 @@ try {
   const chosenSource = await pg.evaluate(() => window.__chosenSource);
   ok(chosenSource.id === documentId && chosenSource.kind === "document", "資料選択のcallbackに選んだentryが渡る");
 
+  const displayNoticeCounts = await pg.evaluate(async () => {
+    const toast = document.getElementById("toast");
+    let count = 0;
+    const observer = new MutationObserver(() => {
+      if (toast.textContent === "履歴を表示できません") count++;
+    });
+    observer.observe(toast, { childList: true });
+    const realList = window.AIHistory.list;
+    window.AIHistory.list = () => Promise.reject(new Error("架空の表示失敗"));
+    window.setView("history");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    window.setView("history");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const whileFailing = count;
+    window.AIHistory.list = realList;
+    window.setView("history");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    window.AIHistory.list = () => Promise.reject(new Error("架空の再表示失敗"));
+    window.setView("history");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const afterSuccess = count;
+    window.AIHistory.list = realList;
+    observer.disconnect();
+    return { whileFailing, afterSuccess };
+  });
+  ok(displayNoticeCounts.whileFailing === 1 && displayNoticeCounts.afterSuccess === 2, "履歴の表示失敗は連続中1回だけ通知し、成功後は再通知する");
+
+  const saveNoticeCounts = await pg.evaluate(async () => {
+    const toast = document.getElementById("toast");
+    let count = 0;
+    const observer = new MutationObserver(() => {
+      if (toast.textContent === "履歴を保存できません") count++;
+    });
+    observer.observe(toast, { childList: true });
+    const realAdd = window.AIHistory.add;
+    const save = async body => {
+      document.getElementById("handwrittenBody").value = body;
+      document.getElementById("handwrittenSaveBtn").click();
+      await new Promise(resolve => setTimeout(resolve, 20));
+    };
+    window.AIHistory.add = () => Promise.reject(new Error("架空の保存失敗"));
+    await save("架空の保存失敗一");
+    await save("架空の保存失敗二");
+    const whileFailing = count;
+    window.AIHistory.add = realAdd;
+    await save("架空の保存成功");
+    window.AIHistory.add = () => Promise.reject(new Error("架空の再保存失敗"));
+    await save("架空の保存再失敗");
+    const afterSuccess = count;
+    window.AIHistory.add = realAdd;
+    observer.disconnect();
+    return { whileFailing, afterSuccess };
+  });
+  ok(saveNoticeCounts.whileFailing === 1 && saveNoticeCounts.afterSuccess === 2, "履歴の保存失敗は連続中1回だけ通知し、成功後は再通知する");
+
   await pg.evaluate(() => { window.confirm = () => true; });
   await pg.locator(`#historyList [data-history-id="${handwritten.id}"] [data-history-remove]`).click();
-  await pg.waitForFunction(async id => !(await window.AIHistory.get(id)), handwritten.id);
+  await waitAsync(pg, async id => !(await window.AIHistory.get(id)), handwritten.id);
   ok(true, "削除の確認でOKにすると履歴が実際に消える");
   ok(errors.length === 0, "履歴画面でJSエラーがない " + errors.join(" / "));
 
@@ -233,11 +300,11 @@ try {
   });
   await broken.goto(base + "schedule/index.html");
   await broken.waitForTimeout(50);
-  ok(!(await broken.locator("#toast").innerText()).includes("履歴を保存できません"), "壊れたDBでも一覧では履歴の通知を出さない");
+  ok(!(await broken.locator("#toast").innerText()).includes("履歴を表示できません"), "壊れたDBでも一覧では履歴の通知を出さない");
   await broken.click("#historyViewBtn");
-  await broken.waitForFunction(() => document.getElementById("toast").textContent.includes("履歴を保存できません"));
+  await broken.waitForFunction(() => document.getElementById("toast").textContent.includes("履歴を表示できません"));
   ok(await broken.locator("#historyView").isVisible(), "壊れたDBでも履歴タブを開ける");
-  ok((await broken.locator("#toast").innerText()).includes("履歴を保存できません"), "壊れたDBでは保存できない旨が出る");
+  ok((await broken.locator("#toast").innerText()).includes("履歴を表示できません"), "壊れたDBでは表示できない旨が出る");
   await broken.click("#listViewBtn");
   ok(await broken.locator("#listView").isVisible(), "履歴を保存できなくても一覧タブは動く");
   await broken.close();
