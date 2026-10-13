@@ -779,6 +779,7 @@ form.addEventListener("submit", function (event) {
     });
     if (target) Object.assign(target, values);
     toast("更新しました");
+    loadPhoneCalendar();
   } else {
     values.id = uid();
     values.status = "未着手";
@@ -874,17 +875,21 @@ function durationMinutes(start, end) {
 }
 function calendarUid(item) {
   if (item.planKey) return item.planKey;
+  // 一度決めた鍵は覚えておく（以前の鍵は件名・日付から作るので、編集すると変わってしまうため）
+  if (item.calKey) return item.calKey;
   var oldItemKey = item.id + "@docs-tracker";
   var oldMeetingKey = "mtg-" + window.Native.idFrom(item.dueOn + "/" + item.title) + "@docs-tracker";
-  if (state.calIds[oldItemKey]) return oldItemKey;
-  if (state.calIds[oldMeetingKey]) return oldMeetingKey;
-  return item.id + "@schedule";
+  if (state.calIds[oldItemKey]) item.calKey = oldItemKey;
+  else if (state.calIds[oldMeetingKey]) item.calKey = oldMeetingKey;
+  else item.calKey = item.id + "@schedule";
+  return item.calKey;
 }
 function calendarEvent(item) {
   var start = timeOf(item);
   var end = endTimeOfItem(item);
   return {
     uid: calendarUid(item),
+    calEventId: item.calEventId || "",
     title: item.title,
     date: item.dueOn,
     time: start || "",
@@ -907,7 +912,7 @@ function writeEvents(events, name, prefix) {
     var entries = events.map(function (ev) {
       return {
         key: ev.uid,
-        eventId: state.calIds[ev.uid] || "",
+        eventId: state.calIds[ev.uid] || ev.calEventId || "",
         title: ev.title,
         date: ev.date,
         startTime: ev.allDay ? "" : ev.time,
@@ -922,8 +927,14 @@ function writeEvents(events, name, prefix) {
       if (!keys.length) return writeIcs(events, name, prefix);
       keys.forEach(function (key) {
         state.calIds[key] = result.ids[key];
+        // 書き込んだカレンダーの予定の番号を、壱師の予定にも覚えさせる
+        state.items.forEach(function (item) {
+          if (item.calKey === key || item.planKey === key) item.calEventId = result.ids[key];
+        });
       });
       save();
+      // カレンダーの表示を読み直し、書き換えた予定がすぐ反映されるようにする
+      loadPhoneCalendar();
       return { how: "direct", count: keys.length };
     });
   }
@@ -963,6 +974,35 @@ function writeItemsToCalendar(items) {
 }
 
 /* ---------- iPhoneカレンダーの読み込み ---------- */
+
+// 壱師の予定と同じとみなしたカレンダーの予定の番号を、壱師の予定に覚えさせる。
+// 覚えておけば、あとで件名や時刻を編集しても結び付きが切れず、カレンダーの予定が重ねて出ない
+function linkCalendarEvents() {
+  var changed = false;
+  state.items.forEach(function (item) {
+    if (item.calEventId) return;
+    // 以前の書類トラッカーの鍵（件名・日付から作るもの）も含めて、書き込み済みかを調べる
+    var key = calendarUid(item);
+    if (state.calIds[key]) {
+      item.calEventId = state.calIds[key];
+      changed = true;
+      return;
+    }
+    var match = externalItems.find(function (ext) {
+      return ext.eventId && window.ScheduleView.isAlreadyRegistered([item], {
+        id: "",
+        title: ext.title,
+        date: ext.dueOn,
+        startTime: ext.startTime
+      }, {});
+    });
+    if (match) {
+      item.calEventId = match.eventId;
+      changed = true;
+    }
+  });
+  if (changed) save();
+}
 
 function loadPhoneCalendar() {
   if (!window.CalendarRead || !window.CalendarRead.available()) return;
@@ -1005,6 +1045,7 @@ function loadPhoneCalendar() {
         external: true
       };
     });
+    linkCalendarEvents();
     render();
   }).catch(function () {
     /* 読めない場合も、予定アプリ内の予定だけで使い続ける */
