@@ -398,6 +398,7 @@ button.small {
     <div class="chips">
       <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
       <button type="button" class="primary" id="plannerScanBtn">📒 手帳を撮る</button>
+      <button type="button" id="documentReadBtn" hidden>📁 ファイルから読む</button>
       <button type="button" id="meetingManualBtn">＋ 予定を手入力</button>
       <button type="button" id="calendarFindBtn" hidden>📅 カレンダーから探す</button>
     </div>
@@ -427,13 +428,21 @@ button.small {
   </section>
 
   <section class="card" id="meetingConfirm" hidden>
-    <h2>読み取った予定（確認して登録）</h2><div id="meetingForms"></div>
+    <h2 id="meetingConfirmTitle">読み取った予定（確認して登録）</h2>
+    <p class="footnote" id="documentOcrNotice" hidden>スキャンした PDF なので、読み違いがないか特によく確かめてください</p>
+    <div id="meetingForms"></div>
     <div class="chips">
       <button type="button" class="primary" data-meeting-mode="both">カレンダーとアプリに登録</button>
       <button type="button" data-meeting-mode="calendar">カレンダーだけ</button>
       <button type="button" data-meeting-mode="app">アプリだけ</button>
       <button type="button" class="link" id="meetingCancel">やめる</button>
     </div>
+  </section>
+
+  <section class="card" id="documentTextCard" hidden>
+    <h2>取り出した文字</h2>
+    <pre id="documentText"></pre>
+    <div class="chips"><button type="button" id="documentManualBtn">手入力</button></div>
   </section>
 
   <section class="card" id="plannerConfirm" hidden>
@@ -486,6 +495,8 @@ button.small {
 <script src="../shared/contacts.js"></script>
 <script src="../shared/suggest.js"></script>
 <script src="../shared/todos.js"></script>
+<script src="../shared/scheduletable.js"></script>
+<script src="../shared/documentreader.js"></script>
 <div class="actionbar">
   <div>
     <button type="button" class="primary" id="jumpAdd">予定を登録する</button>
@@ -1174,10 +1185,15 @@ function meetingNote(meeting) {
   lines.push(meeting.source === "calendar" ? "（カレンダーから登録）" : meeting.source === "manual" ? "（手入力で登録）" : meeting.source === "memo" ? "（メモから登録）" : "（会議の通知から登録）");
   return lines.join("\n");
 }
-function renderMeetings(list) {
+function renderMeetings(list, options) {
+  var renderOptions = options || {};
   scannedMeetings = list || [];
   var box = document.getElementById("meetingConfirm");
   box.hidden = !scannedMeetings.length;
+  document.getElementById("meetingConfirmTitle").textContent = renderOptions.source === "file"
+    ? "ファイルから読み取った予定（確認して登録）"
+    : "読み取った予定（確認して登録）";
+  document.getElementById("documentOcrNotice").hidden = !(renderOptions.source === "file" && renderOptions.ocr);
   document.getElementById("meetingForms").innerHTML = scannedMeetings.map(function (meeting, index) {
     var rawText = (meeting.rows || []).join("\n");
     var suggestItem = {
@@ -1273,6 +1289,39 @@ function applyMeetingScan(lines) {
   renderMeetings(found);
   toast(found.length ? found.length + "件を読み取りました" : "会議を見つけられませんでした");
   return found;
+}
+function showDocumentResult(result) {
+  var converted = window.DocumentReader.toMeetings(result, ymd(new Date()));
+  var textCard = document.getElementById("documentTextCard");
+  textCard.hidden = true;
+  if (converted.meetings.length) {
+    renderMeetings(converted.meetings, { source: "file", ocr: !!result.ocr });
+    document.getElementById("meetingConfirm").scrollIntoView({ behavior: "smooth", block: "start" });
+    toast(converted.meetings.length + "件を読み取りました");
+    return;
+  }
+  renderMeetings([]);
+  document.getElementById("documentText").innerHTML = esc(converted.text || "文字を取り出せませんでした");
+  textCard.hidden = false;
+  textCard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function readDocument(promise, button) {
+  var original = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "読んでいます…";
+  }
+  promise.then(function (result) {
+    if (result && !result.cancelled) showDocumentResult(result);
+  }).catch(function (error) {
+    var reason = error && error.message ? error.message : String(error || "原因不明");
+    toast("このファイルは読めませんでした（" + reason + "）");
+  }).then(function () {
+    if (button) {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  });
 }
 function registerMeetingMode(mode, button) {
   var list = collectMeetings().filter(function (meeting) {
@@ -1458,6 +1507,10 @@ if (window.CalendarRead && window.CalendarRead.available()) {
   document.getElementById("scanCard").hidden = false;
   document.getElementById("calendarFindBtn").hidden = false;
 }
+if (window.DocumentReader && window.DocumentReader.available()) {
+  document.getElementById("scanCard").hidden = false;
+  document.getElementById("documentReadBtn").hidden = false;
+}
 document.getElementById("calendarFindBtn").addEventListener("click", function () {
   var button = this;
   var original = button.textContent;
@@ -1543,6 +1596,14 @@ document.getElementById("meetingScanBtn").addEventListener("click", function () 
 document.getElementById("plannerScanBtn").addEventListener("click", function () {
   scan(this, { purpose: "planner" }, applyPlannerScan);
 });
+document.getElementById("documentReadBtn").addEventListener("click", function () {
+  readDocument(window.DocumentReader.pick(), this);
+});
+document.getElementById("documentManualBtn").addEventListener("click", function () {
+  document.getElementById("documentTextCard").hidden = true;
+  document.getElementById("addCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("f-title").focus({ preventScroll: true });
+});
 document.getElementById("meetingManualBtn").addEventListener("click", function () {
   renderMeetings(scannedMeetings.concat([{
     title: "",
@@ -1612,6 +1673,9 @@ if (pendingMemo && pendingMemo.length) {
 var pendingPlanner = window.ScanRouter && window.ScanRouter.takeHandoff("planner");
 if (pendingPlanner && pendingPlanner.length) {
   applyPlannerScan(pendingPlanner);
+}
+if (window.DocumentReader && window.DocumentReader.available()) {
+  readDocument(window.DocumentReader.takeShared(), null);
 }
 
 window.scheduleApp = {

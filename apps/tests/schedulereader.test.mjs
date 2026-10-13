@@ -54,6 +54,22 @@ await pg.addInitScript(() => {
   };
   window.Capacitor = {
     isNativePlatform: () => true,
+    Plugins: {
+      DocumentReader: {
+        pick: () => window.__doc.pickError
+          ? Promise.reject(new Error(window.__doc.pickError))
+          : Promise.resolve(window.__doc.pickResult || { cancelled: true }),
+        hasShared: () => Promise.resolve(location.search.includes("testBanner=1")
+          ? { has: true, name: "架空.pdf" }
+          : { has: !!window.__doc.shared, name: window.__doc.shared ? window.__doc.shared.name : "" }),
+        takeShared: () => {
+          window.__doc.takeCount++;
+          const result = window.__doc.shared;
+          window.__doc.shared = null;
+          return Promise.resolve(result || {});
+        }
+      }
+    },
     nativePromise: (plugin, method) => {
       if (method === "isSupported") return Promise.resolve({ supported: true, authorized: true });
       if (method === "listCalendars") return Promise.resolve({ calendars: [{ id: "C1", title: "仕事", color: "#FF9500" }] });
@@ -61,6 +77,11 @@ await pg.addInitScript(() => {
       return Promise.resolve({ cancelled: true });
     }
   };
+  const sharedResult = location.search.includes("testShared=1") ? {
+    name: "共有された架空.pdf", kind: "pdf", ocr: false, tables: [],
+    lines: ["架空検討委員会", "日時 令和8年10月22日（木）午後1時30分から", "場所 架空市役所 第1会議室"]
+  } : null;
+  window.__doc = { pickResult: null, pickError: "", shared: sharedResult, takeCount: 0 };
 });
 
 try {
@@ -71,6 +92,64 @@ try {
   });
   await pg.reload();
   await pg.waitForTimeout(600);
+
+  const tableResult = {
+    name: "架空予定表.xlsx", kind: "xlsx", lines: [], ocr: false,
+    tables: [[
+      ["月日", "曜", "行事", "時間", "会場"],
+      ["10月22日", "木", "架空の定例会", "10:00〜12:00", "議場"],
+      ["10/28", "水", "架空の研修", "13時30分", "第1会議室"],
+      ["", "", "（備考）", "", ""]
+    ]]
+  };
+  await pg.evaluate(result => { window.__doc.pickResult = result; }, tableResult);
+  await pg.click("#documentReadBtn");
+  await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 2);
+  ok(await pg.locator("#meetingForms .scan-result").count() === 2, "Task 10: 予定表から 2 件出る");
+  ok((await pg.locator("#meetingConfirmTitle").innerText()) === "ファイルから読み取った予定（確認して登録）", "Task 10: ファイル用の見出し");
+
+  const noticeResult = {
+    name: "架空通知.docx", kind: "docx", ocr: false, tables: [],
+    lines: [
+      "架空市 第3回 架空検討委員会の開催について",
+      "日時 令和8年10月22日（木）午後1時30分から",
+      "場所 架空市役所 第1会議室",
+      "当日は資料を持参してください。",
+      "出欠を10月20日（火）までに提出してください。",
+      "問い合わせ 架空課 電話 03-0000-0000"
+    ]
+  };
+  await pg.evaluate(result => { window.__doc.pickResult = result; }, noticeResult);
+  await pg.click("#documentReadBtn");
+  await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 1);
+  ok(await pg.locator(".m-date").inputValue() === "2026-10-22", "Task 10: 通知の日付");
+  ok(await pg.locator(".m-todo").count() === 2, "Task 10: 通知のやること候補が 2 件");
+  ok((await pg.locator("#meetingForms").innerText()).includes("問い合わせ: 電話 03-0000-0000"), "Task 10: 通知の連絡先");
+
+  await pg.evaluate(result => { window.__doc.pickResult = { ...result, ocr: true }; }, noticeResult);
+  await pg.click("#documentReadBtn");
+  await pg.waitForFunction(() => !document.getElementById("documentOcrNotice").hidden);
+  ok((await pg.locator("#documentOcrNotice").innerText()).includes("特によく確かめてください"), "Task 10: OCR の注意");
+
+  await pg.evaluate(() => { window.__doc.pickResult = { name: "空の架空.pdf", kind: "pdf", lines: [], tables: [], ocr: false }; });
+  await pg.click("#documentReadBtn");
+  await pg.waitForFunction(() => !document.getElementById("documentTextCard").hidden);
+  ok((await pg.locator("#documentTextCard").innerText()).includes("取り出した文字"), "Task 10: 予定が無いときは取り出した文字の欄");
+  ok(await pg.locator("#documentManualBtn").isVisible(), "Task 10: 予定が無いときは手入力ボタン");
+
+  await pg.evaluate(() => { window.__doc.pickError = "ファイルが壊れているため読めませんでした"; });
+  await pg.click("#documentReadBtn");
+  await pg.waitForFunction(() => document.getElementById("toast").textContent.includes("ファイルが壊れているため読めませんでした"));
+  ok((await pg.locator("#toast").innerText()).includes("このファイルは読めませんでした（ファイルが壊れているため読めませんでした）"), "Task 10: 読めない理由を知らせる");
+  await pg.evaluate(() => { window.__doc.pickError = ""; });
+
+  const shared = await pg.evaluate(async result => {
+    window.__doc.shared = result;
+    const first = await window.DocumentReader.takeShared();
+    const second = await window.DocumentReader.takeShared();
+    return { first, second };
+  }, noticeResult);
+  ok(shared.first && shared.first.name === "架空通知.docx" && shared.second === null, "Task 10: 共有ファイルは 1 回だけ取り出す");
 
   await pg.evaluate(() => window.scheduleApp.renderMeetings([{
     title: "読み取った架空の会議",
@@ -152,6 +231,17 @@ try {
   await pg.click("#submitBtn");
   ok(!(await pg.locator("#hintsCard").isHidden()) && await pg.locator("#hintsCard li").count() === 1, "Task 8: 時刻を変えると新しい指摘として再び出る");
   ok(errs.length === 0, "Task 8: JS エラーなし " + errs.join(" / "));
+
+  await pg.goto(base + "schedule/index.html?testShared=1");
+  await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 1);
+  ok(await pg.locator("#meetingForms .scan-result").count() === 1, "Task 10: 起動時の共有ファイルを確認欄に出す");
+  ok(await pg.evaluate(() => window.__doc.takeCount) === 1, "Task 10: 起動時の takeShared は 1 回だけ");
+
+  await pg.goto(base + "index.html?testBanner=1");
+  await pg.waitForFunction(() => !!document.getElementById("documentReaderBanner"));
+  ok((await pg.locator("#documentReaderBanner").innerText()).includes("共有された「架空.pdf」を予定アプリで読む"), "Task 10: トップ画面に共有ファイルの帯");
+  ok((await pg.locator("#documentReaderBanner a").getAttribute("href")) === "schedule/index.html?shared=1", "Task 10: 帯のリンク先");
+  ok(errs.length === 0, "Task 10: JS エラーなし " + errs.join(" / "));
 } finally {
   await b.close();
   srv.close();
