@@ -584,7 +584,7 @@ var scannedMeetings = [];
 var plannerResult = null;
 var calendarCandidates = [];
 var currentDocumentHistoryId = null;
-var currentDocumentHistorySave = Promise.resolve(null);
+var currentDocumentHistorySave = null;
 var sourcePickerCallback = null;
 window.currentDocumentHistoryId = null;
 var CALENDAR_PICK_IDS_KEY = "schedule.calendarPickIds";
@@ -819,15 +819,23 @@ function historyKindLabel(kind) {
   return { chat: "会話", document: "書類", handwritten: "手書きメモ" }[kind] || "履歴";
 }
 
+function resetDocumentHistory() {
+  currentDocumentHistoryId = null;
+  currentDocumentHistorySave = null;
+  window.currentDocumentHistoryId = null;
+}
+
+function showScheduleResultView() {
+  if (currentView === "ai" || currentView === "history") setView("list");
+}
+
 function saveDocumentHistory(name, text) {
   var body = String(text || "").trim();
-  currentDocumentHistoryId = null;
-  window.currentDocumentHistoryId = null;
+  resetDocumentHistory();
   if (!body || !window.AIHistory) {
-    currentDocumentHistorySave = Promise.resolve(null);
-    return currentDocumentHistorySave;
+    return Promise.resolve(null);
   }
-  currentDocumentHistorySave = window.AIHistory.add({
+  var savePromise = window.AIHistory.add({
     kind: "document",
     title: String(name || "").trim() || window.AIHistory.titleFrom(body),
     body: body,
@@ -836,21 +844,26 @@ function saveDocumentHistory(name, text) {
     sourceId: "",
     eventTitles: []
   }).then(function (entry) {
-    currentDocumentHistoryId = entry.id;
-    window.currentDocumentHistoryId = entry.id;
+    if (currentDocumentHistorySave === savePromise) {
+      currentDocumentHistoryId = entry.id;
+      window.currentDocumentHistoryId = entry.id;
+    }
     return entry;
   }).catch(function () {
     historyError();
     return null;
   });
+  currentDocumentHistorySave = savePromise;
   return currentDocumentHistorySave;
 }
 
 function addEventTitlesToDocument(items) {
   var titles = (items || []).map(function (item) { return item.title; }).filter(Boolean);
-  if (!titles.length || !window.AIHistory) return;
-  currentDocumentHistorySave.then(function (entry) {
-    var id = currentDocumentHistoryId || (entry && entry.id);
+  var historyId = currentDocumentHistoryId;
+  var historySave = currentDocumentHistorySave;
+  if (!titles.length || !window.AIHistory || !historySave) return;
+  historySave.then(function (entry) {
+    var id = historyId || (entry && entry.id);
     if (!id) return null;
     return window.AIHistory.get(id).then(function (saved) {
       if (!saved) return null;
@@ -1466,6 +1479,7 @@ function meetingNote(meeting) {
 function renderMeetings(list, options) {
   var renderOptions = options || {};
   scannedMeetings = list || [];
+  if (!scannedMeetings.length) resetDocumentHistory();
   var box = document.getElementById("meetingConfirm");
   box.hidden = !scannedMeetings.length;
   document.getElementById("meetingConfirmTitle").textContent = renderOptions.source === "file"
@@ -1560,6 +1574,7 @@ function meetingItems(list) {
   });
 }
 function applyMeetingScan(lines) {
+  showScheduleResultView();
   var rows = window.Receipt.rowsFromLines(lines).map(function (row) {
     return row.text;
   });
@@ -1570,6 +1585,7 @@ function applyMeetingScan(lines) {
   return found;
 }
 function showDocumentResult(result) {
+  showScheduleResultView();
   var converted = window.DocumentReader.toMeetings(result, ymd(new Date()));
   var historyText = converted.text || (result.tables || []).map(function (table) {
     return (table || []).map(function (row) { return (row || []).join(" "); }).join("\n");
@@ -1659,11 +1675,11 @@ function registerMeetingMode(mode, button) {
   button.disabled = true;
   writeEvents(items.map(calendarEvent), "会議", "meetings").then(function (result) {
     button.disabled = false;
-    renderMeetings([]);
     if (mode === "calendar") {
       todoResult = addTodos(items);
       addEventTitlesToDocument(items);
     }
+    renderMeetings([]);
     toast((result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました") + todoNotice(todoResult));
   }, function () {
     button.disabled = false;
@@ -1729,6 +1745,8 @@ function plannerItems(list) {
   });
 }
 function applyPlannerScan(lines) {
+  showScheduleResultView();
+  resetDocumentHistory();
   var result = window.Planner.parse(lines);
   renderPlanner(result);
   toast(result.kind
@@ -1881,17 +1899,20 @@ document.getElementById("meetingScanBtn").addEventListener("click", function () 
   scan(this, {}, applyMeetingScan);
 });
 document.getElementById("plannerScanBtn").addEventListener("click", function () {
+  resetDocumentHistory();
   scan(this, { purpose: "planner" }, applyPlannerScan);
 });
 document.getElementById("documentReadBtn").addEventListener("click", function () {
   readDocument(window.DocumentReader.pick(), this);
 });
 document.getElementById("documentManualBtn").addEventListener("click", function () {
+  resetDocumentHistory();
   document.getElementById("documentTextCard").hidden = true;
   document.getElementById("addCard").scrollIntoView({ behavior: "smooth", block: "start" });
   document.getElementById("f-title").focus({ preventScroll: true });
 });
 document.getElementById("meetingManualBtn").addEventListener("click", function () {
+  resetDocumentHistory();
   renderMeetings(scannedMeetings.concat([{
     title: "",
     date: "",

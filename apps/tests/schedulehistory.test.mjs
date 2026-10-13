@@ -96,6 +96,7 @@ try {
   await pg.waitForFunction(async () => (await window.AIHistory.list({})).length === 1);
 
   await pg.click("#historyViewBtn");
+  await pg.waitForFunction(() => document.getElementById("historyList").textContent.includes("架空通知.pdf"));
   ok(await pg.locator("#historySearch").isVisible(), "履歴に検索欄が出る");
   ok((await pg.locator("#historyKind option").allTextContents()).join("/") === "すべて/会話/書類/手書きメモ", "履歴に種類の絞り込みが出る");
   ok(await pg.getByRole("button", { name: "✍️ 手書きメモを撮る" }).isVisible(), "手書きメモを撮るボタンが出る");
@@ -110,9 +111,21 @@ try {
     return entries[0] && entries[0].eventTitles && entries[0].eventTitles.includes("架空検討会");
   });
   ok(true, "書類から登録した予定の件名が履歴に残る");
+  const documentId = await pg.evaluate(async () => (await window.AIHistory.list({ kind: "document" }))[0].id);
+
+  await pg.click("#meetingManualBtn");
+  await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 1);
+  await pg.fill("#meetingForms .m-title", "架空の手入力予定");
+  await pg.fill("#meetingForms .m-date", "2026-10-23");
+  await pg.click('[data-meeting-mode="app"]');
+  await pg.waitForFunction(() => document.getElementById("meetingConfirm").hidden);
+  const documentAfterManual = await pg.evaluate(id => window.AIHistory.get(id), documentId);
+  ok(!documentAfterManual.eventTitles.includes("架空の手入力予定"), "書類の後の手入力予定は書類の登録予定に入らない");
 
   await pg.click("#historyViewBtn");
+  await pg.waitForFunction(() => document.querySelectorAll("#historyList [data-history-id]").length === 1);
   await pg.click("#handwrittenImageBtn");
+  await pg.waitForFunction(() => document.getElementById("handwrittenBody").value.includes("架空メモの一行目"));
   ok(await pg.locator("#handwrittenBody").inputValue() === "架空メモの一行目\n修正前", "写真の文字が編集欄に入る");
   await pg.fill("#handwrittenBody", "架空メモの一行目\n<b>架空</b>に修正");
   await pg.fill("#handwrittenTitle", "");
@@ -144,11 +157,47 @@ try {
   await pg.waitForFunction(() => !document.getElementById("historyDetail").hidden && document.getElementById("historyDetail").textContent.includes("修正"));
   ok(await pg.locator("#historyDetail b").count() === 0, "本文のHTMLは要素にならない");
   ok((await pg.locator("#historyDetail").innerText()).includes("<b>架空</b>"), "本文のHTMLを文字のまま表示する");
-  const documentId = await pg.evaluate(async () => (await window.AIHistory.list({ kind: "document" }))[0].id);
   await pg.locator(`#historyList [data-history-id="${documentId}"] [data-history-open]`).click();
+  await pg.waitForFunction(() => {
+    const detail = document.getElementById("historyDetail");
+    return !detail.hidden && detail.textContent.includes("架空検討会");
+  });
   ok(await pg.getByRole("button", { name: "この資料で壁打ち" }).isVisible(), "書類に壁打ちボタンが出る");
   ok(await pg.getByRole("button", { name: "この資料でブレスト" }).isVisible(), "書類にブレストボタンが出る");
+
+  await pg.evaluate(async () => {
+    await window.AIHistory.add({
+      kind: "chat", title: "架空の会話", body: "", mode: "secretary",
+      messages: [], sourceId: "", eventTitles: []
+    });
+    window.__chosenSource = null;
+    window.chooseSource(entry => { window.__chosenSource = entry; });
+  });
+  await pg.waitForFunction(() => document.querySelectorAll("#historyList [data-history-id]").length === 2);
+  ok(!(await pg.locator("#historyList").innerText()).includes("架空の会話"), "資料選択には書類と手書きメモだけが並ぶ");
+  await pg.locator(`#historyList [data-history-id="${documentId}"] [data-history-select]`).click();
+  await pg.waitForFunction(() => window.__chosenSource && window.__chosenSource.id);
+  const chosenSource = await pg.evaluate(() => window.__chosenSource);
+  ok(chosenSource.id === documentId && chosenSource.kind === "document", "資料選択のcallbackに選んだentryが渡る");
+
+  await pg.evaluate(() => { window.confirm = () => true; });
+  await pg.locator(`#historyList [data-history-id="${handwritten.id}"] [data-history-remove]`).click();
+  await pg.waitForFunction(async id => !(await window.AIHistory.get(id)), handwritten.id);
+  ok(true, "削除の確認でOKにすると履歴が実際に消える");
   ok(errors.length === 0, "履歴画面でJSエラーがない " + errors.join(" / "));
+
+  const receivedContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const received = await receivedContext.newPage();
+  await received.addInitScript(fakeNative);
+  await received.addInitScript(() => localStorage.setItem("schedule.view", "history"));
+  await received.goto(base + "schedule/index.html?shared=1");
+  await received.waitForFunction(() => {
+    const confirm = document.getElementById("meetingConfirm");
+    return !document.getElementById("listView").hidden &&
+      !confirm.hidden && confirm.textContent.includes("ファイルから読み取った予定");
+  });
+  ok(await received.locator("#meetingConfirm").isVisible(), "履歴表示で共有書類を受け取っても確認画面が見える");
+  await receivedContext.close();
 
   const broken = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await broken.addInitScript(() => {
@@ -163,7 +212,10 @@ try {
     Object.defineProperty(window, "indexedDB", { configurable: true, value: failed });
   });
   await broken.goto(base + "schedule/index.html");
+  await broken.click("#historyViewBtn");
   await broken.waitForFunction(() => document.getElementById("toast").textContent.includes("履歴を保存できません"));
+  ok(await broken.locator("#historyView").isVisible(), "壊れたDBでも履歴タブを開ける");
+  ok((await broken.locator("#toast").innerText()).includes("履歴を保存できません"), "壊れたDBでは保存できない旨が出る");
   await broken.click("#listViewBtn");
   ok(await broken.locator("#listView").isVisible(), "履歴を保存できなくても一覧タブは動く");
   await broken.close();
