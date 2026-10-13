@@ -1209,6 +1209,8 @@ function requestDraft(question) {
 
 function sendAIQuestion() {
   var input = document.getElementById("aiQuestion");
+  var sendButton = document.getElementById("aiSend");
+  if (sendButton.disabled) return;
   var question = input.value.trim();
   if (!question) {
     toast("メッセージを入力してください");
@@ -1219,7 +1221,6 @@ function sendAIQuestion() {
   var requestMessages = aiMessages;
   var earlierMessages = requestMessages.slice();
   var sessionNumber = aiSessionNumber;
-  var sendButton = document.getElementById("aiSend");
   var userMessage = { role: "user", text: question };
   aiErrorMessage = "";
   requestMessages.push(userMessage);

@@ -214,19 +214,44 @@ try {
   const sourceChat = await page.evaluate(async id => (await window.AIHistory.list({ kind: "chat" })).find(chat => chat.sourceId === id), source.id);
   ok(sourceChat.mode === "sparring" && sourceChat.sourceId === source.id, "資料付き会話のモードと資料IDを保存する");
 
+  const callsBeforeSourceLoad = await page.evaluate(() => window.__ai.calls.length);
+  await page.evaluate(id => {
+    const realGet = window.AIHistory.get;
+    window.__ai.realHistoryGet = realGet;
+    window.AIHistory.get = requestedId => requestedId === id
+      ? new Promise(resolve => {
+        window.__ai.resolveHistoryGet = () => realGet(id).then(resolve);
+      })
+      : realGet(requestedId);
+    window.startAIWithSource("sparring", { id });
+  }, source.id);
+  await page.waitForFunction(() => typeof window.__ai.resolveHistoryGet === "function");
+  await page.fill("#aiQuestion", "資料の読込中には送らない架空の質問");
+  await page.press("#aiQuestion", "Control+Enter");
+  ok(await page.locator("#aiConversation .ai-bubble.user").count() === 0, "資料の読込中はショートカットで利用者の吹き出しを追加しない");
+  ok(await page.evaluate(() => window.__ai.calls.length) === callsBeforeSourceLoad, "資料の読込中はショートカットでAIへ送らない");
+  await page.evaluate(() => {
+    window.__ai.resolveHistoryGet();
+    window.AIHistory.get = window.__ai.realHistoryGet;
+  });
+  await page.waitForFunction(() => !document.getElementById("aiSend").disabled);
+
   await page.click("#aiNewChat");
   await page.fill("#aiQuestion", "遅い答えを待つ架空の質問");
   await page.click("#aiSend");
   await page.waitForFunction(() => typeof window.__ai.resolveDelayed === "function");
   const delayedId = await page.evaluate(async () => (await window.AIHistory.list({ kind: "chat" }))[0].id);
+  await page.press("#aiQuestion", "Control+Enter");
+  ok(await page.locator("#aiConversation .ai-bubble.user").count() === 1, "回答待ち中の再送でも利用者の吹き出しは1つにする");
   await page.click("#aiNewChat");
   await page.evaluate(() => window.__ai.resolveDelayed());
   await page.waitForFunction(async id => {
     const entry = await window.AIHistory.get(id);
-    return entry && entry.messages.some(message => message.text.includes("遅れて届いた"));
+    return entry && entry.messages.length === 2 && entry.messages.some(message => message.text.includes("遅れて届いた"));
   }, delayedId);
   ok(!(await page.locator("#aiConversation").innerText()).includes("遅れて届いた"), "新しい会話へ遅い答えを混ぜない");
   const delayedEntry = await page.evaluate(id => window.AIHistory.get(id), delayedId);
+  ok(delayedEntry.messages.length === 2, "回答待ち中の再送でも履歴のメッセージは2件だけにする");
   ok(delayedEntry.messages.at(-1).text === "遅れて届いた架空の答え", "遅い答えを送信時の会話へ保存する");
 
   const linkedChat = await page.evaluate(async id => window.AIHistory.add({
@@ -251,7 +276,9 @@ try {
   await page.fill("#aiQuestion", "続きを出して");
   await page.click("#aiSend");
   await page.waitForFunction(async id => (await window.AIHistory.get(id)).messages.length === 4, continuing.id);
-  ok((await page.evaluate(id => window.AIHistory.get(id), continuing.id)).messages.length === 4, "続きから同じ会話へ質問と回答を追記する");
+  const continuedEntry = await page.evaluate(id => window.AIHistory.get(id), continuing.id);
+  const continuedSummary = continuedEntry.messages.map(message => message.role + ":" + String(message.text || "").slice(0, 20)).join(" / ");
+  ok(continuedEntry.messages.length === 4, "続きから同じ会話へ質問と回答を追記する（messages=" + continuedEntry.messages.length + "、内容=" + continuedSummary + "）");
 
   await page.click("#aiNewChat");
   await page.fill("#aiQuestion", "拒否して");
