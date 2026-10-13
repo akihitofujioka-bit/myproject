@@ -105,12 +105,6 @@
     return shuffledRound(count, Math.floor(elapsed / count), startDate, slot)[elapsed % count];
   }
 
-  function veilAlpha(veil) {
-    if (veil === "light") return 0.55;
-    if (veil === "strong") return 0.85;
-    return 0.7;
-  }
-
   function normalize(record, slot) {
     record = record && typeof record === "object" ? record : {};
     var album = record.album;
@@ -120,7 +114,6 @@
       slot: slot,
       interval: record.interval === "week" || record.interval === "month" ? record.interval : "day",
       order: record.order === "random" ? "random" : "sequential",
-      veil: record.veil === "light" || record.veil === "strong" ? record.veil : "normal",
       startDate: dateParts(record.startDate) ? record.startDate : todayString(new Date()),
       photos: Array.isArray(record.photos) ? record.photos : [],
       album: album,
@@ -357,20 +350,17 @@
       background.dataset.url = url;
       background.style.cssText = "position:fixed;inset:0;z-index:-1;background:center / cover no-repeat url(\"" + url + "\")";
 
-      var veil = global.document.createElement("div");
-      veil.style.cssText = "position:absolute;inset:0;background:rgba(255,255,255," + veilAlpha(record.veil) + ")";
-      background.innerHTML = "";
-      background.appendChild(veil);
-
       var style = global.document.getElementById("charBgStyle");
       if (!style) {
         style = global.document.createElement("style");
         style.id = "charBgStyle";
-        // 写真の上に直接のる文字（戻るリンク・見出し・説明文・版表記）は読みにくいので、
+        // 写真には膜をかぶせず、そのまま見せる。写真の上に直接のる文字（戻るリンク・見出し・
+        // 説明文・版表記・家計簿の月・カードが無いときの案内）は読みにくいので、
         // 背景があるときだけ白い半透明の帯を敷く
         style.textContent = "html.has-char-bg body { background: transparent; }" +
           "html.has-char-bg .backlink, html.has-char-bg header, html.has-char-bg .wrap > h1," +
-          " html.has-char-bg .wrap > .lead, html.has-char-bg .version" +
+          " html.has-char-bg .wrap > .lead, html.has-char-bg .version," +
+          " html.has-char-bg .monthbar .label, html.has-char-bg p.empty" +
           " { background: rgba(255,255,255,0.88); border-radius: 10px; padding: 6px 10px; }" +
           "html.has-char-bg .backlink, html.has-char-bg .wrap > h1 { display: table; }";
         global.document.head.appendChild(style);
@@ -384,7 +374,6 @@
   var character = {
     SLOTS: SLOTS,
     pickIndex: pickIndex,
-    veilAlpha: veilAlpha,
     normalize: normalize,
     albumDiff: albumDiff,
     albumNotice: albumNotice,

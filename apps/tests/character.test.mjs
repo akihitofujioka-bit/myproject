@@ -32,10 +32,9 @@ ok(C.pickIndex(3, "month", "2026-10-08", d("2027-01-01")) === 0, "month: 年ま�
 ok(C.pickIndex(1, "day", "2026-10-08", d("2026-12-25")) === 0, "1 枚ならいつも 0");
 ok(C.pickIndex(0, "day", "2026-10-08", d("2026-10-08")) === -1, "0 枚なら -1");
 ok(C.pickIndex(3, "day", "2026-10-08", d("2026-10-01")) === 0, "時計を戻したら 0");
-ok(C.veilAlpha("light") === 0.55 && C.veilAlpha("normal") === 0.7 && C.veilAlpha("strong") === 0.85, "膜の 3 段階");
-ok(C.veilAlpha("xxx") === 0.7, "知らない値は normal");
+ok(C.veilAlpha === undefined, "写真に白い膜をかぶせない");
 const n = C.normalize({ photos: "壊れた値" }, "fridge");
-ok(n.slot === "fridge" && n.interval === "day" && n.veil === "normal" && Array.isArray(n.photos) && n.photos.length === 0, "壊れた記録を最初の値で埋める");
+ok(n.slot === "fridge" && n.interval === "day" && n.veil === undefined && Array.isArray(n.photos) && n.photos.length === 0, "壊れた記録を最初の値で埋める");
 ok(/^\d{4}-\d{2}-\d{2}$/.test(n.startDate), "startDate が無ければ今日");
 ok(C.todayString(new Date(2026, 0, 5)) === "2026-01-05", "地域の日付で YYYY-MM-DD");
 ok(C.SLOTS.join(",") === "top,fridge,docs-tracker,schedule,kakeibo,cards", "6 つの枠");
