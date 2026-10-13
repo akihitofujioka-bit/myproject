@@ -104,7 +104,7 @@ public class CalendarReaderPlugin: CAPPlugin, CAPBridgedPlugin {
             .sorted { $0.startDate < $1.startDate }
             .map { ev -> [String: Any] in
                 let eventEndDate: Date = ev.isAllDay
-                    ? ev.endDate.addingTimeInterval(-1)
+                    ? max(ev.endDate.addingTimeInterval(-1), ev.startDate)
                     : ev.endDate
                 return [
                     "id": ev.eventIdentifier ?? "",
