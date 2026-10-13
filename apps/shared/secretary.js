@@ -345,7 +345,7 @@
     var request = ["入れて", "忘れないように", "予定にして"].some(function (word) {
       return text.indexOf(word) >= 0;
     }) || /やることに(?:追加|入れ|して)/.test(text) || /(?:登録|追加)(?:して|してください|してほしい|をお願い)/.test(text);
-    if (/(?:教えて|は|ある)[？?。]?\s*$/.test(text) || /[？?]\s*$/.test(text)) return request;
+    if (/(?:教えて(?:ください|下さい|ほしい)?|は|ある|あります(?:か)?)[？?。]?\s*$/.test(text) || /[？?]\s*$/.test(text)) return request;
     return ["入れて", "登録", "追加", "忘れないように", "予定にして"].some(function (word) {
       return text.indexOf(word) >= 0;
     }) || /やることに(?:追加|入れ|して)/.test(text);
