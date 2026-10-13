@@ -392,6 +392,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <label for="memoText">メモ</label>
       <textarea id="memoText" rows="5" placeholder="気づいたことや予定、期限のあるやることを書きます"></textarea>
       <div class="chips" style="margin-top:8px">
+        <span id="speechMemoSlot"></span>
         <button type="button" class="primary" id="memoSave">保存する</button>
         <button type="button" id="memoCancel" hidden>やめる</button>
       </div>
@@ -442,6 +443,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/meeting.js"></script>
 <script src="../shared/todos.js"></script>
 <script src="../shared/scanrouter.js"></script>
+<script src="../shared/speechmemo.js"></script>
 <script>
 "use strict";
 if (window.Character) window.Character.applyBackground("docs-tracker");
@@ -762,6 +764,47 @@ function markMemoMoved(id, destination) {
 document.getElementById("docsTab").addEventListener("click", function () { showPanel("docs"); });
 document.getElementById("memoTab").addEventListener("click", function () { showPanel("memo"); });
 document.getElementById("memoCancel").addEventListener("click", stopMemoEditing);
+
+// 対応する iPhone でだけ音声ボタンを作る。認識後も保存は利用者が行う。
+(function setupSpeechMemo() {
+  if (!window.SpeechMemo) return;
+  window.SpeechMemo.available().then(function (supported) {
+    if (!supported) return;
+    var button = document.createElement("button");
+    var listening = false;
+    button.type = "button";
+    button.id = "speechMemoButton";
+    button.textContent = "🎤 話してメモ";
+    document.getElementById("speechMemoSlot").appendChild(button);
+
+    button.addEventListener("click", function () {
+      if (listening) {
+        button.disabled = true;
+        window.SpeechMemo.stop().then(function (text) {
+          document.getElementById("memoText").value = text;
+        }).catch(function (error) {
+          toast((error && error.message) || String(error));
+        }).then(function () {
+          listening = false;
+          button.disabled = false;
+          button.textContent = "🎤 話してメモ";
+        });
+        return;
+      }
+
+      listening = true;
+      button.textContent = "● 聞いています…（もう一度押すと止まる）";
+      window.SpeechMemo.start(function (text) {
+        document.getElementById("memoText").value = text;
+      }).catch(function (error) {
+        listening = false;
+        button.textContent = "🎤 話してメモ";
+        toast((error && error.message) || String(error));
+      });
+    });
+  });
+})();
+
 document.getElementById("memoSave").addEventListener("click", function () {
   var text = document.getElementById("memoText").value.trim();
   if (!text) { toast("メモを入力してください"); return; }

@@ -14,7 +14,8 @@ class ViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(WatchBridgePlugin())
         bridge?.registerPluginInstance(CalendarReaderPlugin())
         bridge?.registerPluginInstance(CalendarWriterPlugin())
+        bridge?.registerPluginInstance(SpeechMemoPlugin())
         // 登録が実際に行われたことを起動ログで確認できるようにする
-        CAPLog.print("⚡️  ReceiptScanner / PhotoAlbum / WatchBridge / CalendarReader / CalendarWriter plugins registered")
+        CAPLog.print("⚡️  ReceiptScanner / PhotoAlbum / WatchBridge / CalendarReader / CalendarWriter / SpeechMemo plugins registered")
     }
 }

@@ -120,6 +120,76 @@ ok(await page.locator(".memo-item", { hasText: "架空の思いつき（編集�
 ideaMemo = page.locator(".memo-item", { hasText: "架空の思いつき（編集済み）" });
 await ideaMemo.locator('button[data-action="delete"]').click();
 ok(await page.locator(".memo-item", { hasText: "架空の思いつき（編集済み）" }).count() === 0, "確認後にメモを削除できる");
+
+// 端末内の音声認識でメモ欄へ文字を入れる（保存は利用者が行う）
+const speechPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await speechPage.addInitScript(() => {
+  const listeners = {};
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: {
+      SpeechMemo: {
+        isSupported: async () => ({ supported: true }),
+        addListener: async (name, listener) => { listeners[name] = listener; },
+        start: async () => { listeners.partial({ text: "10/22 架空の" }); },
+        stop: async () => ({ text: "10/22 架空の打合せ" })
+      }
+    },
+    nativePromise(plugin, method, options) {
+      return this.Plugins[plugin][method](options || {});
+    }
+  };
+});
+await speechPage.goto(base + "docs-tracker/index.html");
+await speechPage.evaluate(() => localStorage.clear());
+await speechPage.reload();
+await speechPage.click("#memoTab");
+ok(await speechPage.locator("#speechMemoButton").isVisible(), "端末内の音声認識が使えると音声ボタンが出る");
+await speechPage.click("#speechMemoButton");
+ok(await speechPage.locator("#memoText").inputValue() === "10/22 架空の", "音声認識の途中の文字を入力欄に出す");
+ok((await speechPage.locator("#speechMemoButton").textContent()).includes("● 聞いています…（もう一度押すと止まる）"), "録音中の文をボタンに出す");
+await speechPage.click("#speechMemoButton");
+ok(await speechPage.locator("#memoText").inputValue() === "10/22 架空の打合せ", "音声認識を止めたら最後の文字を入力欄に残す");
+ok(await speechPage.locator(".memo-item").count() === 0, "音声認識を止めてもメモは自動保存しない");
+await speechPage.close();
+
+const unsupportedSpeechPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await unsupportedSpeechPage.addInitScript(() => {
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: { SpeechMemo: { isSupported: async () => ({ supported: false }) } },
+    nativePromise(plugin, method, options) { return this.Plugins[plugin][method](options || {}); }
+  };
+});
+await unsupportedSpeechPage.goto(base + "docs-tracker/index.html");
+ok(await unsupportedSpeechPage.locator("#speechMemoButton").count() === 0, "端末内の音声認識が使えなければ音声ボタンを出さない");
+await unsupportedSpeechPage.close();
+
+const browserSpeechPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await browserSpeechPage.goto(base + "docs-tracker/index.html");
+ok(await browserSpeechPage.locator("#speechMemoButton").count() === 0, "ブラウザでは音声ボタンを出さない");
+await browserSpeechPage.close();
+
+const failedSpeechPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await failedSpeechPage.addInitScript(() => {
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: {
+      SpeechMemo: {
+        isSupported: async () => ({ supported: true }),
+        addListener: async () => {},
+        start: async () => { throw new Error("この端末では使えません"); }
+      }
+    },
+    nativePromise(plugin, method, options) { return this.Plugins[plugin][method](options || {}); }
+  };
+});
+await failedSpeechPage.goto(base + "docs-tracker/index.html");
+await failedSpeechPage.click("#memoTab");
+await failedSpeechPage.click("#speechMemoButton");
+ok((await failedSpeechPage.locator("#toast").textContent()).includes("この端末では使えません"), "音声認識を始められない理由を知らせに出す");
+await failedSpeechPage.close();
+
 ok(errors.length === 0, "JavaScript エラーなし " + errors.join(" / "));
 
 await browser.close();

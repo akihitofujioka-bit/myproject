@@ -41,10 +41,14 @@
 	<string>会議や書類の期限をカレンダーに登録し、カレンダーの予定を会議として取り込むために使用します。内容は端末の中だけで処理され、どこにも送信しません。書き込むのは、このアプリから登録した予定だけです。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>商品のバーコードを読み取るためにカメラを使用します。撮影した映像は端末の中だけで処理され、どこにも送信しません。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>話した内容をメモにするために使います。音声は端末の外に送りません</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>撮影した書類を写真アプリに保存するために使用します。既存の写真を読み取ることはありません。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>キャラクター写真に使うアルバムを読み込みます。写真はこの端末の中だけで使い、外部へは送りません。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>話した内容を、この iPhone の中だけで文字にします</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
