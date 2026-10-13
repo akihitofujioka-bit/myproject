@@ -99,7 +99,7 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
     <img src="schedule/icon-192.png" data-default-src="schedule/icon-192.png" data-char-slot="schedule" alt="">
     <span>
       <span class="name">予定</span><br>
-      <span class="desc">会議や予定を一覧とカレンダーで確認します</span>
+      <span class="desc">予定を一覧とカレンダーで確認します</span>
     </span>
   </a>
 
@@ -176,7 +176,10 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 (function () {
   "use strict";
 
-  if (window.ScheduleMove) window.ScheduleMove.run(localStorage);
+  if (window.ScheduleMove) {
+    window.ScheduleMove.run(localStorage);
+    window.ScheduleMove.unify(localStorage);
+  }
 
   // 廃止した備蓄の端末内データは、この更新後にトップを初めて開いたときだけ片付ける。
   // 印を先に残さないことで、容量不足などで保存できなかった場合は次回もう一度試す。

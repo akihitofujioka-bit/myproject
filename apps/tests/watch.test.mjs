@@ -139,7 +139,7 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
   const store = {
     "schedule.v1": {
       items: [
-        { id: "1", title: "架空の定例会", kind: "会議", dest: "架空交流館 2階", dueOn: day(1),
+        { id: "1", title: "架空の定例会", kind: "架空の旧種別", dest: "架空交流館 2階", dueOn: day(1),
           status: "未着手", note: "13:30〜15:00 開始\n懇親会あり（会費 5,000円）\n（会議の通知から登録）" },
         { id: "2", title: "架空の遠い会議", kind: "会議", dest: "架空県庁", dueOn: day(30), status: "未着手", note: "" }
       ]
@@ -170,18 +170,18 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
   const snap = win.Watch.snapshot({ today: TODAY, now: NOW });
 
   ok(snap.version === 1 && snap.today === TODAY, "一覧の形（version と今日の日付）");
-  ok(snap.meetings.length === 1 && snap.meetings[0].title === "架空の定例会", "会議：予定から1週間先までを送る");
-  ok(snap.meetings[0].time === "13:30〜15:00", "会議：開始時刻を取り出す");
-  ok(snap.meetings[0].place === "架空交流館 2階", "会議：場所を取り出す");
-  ok(snap.meetings[0].social === "懇親会あり（会費 5,000円）", "会議：懇親会の有無を取り出す");
-  ok(snap.meetings[0].days === 1, "会議：あと何日かを添える");
+  ok(snap.meetings.length === 1 && snap.meetings[0].title === "架空の定例会", "予定：種別に関係なく1週間先までを送る");
+  ok(snap.meetings[0].time === "13:30〜15:00", "予定：開始時刻を取り出す");
+  ok(snap.meetings[0].place === "架空交流館 2階", "予定：場所を取り出す");
+  ok(snap.meetings[0].social === "懇親会あり（会費 5,000円）", "予定：懇親会の有無を取り出す");
+  ok(snap.meetings[0].days === 1, "予定：あと何日かを添える");
 
   const titles = snap.deadlines.map((d) => d.title);
   ok(titles.includes("○○協議会の回答"), "期限：2週間以内の書類を送る");
   ok(titles.includes("期限切れの届出"), "期限：過ぎたものも送る（まだ終わっていないため）");
   ok(!titles.includes("終わった書類"), "期限：完了したものは送らない");
   ok(!titles.includes("ずっと先の提出"), "期限：2週間より先は送らない");
-  ok(!titles.includes("架空の定例会"), "期限：会議は期限の欄に重ねない");
+  ok(!titles.includes("架空の定例会"), "期限：予定は期限の欄に重ねない");
   ok(snap.deadlines[0].title === "期限切れの届出", "期限：差し迫った順に並ぶ");
 
   const shopping = snap.shopping.map((s) => s.name);

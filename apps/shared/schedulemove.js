@@ -9,6 +9,8 @@
   var DOCS_KEY = "docs-tracker.v1";
   var BACKUP_KEY = "docs-tracker.v1.backup-2026-10";
   var SCHEDULE_KEY = "schedule.v1";
+  var UNIFY_KEY = "migration.schedule-unify-2026-10";
+  var UNIFY_BACKUP_KEY = "schedule.v1.backup-unify-2026-10";
 
   function result(moved, skipped, error) {
     return { moved: moved, skipped: skipped, error: error || "" };
@@ -129,5 +131,136 @@
     return result(scheduleItems.length, false, "");
   }
 
-  global.ScheduleMove = { run: run };
+  function unifyResult(merged, skipped, error) {
+    return { merged: merged, skipped: skipped, error: error || "" };
+  }
+
+  function itemTime(item) {
+    var direct = item.startTime || item.time || "";
+    if (direct) return direct;
+    var match = String(item.note || "").match(/^\s*(\d{1,2}:\d{2})/);
+    return match ? match[1] : "";
+  }
+
+  function itemEndTime(item) {
+    if (item.endTime) return item.endTime;
+    var match = String(item.note || "").match(/^\s*\d{1,2}:\d{2}[^\d]+(\d{1,2}:\d{2})/);
+    return match ? match[1] : "";
+  }
+
+  function informationScore(item) {
+    var note = String(item.note || "");
+    return (item.dest ? 1 : 0) +
+      (itemTime(item) ? 1 : 0) +
+      (itemEndTime(item) ? 1 : 0) +
+      (note ? 1 : 0) +
+      (note.indexOf("懇親会") !== -1 ? 1 : 0) +
+      (item.calEventId ? 1 : 0);
+  }
+
+  function sameSchedule(a, b, knownTime) {
+    if (a.title !== b.title || a.dueOn !== b.dueOn) return false;
+    var aTime = knownTime || itemTime(a);
+    var bTime = itemTime(b);
+    return !aTime || !bTime || aTime === bTime;
+  }
+
+  function addMissingInformation(keep, remove) {
+    if (!keep.dest && remove.dest) keep.dest = remove.dest;
+    if (!keep.calEventId && remove.calEventId) keep.calEventId = remove.calEventId;
+    var keepNote = String(keep.note || "");
+    var removeNote = String(remove.note || "");
+    if (removeNote && keepNote.indexOf(removeNote) === -1) {
+      keep.note = keepNote ? keepNote + "\n" + removeNote : removeNote;
+    }
+  }
+
+  function unifiedItems(items) {
+    var output = [];
+    var groupTimes = [];
+    var merged = 0;
+    items.forEach(function (original) {
+      var item = {};
+      Object.keys(original || {}).forEach(function (key) { item[key] = original[key]; });
+      item.kind = "予定";
+      var found = -1;
+      for (var i = 0; i < output.length; i++) {
+        if (sameSchedule(output[i], item, groupTimes[i])) {
+          found = i;
+          break;
+        }
+      }
+      if (found === -1) {
+        output.push(item);
+        groupTimes.push(itemTime(item));
+        return;
+      }
+      if (!groupTimes[found]) groupTimes[found] = itemTime(item);
+      var first = output[found];
+      if (informationScore(item) > informationScore(first)) {
+        addMissingInformation(item, first);
+        output[found] = item;
+      } else {
+        addMissingInformation(first, item);
+      }
+      merged++;
+    });
+    return { items: output, merged: merged };
+  }
+
+  function unify(storage) {
+    if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function") {
+      return unifyResult(0, false, "保存場所を利用できません");
+    }
+    try {
+      if (storage.getItem(UNIFY_KEY) !== null) return unifyResult(0, true, "");
+    } catch (error) {
+      return unifyResult(0, false, message(error));
+    }
+
+    var original;
+    try {
+      original = storage.getItem(SCHEDULE_KEY);
+    } catch (error) {
+      return unifyResult(0, false, message(error));
+    }
+    var schedule = null;
+    if (original !== null) {
+      try {
+        schedule = JSON.parse(original);
+        if (!schedule || typeof schedule !== "object" || !Array.isArray(schedule.items)) schedule = null;
+      } catch (error) {
+        schedule = null;
+      }
+    }
+    if (!schedule) {
+      try {
+        storage.setItem(UNIFY_KEY, "1");
+        return unifyResult(0, false, "");
+      } catch (error) {
+        return unifyResult(0, false, message(error));
+      }
+    }
+
+    var combined = unifiedItems(schedule.items);
+    var changed = {};
+    Object.keys(schedule).forEach(function (key) { changed[key] = schedule[key]; });
+    changed.items = combined.items;
+    try {
+      if (storage.getItem(UNIFY_BACKUP_KEY) === null) storage.setItem(UNIFY_BACKUP_KEY, original);
+      storage.setItem(SCHEDULE_KEY, JSON.stringify(changed));
+      storage.setItem(UNIFY_KEY, "1");
+      return unifyResult(combined.merged, false, "");
+    } catch (error) {
+      var text = message(error);
+      try {
+        storage.setItem(SCHEDULE_KEY, original);
+      } catch (rollbackError) {
+        text += "（元に戻す処理にも失敗しました: " + message(rollbackError) + "）";
+      }
+      return unifyResult(combined.merged, false, text);
+    }
+  }
+
+  global.ScheduleMove = { run: run, unify: unify };
 })(typeof window !== "undefined" ? window : this);

@@ -71,7 +71,7 @@ function item(id, dueOn, note = "") {
 // iPhone のカレンダーの予定のうち、予定アプリの予定と同じものは出さない（表示の重なりを防ぐ）
 {
   const appItems = [
-    { id: "a1", kind: "会議", title: "星空委員会", dueOn: "2026-10-12", note: "13:30〜15:00 開始" },
+    { id: "a1", kind: "予定", title: "星空委員会", dueOn: "2026-10-12", note: "13:30〜15:00 開始" },
     { id: "a2", kind: "予定", title: "若葉公園の下見", dueOn: "2026-10-13", note: "" }
   ];
   const external = [

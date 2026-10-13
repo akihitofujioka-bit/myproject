@@ -362,7 +362,7 @@ button.small {
   <p class="backlink"><a href="../index.html">← アプリ一覧にもどる</a></p>
   <header>
     <h1>予定</h1>
-    <p class="lead">会議や予定を一覧とカレンダーで確認します。データはこの端末の中だけに保存され、外部には送信しません。</p>
+    <p class="lead">予定を一覧とカレンダーで確認します。データはこの端末の中だけに保存され、外部には送信しません。</p>
   </header>
 
   <div class="view-switch" role="group" aria-label="表示方法">
@@ -392,7 +392,7 @@ button.small {
     <div class="chips">
       <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
       <button type="button" class="primary" id="plannerScanBtn">📒 手帳を撮る</button>
-      <button type="button" id="meetingManualBtn">＋ 会議を手入力</button>
+      <button type="button" id="meetingManualBtn">＋ 予定を手入力</button>
       <button type="button" id="calendarFindBtn" hidden>📅 カレンダーから探す</button>
     </div>
   </section>
@@ -415,13 +415,13 @@ button.small {
     <p class="footnote" id="calendarCandidatesSummary"></p>
     <ul class="items" id="calendarCandidatesList"></ul>
     <div class="chips" style="margin-top:10px">
-      <button type="button" class="primary" id="calendarRegisterBtn">選んだものを会議として登録</button>
+      <button type="button" class="primary" id="calendarRegisterBtn">選んだものを予定として登録</button>
       <button type="button" class="link" id="calendarCandidatesCancel">やめる</button>
     </div>
   </section>
 
   <section class="card" id="meetingConfirm" hidden>
-    <h2>読み取った会議（確認して登録）</h2><div id="meetingForms"></div>
+    <h2>読み取った予定（確認して登録）</h2><div id="meetingForms"></div>
     <div class="chips">
       <button type="button" class="primary" data-meeting-mode="both">カレンダーとアプリに登録</button>
       <button type="button" data-meeting-mode="calendar">カレンダーだけ</button>
@@ -446,7 +446,6 @@ button.small {
     <form id="itemForm">
       <div class="row">
         <div class="field wide"><label for="f-title">件名（必須）</label><input id="f-title" name="title" required autocomplete="off" placeholder="例：架空の打合せ"></div>
-        <div class="field"><label for="f-kind">種別</label><select id="f-kind" name="kind"><option>予定</option><option>会議</option></select></div>
       </div>
       <div class="row">
         <div class="field date"><label for="f-date">日付（必須）</label><input id="f-date" name="dueOn" type="date" required></div>
@@ -494,6 +493,7 @@ var STORAGE_KEY = "schedule.v1";
 var VIEW_KEY = "schedule.view";
 if (window.ScheduleMove) {
   window.ScheduleMove.run(localStorage);
+  window.ScheduleMove.unify(localStorage);
 }
 if (window.Character) {
   window.Character.applyBackground("schedule");
@@ -563,7 +563,7 @@ function normalizeItem(item) {
   });
   copy.id = copy.id || uid();
   copy.title = String(copy.title || "");
-  copy.kind = copy.kind === "会議" ? "会議" : "予定";
+  copy.kind = "予定";
   copy.dest = copy.dest || "";
   copy.dueOn = copy.dueOn || "";
   copy.note = copy.note || "";
@@ -625,7 +625,8 @@ function itemHtml(item) {
   return '<li class="item' + (external ? ' external' : '') + '" data-id="' + esc(item.id) + '"' +
     (color ? ' style="border-left-color:' + color + '"' : '') + '>' +
     '<div class="item-head"><span class="item-title">' + esc(item.title) + '</span>' +
-      '<span class="badge">' + esc(external ? (item.calendarTitle || "iPhoneカレンダー") : item.kind) + '</span>' +
+      (external ? '<span class="badge">' + esc(item.calendarTitle || "iPhoneカレンダー") + '</span>' :
+        (String(item.note || "").indexOf("懇親会あり") !== -1 ? '<span class="badge">懇親会あり</span>' : '')) +
       '<span class="when">' + esc(dateLabel(item)) + '</span></div>' +
     (item.dest ? '<div class="item-detail">場所：' + esc(item.dest) + '</div>' : '') + (cleanNote(item) ? '<div class="item-detail">' + esc(cleanNote(item)) + '</div>' : '') +
     (external ? '' : '<div class="actions">' +
@@ -719,6 +720,18 @@ document.getElementById("monthGrid").addEventListener("click", function (event) 
 /* ---------- 予定の登録・編集・削除 ---------- */
 
 var form = document.getElementById("itemForm");
+function sameRegisteredSchedule(a, b) {
+  if (a.title !== b.title || a.dueOn !== b.dueOn) return false;
+  var aTime = timeOf(a);
+  var bTime = timeOf(b);
+  return !aTime || !bTime || aTime === bTime;
+}
+function confirmRegistration(item, ownId) {
+  var exists = state.items.some(function (old) {
+    return old.id !== ownId && sameRegisteredSchedule(old, item);
+  });
+  return !exists || confirm("「" + item.title + "」は同じ日にすでに登録されています。それでも登録しますか？");
+}
 form.addEventListener("submit", function (event) {
   event.preventDefault();
   var data = new FormData(form);
@@ -727,7 +740,7 @@ form.addEventListener("submit", function (event) {
   if (!title || !dueOn) return;
   var values = {
     title: title,
-    kind: String(data.get("kind") || "予定"),
+    kind: "予定",
     dueOn: dueOn,
     dest: String(data.get("dest") || "").trim(),
     note: makeNote(
@@ -736,6 +749,7 @@ form.addEventListener("submit", function (event) {
       data.get("note")
     )
   };
+  if (!confirmRegistration(values, editingId)) return;
   if (editingId) {
     var target = state.items.find(function (item) {
       return item.id === editingId;
@@ -760,7 +774,6 @@ form.addEventListener("submit", function (event) {
 function startEditing(item) {
   editingId = item.id;
   document.getElementById("f-title").value = item.title;
-  document.getElementById("f-kind").value = item.kind;
   document.getElementById("f-date").value = item.dueOn;
   document.getElementById("f-start").value = timeOf(item);
   document.getElementById("f-end").value = endTimeOfItem(item);
@@ -821,7 +834,7 @@ function calendarUid(item) {
   var oldItemKey = item.id + "@docs-tracker";
   var oldMeetingKey = "mtg-" + window.Native.idFrom(item.dueOn + "/" + item.title) + "@docs-tracker";
   if (state.calIds[oldItemKey]) return oldItemKey;
-  if (item.kind === "会議" && state.calIds[oldMeetingKey]) return oldMeetingKey;
+  if (state.calIds[oldMeetingKey]) return oldMeetingKey;
   return item.id + "@schedule";
 }
 function calendarEvent(item) {
@@ -1001,13 +1014,13 @@ function showCalendarCandidates(events) {
   }).length;
   document.getElementById("calendarCandidatesSummary").textContent =
     calendarCandidates.length + "件見つかりました。" +
-    "登録する会議を選んでください。" +
+    "登録する予定を選んでください。" +
     (registeredCount ? "登録済みは" + registeredCount + "件です。" : "");
   document.getElementById("calendarCandidatesList").innerHTML = calendarCandidates.map(function (event, index) {
     var registered = window.ScheduleView.isAlreadyRegistered(state.items, event, state.calIds);
     var when = [event.date, event.startTime].filter(Boolean).join(" ");
     return '<li class="item"><label class="check">' +
-      '<input type="checkbox" data-index="' + index + '"' + (registered ? ' disabled' : ' checked') + '> ' +
+      '<input type="checkbox" data-index="' + index + '"' + (registered ? '' : ' checked') + '> ' +
       '<span><strong>' + esc(event.title || "（件名なし）") + '</strong><br><span class="when">' + esc(when) + '</span></span>' +
       (registered ? '<span class="badge">登録済み</span>' : '') + '</label></li>';
   }).join("");
@@ -1075,7 +1088,7 @@ function meetingItems(list) {
     return normalizeItem({
       id: uid(),
       title: meeting.title,
-      kind: "会議",
+      kind: "予定",
       dest: meeting.place,
       dueOn: meeting.date,
       note: meetingNote(meeting),
@@ -1107,14 +1120,14 @@ function registerMeetingMode(mode, button) {
   }
   var items = meetingItems(list);
   if (mode !== "calendar") {
-    items.forEach(function (item) {
-      var exists = state.items.some(function (old) {
-        return old.kind === "会議" && old.dueOn === item.dueOn && old.title === item.title;
-      });
-      if (!exists) state.items.push(item);
+    items = items.filter(function (item) {
+      if (!confirmRegistration(item, "")) return false;
+      state.items.push(item);
+      return true;
     });
     save();
     render();
+    if (!items.length) return;
   }
   if (mode === "app") {
     renderMeetings([]);
@@ -1207,19 +1220,14 @@ function registerPlannerMode(mode, button) {
   }
   var items = plannerItems(list);
   if (mode !== "calendar") {
-    items.forEach(function (item) {
-      var found = state.items.find(function (old) {
-        return old.planKey === item.planKey;
-      });
-      if (found) {
-        found.dueOn = item.dueOn;
-        found.note = item.note;
-      } else {
-        state.items.push(item);
-      }
+    items = items.filter(function (item) {
+      if (!confirmRegistration(item, "")) return false;
+      state.items.push(item);
+      return true;
     });
     save();
     render();
+    if (!items.length) return;
   }
   if (mode === "app") {
     renderPlanner(null);
@@ -1317,9 +1325,7 @@ document.getElementById("calendarRegisterBtn").addEventListener("click", functio
     function (input) {
       return calendarCandidates[Number(input.getAttribute("data-index"))];
     }
-  ).filter(function (event) {
-    return event && !window.ScheduleView.isAlreadyRegistered(state.items, event, state.calIds);
-  });
+  ).filter(function (event) { return event; });
   if (!selected.length) {
     toast("登録する予定を選んでください");
     return;
@@ -1329,14 +1335,17 @@ document.getElementById("calendarRegisterBtn").addEventListener("click", functio
     meeting.calEventId = event.id || "";
     return meeting;
   });
-  meetingItems(meetings).forEach(function (item) {
+  var items = meetingItems(meetings).filter(function (item) {
+    if (!confirmRegistration(item, "")) return false;
     state.items.push(item);
+    return true;
   });
+  if (!items.length) return;
   save();
   render();
   document.getElementById("calendarCandidates").hidden = true;
   calendarCandidates = [];
-  toast(meetings.length + "件を会議として登録しました");
+  toast(items.length + "件を予定として登録しました");
 });
 document.getElementById("meetingScanBtn").addEventListener("click", function () {
   scan(this, {}, applyMeetingScan);

@@ -147,5 +147,68 @@ console.log("== 保存に失敗したときに元へ戻す ==");
   ok(!Object.prototype.hasOwnProperty.call(storage.values, "schedule.v1"), "途中で作った schedule.v1 を消す");
 }
 
+console.log("== 予定の種別と重なりを1回だけ整理する ==");
+{
+  const original = json({
+    version: 1,
+    items: [
+      { id: "a1", kind: "会議", title: "架空の星空会", dueOn: "2026-10-20", note: "13:30 開始" },
+      { id: "a2", kind: "予定", title: "架空の星空会", dueOn: "2026-10-20", startTime: "13:30" },
+      { id: "b1", kind: "会議", title: "架空の青空研修", dueOn: "2026-10-21", dest: "架空会館", calEventId: "CAL-1", note: "架空の資料を持参" },
+      { id: "b2", kind: "予定", title: "架空の青空研修", dueOn: "2026-10-21", startTime: "10:00", endTime: "12:00", note: "懇親会あり" },
+      { id: "c1", kind: "会議", title: "架空の若葉訪問", dueOn: "2026-10-22", startTime: "09:00" },
+      { id: "c2", kind: "会議", title: "架空の若葉訪問", dueOn: "2026-10-22", startTime: "11:00" },
+      { id: "d1", kind: "会議", title: "架空の月見会", dueOn: "2026-10-23" }
+    ],
+    calIds: { "架空の鍵": "架空の予定番号" }
+  });
+  const storage = fakeStorage({ "schedule.v1": original });
+  const result = Move.unify(storage);
+  const schedule = JSON.parse(storage.values["schedule.v1"]);
+  const rich = schedule.items.find((item) => item.id === "b2");
+
+  ok(result.merged === 2 && result.skipped === false && result.error === "", "時刻が同じ組と片方に時刻が無い組をまとめる");
+  ok(schedule.items.length === 5, "2組をまとめて2件減らす");
+  ok(schedule.items.every((item) => item.kind === "予定"), "会議を含むすべての種別を予定にする");
+  ok(schedule.items.some((item) => item.id === "c1") && schedule.items.some((item) => item.id === "c2"), "開始時刻が違う予定はまとめない");
+  ok(rich && rich.dest === "架空会館" && rich.calEventId === "CAL-1", "情報の多い方を残し、場所とカレンダー番号を引き継ぐ");
+  ok(rich && rich.note === "懇親会あり\n架空の資料を持参", "消す方だけにあるメモを末尾へ引き継ぐ");
+  ok(schedule.calIds["架空の鍵"] === "架空の予定番号", "予定以外の保存内容も保つ");
+  ok(storage.values["schedule.v1.backup-unify-2026-10"] === original, "変更前の控えを作る");
+  ok(storage.values["migration.schedule-unify-2026-10"] === "1", "整理済みの印を付ける");
+
+  const afterFirst = { ...storage.values };
+  const second = Move.unify(storage);
+  ok(second.merged === 0 && second.skipped === true && second.error === "", "2回目は何もしない");
+  ok(JSON.stringify(storage.values) === JSON.stringify(afterFirst), "2回目に保存内容を変えない");
+}
+{
+  const storage = fakeStorage({ "schedule.v1": json({ version: 1, items: [
+    { id: "f1", kind: "予定", title: "架空の朝空講座", dueOn: "2026-10-25", dest: "架空の広場", note: "懇親会あり", calEventId: "CAL-2" },
+    { id: "f2", kind: "予定", title: "架空の朝空講座", dueOn: "2026-10-25", startTime: "10:00" },
+    { id: "f3", kind: "予定", title: "架空の朝空講座", dueOn: "2026-10-25", startTime: "11:00" }
+  ] }) });
+  Move.unify(storage);
+  const items = JSON.parse(storage.values["schedule.v1"]).items;
+  ok(items.length === 2, "時刻なしを1件へまとめた後も、異なる2つの開始時刻はまとめない");
+}
+{
+  const original = json({ version: 1, items: [
+    { id: "e1", kind: "会議", title: "架空の夕空会", dueOn: "2026-10-24", note: "14:00 開始" },
+    { id: "e2", kind: "予定", title: "架空の夕空会", dueOn: "2026-10-24", startTime: "14:00" }
+  ] });
+  const storage = fakeStorage({ "schedule.v1": original }, "schedule.v1");
+  const result = Move.unify(storage);
+  ok(result.merged === 1 && result.skipped === false && result.error !== "", "保存失敗でも、まとめる予定だった件数と理由を返す");
+  ok(storage.values["schedule.v1"] === original, "保存失敗では schedule.v1 を元のままにする");
+  ok(!Object.prototype.hasOwnProperty.call(storage.values, "migration.schedule-unify-2026-10"), "保存失敗では整理済みの印を付けない");
+}
+{
+  const storage = fakeStorage({ "schedule.v1": "{こわれた予定" });
+  const result = Move.unify(storage);
+  ok(result.merged === 0 && result.error === "", "壊れた予定データでは内容を変えずに終わる");
+  ok(storage.values["schedule.v1"] === "{こわれた予定" && storage.values["migration.schedule-unify-2026-10"] === "1", "壊れた予定データには整理済みの印だけ付ける");
+}
+
 console.log(failures ? `\n${failures} 件失敗` : "\nすべて成功");
 process.exit(failures ? 1 : 0);

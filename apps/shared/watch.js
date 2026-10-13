@@ -70,7 +70,6 @@
       if (!isOpen(it)) return;
       var days = daysUntil(today, it.dueOn);
       if (days === null) return;
-      if (it.kind !== "会議" && it.kind !== "予定") return;
       if (days < 0 || days > MEETING_DAYS) return;
       var d = meetingDetail(it.note);
       meetings.push({

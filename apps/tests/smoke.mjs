@@ -570,7 +570,7 @@ console.log("== 会議の通知（apps/schedule）==");
   ok(await mp.locator("#meetingConfirm").isVisible(), "確認欄が出る");
   await mp.click('[data-meeting-mode="app"]');
   const items = await mp.evaluate(() => JSON.parse(localStorage.getItem("schedule.v1")).items);
-  ok(items.length === 1 && items[0].kind === "会議", "会議は schedule.v1 に登録する");
+  ok(items.length === 1 && items[0].kind === "予定", "会議の通知も「予定」として schedule.v1 に登録する");
   const docs = await mp.evaluate(() => localStorage.getItem("docs-tracker.v1"));
   ok(docs === null, "会議を書類の保存先へ戻さない");
 
