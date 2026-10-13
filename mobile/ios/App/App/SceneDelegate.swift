@@ -14,11 +14,25 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.rootViewController = ViewController()
         window?.makeKeyAndVisible()
 
+        connectionOptions.urlContexts.forEach { context in
+            if context.url.isFileURL {
+                DocumentReaderPlugin.receive(url: context.url)
+            }
+        }
+
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
+        URLContexts.forEach { context in
+            if context.url.isFileURL {
+                DocumentReaderPlugin.receive(url: context.url)
+            }
+        }
+        let otherContexts = Set(URLContexts.filter { !$0.url.isFileURL })
+        if !otherContexts.isEmpty {
+            SceneDelegateProxy.shared.scene(scene, openURLContexts: otherContexts)
+        }
     }
 
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {

@@ -354,6 +354,7 @@ button.small {
 }
 .actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
 .actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+.barback { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: inherit; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .wrap { padding-bottom: 104px; }
 </style>
 </head>
@@ -371,7 +372,13 @@ button.small {
   </div>
 
 
-  <main id="listView"><div id="listGroups"></div></main>
+  <main id="listView">
+    <section class="card" id="hintsCard" hidden>
+      <h2>気づいたこと</h2>
+      <ul class="items" id="hintsList"></ul>
+    </section>
+    <div id="listGroups"></div>
+  </main>
 
   <main id="calendarView" hidden>
     <section class="card">
@@ -392,6 +399,7 @@ button.small {
     <div class="chips">
       <button type="button" class="primary" id="meetingScanBtn">📄 会議の通知を撮る</button>
       <button type="button" class="primary" id="plannerScanBtn">📒 手帳を撮る</button>
+      <button type="button" id="documentReadBtn" hidden>📁 ファイルから読む</button>
       <button type="button" id="meetingManualBtn">＋ 予定を手入力</button>
       <button type="button" id="calendarFindBtn" hidden>📅 カレンダーから探す</button>
     </div>
@@ -421,13 +429,21 @@ button.small {
   </section>
 
   <section class="card" id="meetingConfirm" hidden>
-    <h2>読み取った予定（確認して登録）</h2><div id="meetingForms"></div>
+    <h2 id="meetingConfirmTitle">読み取った予定（確認して登録）</h2>
+    <p class="footnote" id="documentOcrNotice" hidden>スキャンした PDF なので、読み違いがないか特によく確かめてください</p>
+    <div id="meetingForms"></div>
     <div class="chips">
       <button type="button" class="primary" data-meeting-mode="both">カレンダーとアプリに登録</button>
       <button type="button" data-meeting-mode="calendar">カレンダーだけ</button>
       <button type="button" data-meeting-mode="app">アプリだけ</button>
       <button type="button" class="link" id="meetingCancel">やめる</button>
     </div>
+  </section>
+
+  <section class="card" id="documentTextCard" hidden>
+    <h2>取り出した文字</h2>
+    <pre id="documentText"></pre>
+    <div class="chips"><button type="button" id="documentManualBtn">手入力</button></div>
   </section>
 
   <section class="card" id="plannerConfirm" hidden>
@@ -477,8 +493,14 @@ button.small {
 <script src="../shared/scanrouter.js"></script>
 <script src="../shared/calendarread.js"></script>
 <script src="../shared/calendarwrite.js"></script>
+<script src="../shared/contacts.js"></script>
+<script src="../shared/suggest.js"></script>
+<script src="../shared/todos.js"></script>
+<script src="../shared/scheduletable.js"></script>
+<script src="../shared/documentreader.js"></script>
 <div class="actionbar">
   <div>
+    <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
     <button type="button" class="primary" id="jumpAdd">予定を登録する</button>
     <button type="button" id="jumpToday">今日の予定へ</button>
   </div>
@@ -554,10 +576,11 @@ function load() {
       items: items.filter(function (item) {
         return item && item.title;
       }).map(normalizeItem),
-      calIds: parsed && parsed.calIds && typeof parsed.calIds === "object" ? parsed.calIds : {}
+      calIds: parsed && parsed.calIds && typeof parsed.calIds === "object" ? parsed.calIds : {},
+      dismissedHints: parsed && Array.isArray(parsed.dismissedHints) ? parsed.dismissedHints : []
     };
   } catch (e) {
-    return { version: 1, items: [], calIds: {} };
+    return { version: 1, items: [], calIds: {}, dismissedHints: [] };
   }
 }
 
@@ -582,7 +605,8 @@ function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       version: 1,
       items: state.items,
-      calIds: state.calIds
+      calIds: state.calIds,
+      dismissedHints: state.dismissedHints
     }));
   } catch (e) {
     toast("保存できませんでした（端末の空き容量を確認してください）");
@@ -611,6 +635,18 @@ function endTimeOfItem(item) {
 
 function cleanNote(item) {
   return String(item.note || "").replace(/^\s*\d{1,2}:\d{2}(?:〜\d{1,2}:\d{2})?\s*開始\s*\n?/, "");
+}
+
+function toSuggestItem(item) {
+  return {
+    id: item.id,
+    title: item.title,
+    date: item.dueOn,
+    start: timeOf(item),
+    end: endTimeOfItem(item),
+    place: item.dest,
+    rawText: ""
+  };
 }
 
 // 懇親会の行の書き方は、会議の通知から登録したときと同じ（Watch と一覧の印がこの行を読む）
@@ -650,7 +686,7 @@ function itemHtml(item) {
       (external ? '<span class="badge">' + esc(item.calendarTitle || "iPhoneカレンダー") + '</span>' :
         (String(item.note || "").indexOf("懇親会あり") !== -1 ? '<span class="badge">懇親会あり</span>' : '')) +
       '<span class="when">' + esc(dateLabel(item)) + '</span></div>' +
-    (item.dest ? '<div class="item-detail">場所：' + esc(item.dest) + '</div>' : '') + (cleanNote(item) ? '<div class="item-detail">' + esc(cleanNote(item)) + '</div>' : '') +
+    (item.dest ? '<div class="item-detail">場所：' + esc(item.dest) + '</div>' : '') + (cleanNote(item) ? '<div class="item-detail">' + window.Contacts.linkify(cleanNote(item)) + '</div>' : '') +
     (external ? '' : '<div class="actions">' +
       '<button type="button" class="small" data-action="calendar">カレンダーに入れる</button>' +
       '<button type="button" class="small link" data-action="edit">編集</button>' +
@@ -695,10 +731,33 @@ function renderSelectedDay() {
   var items = window.ScheduleView.itemsOn(allItems(), selectedYmd);
   document.getElementById("dayItems").innerHTML = items.length ? items.map(itemHtml).join("") : '<li class="empty">この日の予定はありません。</li>';
 }
+function renderHints() {
+  var hidden = state.dismissedHints || [];
+  var hints = window.Suggest.upcoming(allItems().map(toSuggestItem), ymd(new Date())).filter(function (hint) {
+    return hidden.indexOf(hint.key) === -1;
+  });
+  var card = document.getElementById("hintsCard");
+  card.hidden = !hints.length;
+  document.getElementById("hintsList").innerHTML = hints.map(function (hint) {
+    return '<li class="item"><div class="item-detail">⚠️ ' + esc(hint.message) + '</div>' +
+      '<div class="actions"><button type="button" class="small link" data-key="' + esc(hint.key) +
+      '">この指摘を消す</button></div></li>';
+  }).join("");
+}
 function render() {
+  renderHints();
   renderList();
   renderCalendar();
 }
+
+document.getElementById("hintsCard").addEventListener("click", function (event) {
+  var button = event.target.closest("button[data-key]");
+  if (!button) return;
+  var key = button.getAttribute("data-key");
+  if (state.dismissedHints.indexOf(key) === -1) state.dismissedHints.push(key);
+  save();
+  render();
+});
 
 function setView(view) {
   currentView = view === "calendar" ? "calendar" : "list";
@@ -1122,14 +1181,35 @@ function meetingNote(meeting) {
   if (meeting.social && meeting.social.has) {
     lines.push("懇親会あり" + (meeting.social.fee ? "（会費 " + meeting.social.fee + "円）" : ""));
   }
-  lines.push(meeting.source === "calendar" ? "（カレンダーから登録）" : meeting.source === "manual" ? "（手入力で登録）" : "（会議の通知から登録）");
+  if (meeting.contactLine) {
+    lines.push(meeting.contactLine);
+  }
+  lines.push(meeting.source === "calendar" ? "（カレンダーから登録）" : meeting.source === "manual" ? "（手入力で登録）" : meeting.source === "memo" ? "（メモから登録）" : "（会議の通知から登録）");
   return lines.join("\n");
 }
-function renderMeetings(list) {
+function renderMeetings(list, options) {
+  var renderOptions = options || {};
   scannedMeetings = list || [];
   var box = document.getElementById("meetingConfirm");
   box.hidden = !scannedMeetings.length;
+  document.getElementById("meetingConfirmTitle").textContent = renderOptions.source === "file"
+    ? "ファイルから読み取った予定（確認して登録）"
+    : "読み取った予定（確認して登録）";
+  document.getElementById("documentOcrNotice").hidden = !(renderOptions.source === "file" && renderOptions.ocr);
   document.getElementById("meetingForms").innerHTML = scannedMeetings.map(function (meeting, index) {
+    var rawText = (meeting.rows || []).join("\n");
+    var suggestItem = {
+      id: "scan-" + index,
+      title: meeting.title,
+      date: meeting.date,
+      start: meeting.startTime,
+      end: meeting.endTime,
+      place: meeting.place,
+      rawText: rawText
+    };
+    var hints = window.Suggest.check([suggestItem], allItems().map(toSuggestItem));
+    var contactLine = window.Contacts.noteLine(window.Contacts.find(rawText));
+    var todos = window.Todos.candidates(rawText, meeting.date, ymd(new Date()));
     return '<div class="scan-result" data-index="' + index + '">' +
       '<label class="check"><input type="checkbox" class="m-use" checked> ' +
         (index + 1) + '件目</label>' +
@@ -1144,7 +1224,19 @@ function renderMeetings(list) {
       '<div class="field wide"><label>場所</label>' +
         '<input class="m-place" value="' + esc(meeting.place) + '"></div></div>' +
       '<label class="check"><input type="checkbox" class="m-social"' +
-        (meeting.social && meeting.social.has ? ' checked' : '') + '> 懇親会あり</label></div>';
+        (meeting.social && meeting.social.has ? ' checked' : '') + '> 懇親会あり</label>' +
+      (hints.length ? '<ul class="scan-hints">' + hints.map(function (hint) {
+        return '<li>⚠️ ' + esc(hint.message) + '</li>';
+      }).join("") + '</ul>' : '') +
+      (contactLine ? '<label class="check"><input type="checkbox" class="m-contact" checked> ☎️ <span>' +
+        esc(contactLine) + '</span></label>' : '') +
+      todos.map(function (todo) {
+        var due = todo.dueOn && /^\d{4}-(\d{2})-(\d{2})$/.exec(todo.dueOn);
+        var dueLabel = due ? '（期限 ' + Number(due[1]) + '/' + Number(due[2]) + '）' : '';
+        return '<label class="check"><input type="checkbox" class="m-todo" data-title="' +
+          esc(todo.title) + '" data-due="' + esc(todo.dueOn) + '" checked> ✅ ' +
+          esc(todo.title) + esc(dueLabel) + '</label>';
+      }).join("") + '</div>';
   }).join("");
 }
 function collectMeetings() {
@@ -1154,6 +1246,8 @@ function collectMeetings() {
       var get = function (name) {
         return row.querySelector("." + name).value.trim();
       };
+      var original = scannedMeetings[Number(row.getAttribute("data-index"))] || {};
+      var contact = row.querySelector(".m-contact");
       return row.querySelector(".m-use").checked ? {
         title: get("m-title") || "会議",
         date: get("m-date"),
@@ -1161,8 +1255,12 @@ function collectMeetings() {
         endTime: get("m-end"),
         place: get("m-place"),
         social: { has: row.querySelector(".m-social").checked, fee: null },
-        source: (scannedMeetings[Number(row.getAttribute("data-index"))] || {}).source || "",
-        calEventId: (scannedMeetings[Number(row.getAttribute("data-index"))] || {}).calEventId || ""
+        source: original.source || "",
+        calEventId: original.calEventId || "",
+        contactLine: contact && contact.checked ? contact.parentNode.querySelector("span").textContent : "",
+        todos: Array.prototype.map.call(row.querySelectorAll(".m-todo:checked"), function (todo) {
+          return { title: todo.getAttribute("data-title") || "", dueOn: todo.getAttribute("data-due") || "" };
+        })
       } : null;
     }
   ).filter(Boolean);
@@ -1194,6 +1292,39 @@ function applyMeetingScan(lines) {
   toast(found.length ? found.length + "件を読み取りました" : "会議を見つけられませんでした");
   return found;
 }
+function showDocumentResult(result) {
+  var converted = window.DocumentReader.toMeetings(result, ymd(new Date()));
+  var textCard = document.getElementById("documentTextCard");
+  textCard.hidden = true;
+  if (converted.meetings.length) {
+    renderMeetings(converted.meetings, { source: "file", ocr: !!result.ocr });
+    document.getElementById("meetingConfirm").scrollIntoView({ behavior: "smooth", block: "start" });
+    toast(converted.meetings.length + "件を読み取りました");
+    return;
+  }
+  renderMeetings([]);
+  document.getElementById("documentText").innerHTML = esc(converted.text || "文字を取り出せませんでした");
+  textCard.hidden = false;
+  textCard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function readDocument(promise, button) {
+  var original = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "読んでいます…";
+  }
+  promise.then(function (result) {
+    if (result && !result.cancelled) showDocumentResult(result);
+  }).catch(function (error) {
+    var reason = error && error.message ? error.message : String(error || "原因不明");
+    toast("このファイルは読めませんでした（" + reason + "）");
+  }).then(function () {
+    if (button) {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  });
+}
 function registerMeetingMode(mode, button) {
   var list = collectMeetings().filter(function (meeting) {
     return meeting.date;
@@ -1203,6 +1334,30 @@ function registerMeetingMode(mode, button) {
     return;
   }
   var items = meetingItems(list);
+  var todosById = {};
+  items.forEach(function (item, index) {
+    todosById[item.id] = list[index].todos || [];
+  });
+  function addTodos(targets) {
+    var entries = [];
+    targets.forEach(function (item) {
+      (todosById[item.id] || []).forEach(function (todo) {
+        entries.push({
+          title: todo.title,
+          dueOn: todo.dueOn,
+          scheduleId: item.id,
+          scheduleTitle: item.title,
+          scheduleDate: item.dueOn
+        });
+      });
+    });
+    return entries.length ? window.Todos.add(localStorage, entries) : { ok: true, added: 0 };
+  }
+  function todoNotice(result) {
+    if (!result.ok) return "。やることを入れられませんでした（書類・やることのデータが読めません）";
+    return result.added ? "。やること " + result.added + " 件を書類・やることに入れました" : "";
+  }
+  var todoResult = null;
   if (mode !== "calendar") {
     items = items.filter(function (item) {
       if (!confirmRegistration(item, "")) return false;
@@ -1212,20 +1367,22 @@ function registerMeetingMode(mode, button) {
     save();
     render();
     if (!items.length) return;
+    todoResult = addTodos(items);
   }
   if (mode === "app") {
     renderMeetings([]);
-    toast("アプリに登録しました");
+    toast("アプリに登録しました" + todoNotice(todoResult));
     return;
   }
   button.disabled = true;
   writeEvents(items.map(calendarEvent), "会議", "meetings").then(function (result) {
     button.disabled = false;
     renderMeetings([]);
-    toast(result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました");
+    if (mode === "calendar") todoResult = addTodos(items);
+    toast((result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました") + todoNotice(todoResult));
   }, function () {
     button.disabled = false;
-    toast("カレンダーに登録できませんでした");
+    toast("カレンダーに登録できませんでした" + (todoResult ? todoNotice(todoResult) : ""));
   });
 }
 
@@ -1352,6 +1509,10 @@ if (window.CalendarRead && window.CalendarRead.available()) {
   document.getElementById("scanCard").hidden = false;
   document.getElementById("calendarFindBtn").hidden = false;
 }
+if (window.DocumentReader && window.DocumentReader.available()) {
+  document.getElementById("scanCard").hidden = false;
+  document.getElementById("documentReadBtn").hidden = false;
+}
 document.getElementById("calendarFindBtn").addEventListener("click", function () {
   var button = this;
   var original = button.textContent;
@@ -1437,6 +1598,14 @@ document.getElementById("meetingScanBtn").addEventListener("click", function () 
 document.getElementById("plannerScanBtn").addEventListener("click", function () {
   scan(this, { purpose: "planner" }, applyPlannerScan);
 });
+document.getElementById("documentReadBtn").addEventListener("click", function () {
+  readDocument(window.DocumentReader.pick(), this);
+});
+document.getElementById("documentManualBtn").addEventListener("click", function () {
+  document.getElementById("documentTextCard").hidden = true;
+  document.getElementById("addCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("f-title").focus({ preventScroll: true });
+});
 document.getElementById("meetingManualBtn").addEventListener("click", function () {
   renderMeetings(scannedMeetings.concat([{
     title: "",
@@ -1496,13 +1665,24 @@ var pendingMeeting = window.ScanRouter && window.ScanRouter.takeHandoff("meeting
 if (pendingMeeting && pendingMeeting.length) {
   applyMeetingScan(pendingMeeting);
 }
+var pendingMemo = window.ScanRouter && window.ScanRouter.takeHandoff("memo");
+if (pendingMemo && pendingMemo.length) {
+  renderMeetings(window.Meeting.parse(pendingMemo, {}).map(function (meeting) {
+    meeting.source = "memo";
+    return meeting;
+  }));
+}
 var pendingPlanner = window.ScanRouter && window.ScanRouter.takeHandoff("planner");
 if (pendingPlanner && pendingPlanner.length) {
   applyPlannerScan(pendingPlanner);
 }
+if (window.DocumentReader && window.DocumentReader.available()) {
+  readDocument(window.DocumentReader.takeShared(), null);
+}
 
 window.scheduleApp = {
   applyMeetingScan: applyMeetingScan,
+  renderMeetings: renderMeetings,
   collectMeetings: collectMeetings,
   applyPlannerScan: applyPlannerScan,
   collectPlanner: collectPlanner

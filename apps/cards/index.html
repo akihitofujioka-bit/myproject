@@ -133,6 +133,7 @@ li.cardtile button.open { display: block; width: 100%; padding: 0; border: none;
 }
 .actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
 .actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+.barback { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: inherit; font-weight: 700; text-decoration: none; white-space: nowrap; }
 
 /* ---- モーダル ---- */
 .modal[hidden] { display: none; }
@@ -237,6 +238,7 @@ ul.help li { margin-bottom: 6px; }
 
 <div class="actionbar">
   <div>
+    <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
     <button type="button" class="primary" id="addBtn">カードを追加</button>
   </div>
 </div>
@@ -358,6 +360,8 @@ ul.help li { margin-bottom: 6px; }
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="../shared/deeplink.js"></script>
+<script src="../shared/documentreader.js"></script>
+<script>window.DocumentReader.watchShared("../schedule/index.html");</script>
 <script src="../shared/qr.js"></script>
 <script src="../shared/barcode.js"></script>
 <script src="../fridge/ean.js"></script>

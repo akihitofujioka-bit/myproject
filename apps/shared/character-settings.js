@@ -26,12 +26,6 @@
     { value: "random", label: "ランダム" }
   ];
 
-  var VEILS = [
-    { value: "light", label: "薄い" },
-    { value: "normal", label: "普通" },
-    { value: "strong", label: "濃い" }
-  ];
-
   function addOption(select, item) {
     var option = global.document.createElement("option");
     option.value = item.value;
@@ -79,7 +73,6 @@
         slot: slot,
         interval: "day",
         order: "sequential",
-        veil: "normal",
         startDate: global.Character.todayString(new Date()),
         photos: [],
         album: null,
@@ -237,9 +230,6 @@
         addSelect(settings, "選び方", ORDERS, editor.record.order, function (value) {
           update({ order: value }, true);
         });
-        addSelect(settings, "膜の濃さ", VEILS, editor.record.veil, function (value) {
-          update({ veil: value }, false);
-        });
         box.appendChild(settings);
         box.open = wasOpen;
       }
@@ -260,7 +250,6 @@
           slot: editor.record.slot,
           interval: editor.record.interval,
           order: editor.record.order,
-          veil: editor.record.veil,
           startDate: global.Character.todayString(new Date()),
           photos: editor.record.photos.slice(),
           album: editor.record.album,
