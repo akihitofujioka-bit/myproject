@@ -39,6 +39,9 @@ if (!S) {
   ok(sameRange("20日の予定", "2026-10-13", "2026-10-20", "2026-10-20"), "日だけを選ぶ");
   ok(sameRange("火曜の予定", "2026-10-13", "2026-10-13", "2026-10-13"), "曜日だけなら今日以降で最初の日");
   ok(sameRange("来週火曜の予定", "2026-10-13", "2026-10-20", "2026-10-20"), "来週の曜日を選ぶ");
+  ok(sameRange("来週の火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "来週と曜日の間の助詞を許す");
+  ok(sameRange("来週は火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "来週と曜日の間の別の助詞も許す");
+  ok(sameRange("来週の朝火曜", "2026-10-13", "2026-10-20", "2026-10-20"), "来週と曜日の間の2字を許す");
   ok(sameRange("予定を教えて", "2026-10-13", "2026-10-13", "2026-10-26", false), "期間なしは今日から14日間");
   ok(sameRange("来月", "2026-12-20", "2027-01-01", "2027-01-31"), "年末の来月は翌年");
   ok(sameRange("1月5日", "2026-12-20", "2027-01-05", "2027-01-05"), "過ぎた月日は翌年");
@@ -51,15 +54,17 @@ if (!S) {
         { title: "架空の時刻なし予定", dueOn: "2026-10-21" }
       ],
       calendarEvents: [
-        { id: "cal-1", title: "重複する予定", start: "2026-10-20T10:00:00", end: "2026-10-20T12:00:00", location: "別室" },
-        { id: "cal-2", title: "架空の外部予定", start: "2026-10-20T09:00:00", end: "2026-10-20T09:30:00", location: "第2会議室" }
+        { id: "cal-1", calendarId: "calendar-1", title: "重複する予定", date: "2026-10-20", startTime: "10:00", endTime: "12:00", place: "別室" },
+        { id: "cal-2", calendarId: "calendar-1", title: "架空の外部予定", date: "2026-10-20", startTime: "09:00", endTime: "09:30", place: "第2会議室" },
+        { id: "cal-3", calendarId: "calendar-1", title: "架空の終日行事", date: "2026-10-21", startTime: "", endTime: "", place: "中央広場" }
       ],
       todos: [{ title: "架空の資料提出", dueOn: "2026-10-22" }]
     }
   );
-  ok(list.count === 4 && !list.cut, "結び付いた予定を1件にまとめる");
+  ok(list.count === 5 && !list.cut, "実際のカレンダー形式でも結び付いた予定を1件にまとめる");
   ok(list.text.split("\n")[0] === "10/20(火) 9:00-9:30 架空の外部予定 @第2会議室", "日付・開始時刻順で予定を書く");
   ok(list.text.includes("10/20(火) 10:00-12:00 架空の委員会 @第1会議室"), "予定アプリの時刻と場所を書く");
+  ok(list.text.includes("10/21(水) 架空の終日行事 @中央広場"), "開始時刻が空のカレンダー予定を終日の行として書く");
   ok(list.text.includes("10/22(木) 期限 架空の資料提出（やること）"), "期限付きのやることを書く");
 
   const helped = S.lines(
@@ -96,6 +101,27 @@ if (!S) {
   );
   ok(fenced.ok && fenced.draft.date === "2026-10-20", "説明やJSON囲みの中の最初のオブジェクトを読み、質問の日付を優先する");
 
+  const assistedDate = S.checkDraft(
+    '{"kind":"event","title":"架空の打合せ","date":"2026-10-21","start":"10:00"}',
+    "来週の火曜10時に架空の打合せを入れて",
+    "2026-10-13"
+  );
+  ok(assistedDate.ok && assistedDate.draft.date === "2026-10-20", "下書きでも助詞を挟んだ来週の曜日を規則側で選ぶ");
+
+  const todoDraft = S.checkDraft(
+    '{"kind":"todo","title":"架空の資料確認","date":"2026-10-20"}',
+    "架空の資料確認をやることに追加",
+    "2026-10-13"
+  );
+  ok(todoDraft.ok && todoDraft.draft.kind === "todo", "やることの下書きを保つ");
+
+  const reversedTime = S.checkDraft(
+    '{"kind":"event","title":"架空の面談","date":"2026-10-20","start":"10:00","end":"09:30"}',
+    "架空の面談を追加",
+    "2026-10-13"
+  );
+  ok(reversedTime.ok && reversedTime.draft.start === "10:00" && reversedTime.draft.end === "", "終了が開始より前なら終了を空欄にする");
+
   ok(!S.checkDraft("読めない文字", "架空の予定を追加", "2026-10-13").ok, "JSONを読めない場合は失敗にする");
   const fallbackQuestion = "架空の確認を予定にしてください。追加の説明を十分に長く書いた質問です。";
   const cleaned = S.checkDraft(
@@ -107,6 +133,10 @@ if (!S) {
   ok(cleaned.draft.date === "" && cleaned.draft.start === "" && cleaned.draft.end === "09:30", "あり得ない日付・時刻を空欄にする");
   ok(cleaned.draft.title === fallbackQuestion.slice(0, 30) && cleaned.draft.title.length === 30, "空の件名は質問の先頭30字にする");
   ok(cleaned.draft.place === "3" && cleaned.draft.memo === "", "下書きの各値を安全な文字列にする");
+  ok(S.freeSlots(
+    { from: "2026-10-20", to: "2026-10-20" },
+    [{ date: "2026-10-20", start: "08:30", end: "17:15" }]
+  ) === "10/20(火) 空きなし", "勤務時間内に空きがない日を示す");
   ok(S.draftInstructions("2026-10-13").includes("2026-10-13") && S.draftInstructions("2026-10-13").includes('"kind":"event|todo"'), "JSONだけを返す下書き指示を作る");
 }
 

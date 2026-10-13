@@ -66,7 +66,7 @@
     });
     var match;
 
-    match = text.match(/来週\s*([日月火水木金土])曜/);
+    match = text.match(/来週\s*[^\s、。,.!?！？]{0,2}?\s*([日月火水木金土])曜/);
     if (match) {
       var nextMonday = addDays(today, 7 - ((today.getDay() + 6) % 7));
       var wanted = DAY_NAMES.indexOf(match[1]);
@@ -143,16 +143,6 @@
     return match ? pad(Number(match[1])) + ":" + match[2] : "";
   }
 
-  function isoDate(value) {
-    var match = /^(\d{4}-\d{2}-\d{2})/.exec(String(value || ""));
-    return match && parseDate(match[1]) ? match[1] : "";
-  }
-
-  function isoTime(value) {
-    var match = /T(\d{2}:\d{2})/.exec(String(value || ""));
-    return match ? cleanTime(match[1]) : "";
-  }
-
   function inRange(date, selectedRange) {
     return date && date >= String(selectedRange.from || "") && date <= String(selectedRange.to || "");
   }
@@ -181,14 +171,14 @@
 
     (data.calendarEvents || []).forEach(function (event, index) {
       if (!event || linkedIds[String(event.id || "")]) return;
-      var date = isoDate(event.start);
+      var date = parseDate(String(event.date || "")) ? String(event.date) : "";
       if (!inRange(date, selectedRange || {})) return;
       rows.push({
         date: date,
-        start: event.allDay ? "" : isoTime(event.start),
-        end: event.allDay ? "" : isoTime(event.end),
+        start: cleanTime(event.startTime),
+        end: cleanTime(event.endTime),
         title: String(event.title || "").trim(),
-        place: String(event.location || "").trim(),
+        place: String(event.place || "").trim(),
         todo: false,
         order: 100000 + index
       });
@@ -334,14 +324,17 @@
     var date = parseDate(stringValue(value.date)) ? stringValue(value.date) : "";
     if (selected.found && selected.from === selected.to) date = selected.from;
     var title = stringValue(value.title).trim() || String(question || "").trim().slice(0, 30);
+    var start = draftTime(value.start);
+    var end = draftTime(value.end);
+    if (start && end && minutes(end) < minutes(start)) end = "";
     return {
       ok: true,
       draft: {
         kind: value.kind === "todo" ? "todo" : "event",
         title: title,
         date: date,
-        start: draftTime(value.start),
-        end: draftTime(value.end),
+        start: start,
+        end: end,
         place: stringValue(value.place),
         memo: stringValue(value.memo)
       }
