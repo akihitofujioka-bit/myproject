@@ -10,6 +10,8 @@
 		004DD6FF5311743F61CDFBC7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1AC8F45E959305C8A7517B99 /* Foundation.framework */; };
 		0534399A18A3BF11C165F2E4 /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */; };
 		05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */; };
+		D09A00000000000000000001 /* DocumentText.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09A00000000000000000003 /* DocumentText.swift */; };
+		D09A00000000000000000002 /* ZipReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09A00000000000000000004 /* ZipReader.swift */; };
 		726E67CBBB28498D943908A0 /* CalendarWriterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */; };
 		0CB97B323C0240D9BEA3CE93 /* SilentCameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */; };
 		0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54417C08DED3D9DAECF1E66F /* ViewController.swift */; };
@@ -112,6 +114,8 @@
 /* Begin PBXFileReference section */
 		03CE4193F022CF0F7EA8A8CC /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarReaderPlugin.swift; sourceTree = "<group>"; };
+		D09A00000000000000000003 /* DocumentText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentText.swift; sourceTree = "<group>"; };
+		D09A00000000000000000004 /* ZipReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipReader.swift; sourceTree = "<group>"; };
 		453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarWriterPlugin.swift; sourceTree = "<group>"; };
 		6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentCameraViewController.swift; sourceTree = "<group>"; };
 		12B22BFA83CC2B191D5EB3E7 /* NextUpWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextUpWidget.swift; sourceTree = "<group>"; };
@@ -258,6 +262,7 @@
 				6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */,
 				16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */,
 				11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */,
+				D09A00000000000000000005 /* DocumentText */,
 				453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */,
 				54417C08DED3D9DAECF1E66F /* ViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -269,6 +274,15 @@
 				2FFB402144413474A0F0F175 /* App.entitlements */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		D09A00000000000000000005 /* DocumentText */ = {
+			isa = PBXGroup;
+			children = (
+				D09A00000000000000000003 /* DocumentText.swift */,
+				D09A00000000000000000004 /* ZipReader.swift */,
+			);
+			path = DocumentText;
 			sourceTree = "<group>";
 		};
 		68E86C7FFF4BC76211EE78E1 /* watchOS */ = {
@@ -524,6 +538,8 @@
 				0CB97B323C0240D9BEA3CE93 /* SilentCameraViewController.swift in Sources */,
 				689B9E964FC64B47BCD87A3C /* WatchBridgePlugin.swift in Sources */,
 				05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */,
+				D09A00000000000000000001 /* DocumentText.swift in Sources */,
+				D09A00000000000000000002 /* ZipReader.swift in Sources */,
 				726E67CBBB28498D943908A0 /* CalendarWriterPlugin.swift in Sources */,
 				0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
