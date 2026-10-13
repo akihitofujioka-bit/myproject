@@ -48,6 +48,14 @@ console.log("== ブラウザで開いたとき（window.Capacitor が無い）==
   ok(win.ReceiptScan.available() === false, "レシート撮影：使えない判定になる");
   const status = await win.OnDeviceAI.status();
   ok(status.available === false && status.reason === "unsupported", "端末内 AI：非対応として理由を返す");
+
+  let code = "";
+  try {
+    await win.OnDeviceAI.respond({ instructions: "架空の案内役", prompt: "架空の質問" });
+  } catch (error) {
+    code = error.code;
+  }
+  ok(code === "unavailable", "端末内 AI：Capacitor が無い場合は unavailable で拒否する");
 }
 
 /* ---------- にせ Capacitor（新しい橋渡しの呼び出し）---------- */

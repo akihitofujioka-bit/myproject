@@ -63,6 +63,10 @@ public class OnDeviceAIPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let instructions = call.getString("instructions") ?? ""
         let prompt = call.getString("prompt") ?? ""
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            call.reject("質問を入力してください", "failed")
+            return
+        }
         Task {
             do {
                 let session = LanguageModelSession(instructions: instructions)
@@ -74,7 +78,7 @@ public class OnDeviceAIPlugin: CAPPlugin, CAPBridgedPlugin {
                     call.reject("入力が長すぎます", "tooLong")
                 case .guardrailViolation(_), .refusal(_, _):
                     call.reject("安全上の理由で回答できません", "refused")
-                @unknown default:
+                default:
                     call.reject("回答を作れませんでした", "failed")
                 }
             } catch {

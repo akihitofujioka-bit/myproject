@@ -6,6 +6,7 @@
 //
 import Foundation
 import UIKit
+import ImageIO
 import UniformTypeIdentifiers
 import PDFKit
 import Vision
@@ -138,9 +139,10 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                 call.reject("選んだ写真を読み込めませんでした")
                 return
             }
+            let orientation = Self.cgImageOrientation(from: image.imageOrientation)
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    let lines = try Self.recognizeImage(cgImage)
+                    let lines = try Self.recognizeImage(cgImage, orientation: orientation)
                     call.resolve([
                         "cancelled": false,
                         "name": name,
@@ -230,15 +232,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
             let request = VNRecognizeTextRequest { request, error in
                 guard error == nil,
                       let observations = request.results as? [VNRecognizedTextObservation] else { return }
-                pageLines = observations
-                    .sorted {
-                        if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > 0.01 {
-                            return $0.boundingBox.maxY > $1.boundingBox.maxY
-                        }
-                        return $0.boundingBox.minX < $1.boundingBox.minX
-                    }
-                    .compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
+                pageLines = recognizedLines(from: observations)
             }
             request.recognitionLanguages = ["ja-JP"]
             request.recognitionLevel = .accurate
@@ -257,34 +251,74 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
     }
 
     /// 写真 1 枚を端末内の Vision で読み、上から順に文字列を返す。
-    private static func recognizeImage(_ cgImage: CGImage) throws -> [String] {
+    private static func recognizeImage(
+        _ cgImage: CGImage,
+        orientation: CGImagePropertyOrientation
+    ) throws -> [String] {
         var lines: [String] = []
+        var requestFailed = false
         let request = VNRecognizeTextRequest { request, error in
             guard error == nil,
-                  let observations = request.results as? [VNRecognizedTextObservation] else { return }
-            lines = observations
-                .sorted {
-                    if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > 0.01 {
-                        return $0.boundingBox.maxY > $1.boundingBox.maxY
-                    }
-                    return $0.boundingBox.minX < $1.boundingBox.minX
-                }
-                .compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+                  let observations = request.results as? [VNRecognizedTextObservation] else {
+                requestFailed = true
+                return
+            }
+            lines = recognizedLines(from: observations)
         }
         request.recognitionLanguages = ["ja-JP"]
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
         do {
-            try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+            try VNImageRequestHandler(
+                cgImage: cgImage,
+                orientation: orientation,
+                options: [:]
+            ).perform([request])
         } catch {
-            throw NSError(
-                domain: "DocumentReader",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "写真の文字を読み取れませんでした"]
-            )
+            throw imageRecognitionError()
         }
+        guard !requestFailed, !lines.isEmpty else { throw imageRecognitionError() }
         return lines
+    }
+
+    private static func recognizedLines(
+        from observations: [VNRecognizedTextObservation]
+    ) -> [String] {
+        observations
+            .sorted {
+                if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > 0.01 {
+                    return $0.boundingBox.maxY > $1.boundingBox.maxY
+                }
+                return $0.boundingBox.minX < $1.boundingBox.minX
+            }
+            .compactMap {
+                $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func cgImageOrientation(
+        from orientation: UIImage.Orientation
+    ) -> CGImagePropertyOrientation {
+        switch orientation {
+        case .up: return .up
+        case .upMirrored: return .upMirrored
+        case .down: return .down
+        case .downMirrored: return .downMirrored
+        case .left: return .left
+        case .leftMirrored: return .leftMirrored
+        case .right: return .right
+        case .rightMirrored: return .rightMirrored
+        @unknown default: return .up
+        }
+    }
+
+    private static func imageRecognitionError() -> NSError {
+        NSError(
+            domain: "DocumentReader",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "写真の文字を読み取れませんでした"]
+        )
     }
 
     private func hostViewController() -> UIViewController? {
