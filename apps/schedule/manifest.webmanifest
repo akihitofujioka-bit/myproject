@@ -1,6 +1,6 @@
 {
-  "name": "備蓄・消耗品の管理",
-  "short_name": "備蓄",
+  "name": "予定",
+  "short_name": "予定",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",

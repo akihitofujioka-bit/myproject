@@ -14,14 +14,14 @@ const WWW = path.resolve(HERE, "..", "www");
 fs.rmSync(WWW, { recursive: true, force: true });
 fs.mkdirSync(WWW, { recursive: true });
 
-for (const dir of ["fridge", "docs-tracker", "stock", "kakeibo", "cards", "shared"]) {
+for (const dir of ["fridge", "docs-tracker", "schedule", "kakeibo", "cards", "shared"]) {
   fs.cpSync(path.join(ROOT, "apps", dir), path.join(WWW, dir), { recursive: true });
 }
 fs.copyFileSync(path.join(ROOT, "apps/index.html"), path.join(WWW, "index.html"));
 
 // アプリの中では Service Worker は不要（ファイルは端末内にあるため）。
 // 登録処理は残っていても失敗するだけだが、混乱を避けるため取り除く。
-for (const file of ["fridge/sw.js", "docs-tracker/sw.js", "stock/sw.js", "kakeibo/sw.js", "cards/sw.js"]) {
+for (const file of ["fridge/sw.js", "docs-tracker/sw.js", "schedule/sw.js", "kakeibo/sw.js", "cards/sw.js"]) {
   fs.rmSync(path.join(WWW, file), { force: true });
 }
 

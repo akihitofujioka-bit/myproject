@@ -61,7 +61,7 @@ struct ContentView: View {
     private var meetingSection: some View {
         let list = store.snapshot.meetings ?? []
         if !list.isEmpty {
-            Section("会議") {
+            Section("予定") {
                 ForEach(list) { m in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(m.title ?? "（件名なし）")

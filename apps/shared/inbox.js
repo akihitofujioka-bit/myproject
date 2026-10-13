@@ -1,9 +1,9 @@
 /*
  * 別のアプリへ品目を送るための受け渡し。
  *
- * 家計簿でレシートから読み取った「買ったもの」を、冷蔵庫や備蓄の在庫として
- * 登録するために使う。アプリはどれも同じ場所（localStorage）に、それぞれの
- * 鍵で保存しているため、鍵と形を合わせれば足せる。
+ * 家計簿でレシートから読み取った「買ったもの」を、冷蔵庫の在庫として
+ * 登録するために使う。アプリは同じ場所（localStorage）に保存しているため、
+ * 鍵と形を合わせれば足せる。
  *
  * 壊さないための約束:
  *  - 送り先のデータが読めないときは、何も書かずに失敗を返す（上書きしない）
@@ -28,55 +28,6 @@
           note: item.note || ""
         };
       }
-    },
-    // 日用品は備蓄アプリの台帳に入れる。残りが少なくなったら知らせる仕組みが
-    // そのまま使えるため。職場向けの備蓄と混ざらないよう、保管場所で分けている。
-    household: {
-      key: "stock.v1",
-      label: "日用品",
-      make: function (item) {
-        return {
-          name: item.name,
-          qty: 1,
-          unit: "個",
-          minQty: null,
-          place: "日用品",
-          expiresOn: "",
-          note: item.note || ""
-        };
-      }
-    },
-    // 常備薬も備蓄アプリの台帳に入れる。使用期限の管理がそのまま使えるため。
-    // 期限はレシートに載らないので空で入る（箱を見て入れてもらう）。
-    medicine: {
-      key: "stock.v1",
-      label: "医薬品",
-      make: function (item) {
-        return {
-          name: item.name,
-          qty: 1,
-          unit: "個",
-          minQty: null,
-          place: "医薬品",
-          expiresOn: "",
-          note: item.note || ""
-        };
-      }
-    },
-    stock: {
-      key: "stock.v1",
-      label: "備蓄",
-      make: function (item) {
-        return {
-          name: item.name,
-          qty: 1,
-          unit: "個",
-          minQty: null,
-          place: "",
-          expiresOn: "",
-          note: item.note || ""
-        };
-      }
     }
   };
 
@@ -90,7 +41,7 @@
 
   /**
    * 送り先に品目を足す。
-   * @param target "fridge" | "stock"
+   * @param target "fridge"
    * @param items  [{ name, note }]
    * @returns { ok: true, added: n } / { ok: false, reason: "..." }
    */

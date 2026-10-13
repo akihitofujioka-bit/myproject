@@ -49,7 +49,7 @@
     return Math.round((b - a) / 86400000);
   }
 
-  // 会議のメモから開始時刻と懇親会の有無を取り出す（書式は docs-tracker の meetingNote）
+  // 会議のメモから開始時刻と懇親会の有無を取り出す（予定アプリの meetingNote の書式）
   function meetingDetail(note) {
     var time = "", social = "";
     String(note || "").split("\n").forEach(function (line) {
@@ -62,29 +62,30 @@
 
   function isOpen(item) { return OPEN_STATUSES.indexOf(item && item.status) >= 0; }
 
-  function docsLists(today) {
-    var data = read("docs-tracker.v1");
-    var items = (data && data.items) || [];
+  function scheduleAndDocsLists(today) {
+    var schedule = read("schedule.v1");
+    var docs = read("docs-tracker.v1");
     var meetings = [], deadlines = [];
-    items.forEach(function (it) {
+    ((schedule && schedule.items) || []).forEach(function (it) {
       if (!isOpen(it)) return;
       var days = daysUntil(today, it.dueOn);
       if (days === null) return;
-      // 手帳から入れた「予定」も、会議と同じく日時のある予定として扱う（過ぎたら出さない）
-      if (it.kind === "会議" || it.kind === "予定") {
-        if (days < 0 || days > MEETING_DAYS) return;
-        var d = meetingDetail(it.note);
-        meetings.push({
-          id: it.id,
-          title: it.title,
-          date: it.dueOn,
-          days: days,
-          time: d.time,
-          place: it.dest || "",
-          social: d.social
-        });
-        return;
-      }
+      if (days < 0 || days > MEETING_DAYS) return;
+      var d = meetingDetail(it.note);
+      meetings.push({
+        id: it.id,
+        title: it.title,
+        date: it.dueOn,
+        days: days,
+        time: d.time,
+        place: it.dest || "",
+        social: d.social
+      });
+    });
+    ((docs && docs.items) || []).forEach(function (it) {
+      if (!isOpen(it) || it.kind === "会議" || it.kind === "予定") return;
+      var days = daysUntil(today, it.dueOn);
+      if (days === null) return;
       if (days > DEADLINE_DAYS) return;   // 期限切れ（マイナス）は残す。まだ終わっていないため
       deadlines.push({
         id: it.id,
@@ -118,27 +119,6 @@
     return out;
   }
 
-  // 備蓄：最低在庫数を下回ったもの（最低在庫数が未設定でも、残り0なら対象）
-  function stockShopping() {
-    var data = read("stock.v1");
-    if (!data) return [];
-    var out = [];
-    (data.items || []).forEach(function (it) {
-      var have = Number(it.qty);
-      if (isNaN(have)) have = 0;
-      var min = it.minQty === null || it.minQty === undefined || it.minQty === "" ? null : Number(it.minQty);
-      var gap = 0;
-      if (min !== null && !isNaN(min) && have < min) gap = min - have;
-      else if (have === 0) gap = 1;
-      if (gap <= 0) return;
-      out.push({
-        name: it.name + (min !== null && !isNaN(min) ? " あと" + gap + (it.unit || "") : ""),
-        from: "備蓄"
-      });
-    });
-    return out;
-  }
-
   /**
    * Apple Watch に送る一覧を作る。
    * options: { today: "YYYY-MM-DD", now: ミリ秒 }（テスト用。省略すると今の時刻）
@@ -147,14 +127,14 @@
     var opts = options || {};
     var now = opts.now || Date.now();
     var today = opts.today || ymd(new Date(now));
-    var lists = docsLists(today);
+    var lists = scheduleAndDocsLists(today);
     return {
       version: 1,
       today: today,
       updatedAt: new Date(now).toISOString(),
       meetings: lists.meetings,
       deadlines: lists.deadlines,
-      shopping: fridgeShopping(now).concat(stockShopping()).slice(0, MAX)
+      shopping: fridgeShopping(now).slice(0, MAX)
     };
   }
 

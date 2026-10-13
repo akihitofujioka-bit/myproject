@@ -120,7 +120,7 @@ function monthGrid(notes) {
 }
 {
   const g = makeSandbox();
-  ok(g.ScanRouter.destinationFor("planner") === "docs-tracker/index.html", "手帳は書類トラッカーへ（確認してカレンダーに登録）");
+  ok(g.ScanRouter.destinationFor("planner") === "schedule/index.html", "手帳は予定へ（確認してカレンダーに登録）");
   g.ScanRouter.handoff("planner", frag(["10/3(土)"]));
   ok(g.ScanRouter.takeHandoff("meeting") === null, "手帳の受け渡しを会議として取り出さない");
   ok(g.ScanRouter.takeHandoff("planner") !== null, "会議側が先に見ても、手帳宛ての受け渡しは消えずに残る");
@@ -145,7 +145,7 @@ console.log("== 振り分け先 ==");
 {
   const g = makeSandbox();
   ok(g.ScanRouter.destinationFor("receipt") === "kakeibo/index.html", "レシートは家計簿へ");
-  ok(g.ScanRouter.destinationFor("meeting") === "docs-tracker/index.html", "会議の通知は書類トラッカーへ");
+  ok(g.ScanRouter.destinationFor("meeting") === "schedule/index.html", "会議の通知は予定へ");
   ok(g.ScanRouter.destinationFor("unknown") === null, "unknown には行き先が無い");
 }
 

@@ -15,7 +15,7 @@
 
   var KEY = "pendingScan";
   var MAX_AGE_MS = 5 * 60 * 1000; // 古い受け渡しは事故防止のため使わない
-  var DEST = { receipt: "kakeibo/index.html", meeting: "docs-tracker/index.html", planner: "docs-tracker/index.html" };
+  var DEST = { receipt: "kakeibo/index.html", meeting: "schedule/index.html", planner: "schedule/index.html" };
 
   // レシートにだけ出てくる語。「合計」の見出しが読めなかったときの裏付けに使う
   var RECEIPT_WORDS = /小\s*計|お預|預り|お釣|釣銭|おつり|領収|税込|内税|外税|消費税|税率|対象|レジ|\d+\s*点|お買上|お買い上げ|現金|クレジット|電子マネー/;
@@ -130,7 +130,7 @@
       var raw = global.sessionStorage.getItem(KEY);
       if (!raw) return null;
       var data = JSON.parse(raw);
-      // 宛先が違うものは消さずに残す。書類トラッカーは「会議」と「手帳」の両方を
+      // 宛先が違うものは消さずに残す。予定アプリは「会議」と「手帳」の両方を
       // 受け取るため、先に会議側が見たときに手帳宛てのものを消してしまわないように
       if (data && data.type !== expectedType && data.at && Date.now() - data.at <= MAX_AGE_MS) return null;
       global.sessionStorage.removeItem(KEY);

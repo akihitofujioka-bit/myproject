@@ -9,8 +9,9 @@
   var DB_NAME = "character";
   var DB_VERSION = 1;
   var STORE_NAME = "slots";
-  var SLOTS = ["top", "fridge", "docs-tracker", "stock", "kakeibo", "cards"];
+  var SLOTS = ["top", "fridge", "docs-tracker", "schedule", "kakeibo", "cards"];
   var albumStatuses = {};
+  var legacyStockCleanup = null;
 
   function todayString(date) {
     var year = date.getFullYear();
@@ -172,6 +173,23 @@
     });
   }
 
+  // 廃止した備蓄用の写真を、Character を初めて読み込むときに1回だけ消す。
+  function removeLegacyStock() {
+    if (legacyStockCleanup) return legacyStockCleanup;
+    legacyStockCleanup = openDatabase().then(function (db) {
+      return new Promise(function (resolve) {
+        var transaction = db.transaction(STORE_NAME, "readwrite");
+        transaction.objectStore(STORE_NAME).delete("stock");
+        transaction.oncomplete = function () { db.close(); resolve(); };
+        transaction.onerror = function () { db.close(); resolve(); };
+        transaction.onabort = function () { db.close(); resolve(); };
+      });
+    }).catch(function () {
+      // 古い枠を消せなくても、現在の写真は読み込めるようにする。
+    });
+    return legacyStockCleanup;
+  }
+
   // iPhone のアプリ（WebKit）では、IndexedDB に Blob のまま保存すると、別の画面から
   // 読み直したときに中身を読めないことがある（2026-10-09、書類の画面で背景が出なかった）。
   // そこで写真は { type, data: ArrayBuffer } の形で保存し、読み出すときに Blob に戻す
@@ -216,7 +234,7 @@
   }
 
   function load(slot) {
-    return openDatabase().then(function (db) {
+    return removeLegacyStock().then(openDatabase).then(function (db) {
       return new Promise(function (resolve, reject) {
         var transaction = db.transaction(STORE_NAME, "readonly");
         var request = transaction.objectStore(STORE_NAME).get(slot);
