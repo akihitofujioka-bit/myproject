@@ -78,7 +78,7 @@
   - 質問の中の日付の言葉を①の規則で計算し、AI の日付と食い違えば **規則の値** を採る
   - 件名が空なら質問の先頭 30 字
 - 予定 → 今ある **予定の登録画面** に値を入れて開く
-- やること → 2-3 の **やること候補の確認画面**（`todos.js`）に入れて開く。「追加」で「書類・やること」に入る
+- やること → AI のタブに件名・期限を直せる小さな確認欄を出す。「書類・やることに入れる」で `todos.js` の `Todos.add` を使って足す（予定アプリには単独のやること確認画面が無いため）
 
 ## 壁打ち・ブレスト
 
@@ -134,7 +134,7 @@ IndexedDB `ichishi-history`（版 1）、ストア `entries`（keyPath `id`、�
   - 毎回新しい `LanguageModelSession(instructions:)` で 1 回だけ答える
   - 失敗は理由付きで reject: `tooLong`（上限超過）、`refused`（安全のため答えない）、`unavailable`、`failed`
 - `@available(iOS 26.0, *)` で AI の部分だけを囲む。プロジェクトの対応 OS は変えない
-- 手書きメモの文字認識は、2-3 で入れた写真の文字認識（Vision、`ja-JP`）を使い回す。新しい部品は作らない
+- 手書きメモの「撮る」は既存の `ReceiptScan.scan`（Vision）を使い回す。「写真から」は既存の `DocumentReaderPlugin` に `pickImage`（写真 1 枚を選び Vision `ja-JP` で文字にする）を足す
 
 ### Web（`apps/shared/` に足す）
 
@@ -143,7 +143,7 @@ IndexedDB `ichishi-history`（版 1）、ストア `entries`（keyPath `id`、�
 | `ondeviceai.js` | プラグインの呼び出し口。ブラウザでは `{available:false, reason:"unsupported"}` | 使う（橋渡し） |
 | `secretary.js` | 期間の読み取り、予定一覧の組み立て、空き時間の計算、下書きの確かめ | 使わない |
 | `aichat.js` | 3 モードの指示文、直近 6 往復の切り出し、資料 3,000 字切り、上限超過時のやり直し | 呼び出しのみ |
-| `history.js` | 履歴の保存・追記・検索・削除 | 使わない |
+| `history.js` | 履歴の保存・追記・検索・削除（`window.AIHistory`。ブラウザの `window.History` と名前がぶつかるため） | 使わない |
 
 画面は `apps/schedule/index.html` に足す。
 
