@@ -57,5 +57,12 @@ const cal = await pg.evaluate(() => window.__cal);
 ok(cal.saves.length === 1 && cal.saves[0][0].eventId === "E9", "カレンダーに入れると、元の予定（E9）を書き換える");
 ok(cal.events.length === 1 && cal.events[0].title === "架空の研修（変更）" && cal.events[0].startTime === "13:00", "カレンダーの予定は 1 件のまま、中身が新しくなる");
 ok((await orange()).length === 0, "書き込んだあとも、オレンジで重ならない");
+// カレンダーアプリで予定を消して戻ってくると、オレンジの表示も消える
+await pg.evaluate((d) => { window.__cal.events.push({ id: "E50", calendarId: "C1", title: "架空の祭り", date: d, startTime: "", endTime: "", place: "" }); }, today);
+await pg.evaluate(() => document.dispatchEvent(new Event("visibilitychange"))); await pg.waitForTimeout(500);
+ok((await orange()).length === 1, "カレンダーに足した予定は、戻ってきたときオレンジで出る");
+await pg.evaluate(() => { window.__cal.events = window.__cal.events.filter((e) => e.id !== "E50"); });
+await pg.evaluate(() => document.dispatchEvent(new Event("visibilitychange"))); await pg.waitForTimeout(500);
+ok((await orange()).length === 0, "カレンダーで消して戻ってくると、オレンジの表示も消える");
 ok(errs.length === 0, "JS エラーなし " + errs.join(" / "));
 await b.close(); srv.close(); process.exit(fail ? 1 : 0);

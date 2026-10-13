@@ -1510,6 +1510,11 @@ window.scheduleApp = {
 setView(currentView);
 render();
 loadPhoneCalendar();
+// ほかのアプリ（カレンダーアプリなど）から戻ってきたときも読み直す。
+// 読み直さないと、カレンダーアプリで消した予定がオレンジで残ってしまう
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "visible") loadPhoneCalendar();
+});
 // 画面下の操作バー: 「予定を登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
 document.getElementById("jumpAdd").addEventListener("click", function () {
   var card = document.getElementById("addCard");
