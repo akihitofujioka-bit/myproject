@@ -1,0 +1,175 @@
+/*
+ * 予定アプリの履歴・手書きメモ画面（Playwright が必要）。
+ *
+ *   NODE_PATH=<playwright の場所> node apps/tests/schedulehistory.test.mjs
+ */
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+let chromium;
+try {
+  ({ chromium } = require("playwright"));
+} catch (e) {
+  console.error("Playwright が見つかりません。");
+  process.exit(1);
+}
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const types = { ".html": "text/html", ".js": "text/javascript", ".png": "image/png" };
+const srv = http.createServer((q, r) => {
+  const p = path.join(ROOT, decodeURIComponent(q.url.split("?")[0]));
+  fs.readFile(p, (e, d) => {
+    if (e) { r.writeHead(404); r.end(); return; }
+    r.writeHead(200, { "content-type": types[path.extname(p)] || "application/octet-stream" });
+    r.end(d);
+  });
+});
+await new Promise((resolve, reject) => {
+  srv.once("error", reject);
+  srv.listen(0, "127.0.0.1", resolve);
+});
+
+const base = `http://127.0.0.1:${srv.address().port}/apps/`;
+const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+let fail = 0;
+const ok = (condition, label) => {
+  console.log((condition ? "PASS " : "FAIL ") + label);
+  if (!condition) fail++;
+};
+
+const fakeNative = () => {
+  window.__doc = {
+    image: { cancelled: false, name: "架空メモ.jpg", text: "架空メモの一行目\n修正前", ocr: true },
+    shared: location.search.includes("shared=1") ? {
+      cancelled: false,
+      name: "架空通知.pdf",
+      kind: "pdf",
+      ocr: true,
+      tables: [],
+      lines: ["架空検討会", "日時 令和8年10月22日（木）午後1時30分から", "場所 架空市役所 第１会議室"]
+    } : null
+  };
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: {
+      DocumentReader: {
+        pick: () => Promise.resolve({ cancelled: true }),
+        pickImage: () => window.__doc.imageError
+          ? Promise.reject(new Error(window.__doc.imageError))
+          : Promise.resolve(window.__doc.image),
+        takeShared: () => {
+          const value = window.__doc.shared;
+          window.__doc.shared = null;
+          return Promise.resolve(value || {});
+        }
+      }
+    },
+    nativePromise: (plugin, method) => {
+      if (plugin === "ReceiptScanner" && method === "scan") {
+        return Promise.resolve({ cancelled: false, lines: [{ text: "撮った架空メモ" }] });
+      }
+      if (method === "isSupported") return Promise.resolve({ supported: false, authorized: false });
+      return Promise.resolve({ cancelled: true });
+    }
+  };
+};
+
+const pg = await browser.newPage({ viewport: { width: 390, height: 844 } });
+const errors = [];
+pg.on("pageerror", error => errors.push(error.message));
+await pg.addInitScript(fakeNative);
+
+try {
+  await pg.goto(base + "schedule/index.html");
+  await pg.evaluate(async () => {
+    localStorage.clear();
+    await new Promise(resolve => {
+      const request = indexedDB.deleteDatabase("ichishi-history");
+      request.onsuccess = request.onerror = request.onblocked = resolve;
+    });
+  });
+  await pg.goto(base + "schedule/index.html?shared=1");
+  await pg.waitForFunction(async () => (await window.AIHistory.list({})).length === 1);
+
+  await pg.click("#historyViewBtn");
+  ok(await pg.locator("#historySearch").isVisible(), "履歴に検索欄が出る");
+  ok((await pg.locator("#historyKind option").allTextContents()).join("/") === "すべて/会話/書類/手書きメモ", "履歴に種類の絞り込みが出る");
+  ok(await pg.getByRole("button", { name: "✍️ 手書きメモを撮る" }).isVisible(), "手書きメモを撮るボタンが出る");
+  ok(await pg.getByRole("button", { name: "写真から" }).isVisible(), "写真からボタンが出る");
+  ok((await pg.locator("#historyList").innerText()).includes("架空通知.pdf"), "共有書類が自動で履歴に残る");
+
+  await pg.click("#listViewBtn");
+  await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 1);
+  await pg.click('[data-meeting-mode="app"]');
+  await pg.waitForFunction(async () => {
+    const entries = await window.AIHistory.list({ kind: "document" });
+    return entries[0] && entries[0].eventTitles && entries[0].eventTitles.includes("架空検討会");
+  });
+  ok(true, "書類から登録した予定の件名が履歴に残る");
+
+  await pg.click("#historyViewBtn");
+  await pg.click("#handwrittenImageBtn");
+  ok(await pg.locator("#handwrittenBody").inputValue() === "架空メモの一行目\n修正前", "写真の文字が編集欄に入る");
+  await pg.fill("#handwrittenBody", "架空メモの一行目\n<b>架空</b>に修正");
+  await pg.fill("#handwrittenTitle", "");
+  await pg.click("#handwrittenSaveBtn");
+  await pg.waitForFunction(async () => (await window.AIHistory.list({ kind: "handwritten" })).length === 1);
+  const handwritten = await pg.evaluate(async () => (await window.AIHistory.list({ kind: "handwritten" }))[0]);
+  ok(handwritten.title === "架空メモの一行目", "題名が空なら本文の一行目になる");
+
+  await pg.fill("#historySearch", "ダイイチ");
+  await pg.waitForFunction(() => document.querySelectorAll("#historyList [data-history-id]").length === 0);
+  ok(true, "一致しない読みの検索は0件になる");
+  await pg.fill("#historySearch", "第１");
+  await pg.waitForFunction(() => document.querySelectorAll("#historyList [data-history-id]").length === 1);
+  ok(true, "全角数字でも書類を検索できる");
+  await pg.fill("#historySearch", "");
+  await pg.selectOption("#historyKind", "chat");
+  await pg.waitForFunction(() => document.querySelectorAll("#historyList [data-history-id]").length === 0);
+  ok(true, "会話の絞り込みで書類が消える");
+
+  await pg.selectOption("#historyKind", "");
+  await pg.waitForFunction(() => document.querySelectorAll("#historyList [data-history-id]").length === 2);
+  await pg.evaluate(() => { window.confirm = () => false; });
+  await pg.locator("#historyList [data-history-remove]").first().click();
+  ok(await pg.locator("#historyList [data-history-id]").count() === 2, "1件削除はキャンセルすると消えない");
+  await pg.click("#historyClearBtn");
+  ok(await pg.locator("#historyList [data-history-id]").count() === 2, "すべて削除はキャンセルすると消えない");
+
+  await pg.locator(`#historyList [data-history-id="${handwritten.id}"] [data-history-open]`).click();
+  await pg.waitForFunction(() => !document.getElementById("historyDetail").hidden && document.getElementById("historyDetail").textContent.includes("修正"));
+  ok(await pg.locator("#historyDetail b").count() === 0, "本文のHTMLは要素にならない");
+  ok((await pg.locator("#historyDetail").innerText()).includes("<b>架空</b>"), "本文のHTMLを文字のまま表示する");
+  const documentId = await pg.evaluate(async () => (await window.AIHistory.list({ kind: "document" }))[0].id);
+  await pg.locator(`#historyList [data-history-id="${documentId}"] [data-history-open]`).click();
+  ok(await pg.getByRole("button", { name: "この資料で壁打ち" }).isVisible(), "書類に壁打ちボタンが出る");
+  ok(await pg.getByRole("button", { name: "この資料でブレスト" }).isVisible(), "書類にブレストボタンが出る");
+  ok(errors.length === 0, "履歴画面でJSエラーがない " + errors.join(" / "));
+
+  const broken = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await broken.addInitScript(() => {
+    const failed = { open: () => {
+      const request = {};
+      setTimeout(() => {
+        request.error = new Error("壊れた保存先");
+        if (request.onerror) request.onerror();
+      }, 0);
+      return request;
+    } };
+    Object.defineProperty(window, "indexedDB", { configurable: true, value: failed });
+  });
+  await broken.goto(base + "schedule/index.html");
+  await broken.waitForFunction(() => document.getElementById("toast").textContent.includes("履歴を保存できません"));
+  await broken.click("#listViewBtn");
+  ok(await broken.locator("#listView").isVisible(), "履歴を保存できなくても一覧タブは動く");
+  await broken.close();
+} finally {
+  await browser.close();
+  srv.close();
+}
+
+process.exit(fail ? 1 : 0);

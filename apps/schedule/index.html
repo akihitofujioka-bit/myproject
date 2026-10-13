@@ -157,7 +157,7 @@ button.small {
 }
 .view-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   margin-bottom: 14px;
 }
@@ -230,6 +230,14 @@ button.small {
   color: var(--muted);
   text-align: center;
   padding: 22px 8px;
+}
+.history-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.history-meta {
+  color: var(--muted);
+  font-size: 12px;
 }
 .calendar-head {
   display: flex;
@@ -369,6 +377,8 @@ button.small {
   <div class="view-switch" role="group" aria-label="表示方法">
     <button type="button" id="listViewBtn" data-view="list">一覧</button>
     <button type="button" id="calendarViewBtn" data-view="calendar">カレンダー</button>
+    <button type="button" id="aiViewBtn" data-view="ai">AI</button>
+    <button type="button" id="historyViewBtn" data-view="history">履歴</button>
   </div>
 
 
@@ -392,6 +402,36 @@ button.small {
     </section>
     <section class="card"><h2 id="selectedTitle">選んだ日の予定</h2><ul class="items" id="dayItems"></ul></section>
   </main>
+
+  <main id="aiView" hidden>
+    <section class="card"><h2>AI</h2></section>
+  </main>
+
+  <main id="historyView" hidden>
+    <section class="card">
+      <h2>履歴</h2>
+      <div class="row">
+        <div class="field wide"><label for="historySearch">検索</label><input id="historySearch" type="search" placeholder="題名や本文を検索" autocomplete="off"></div>
+        <div class="field"><label for="historyKind">種類</label><select id="historyKind"><option value="">すべて</option><option value="chat">会話</option><option value="document">書類</option><option value="handwritten">手書きメモ</option></select></div>
+      </div>
+      <div class="chips">
+        <button type="button" class="primary" id="handwrittenScanBtn">✍️ 手書きメモを撮る</button>
+        <button type="button" id="handwrittenImageBtn">写真から</button>
+        <button type="button" class="link" id="historyClearBtn">すべて削除</button>
+      </div>
+      <div id="sourcePickerNotice" hidden><p class="footnote">使う資料を選んでください。</p><button type="button" class="link small" id="sourcePickerCancel">やめる</button></div>
+      <ul class="items" id="historyList"></ul>
+    </section>
+    <section class="card" id="handwrittenEditor" hidden>
+      <h2>手書きメモを保存</h2>
+      <div class="row"><div class="field wide"><label for="handwrittenTitle">題名</label><input id="handwrittenTitle" autocomplete="off"></div></div>
+      <div class="row"><div class="field wide"><label for="handwrittenBody">読み取った文字</label><textarea id="handwrittenBody" rows="8"></textarea></div></div>
+      <div class="chips"><button type="button" class="primary" id="handwrittenSaveBtn">保存</button><button type="button" class="link" id="handwrittenCancelBtn">やめる</button></div>
+    </section>
+    <section class="card" id="historyDetail" hidden></section>
+  </main>
+
+  <div id="scheduleTools">
 
   <section class="card" id="scanCard" hidden>
     <h2>会議の通知・手帳を読み取る</h2>
@@ -481,6 +521,7 @@ button.small {
       </div>
     </form>
   </section>
+  </div>
 </div>
 <div class="toast" id="toast" role="status"></div>
 
@@ -498,6 +539,10 @@ button.small {
 <script src="../shared/todos.js"></script>
 <script src="../shared/scheduletable.js"></script>
 <script src="../shared/documentreader.js"></script>
+<script src="../shared/history.js"></script>
+<script src="../shared/secretary.js"></script>
+<script src="../shared/aichat.js"></script>
+<script src="../shared/ondeviceai.js"></script>
 <div class="actionbar">
   <div>
     <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
@@ -533,10 +578,15 @@ var editingId = null;
 var today = new Date();
 var shownMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 var selectedYmd = ymd(today);
-var currentView = localStorage.getItem(VIEW_KEY) === "calendar" ? "calendar" : "list";
+var savedView = localStorage.getItem(VIEW_KEY);
+var currentView = ["list", "calendar", "ai", "history"].indexOf(savedView) !== -1 ? savedView : "list";
 var scannedMeetings = [];
 var plannerResult = null;
 var calendarCandidates = [];
+var currentDocumentHistoryId = null;
+var currentDocumentHistorySave = Promise.resolve(null);
+var sourcePickerCallback = null;
+window.currentDocumentHistoryId = null;
 var CALENDAR_PICK_IDS_KEY = "schedule.calendarPickIds";
 
 function uid() {
@@ -759,12 +809,142 @@ document.getElementById("hintsCard").addEventListener("click", function (event) 
   render();
 });
 
+/* ---------- AI・書類・手書きメモの履歴 ---------- */
+
+function historyError() {
+  toast("履歴を保存できません");
+}
+
+function historyKindLabel(kind) {
+  return { chat: "会話", document: "書類", handwritten: "手書きメモ" }[kind] || "履歴";
+}
+
+function saveDocumentHistory(name, text) {
+  var body = String(text || "").trim();
+  currentDocumentHistoryId = null;
+  window.currentDocumentHistoryId = null;
+  if (!body || !window.AIHistory) {
+    currentDocumentHistorySave = Promise.resolve(null);
+    return currentDocumentHistorySave;
+  }
+  currentDocumentHistorySave = window.AIHistory.add({
+    kind: "document",
+    title: String(name || "").trim() || window.AIHistory.titleFrom(body),
+    body: body,
+    mode: "",
+    messages: [],
+    sourceId: "",
+    eventTitles: []
+  }).then(function (entry) {
+    currentDocumentHistoryId = entry.id;
+    window.currentDocumentHistoryId = entry.id;
+    return entry;
+  }).catch(function () {
+    historyError();
+    return null;
+  });
+  return currentDocumentHistorySave;
+}
+
+function addEventTitlesToDocument(items) {
+  var titles = (items || []).map(function (item) { return item.title; }).filter(Boolean);
+  if (!titles.length || !window.AIHistory) return;
+  currentDocumentHistorySave.then(function (entry) {
+    var id = currentDocumentHistoryId || (entry && entry.id);
+    if (!id) return null;
+    return window.AIHistory.get(id).then(function (saved) {
+      if (!saved) return null;
+      var eventTitles = Array.isArray(saved.eventTitles) ? saved.eventTitles.slice() : [];
+      titles.forEach(function (title) {
+        if (eventTitles.indexOf(title) === -1) eventTitles.push(title);
+      });
+      return window.AIHistory.update(id, { eventTitles: eventTitles });
+    });
+  }).catch(historyError);
+}
+
+function historyEntryHtml(entry) {
+  var action = sourcePickerCallback && entry.kind !== "chat"
+    ? '<button type="button" class="primary small" data-history-select="' + esc(entry.id) + '">この資料を選ぶ</button>'
+    : '<button type="button" class="small" data-history-open="' + esc(entry.id) + '">開く</button>';
+  return '<li class="item" data-history-id="' + esc(entry.id) + '"><div class="item-head"><span class="badge">' +
+    esc(historyKindLabel(entry.kind)) + '</span><span class="item-title">' + esc(entry.title || "題名なし") +
+    '</span></div><div class="actions">' + action +
+    '<button type="button" class="link small" data-history-remove="' + esc(entry.id) + '">削除</button></div></li>';
+}
+
+function renderHistory() {
+  if (!window.AIHistory) return Promise.resolve();
+  var kind = document.getElementById("historyKind").value;
+  var query = document.getElementById("historySearch").value;
+  return window.AIHistory.list({ kind: kind, query: query }).then(function (entries) {
+    if (sourcePickerCallback) {
+      entries = entries.filter(function (entry) { return entry.kind === "document" || entry.kind === "handwritten"; });
+    }
+    document.getElementById("historyList").innerHTML = entries.length
+      ? entries.map(historyEntryHtml).join("")
+      : '<li class="empty">履歴はありません。</li>';
+  }).catch(function () {
+    document.getElementById("historyList").innerHTML = '<li class="empty">履歴を表示できません。</li>';
+    historyError();
+  });
+}
+
+function openHistory(id) {
+  if (!window.AIHistory) return;
+  window.AIHistory.get(id).then(function (entry) {
+    if (!entry) return;
+    var detail = document.getElementById("historyDetail");
+    var content;
+    if (entry.kind === "chat") {
+      content = (entry.messages || []).map(function (message) {
+        return '<div class="scan-result"><strong>' + esc(message.role === "user" ? "自分" : "AI") +
+          '</strong><div class="history-body">' + esc(message.text || "") + '</div></div>';
+      }).join("") || '<p class="empty">やりとりはありません。</p>';
+      content += '<div class="actions"><button type="button" class="primary" data-history-continue="' + esc(entry.id) + '">続きから話す</button></div>';
+    } else {
+      content = '<div class="history-body">' + esc(entry.body || "") + '</div>';
+      if (entry.eventTitles && entry.eventTitles.length) {
+        content += '<h3>登録した予定</h3><ul>' + entry.eventTitles.map(function (title) { return '<li>' + esc(title) + '</li>'; }).join("") + '</ul>';
+      }
+      content += '<div class="actions"><button type="button" class="primary" data-history-ai="sparring" data-history-entry="' + esc(entry.id) + '">この資料で壁打ち</button>' +
+        '<button type="button" data-history-ai="brainstorm" data-history-entry="' + esc(entry.id) + '">この資料でブレスト</button></div>';
+    }
+    detail.innerHTML = '<h2>' + esc(entry.title || "題名なし") + '</h2><p class="history-meta">' + esc(historyKindLabel(entry.kind)) + '</p>' + content;
+    detail.hidden = false;
+    detail.scrollIntoView({ behavior: "smooth", block: "start" });
+  }).catch(historyError);
+}
+
+function chooseSource(callback) {
+  sourcePickerCallback = typeof callback === "function" ? callback : null;
+  document.getElementById("historySearch").value = "";
+  document.getElementById("historyKind").value = "";
+  document.getElementById("sourcePickerNotice").hidden = !sourcePickerCallback;
+  document.getElementById("historyDetail").hidden = true;
+  setView("history");
+  renderHistory();
+}
+
+function showHandwrittenEditor(text, title) {
+  document.getElementById("handwrittenTitle").value = title || "";
+  document.getElementById("handwrittenBody").value = text || "";
+  document.getElementById("handwrittenEditor").hidden = false;
+  document.getElementById("handwrittenEditor").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function setView(view) {
-  currentView = view === "calendar" ? "calendar" : "list";
+  currentView = ["list", "calendar", "ai", "history"].indexOf(view) !== -1 ? view : "list";
   document.getElementById("listView").hidden = currentView !== "list";
   document.getElementById("calendarView").hidden = currentView !== "calendar";
+  document.getElementById("aiView").hidden = currentView !== "ai";
+  document.getElementById("historyView").hidden = currentView !== "history";
+  document.getElementById("scheduleTools").hidden = currentView === "ai" || currentView === "history";
+  document.querySelector(".actionbar").hidden = currentView === "ai" || currentView === "history";
   document.getElementById("listViewBtn").setAttribute("aria-pressed", String(currentView === "list"));
   document.getElementById("calendarViewBtn").setAttribute("aria-pressed", String(currentView === "calendar"));
+  document.getElementById("aiViewBtn").setAttribute("aria-pressed", String(currentView === "ai"));
+  document.getElementById("historyViewBtn").setAttribute("aria-pressed", String(currentView === "history"));
   try {
     localStorage.setItem(VIEW_KEY, currentView);
   } catch (e) {
@@ -772,12 +952,108 @@ function setView(view) {
   }
   if (currentView === "calendar") {
     renderCalendar();
+  } else if (currentView === "history") {
+    renderHistory();
   }
 }
 
 document.querySelector(".view-switch").addEventListener("click", function (event) {
   var view = event.target.getAttribute("data-view");
   if (view) setView(view);
+});
+document.getElementById("historySearch").addEventListener("input", renderHistory);
+document.getElementById("historyKind").addEventListener("change", renderHistory);
+document.getElementById("historyList").addEventListener("click", function (event) {
+  var openButton = event.target.closest("button[data-history-open]");
+  var removeButton = event.target.closest("button[data-history-remove]");
+  var selectButton = event.target.closest("button[data-history-select]");
+  if (openButton) openHistory(openButton.getAttribute("data-history-open"));
+  if (removeButton && confirm("この履歴を削除しますか？")) {
+    window.AIHistory.remove(removeButton.getAttribute("data-history-remove")).then(function () {
+      document.getElementById("historyDetail").hidden = true;
+      renderHistory();
+    }).catch(historyError);
+  }
+  if (selectButton && sourcePickerCallback) {
+    window.AIHistory.get(selectButton.getAttribute("data-history-select")).then(function (entry) {
+      var callback = sourcePickerCallback;
+      sourcePickerCallback = null;
+      document.getElementById("sourcePickerNotice").hidden = true;
+      if (entry && callback) callback(entry);
+    }).catch(historyError);
+  }
+});
+document.getElementById("historyDetail").addEventListener("click", function (event) {
+  var aiButton = event.target.closest("button[data-history-ai]");
+  var continueButton = event.target.closest("button[data-history-continue]");
+  var id = aiButton ? aiButton.getAttribute("data-history-entry") : continueButton && continueButton.getAttribute("data-history-continue");
+  if (!id) return;
+  window.AIHistory.get(id).then(function (entry) {
+    if (!entry) return;
+    if (aiButton && typeof window.startAIWithSource === "function") {
+      window.startAIWithSource(aiButton.getAttribute("data-history-ai"), entry);
+    } else if (continueButton && typeof window.continueAIChat === "function") {
+      window.continueAIChat(entry);
+    }
+  }).catch(historyError);
+});
+document.getElementById("historyClearBtn").addEventListener("click", function () {
+  if (!confirm("履歴をすべて削除しますか？")) return;
+  window.AIHistory.clear().then(function () {
+    document.getElementById("historyDetail").hidden = true;
+    renderHistory();
+  }).catch(historyError);
+});
+document.getElementById("sourcePickerCancel").addEventListener("click", function () {
+  sourcePickerCallback = null;
+  document.getElementById("sourcePickerNotice").hidden = true;
+  renderHistory();
+});
+document.getElementById("handwrittenScanBtn").addEventListener("click", function () {
+  var button = this;
+  button.disabled = true;
+  window.ReceiptScan.scan({ purpose: "planner" }).then(function (result) {
+    if (result && !result.cancelled) {
+      showHandwrittenEditor((result.lines || []).map(function (line) { return line.text || ""; }).join("\n"), "");
+    }
+  }).catch(function (error) {
+    toast(error && error.message ? error.message : "写真の文字を読み取れませんでした");
+  }).then(function () { button.disabled = false; });
+});
+document.getElementById("handwrittenImageBtn").addEventListener("click", function () {
+  var button = this;
+  button.disabled = true;
+  window.DocumentReader.pickImage().then(function (result) {
+    if (result && !result.cancelled) showHandwrittenEditor(result.text || "", "");
+  }).catch(function (error) {
+    toast(error && error.message ? error.message : "写真の文字を読み取れませんでした");
+  }).then(function () { button.disabled = false; });
+});
+document.getElementById("handwrittenSaveBtn").addEventListener("click", function () {
+  var body = document.getElementById("handwrittenBody").value.trim();
+  var title = document.getElementById("handwrittenTitle").value.trim();
+  if (!body) {
+    toast("文字を入力してください");
+    return;
+  }
+  window.AIHistory.add({
+    kind: "handwritten",
+    title: title || window.AIHistory.titleFrom(body),
+    body: body,
+    mode: "",
+    messages: [],
+    sourceId: "",
+    eventTitles: []
+  }).then(function () {
+    document.getElementById("handwrittenEditor").hidden = true;
+    document.getElementById("handwrittenTitle").value = "";
+    document.getElementById("handwrittenBody").value = "";
+    toast("手書きメモを保存しました");
+    renderHistory();
+  }).catch(historyError);
+});
+document.getElementById("handwrittenCancelBtn").addEventListener("click", function () {
+  document.getElementById("handwrittenEditor").hidden = true;
 });
 document.getElementById("prevMonth").addEventListener("click", function () {
   shownMonth = new Date(shownMonth.getFullYear(), shownMonth.getMonth() - 1, 1);
@@ -1287,6 +1563,7 @@ function applyMeetingScan(lines) {
   var rows = window.Receipt.rowsFromLines(lines).map(function (row) {
     return row.text;
   });
+  saveDocumentHistory("", rows.join("\n"));
   var found = window.Meeting.parse(rows, {});
   renderMeetings(found);
   toast(found.length ? found.length + "件を読み取りました" : "会議を見つけられませんでした");
@@ -1294,6 +1571,10 @@ function applyMeetingScan(lines) {
 }
 function showDocumentResult(result) {
   var converted = window.DocumentReader.toMeetings(result, ymd(new Date()));
+  var historyText = converted.text || (result.tables || []).map(function (table) {
+    return (table || []).map(function (row) { return (row || []).join(" "); }).join("\n");
+  }).join("\n");
+  saveDocumentHistory(result.name || "", historyText);
   var textCard = document.getElementById("documentTextCard");
   textCard.hidden = true;
   if (converted.meetings.length) {
@@ -1367,6 +1648,7 @@ function registerMeetingMode(mode, button) {
     save();
     render();
     if (!items.length) return;
+    addEventTitlesToDocument(items);
     todoResult = addTodos(items);
   }
   if (mode === "app") {
@@ -1378,7 +1660,10 @@ function registerMeetingMode(mode, button) {
   writeEvents(items.map(calendarEvent), "会議", "meetings").then(function (result) {
     button.disabled = false;
     renderMeetings([]);
-    if (mode === "calendar") todoResult = addTodos(items);
+    if (mode === "calendar") {
+      todoResult = addTodos(items);
+      addEventTitlesToDocument(items);
+    }
     toast((result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました") + todoNotice(todoResult));
   }, function () {
     button.disabled = false;
@@ -1687,6 +1972,12 @@ window.scheduleApp = {
   applyPlannerScan: applyPlannerScan,
   collectPlanner: collectPlanner
 };
+window.setView = setView;
+window.openHistory = openHistory;
+window.chooseSource = chooseSource;
+if (window.AIHistory) {
+  window.AIHistory.open().catch(historyError);
+}
 setView(currentView);
 render();
 loadPhoneCalendar();
