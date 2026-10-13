@@ -103,12 +103,16 @@ public class CalendarReaderPlugin: CAPPlugin, CAPBridgedPlugin {
         let events = store.events(matching: predicate)
             .sorted { $0.startDate < $1.startDate }
             .map { ev -> [String: Any] in
-                [
+                let eventEndDate: Date = ev.isAllDay
+                    ? ev.endDate.addingTimeInterval(-1)
+                    : ev.endDate
+                return [
                     "id": ev.eventIdentifier ?? "",
                     // どのカレンダーの予定か（予定アプリで色と名前を出すため）
                     "calendarId": ev.calendar?.calendarIdentifier ?? "",
                     "title": ev.title ?? "",
                     "date": dateFmt.string(from: ev.startDate),
+                    "endDate": dateFmt.string(from: eventEndDate),
                     "startTime": ev.isAllDay ? "" : timeFmt.string(from: ev.startDate),
                     "endTime": ev.isAllDay ? "" : timeFmt.string(from: ev.endDate),
                     "place": ev.location ?? ""

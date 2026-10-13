@@ -14,7 +14,7 @@ import PhotosUI
 import Capacitor
 
 @objc(DocumentReaderPlugin)
-public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate, PHPickerViewControllerDelegate {
+public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate, PHPickerViewControllerDelegate, UIAdaptivePresentationControllerDelegate {
     public let identifier = "DocumentReaderPlugin"
     public let jsName = "DocumentReader"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -110,6 +110,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
             configuration.filter = .images
             let picker = PHPickerViewController(configuration: configuration)
             picker.delegate = self
+            picker.presentationController?.delegate = self
             self.pendingImagePick = call
             host.present(picker, animated: true)
         }
@@ -154,6 +155,13 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                 }
             }
         }
+    }
+
+    public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        guard presentationController.presentedViewController is PHPickerViewController,
+              let call = pendingImagePick else { return }
+        pendingImagePick = nil
+        call.resolve(["cancelled": true])
     }
 
     @objc func takeShared(_ call: CAPPluginCall) {
@@ -228,12 +236,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                 for: .mediaBox
             )
             guard let cgImage = image.cgImage else { continue }
-            var pageLines: [String] = []
-            let request = VNRecognizeTextRequest { request, error in
-                guard error == nil,
-                      let observations = request.results as? [VNRecognizedTextObservation] else { return }
-                pageLines = recognizedLines(from: observations)
-            }
+            let request = VNRecognizeTextRequest()
             request.recognitionLanguages = ["ja-JP"]
             request.recognitionLevel = .accurate
             do {
@@ -245,7 +248,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                     userInfo: [NSLocalizedDescriptionKey: "スキャンした PDF の文字を読み取れませんでした"]
                 )
             }
-            lines.append(contentsOf: pageLines)
+            lines.append(contentsOf: recognizedLines(from: request.results ?? []))
         }
         return lines
     }
@@ -255,16 +258,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
         _ cgImage: CGImage,
         orientation: CGImagePropertyOrientation
     ) throws -> [String] {
-        var lines: [String] = []
-        var requestFailed = false
-        let request = VNRecognizeTextRequest { request, error in
-            guard error == nil,
-                  let observations = request.results as? [VNRecognizedTextObservation] else {
-                requestFailed = true
-                return
-            }
-            lines = recognizedLines(from: observations)
-        }
+        let request = VNRecognizeTextRequest()
         request.recognitionLanguages = ["ja-JP"]
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
@@ -277,7 +271,8 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
         } catch {
             throw imageRecognitionError()
         }
-        guard !requestFailed, !lines.isEmpty else { throw imageRecognitionError() }
+        let lines = recognizedLines(from: request.results ?? [])
+        guard !lines.isEmpty else { throw imageRecognitionError() }
         return lines
     }
 

@@ -50,7 +50,7 @@ public class OnDeviceAIPlugin: CAPPlugin, CAPBridgedPlugin {
 #endif
     }
 
-    @objc func respond(_ call: CAPPluginCall) {
+    @MainActor @objc func respond(_ call: CAPPluginCall) {
         guard #available(iOS 26.0, *) else {
             call.reject("この iOS では端末内 AI を使えません", "unavailable")
             return
