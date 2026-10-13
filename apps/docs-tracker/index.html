@@ -221,7 +221,9 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 }
 .actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
 .actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
-.actionbar[hidden] { display: none; }
+.barback { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: inherit; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.bargroup { display: contents; }
+.bargroup[hidden] { display: none; }
 @media (max-width: 640px) {
   .wrap { padding-left: 12px; padding-right: 12px; }
   /* 日付欄は横幅を取るので、狭い画面では1行を占有させる */
@@ -403,10 +405,13 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
 <div class="actionbar" id="docsActionbar">
   <div>
+    <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
+    <span class="bargroup" id="docsBarButtons">
     <button type="button" class="primary" id="jumpAdd">書類を登録する</button>
     <!-- QR の読み取りは端末側の機能を使うため、アプリとして開いたときだけ出す -->
     <button type="button" id="qrScanBtn" hidden>QRで開く</button>
-    <button type="button" id="jumpDue">期限が近いものへ</button>
+    <button type="button" id="jumpDue">期限が近い順</button>
+    </span>
   </div>
 </div>
 
@@ -707,7 +712,8 @@ function showPanel(name) {
   var memo = name === "memo";
   document.getElementById("docsPanel").hidden = memo;
   document.getElementById("memoPanel").hidden = !memo;
-  document.getElementById("docsActionbar").hidden = memo;
+  // メモのタブでは書類用のボタンだけ隠し、「← 一覧」は残す
+  document.getElementById("docsBarButtons").hidden = memo;
   document.getElementById("docsTab").setAttribute("aria-pressed", String(!memo));
   document.getElementById("memoTab").setAttribute("aria-pressed", String(memo));
   if (memo) renderMemos();

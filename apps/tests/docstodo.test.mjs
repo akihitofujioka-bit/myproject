@@ -76,7 +76,7 @@ ok(saved.items.find(it => it.id === "d1").scheduleId === "s1", "別の書類を�
 await page.evaluate(() => localStorage.clear());
 await page.reload();
 await page.click("#memoTab");
-ok(!(await page.locator("#docsActionbar").isVisible()), "メモのタブでは書類のボタン帯を隠す");
+ok(!(await page.locator("#jumpAdd").isVisible()) && await page.locator("#docsActionbar .barback").isVisible(), "メモのタブでは書類のボタンを隠し、一覧へ戻るボタンは残す");
 await page.fill("#memoText", "10月22日 14時から 架空の打合せ 第2会議室");
 await page.click("#memoSave");
 let memo = page.locator(".memo-item").first();
