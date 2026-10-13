@@ -79,7 +79,7 @@
       if (monthDay) return oneDay(monthDay);
     }
 
-    match = text.match(/(^|[^月\d])(\d{1,2})\s*日/);
+    match = text.match(/(^|[^月\d])(\d{1,2})\s*日(?!間|後|以内|前|ほど)/);
     if (match) {
       var dayOnly = closestDay(Number(match[2]), today);
       if (dayOnly) return oneDay(dayOnly);

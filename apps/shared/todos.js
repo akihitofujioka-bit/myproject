@@ -81,6 +81,8 @@
     });
     var now = new Date().toISOString();
     entries.forEach(function (item) {
+      var scheduleTitle = String(item.scheduleTitle || "").trim();
+      var scheduleDate = monthDay(item.scheduleDate);
       data.items.push({
         id: uid(),
         title: String(item.title).trim(),
@@ -89,7 +91,9 @@
         dueOn: String(item.dueOn || ""),
         status: "未着手",
         priority: "中",
-        note: "予定: " + String(item.scheduleTitle || "") + "（" + monthDay(item.scheduleDate) + "）",
+        note: scheduleTitle || scheduleDate
+          ? "予定: " + scheduleTitle + (scheduleDate ? "（" + scheduleDate + "）" : "")
+          : "",
         createdAt: now,
         doneAt: "",
         icsSeq: 0,

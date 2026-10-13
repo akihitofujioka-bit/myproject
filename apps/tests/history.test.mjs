@@ -74,6 +74,38 @@ function fakeIndexedDB() {
   };
 }
 
+function reconnectingIndexedDB() {
+  const records = new Map();
+  let openCount = 0;
+  const store = {
+    put(value) {
+      return request(() => {
+        const saved = structuredClone(value);
+        records.set(saved.id, saved);
+        return saved.id;
+      });
+    }
+  };
+  return {
+    get openCount() { return openCount; },
+    open() {
+      openCount++;
+      const firstConnection = openCount === 1;
+      return request(() => ({
+        objectStoreNames: { contains: () => true },
+        transaction() {
+          if (firstConnection) {
+            const error = new Error("接続が切れました");
+            error.name = "InvalidStateError";
+            throw error;
+          }
+          return { objectStore: () => store };
+        }
+      }));
+    }
+  };
+}
+
 if (!H) {
   ok(false, "window.AIHistory が公開されている");
 } else {
@@ -118,6 +150,29 @@ if (!H) {
   ok(await H.get(document.id) === null, "1 件を削除する");
   await H.clear();
   ok((await H.list()).length === 0, "すべて削除する");
+
+  let failOldOpen;
+  const oldOpen = H.open({
+    open() {
+      const pending = {};
+      failOldOpen = () => {
+        pending.error = new Error("古い接続だけ失敗");
+        if (pending.onerror) pending.onerror();
+      };
+      return pending;
+    }
+  });
+  const oldFailure = oldOpen.catch(() => true);
+  await H.open(fakeIndexedDB());
+  failOldOpen();
+  await oldFailure;
+  const afterOldFailure = await H.add({ kind: "document", title: "架空の新しい接続", body: "接続確認" });
+  ok(Boolean(afterOldFailure.id), "古い open の失敗で新しい接続を捨てない");
+
+  const reconnecting = reconnectingIndexedDB();
+  await H.open(reconnecting);
+  const recovered = await H.add({ kind: "document", title: "架空の再接続", body: "接続確認" });
+  ok(Boolean(recovered.id) && reconnecting.openCount === 2, "transaction が InvalidStateError でも1回だけ開き直して追加する");
 
   const title = H.titleFrom("\n\n架空の議案について説明します。" + "あ".repeat(40));
   ok(title.length === 30 && title.startsWith("架空の議案"), "最初の空でない行を 30 字にする");

@@ -295,6 +295,56 @@ try {
   await page.waitForFunction(() => document.getElementById("aiConversation").textContent.includes("架空の答えです"));
   ok(await page.locator("#aiConversation .ai-bubble.user").count() === 1, "拒否後に同じ質問を送り直しても利用者の吹き出しは1つにする");
 
+  const failedPast = await page.evaluate(async () => window.AIHistory.add({
+    kind: "chat", title: "失敗を含む架空会話", body: "", mode: "brainstorm",
+    messages: [
+      { role: "user", text: "残す架空質問" }, { role: "ai", text: "残す架空回答" },
+      { role: "user", text: "答えの無い架空質問" }, { role: "ai", text: "（答えを作れませんでした）" }
+    ],
+    sourceId: "", eventTitles: []
+  }));
+  await page.evaluate(entry => window.continueAIChat(entry), failedPast);
+  ok(await page.locator("#aiConversation .ai-bubble").count() === 2, "続きから話す画面では失敗行と答えの無い質問を表示しない");
+  ok(!(await page.locator("#aiConversation").innerText()).includes("答えの無い架空質問"), "答えの無い質問を過去の会話から外す");
+  await page.fill("#aiQuestion", "失敗を除いて続ける架空質問");
+  await page.click("#aiSend");
+  await page.waitForFunction(async id => (await window.AIHistory.get(id)).messages.length === 6, failedPast.id);
+  const resumedCall = await page.evaluate(() => window.__ai.calls.at(-1));
+  ok(resumedCall.prompt.includes("残す架空質問") && !resumedCall.prompt.includes("答えの無い架空質問") && !resumedCall.prompt.includes("答えを作れませんでした"), "AIへ渡す過去の会話から失敗した一往復を外す");
+
+  const deletedCurrent = await page.evaluate(async () => window.AIHistory.add({
+    kind: "chat", title: "削除する架空会話", body: "", mode: "secretary",
+    messages: [{ role: "user", text: "削除前の架空質問" }, { role: "ai", text: "削除前の架空回答" }],
+    sourceId: "", eventTitles: []
+  }));
+  await page.evaluate(entry => {
+    window.continueAIChat(entry);
+    window.setView("history");
+    window.confirm = () => true;
+  }, deletedCurrent);
+  await page.waitForFunction(id => document.querySelector(`[data-history-id="${id}"] [data-history-remove]`), deletedCurrent.id);
+  await page.click(`[data-history-id="${deletedCurrent.id}"] [data-history-remove]`);
+  await page.waitForFunction(async id => !(await window.AIHistory.get(id)), deletedCurrent.id);
+  await page.click("#aiViewBtn");
+  ok(await page.locator("#aiConversation .ai-bubble").count() === 0, "今使っている会話を削除したらAI画面を新しい会話にする");
+  await page.fill("#aiQuestion", "一件削除後の架空質問");
+  await page.click("#aiSend");
+  await page.waitForFunction(async () => (await window.AIHistory.list({ kind: "chat" })).some(entry => entry.title === "一件削除後の架空質問" && entry.messages.length === 2));
+  ok(!(await page.locator("#toast").innerText()).includes("履歴を保存できません"), "今の会話を削除した後も新しい会話を保存できる");
+
+  await page.click("#historyViewBtn");
+  await page.click("#historyClearBtn");
+  await page.waitForFunction(async () => (await window.AIHistory.list({})).length === 0);
+  await page.click("#aiViewBtn");
+  ok(await page.locator("#aiConversation .ai-bubble").count() === 0, "履歴をすべて削除したらAI画面を新しい会話にする");
+  await page.fill("#aiQuestion", "全削除後の架空質問");
+  await page.click("#aiSend");
+  await page.waitForFunction(async () => {
+    const chats = await window.AIHistory.list({ kind: "chat" });
+    return chats.length === 1 && chats[0].messages.length === 2;
+  });
+  ok(!(await page.locator("#toast").innerText()).includes("履歴を保存できません"), "履歴をすべて削除した後も新しい会話を保存できる");
+
   await page.click("#aiNewChat");
   await page.fill("#aiQuestion", "危険な文字を返して");
   await page.click("#aiSend");

@@ -199,6 +199,26 @@ try {
   ok(await received.locator("#meetingConfirm").isVisible(), "履歴表示で共有書類を受け取っても確認画面が見える");
   await receivedContext.close();
 
+  const memoContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const memoReceived = await memoContext.newPage();
+  await memoReceived.addInitScript(fakeNative);
+  await memoReceived.addInitScript(() => {
+    localStorage.setItem("schedule.view", "history");
+    sessionStorage.setItem("pendingScan", JSON.stringify({
+      type: "memo",
+      lines: ["10月22日 14時から 架空の打合せ 第2会議室"],
+      at: Date.now()
+    }));
+  });
+  await memoReceived.goto(base + "schedule/index.html");
+  await memoReceived.waitForFunction(() => {
+    const confirm = document.getElementById("meetingConfirm");
+    return !document.getElementById("listView").hidden && !confirm.hidden &&
+      document.querySelectorAll("#meetingForms .scan-result").length === 1;
+  });
+  ok(await memoReceived.locator("#meetingConfirm").isVisible(), "履歴表示で音声メモを受け取っても確認画面が見える");
+  await memoContext.close();
+
   const broken = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await broken.addInitScript(() => {
     const failed = { open: () => {
@@ -212,6 +232,8 @@ try {
     Object.defineProperty(window, "indexedDB", { configurable: true, value: failed });
   });
   await broken.goto(base + "schedule/index.html");
+  await broken.waitForTimeout(50);
+  ok(!(await broken.locator("#toast").innerText()).includes("履歴を保存できません"), "壊れたDBでも一覧では履歴の通知を出さない");
   await broken.click("#historyViewBtn");
   await broken.waitForFunction(() => document.getElementById("toast").textContent.includes("履歴を保存できません"));
   ok(await broken.locator("#historyView").isVisible(), "壊れたDBでも履歴タブを開ける");

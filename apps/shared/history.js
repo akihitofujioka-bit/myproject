@@ -9,17 +9,23 @@
   var DB_VERSION = 1;
   var STORE_NAME = "entries";
   var dbPromise = null;
+  var dbSource = null;
+
+  function forgetConnection(promise) {
+    if (dbPromise === promise) dbPromise = null;
+  }
 
   function open(indexedDB) {
     if (!indexedDB && dbPromise) return dbPromise;
-    var source = indexedDB || global.indexedDB;
+    var source = indexedDB || dbSource || global.indexedDB;
     if (!source || typeof source.open !== "function") {
       return Promise.reject(new Error("unavailable"));
     }
+    dbSource = source;
 
     // 引数を渡した場合は、テスト用などの保存先へ明示的に切り替える。
     if (indexedDB || !dbPromise) {
-      dbPromise = new Promise(function (resolve, reject) {
+      var opening = new Promise(function (resolve, reject) {
         var request;
         try {
           request = source.open(DB_NAME, DB_VERSION);
@@ -35,17 +41,30 @@
             store.createIndex("kind", "kind", { unique: false });
           }
         };
-        request.onsuccess = function () { resolve(request.result); };
+        request.onsuccess = function () {
+          var db = request.result;
+          db.onclose = function () { forgetConnection(opening); };
+          db.onversionchange = function () {
+            forgetConnection(opening);
+            if (typeof db.close === "function") db.close();
+          };
+          resolve(db);
+        };
         request.onerror = function () { reject(request.error || new Error("unavailable")); };
       });
-      dbPromise.catch(function () { dbPromise = null; });
+      dbPromise = opening;
+      opening.catch(function () { forgetConnection(opening); });
     }
     return dbPromise;
   }
 
-  function run(method, value) {
-    var hasValue = arguments.length > 1;
-    return open().then(function (db) {
+  function reconnectable(error) {
+    return error && ["InvalidStateError", "TransactionInactiveError", "AbortError"].indexOf(error.name) !== -1;
+  }
+
+  function runAttempt(method, value, hasValue, retried) {
+    var connection = open();
+    return connection.then(function (db) {
       return new Promise(function (resolve, reject) {
         var request;
         try {
@@ -58,7 +77,18 @@
         request.onsuccess = function () { resolve(request.result); };
         request.onerror = function () { reject(request.error || new Error("履歴を操作できませんでした")); };
       });
+    }).catch(function (error) {
+      if (!retried && reconnectable(error)) {
+        forgetConnection(connection);
+        return runAttempt(method, value, hasValue, true);
+      }
+      throw error;
     });
+  }
+
+  function run(method, value) {
+    var hasValue = arguments.length > 1;
+    return runAttempt(method, value, hasValue, false);
   }
 
   function now() {

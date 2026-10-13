@@ -901,6 +901,18 @@ function historyKindLabel(kind) {
   return { chat: "会話", document: "書類", handwritten: "手書きメモ" }[kind] || "履歴";
 }
 
+function usableChatMessages(messages) {
+  var usable = [];
+  (messages || []).forEach(function (message) {
+    if (message.role === "ai" && message.text === "（答えを作れませんでした）") {
+      if (usable.length && usable[usable.length - 1].role === "user") usable.pop();
+      return;
+    }
+    usable.push(message);
+  });
+  return usable;
+}
+
 function resetDocumentHistory() {
   currentDocumentHistoryId = null;
   currentDocumentHistorySave = null;
@@ -993,7 +1005,7 @@ function openHistory(id) {
     var content;
     if (entry.kind === "chat") {
       content = entry.sourceId ? '<p class="history-meta" data-history-source>' + esc("資料を確認しています") + '</p>' : '';
-      content += (entry.messages || []).map(function (message) {
+      content += usableChatMessages(entry.messages).map(function (message) {
         return '<div class="scan-result"><strong>' + esc(message.role === "user" ? "自分" : "AI") +
           '</strong><div class="history-body">' + esc(message.text || "") + '</div></div>';
       }).join("") || '<p class="empty">やりとりはありません。</p>';
@@ -1320,7 +1332,7 @@ function continueAIChat(entry) {
   document.getElementById("aiSend").disabled = true;
   selectAIMode(entry && entry.mode);
   aiConversationId = entry && entry.id;
-  aiMessages = (entry && entry.messages || []).map(function (message) {
+  aiMessages = usableChatMessages(entry && entry.messages).map(function (message) {
     return { role: message.role, text: message.text || "" };
   });
   renderAIConversation();
@@ -1485,7 +1497,9 @@ document.getElementById("historyList").addEventListener("click", function (event
   var selectButton = event.target.closest("button[data-history-select]");
   if (openButton) openHistory(openButton.getAttribute("data-history-open"));
   if (removeButton && confirm("この履歴を削除しますか？")) {
-    window.AIHistory.remove(removeButton.getAttribute("data-history-remove")).then(function () {
+    var removedId = removeButton.getAttribute("data-history-remove");
+    window.AIHistory.remove(removedId).then(function () {
+      if (aiConversationId === removedId) newAIConversation(false);
       document.getElementById("historyDetail").hidden = true;
       renderHistory();
     }).catch(historyError);
@@ -1516,6 +1530,7 @@ document.getElementById("historyDetail").addEventListener("click", function (eve
 document.getElementById("historyClearBtn").addEventListener("click", function () {
   if (!confirm("履歴をすべて削除しますか？")) return;
   window.AIHistory.clear().then(function () {
+    if (aiConversationId) newAIConversation(false);
     document.getElementById("historyDetail").hidden = true;
     renderHistory();
   }).catch(historyError);
@@ -2479,6 +2494,7 @@ if (pendingMeeting && pendingMeeting.length) {
 }
 var pendingMemo = window.ScanRouter && window.ScanRouter.takeHandoff("memo");
 if (pendingMemo && pendingMemo.length) {
+  showScheduleResultView();
   renderMeetings(window.Meeting.parse(pendingMemo, {}).map(function (meeting) {
     meeting.source = "memo";
     return meeting;
@@ -2506,7 +2522,9 @@ window.openDraftForm = openDraftForm;
 window.startAIWithSource = startAIWithSource;
 window.continueAIChat = continueAIChat;
 if (window.AIHistory) {
-  window.AIHistory.open().catch(historyError);
+  window.AIHistory.open().catch(function () {
+    /* 一覧では通知せず、履歴を開いたときに renderHistory から知らせる。 */
+  });
 }
 setView(currentView);
 render();
