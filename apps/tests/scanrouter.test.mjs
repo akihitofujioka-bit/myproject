@@ -146,6 +146,7 @@ console.log("== 振り分け先 ==");
   const g = makeSandbox();
   ok(g.ScanRouter.destinationFor("receipt") === "kakeibo/index.html", "レシートは家計簿へ");
   ok(g.ScanRouter.destinationFor("meeting") === "schedule/index.html", "会議の通知は予定へ");
+  ok(g.ScanRouter.destinationFor("memo") === "schedule/index.html", "メモは予定へ");
   ok(g.ScanRouter.destinationFor("unknown") === null, "unknown には行き先が無い");
 }
 

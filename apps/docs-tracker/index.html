@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>書類・回覧トラッカー</title>
+<title>書類・やること</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2f6fed">
 <meta name="mobile-web-app-capable" content="yes">
@@ -170,6 +170,12 @@ li.item.done { opacity: .62; }
 .due.none { color: var(--muted); }
 .item-note { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
 .item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tab-switch { display: flex; gap: 8px; margin-bottom: 14px; }
+.tab-switch button { flex: 1; font-weight: 700; }
+.tab-switch button[aria-pressed="true"] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
+.memo-item { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px; margin-bottom: 8px; }
+.memo-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.memo-marks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
 /* ---- QRコードの表示（紙の書類に貼って、アプリから開けるようにする） ---- */
 .modal {
@@ -215,6 +221,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 }
 .actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
 .actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+.actionbar[hidden] { display: none; }
 @media (max-width: 640px) {
   .wrap { padding-left: 12px; padding-right: 12px; }
   /* 日付欄は横幅を取るので、狭い画面では1行を占有させる */
@@ -229,13 +236,20 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <div class="wrap">
   <p class="backlink"><a href="../index.html">← アプリ一覧にもどる</a></p>
   <header>
-    <h1>書類・回覧トラッカー</h1>
-    <p class="lead">提出期限のある書類・回覧・申請を管理します。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
+    <h1>書類・やること</h1>
+    <p class="lead">提出期限のある書類・回覧・申請と、やることを管理します。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
   </header>
 
   <div class="notice">
     <strong>取り扱いの注意：</strong>個人情報や機微な内容は入力しないでください。書類名は「〇〇申請書（△△課分）」のように、本人を特定できない表現にとどめます。共用パソコンで使う場合は、使い終わったらブラウザのデータを消してください。
   </div>
+
+  <div class="tab-switch" role="group" aria-label="表示する内容">
+    <button type="button" id="docsTab" aria-pressed="true">書類・やること</button>
+    <button type="button" id="memoTab" aria-pressed="false">メモ</button>
+  </div>
+
+  <div id="docsPanel">
 
   <div class="stats" id="stats"></div>
 
@@ -272,7 +286,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
           <label for="f-kind">種別</label>
           <select id="f-kind" name="kind">
             <option>申請</option><option>回覧</option><option>提出</option>
-            <option>支払い</option><option>その他</option>
+            <option>支払い</option><option>やること</option><option>その他</option>
           </select>
         </div>
       </div>
@@ -324,7 +338,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
         <select id="kindFilter">
           <option value="すべて">すべて</option>
           <option>申請</option><option>回覧</option><option>提出</option>
-          <option>支払い</option><option>その他</option>
+          <option>支払い</option><option>やること</option><option>その他</option>
         </select>
       </div>
       <div class="field">
@@ -370,9 +384,23 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       保存した JSON を <code>data/deadlines.json</code> に置くと、朝のブリーフ（<code>/brief</code>）が今日の締切として拾います。読み込むと今のデータは置き換わります。
     </p>
   </section>
+  </div>
+
+  <div id="memoPanel" hidden>
+    <section class="card">
+      <h2 id="memoFormTitle">メモを書く</h2>
+      <label for="memoText">メモ</label>
+      <textarea id="memoText" rows="5" placeholder="気づいたことや予定、期限のあるやることを書きます"></textarea>
+      <div class="chips" style="margin-top:8px">
+        <button type="button" class="primary" id="memoSave">保存する</button>
+        <button type="button" id="memoCancel" hidden>やめる</button>
+      </div>
+    </section>
+    <div id="memoList"></div>
+  </div>
 </div>
 
-<div class="actionbar">
+<div class="actionbar" id="docsActionbar">
   <div>
     <button type="button" class="primary" id="jumpAdd">書類を登録する</button>
     <!-- QR の読み取りは端末側の機能を使うため、アプリとして開いたときだけ出す -->
@@ -411,6 +439,9 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/watch.js"></script>
 <script src="../shared/character.js"></script>
 <script src="../shared/schedulemove.js"></script>
+<script src="../shared/meeting.js"></script>
+<script src="../shared/todos.js"></script>
+<script src="../shared/scanrouter.js"></script>
 <script>
 "use strict";
 if (window.Character) window.Character.applyBackground("docs-tracker");
@@ -423,27 +454,43 @@ var PRIORITY_ORDER = { "高": 0, "中": 1, "低": 2 };
 
 var state = load();
 var editingId = null;
+var editingMemoId = null;
+var pendingTodoMemoId = null;
 // due: 上の件数のボタンで選んだ期限の絞り込み（"" / "expired" / "today" / "week"）
 var filters = { q: "", status: "未完了", kind: "すべて", sort: "due", due: "" };
 
 function load() {
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { v: 1, items: [], calIds: {} };
+    if (!raw) return { v: 1, items: [], calIds: {}, memos: [] };
     return normalize(JSON.parse(raw));
   } catch (e) {
-    return { v: 1, items: [], calIds: {} };
+    return { v: 1, items: [], calIds: {}, memos: [] };
   }
 }
 
 function normalize(data) {
-  if (!data || typeof data !== "object") return { v: 1, items: [], calIds: {} };
+  if (!data || typeof data !== "object") return { v: 1, items: [], calIds: {}, memos: [] };
   var items = Array.isArray(data.items) ? data.items : [];
+  var memos = Array.isArray(data.memos) ? data.memos : [];
   return {
     v: 1,
     // カレンダーに入れた予定の識別子（鍵は下の calKey）。登録し直したときに
     // 新しい予定を増やさず、同じ予定を書き換えるために覚えておく
     calIds: (data.calIds && typeof data.calIds === "object") ? data.calIds : {},
+    memos: memos.filter(function (memo) {
+      return memo && typeof memo === "object";
+    }).map(function (memo) {
+      return {
+        id: memo.id || uid(),
+        text: String(memo.text || ""),
+        createdAt: memo.createdAt || new Date().toISOString(),
+        updatedAt: memo.updatedAt || memo.createdAt || new Date().toISOString(),
+        movedTo: Array.isArray(memo.movedTo) ? memo.movedTo.filter(function (to) {
+          return to === "schedule" || to === "todo";
+        }) : []
+      };
+    }),
     items: items.filter(function (it) {
       return it && it.title && it.kind !== "会議" && it.kind !== "予定";
     }).map(function (it) {
@@ -460,7 +507,8 @@ function normalize(data) {
         doneAt: it.doneAt || "",
         icsSeq: Number(it.icsSeq) || 0,
         // 手帳から入れた予定の識別子。撮り直して登録したときに、増やさず書き換えるために使う
-        planKey: it.planKey || ""
+        planKey: it.planKey || "",
+        scheduleId: it.scheduleId || ""
       };
     })
   };
@@ -648,7 +696,139 @@ function render() {
   fillDatalist("titleList", pastValues("title"));
   fillDatalist("destList", pastValues("dest"));
   renderRecentChips();
+  renderMemos();
 }
+
+/* ---------- メモ ---------- */
+
+function showPanel(name) {
+  var memo = name === "memo";
+  document.getElementById("docsPanel").hidden = memo;
+  document.getElementById("memoPanel").hidden = !memo;
+  document.getElementById("docsActionbar").hidden = memo;
+  document.getElementById("docsTab").setAttribute("aria-pressed", String(!memo));
+  document.getElementById("memoTab").setAttribute("aria-pressed", String(memo));
+  if (memo) renderMemos();
+}
+
+function memoMoveCandidate(text) {
+  if (window.Meeting && window.Meeting.findDate(String(text || ""))) return true;
+  if (!window.Todos) return false;
+  return window.Todos.candidates(text, "", todayStr()).some(function (item) { return !!item.dueOn; });
+}
+
+function renderMemos() {
+  var list = state.memos.slice().sort(function (a, b) {
+    return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  });
+  var el = document.getElementById("memoList");
+  if (!list.length) {
+    el.innerHTML = '<div class="card empty">メモはまだありません。</div>';
+    return;
+  }
+  el.innerHTML = list.map(function (memo) {
+    var canMove = memoMoveCandidate(memo.text);
+    var moved = memo.movedTo || [];
+    return '<article class="memo-item" data-id="' + esc(memo.id) + '">' +
+      '<div class="memo-text">' + esc(memo.text) + '</div>' +
+      '<div class="memo-marks">' +
+        (moved.indexOf("schedule") >= 0 ? '<span class="badge">予定に入れた</span>' : '') +
+        (moved.indexOf("todo") >= 0 ? '<span class="badge">やることにした</span>' : '') +
+      '</div><div class="item-actions">' +
+        (canMove ? '<button type="button" class="small" data-action="schedule">予定に入れる</button>' +
+          '<button type="button" class="small" data-action="todo">やることにする</button>' : '') +
+        (moved.indexOf("schedule") >= 0 ? '<a class="memo-schedule-link" href="../schedule/index.html">予定アプリを開く</a>' : '') +
+        '<button type="button" class="small link" data-action="edit">編集</button>' +
+        '<button type="button" class="small link" data-action="delete">削除</button>' +
+      '</div></article>';
+  }).join("");
+}
+
+function stopMemoEditing() {
+  editingMemoId = null;
+  document.getElementById("memoText").value = "";
+  document.getElementById("memoFormTitle").textContent = "メモを書く";
+  document.getElementById("memoSave").textContent = "保存する";
+  document.getElementById("memoCancel").hidden = true;
+}
+
+function markMemoMoved(id, destination) {
+  var memo = state.memos.find(function (item) { return item.id === id; });
+  if (!memo || memo.movedTo.indexOf(destination) >= 0) return;
+  memo.movedTo.push(destination);
+  memo.updatedAt = new Date().toISOString();
+}
+
+document.getElementById("docsTab").addEventListener("click", function () { showPanel("docs"); });
+document.getElementById("memoTab").addEventListener("click", function () { showPanel("memo"); });
+document.getElementById("memoCancel").addEventListener("click", stopMemoEditing);
+document.getElementById("memoSave").addEventListener("click", function () {
+  var text = document.getElementById("memoText").value.trim();
+  if (!text) { toast("メモを入力してください"); return; }
+  var now = new Date().toISOString();
+  if (editingMemoId) {
+    var memo = state.memos.find(function (item) { return item.id === editingMemoId; });
+    if (memo) { memo.text = text; memo.updatedAt = now; }
+    toast("メモを更新しました");
+  } else {
+    state.memos.push({ id: uid(), text: text, createdAt: now, updatedAt: now, movedTo: [] });
+    toast("メモを保存しました");
+  }
+  stopMemoEditing();
+  save();
+  renderMemos();
+});
+
+document.getElementById("memoList").addEventListener("click", function (event) {
+  var button = event.target.closest("button[data-action]");
+  if (!button) return;
+  var row = button.closest(".memo-item");
+  var id = row && row.getAttribute("data-id");
+  var memo = state.memos.find(function (item) { return item.id === id; });
+  if (!memo) return;
+  var action = button.getAttribute("data-action");
+  if (action === "edit") {
+    editingMemoId = id;
+    document.getElementById("memoText").value = memo.text;
+    document.getElementById("memoFormTitle").textContent = "メモを編集";
+    document.getElementById("memoSave").textContent = "更新する";
+    document.getElementById("memoCancel").hidden = false;
+    document.getElementById("memoText").focus();
+    return;
+  }
+  if (action === "delete") {
+    if (!confirm("このメモを削除しますか？")) return;
+    state.memos = state.memos.filter(function (item) { return item.id !== id; });
+    if (editingMemoId === id) stopMemoEditing();
+    save();
+    renderMemos();
+    toast("メモを削除しました");
+    return;
+  }
+  if (action === "schedule") {
+    if (!window.ScanRouter || !window.ScanRouter.handoff("memo", memo.text.split("\n"))) {
+      toast("予定アプリへ渡せませんでした");
+      return;
+    }
+    markMemoMoved(id, "schedule");
+    save();
+    renderMemos();
+    toast("下のリンクから予定アプリを開いてください");
+    return;
+  }
+  if (action === "todo") {
+    if (editingId) stopEditing();
+    var candidates = window.Todos ? window.Todos.candidates(memo.text, "", todayStr()) : [];
+    document.getElementById("f-title").value = String(memo.text.split(/\r?\n/)[0] || "").trim().slice(0, 40);
+    document.getElementById("f-kind").value = "やること";
+    document.getElementById("f-due").value = candidates.length ? candidates[0].dueOn : "";
+    document.getElementById("f-note").value = memo.text;
+    pendingTodoMemoId = id;
+    showPanel("docs");
+    document.getElementById("f-title").focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+});
 
 /* ---------- 操作 ---------- */
 
@@ -674,10 +854,15 @@ form.addEventListener("submit", function (e) {
     stopEditing();
   } else {
     values.id = uid();
+    values.scheduleId = "";
     values.status = "未着手";
     values.createdAt = new Date().toISOString();
     values.doneAt = "";
     state.items.push(values);
+    if (pendingTodoMemoId) {
+      markMemoMoved(pendingTodoMemoId, "todo");
+      pendingTodoMemoId = null;
+    }
     toast("登録しました");
     form.reset();
   }
@@ -831,7 +1016,7 @@ function toCalendarEvent(item) {
   var parts = [];
   if (item.note) parts.push(item.note);
   parts.push("状態：" + item.status);
-  parts.push("（書類・回覧トラッカーから登録）");
+  parts.push("（書類・やることから登録）");
   return {
     uid: item.id + "@docs-tracker",
     title: "【" + item.kind + "】" + item.title,

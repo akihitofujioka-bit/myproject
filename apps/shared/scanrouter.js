@@ -15,7 +15,7 @@
 
   var KEY = "pendingScan";
   var MAX_AGE_MS = 5 * 60 * 1000; // 古い受け渡しは事故防止のため使わない
-  var DEST = { receipt: "kakeibo/index.html", meeting: "schedule/index.html", planner: "schedule/index.html" };
+  var DEST = { receipt: "kakeibo/index.html", meeting: "schedule/index.html", planner: "schedule/index.html", memo: "schedule/index.html" };
 
   // レシートにだけ出てくる語。「合計」の見出しが読めなかったときの裏付けに使う
   var RECEIPT_WORDS = /小\s*計|お預|預り|お釣|釣銭|おつり|領収|税込|内税|外税|消費税|税率|対象|レジ|\d+\s*点|お買上|お買い上げ|現金|クレジット|電子マネー/;

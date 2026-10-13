@@ -1122,7 +1122,7 @@ function meetingNote(meeting) {
   if (meeting.social && meeting.social.has) {
     lines.push("懇親会あり" + (meeting.social.fee ? "（会費 " + meeting.social.fee + "円）" : ""));
   }
-  lines.push(meeting.source === "calendar" ? "（カレンダーから登録）" : meeting.source === "manual" ? "（手入力で登録）" : "（会議の通知から登録）");
+  lines.push(meeting.source === "calendar" ? "（カレンダーから登録）" : meeting.source === "manual" ? "（手入力で登録）" : meeting.source === "memo" ? "（メモから登録）" : "（会議の通知から登録）");
   return lines.join("\n");
 }
 function renderMeetings(list) {
@@ -1495,6 +1495,13 @@ document.getElementById("plannerToggleAll").addEventListener("click", function (
 var pendingMeeting = window.ScanRouter && window.ScanRouter.takeHandoff("meeting");
 if (pendingMeeting && pendingMeeting.length) {
   applyMeetingScan(pendingMeeting);
+}
+var pendingMemo = window.ScanRouter && window.ScanRouter.takeHandoff("memo");
+if (pendingMemo && pendingMemo.length) {
+  renderMeetings(window.Meeting.parse(pendingMemo, {}).map(function (meeting) {
+    meeting.source = "memo";
+    return meeting;
+  }));
 }
 var pendingPlanner = window.ScanRouter && window.ScanRouter.takeHandoff("planner");
 if (pendingPlanner && pendingPlanner.length) {
