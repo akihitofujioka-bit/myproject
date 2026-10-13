@@ -4,7 +4,8 @@ var ASSETS = [
   "./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png",
   "../shared/schedulemove.js", "../shared/scheduleview.js", "../shared/receiptscan.js", "../shared/receipt.js",
   "../shared/meeting.js", "../shared/planner.js", "../shared/scanrouter.js", "../shared/calendarread.js",
-  "../shared/calendarwrite.js", "../shared/ics.js", "../shared/native.js", "../shared/watch.js",
+  "../shared/calendarwrite.js", "../shared/contacts.js", "../shared/suggest.js", "../shared/todos.js",
+  "../shared/ics.js", "../shared/native.js", "../shared/watch.js",
   "../shared/character.js", "../shared/deeplink.js"
 ];
 
