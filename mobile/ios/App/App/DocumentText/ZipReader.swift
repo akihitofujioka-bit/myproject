@@ -6,7 +6,13 @@ import Compression
 struct ZipReader {
     enum ZipError: Error {
         case invalidArchive
+        case tooLarge
     }
+
+    // 悪意のある ZIP（展開すると巨大になるもの）でアプリが固まらないよう、上限を決める
+    static let maxEntrySize = 50 * 1024 * 1024
+    static let maxTotalSize = 100 * 1024 * 1024
+    static let maxEntryCount = 2_000
 
     let entries: [String: Data]
 
@@ -18,8 +24,10 @@ struct ZipReader {
 
         let entryCount = Int(Self.readUInt16(bytes, endOffset + 10))
         let centralOffset = Int(Self.readUInt32(bytes, endOffset + 16))
+        guard entryCount <= Self.maxEntryCount else { throw ZipError.tooLarge }
         var result: [String: Data] = [:]
         var position = centralOffset
+        var totalSize = 0
 
         for _ in 0..<entryCount {
             guard position >= 0,
@@ -53,6 +61,12 @@ struct ZipReader {
             guard dataOffset >= 0, dataOffset + compressedSize <= bytes.count else {
                 throw ZipError.invalidArchive
             }
+
+            let storedSize = method == 0 ? compressedSize : uncompressedSize
+            guard storedSize <= Self.maxEntrySize, totalSize + storedSize <= Self.maxTotalSize else {
+                throw ZipError.tooLarge
+            }
+            totalSize += storedSize
 
             let compressed = Data(bytes[dataOffset..<(dataOffset + compressedSize)])
             switch method {

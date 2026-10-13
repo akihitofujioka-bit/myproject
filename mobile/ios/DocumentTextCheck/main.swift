@@ -54,6 +54,20 @@ if let scanPDF = read(directory, "doc-scan.pdf") {
     check(scanPDF.lines.isEmpty, "画像 PDF の行は空")
 }
 
+do {
+    _ = try DocumentText.read(url: directory.appendingPathComponent("doc-bomb.docx"))
+    check(false, "展開すると巨大な Word は読まない")
+} catch DocumentTextError.tooLarge {
+    check(true, "展開すると巨大な Word は読まない")
+} catch {
+    print("FAIL: 展開すると巨大な Word は読まない（\(error.localizedDescription)）")
+    failed = true
+}
+
+if let wide = read(directory, "doc-wide.xlsx") {
+    check(wide.tables.first?.first == ["架空の行事"], "極端に右の列は読まず、落ちない")
+}
+
 let unsupportedURL = FileManager.default.temporaryDirectory
     .appendingPathComponent("document-text-check-\(UUID().uuidString).doc")
 do {

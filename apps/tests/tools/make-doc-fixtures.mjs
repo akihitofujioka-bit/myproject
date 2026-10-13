@@ -187,4 +187,15 @@ writeDocx("doc-meeting.docx", meetingLines.map(wordParagraph).join(""));
 writeDocx("doc-table.docx", wordTable(scheduleRows));
 writeXlsx();
 await writePdfs();
-console.log("見本ファイルを5件作成しました。");
+
+// 悪意のあるファイルを模した見本（アプリが固まったり落ちたりしないことの確認用）
+// 展開すると 60MB になる Word（上限 50MB を超える）
+fs.writeFileSync(path.join(outputDirectory, "doc-bomb.docx"), makeZip({
+  "word/document.xml": "<w:document>" + " ".repeat(60 * 1024 * 1024) + "</w:document>",
+}));
+// 極端に右の列（XFD）と、桁あふれするほど長い列名のセルを持つ Excel
+const inlineCell = (ref, text) => `<c r="${ref}" t="inlineStr"><is><t>${text}</t></is></c>`;
+fs.writeFileSync(path.join(outputDirectory, "doc-wide.xlsx"), makeZip({
+  "xl/worksheets/sheet1.xml": `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1">${inlineCell("A1", "架空の行事")}${inlineCell("XFD1", "右端")}${inlineCell("ZZZZZZZZZZZZZZZZZZZZ1", "桁あふれ")}</row></sheetData></worksheet>`,
+}));
+console.log("見本ファイルを7件作成しました。");

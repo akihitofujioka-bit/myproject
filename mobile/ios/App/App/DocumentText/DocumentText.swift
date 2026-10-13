@@ -13,6 +13,7 @@ enum DocumentTextError: LocalizedError {
     case broken
     case locked
     case empty
+    case tooLarge
 
     var errorDescription: String? {
         switch self {
@@ -24,6 +25,8 @@ enum DocumentTextError: LocalizedError {
             return "パスワードが付いているため読めませんでした"
         case .empty:
             return "文字が見つかりませんでした"
+        case .tooLarge:
+            return "ファイルが大きすぎるため読めませんでした"
         }
     }
 }
@@ -120,8 +123,11 @@ enum DocumentText {
         if data.starts(with: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) {
             throw DocumentTextError.locked
         }
+        guard data.count <= ZipReader.maxEntrySize else { throw DocumentTextError.tooLarge }
         do {
             return try ZipReader(data: data)
+        } catch ZipReader.ZipError.tooLarge {
+            throw DocumentTextError.tooLarge
         } catch {
             throw DocumentTextError.broken
         }
@@ -374,9 +380,10 @@ private final class SheetParser: NSObject, XMLParserDelegate {
         case "v": collectingValue = false
         case "t": collectingInlineText = false
         case "c":
-            cells?.append((cellColumn, resolvedCellValue()))
+            // 極端に右の列（"XFD1" など）で巨大な行を作らないよう、上限より右は読まない
+            if cellColumn < Self.maxColumns { cells?.append((cellColumn, resolvedCellValue())) }
         case "row":
-            if let cells, let maximum = cells.map(\.column).max() {
+            if rows.count < Self.maxRows, let cells, let maximum = cells.map(\.column).max() {
                 var row = Array(repeating: "", count: maximum + 1)
                 for cell in cells { row[cell.column] = cell.value }
                 if row.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
@@ -400,6 +407,10 @@ private final class SheetParser: NSObject, XMLParserDelegate {
         return value
     }
 
+    // 予定表に要る範囲だけ読む（Excel の上限より十分小さい値）
+    static let maxColumns = 256
+    static let maxRows = 10_000
+
     private static func columnIndex(from reference: String) -> Int {
         var value = 0
         var foundLetter = false
@@ -407,6 +418,8 @@ private final class SheetParser: NSObject, XMLParserDelegate {
             guard scalar.value >= 65, scalar.value <= 90 else { break }
             foundLetter = true
             value = value * 26 + Int(scalar.value - 64)
+            // 長い列名で桁あふれしないよう、上限を超えたらそこで止める
+            if value > maxColumns { return maxColumns }
         }
         return foundLetter ? value - 1 : 0
     }
