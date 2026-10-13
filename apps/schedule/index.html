@@ -453,6 +453,11 @@ button.small {
         <div class="field"><label for="f-end">終了</label><input id="f-end" name="endTime" type="time"></div>
         <div class="field wide"><label for="f-place">場所</label><input id="f-place" name="dest" autocomplete="off"></div>
       </div>
+      <div class="row">
+        <div class="field"><label class="check"><input id="f-allday" type="checkbox"> 終日</label></div>
+        <div class="field"><label class="check"><input id="f-social" type="checkbox"> 懇親会あり</label></div>
+        <div class="field" id="f-fee-field" hidden><label for="f-fee">会費（円）</label><input id="f-fee" type="number" min="0" step="100" inputmode="numeric"></div>
+      </div>
       <div class="row"><div class="field wide"><label for="f-note">メモ</label><textarea id="f-note" name="note"></textarea></div></div>
       <div class="chips">
         <button type="submit" class="primary" id="submitBtn">登録する</button>
@@ -608,8 +613,25 @@ function cleanNote(item) {
   return String(item.note || "").replace(/^\s*\d{1,2}:\d{2}(?:〜\d{1,2}:\d{2})?\s*開始\s*\n?/, "");
 }
 
-function makeNote(start, end, note) {
-  return (start ? start + (end ? "〜" + end : "") + " 開始\n" : "") + String(note || "").trim();
+// 懇親会の行の書き方は、会議の通知から登録したときと同じ（Watch と一覧の印がこの行を読む）
+var SOCIAL_LINE = /^\s*懇親会あり(?:（会費\s*([\d,]+)円）)?\s*$/m;
+
+function makeNote(start, end, note, social) {
+  var socialLine = social && social.has
+    ? "懇親会あり" + (social.fee ? "（会費 " + social.fee + "円）" : "") + "\n"
+    : "";
+  return (start ? start + (end ? "〜" + end : "") + " 開始\n" : "") + socialLine + String(note || "").trim();
+}
+
+// メモから懇親会の有無と会費を読み取る
+function socialOf(item) {
+  var m = String(item.note || "").match(SOCIAL_LINE);
+  return { has: !!m, fee: m && m[1] ? m[1].replace(/,/g, "") : "" };
+}
+
+// 編集の欄に出すメモ（時刻と懇親会の行は、それぞれの欄に出すので除く）
+function editableNote(item) {
+  return cleanNote(item).replace(SOCIAL_LINE, "").replace(/^\s*\n/, "").trim();
 }
 
 function dateLabel(item) {
@@ -744,9 +766,10 @@ form.addEventListener("submit", function (event) {
     dueOn: dueOn,
     dest: String(data.get("dest") || "").trim(),
     note: makeNote(
-      String(data.get("startTime") || ""),
-      String(data.get("endTime") || ""),
-      data.get("note")
+      allDay.checked ? "" : String(data.get("startTime") || ""),
+      allDay.checked ? "" : String(data.get("endTime") || ""),
+      data.get("note"),
+      { has: socialBox.checked, fee: String(document.getElementById("f-fee").value || "").trim() }
     )
   };
   if (!confirmRegistration(values, editingId)) return;
@@ -771,6 +794,20 @@ form.addEventListener("submit", function (event) {
   selectedYmd = dueOn;
   render();
 });
+// 「終日」なら時刻の欄を使えなくし、「懇親会あり」なら会費の欄を出す
+var allDay = document.getElementById("f-allday");
+var socialBox = document.getElementById("f-social");
+function updateExtraFields() {
+  ["f-start", "f-end"].forEach(function (id) {
+    var input = document.getElementById(id);
+    input.disabled = allDay.checked;
+    if (allDay.checked) input.value = "";
+  });
+  document.getElementById("f-fee-field").hidden = !socialBox.checked;
+}
+allDay.addEventListener("change", updateExtraFields);
+socialBox.addEventListener("change", updateExtraFields);
+
 function startEditing(item) {
   editingId = item.id;
   document.getElementById("f-title").value = item.title;
@@ -778,7 +815,12 @@ function startEditing(item) {
   document.getElementById("f-start").value = timeOf(item);
   document.getElementById("f-end").value = endTimeOfItem(item);
   document.getElementById("f-place").value = item.dest;
-  document.getElementById("f-note").value = cleanNote(item);
+  document.getElementById("f-note").value = editableNote(item);
+  allDay.checked = !timeOf(item);
+  var social = socialOf(item);
+  socialBox.checked = social.has;
+  document.getElementById("f-fee").value = social.fee;
+  updateExtraFields();
   document.getElementById("formTitle").textContent = "予定を編集";
   document.getElementById("submitBtn").textContent = "更新する";
   document.getElementById("cancelEdit").hidden = false;
@@ -789,6 +831,7 @@ function startEditing(item) {
 function stopEditing() {
   editingId = null;
   form.reset();
+  updateExtraFields();
   document.getElementById("formTitle").textContent = "予定を登録";
   document.getElementById("submitBtn").textContent = "登録する";
   document.getElementById("cancelEdit").hidden = true;
