@@ -7,6 +7,7 @@
 
   var DAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
   var DAY_MS = 24 * 60 * 60 * 1000;
+  var DRAFT_REQUEST_WORDS = ["入れて", "忘れないように", "予定にして"];
 
   function pad(value) {
     return String(value).padStart(2, "0");
@@ -342,11 +343,11 @@
 
   function wantsDraft(question) {
     var text = String(question || "");
-    var request = ["入れて", "忘れないように", "予定にして"].some(function (word) {
+    var request = DRAFT_REQUEST_WORDS.some(function (word) {
       return text.indexOf(word) >= 0;
     }) || /やることに(?:追加|入れ|して)/.test(text) || /(?:登録|追加)(?:して|してください|してほしい|をお願い)/.test(text);
     if (/(?:教えて(?:ください|下さい|ほしい)?|は|ある|あります(?:か)?)[？?。]?\s*$/.test(text) || /[？?]\s*$/.test(text)) return request;
-    return ["入れて", "登録", "追加", "忘れないように", "予定にして"].some(function (word) {
+    return DRAFT_REQUEST_WORDS.concat(["登録", "追加"]).some(function (word) {
       return text.indexOf(word) >= 0;
     }) || /やることに(?:追加|入れ|して)/.test(text);
   }

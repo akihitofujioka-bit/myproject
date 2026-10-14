@@ -8,17 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-
-// Playwright の waitForFunction は async の条件を「すぐ満たした」と扱うため、読み込みを待ってから判定し直す
-const waitAsync = async (target, predicate, arg, timeout = 30000) => {
-  const end = Date.now() + timeout;
-  while (Date.now() < end) {
-    if (await target.evaluate(predicate, arg)) return;
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  throw new Error("waitAsync: 条件を満たすまで待てませんでした");
-};
-
+import { waitAsync } from "./tools/waitasync.mjs";
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -130,6 +120,8 @@ try {
     return entries[0] && entries[0].eventTitles && entries[0].eventTitles.includes(title);
   }, documentRowTitle);
   ok(true, "書類と手入力を一緒に登録しても書類の件名が履歴に残る");
+  const savedSchedule = await pg.evaluate(() => JSON.parse(localStorage.getItem("schedule.v1")));
+  ok(savedSchedule.items.some(item => item.title === "架空の手入力予定"), "書類と手入力を一緒に登録すると手入力予定も予定アプリに保存する");
   const documentId = await pg.evaluate(async () => (await window.AIHistory.list({ kind: "document" }))[0].id);
   const documentAfterManual = await pg.evaluate(id => window.AIHistory.get(id), documentId);
   ok(documentRowTitle && documentAfterManual.eventTitles.join("/") === documentRowTitle, "書類の履歴には書類から読んだ行の件名だけを残す");
