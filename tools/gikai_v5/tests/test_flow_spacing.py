@@ -169,3 +169,17 @@ class SpacingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MidHeadingTest(unittest.TestCase):
+    def test_long_heading_stays_inside_its_frame(self):
+        # 原稿で大きい字の段落は 25 字まで中見出しになる。2 行に入らない長さでも
+        # 枠からはみ出さず（行の長さ・行数とも）、Windows で欠けない行送りを保つ。
+        g = Geometry()
+        for count in (8, 16, 20, 24, 25, 30, 40):
+            text = "架" * count
+            pt, lines, span = compose._mid_heading(g, text)
+            self.assertEqual("".join(lines), text)
+            per_line = compose._per_line(g, compose.Rect(0, 0, 1, 2), pt)
+            self.assertTrue(all(len(line) <= per_line for line in lines), count)
+            self.assertGreaterEqual(span * g.line_pitch_pt / len(lines), pt * 1.4 - 0.01)

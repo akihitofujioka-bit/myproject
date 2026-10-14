@@ -62,7 +62,8 @@ class PlacementTest(unittest.TestCase):
         self.assertEqual((heading.rect.dan, heading.rect.line), (1, 0))
 
     def test_two_line_middle_heading_uses_three_grid_lines(self):
-        parts = [I.Part("中見出し", "架空の取組を進めるための長い見出しです"),
+        # 16pt で 1 行 8 字の枠なので、2 行に収まる 16 字の見出し。
+        parts = [I.Part("中見出し", "架空の取組を進める長い見出しです"),
                  I.Part("本文", "本文")]
         result = C.compose_page(layout.GYOSEI, parts, {}, self.g)
         heading = next(p for p in result.placements if p.part.kind == "中見出し")

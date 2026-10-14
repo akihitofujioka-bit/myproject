@@ -55,6 +55,22 @@ def photo_rect(g: Geometry, size: str, dan: int, line: int) -> Rect:
     return Rect(dan, line, dan_span, line_span)
 
 
+def _mid_heading(g: Geometry, text: str) -> Tuple[float, List[str], int]:
+    """中見出しの (字の大きさ, 行, 格子の行数) を決める。16pt で 1〜3 行に
+    収め、収まらない長さなら字を小さくする。文字は削らない。
+    格子の行数は 行数 + 1 にし、行送りが 字×1.4 を下回らないようにする。"""
+    sample = Rect(0, 0, 1, 2)
+    for pt in (16.0, 15.0, 14.0, 13.0, 12.0):
+        per_line = _per_line(g, sample, pt)
+        for max_lines in (1, 2, 3):
+            lines = _heading_lines(text, per_line, max_lines)
+            if len(lines) <= max_lines and max(text_width(l) for l in lines) <= per_line:
+                return pt, lines, len(lines) + 1
+    per_line = _per_line(g, sample, 12.0)
+    lines = split_lines(text, per_line, indent=False) or [""]
+    return 12.0, lines, len(lines) + 1
+
+
 def _caption(parts: List[I.Part], index: int) -> str:
     if index + 1 < len(parts) and parts[index + 1].kind == "写真説明":
         return parts[index + 1].text.lstrip("▲△").strip()
@@ -295,9 +311,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             if part.kind == "大見出し":
                 overflow += 8
             elif part.kind == "中見出し":
-                sample = Rect(0, 0, 1, 2)
-                overflow += 2 if len(_heading_lines(
-                    part.text, _per_line(g, sample, 16.0))) == 1 else 3
+                overflow += _mid_heading(g, part.text)[2]
             elif part.kind == "写真":
                 size = overrides.get(index, {}).get("size") or part.photo_size or "中"
                 overflow += photo_rect(g, size, 0, 0).line_span
@@ -370,9 +384,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                            and index + 1 < len(parts) and parts[index + 1].kind == "答弁")
 
         if part.kind == "中見出し" and not standalone_role:
-            sample = Rect(0, 0, 1, 2)
-            heading_lines = _heading_lines(part.text, _per_line(g, sample, 16.0))
-            span = 2 if len(heading_lines) == 1 else 3
+            heading_pt, heading_lines, span = _mid_heading(g, part.text)
             target = next((r for r in free_runs(g, whole_page(g), occupied)
                            if r.line_span >= span), None)
             if target is None:
@@ -385,7 +397,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             placements.append(Placement(part, rect, index))
             pitch = rect.line_span * g.line_pitch_pt / len(heading_lines)
             _add_text(page, g, rect, heading_lines, font=dx.GOTHIC,
-                      pt=16.0, pitch=pitch, center=True, name="中見出し")
+                      pt=heading_pt, pitch=pitch, center=True, name="中見出し")
             last_rect = rect
             continue
 
