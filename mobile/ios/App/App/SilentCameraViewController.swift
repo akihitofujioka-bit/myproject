@@ -25,7 +25,6 @@
 //
 import UIKit
 import AVFoundation
-import Vision
 
 final class SilentCameraViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
 
@@ -35,6 +34,8 @@ final class SilentCameraViewController: UIViewController, AVCaptureVideoDataOutp
     var guidanceText: String = "枠に収めて「撮る」を押してください（音は鳴りません）"
     /// 撮ったあと紙の四隅を探して、傾きとゆがみを直すか
     var autoCrop: Bool = true
+    /// 書類として採用する領域の最小面積（画像全体を 1 とした割合）
+    var minimumDocumentArea: CGFloat = 0.3
 
     private let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
@@ -370,7 +371,9 @@ final class SilentCameraViewController: UIViewController, AVCaptureVideoDataOutp
         capturing = false
         bestImage = nil
         DispatchQueue.main.async { self.signalCaptured() }
-        let result = autoCrop ? Self.cropToPaper(picked, context: context) : picked
+        let result = autoCrop
+            ? Self.cropToPaper(picked, context: context, minimumArea: minimumDocumentArea)
+            : picked
         finish(with: UIImage(cgImage: result))
     }
 
@@ -397,59 +400,12 @@ final class SilentCameraViewController: UIViewController, AVCaptureVideoDataOutp
     ///
     /// 四隅は少し外側に広げてから切り出す。月間のマス目の外枠を紙の端と取り違えた場合でも、
     /// 枠のすぐ上にある「10月」などの見出しが切り落とされないようにするため。
-    static func cropToPaper(_ image: CGImage, context: CIContext) -> CGImage {
-        let request = VNDetectRectanglesRequest()
-        request.maximumObservations = 4
-        request.minimumConfidence = 0.6
-        request.minimumAspectRatio = 0.3
-        request.maximumAspectRatio = 1.0
-        request.minimumSize = 0.4
-        request.quadratureTolerance = 25
-
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        do {
-            try handler.perform([request])
-        } catch {
-            return image
-        }
-        let found = request.results ?? []
-        guard let best = found.max(by: { area(of: $0) < area(of: $1) }), area(of: best) >= 0.3 else {
-            return image
-        }
-
-        let width = CGFloat(image.width)
-        let height = CGFloat(image.height)
-        let corners = [best.topLeft, best.topRight, best.bottomRight, best.bottomLeft]
-        let center = CGPoint(x: corners.map { $0.x }.reduce(0, +) / 4, y: corners.map { $0.y }.reduce(0, +) / 4)
-        // Vision と CIImage はどちらも左下が原点なので、そのまま画素の位置に直せる
-        func pixel(_ p: CGPoint) -> CIVector {
-            let margin: CGFloat = 0.06
-            let x = min(max(p.x + (p.x - center.x) * margin, 0), 1) * width
-            let y = min(max(p.y + (p.y - center.y) * margin, 0), 1) * height
-            return CIVector(x: x, y: y)
-        }
-        let corrected = CIImage(cgImage: image).applyingFilter("CIPerspectiveCorrection", parameters: [
-            "inputTopLeft": pixel(best.topLeft),
-            "inputTopRight": pixel(best.topRight),
-            "inputBottomRight": pixel(best.bottomRight),
-            "inputBottomLeft": pixel(best.bottomLeft)
-        ])
-        guard corrected.extent.width > 100, corrected.extent.height > 100,
-              let output = context.createCGImage(corrected, from: corrected.extent) else {
-            return image
-        }
-        return output
-    }
-
-    /// 四角形の面積（画像全体を1とした割合）
-    private static func area(of r: VNRectangleObservation) -> CGFloat {
-        let p = [r.topLeft, r.topRight, r.bottomRight, r.bottomLeft]
-        var sum: CGFloat = 0
-        for i in 0..<4 {
-            let a = p[i], b = p[(i + 1) % 4]
-            sum += a.x * b.y - b.x * a.y
-        }
-        return abs(sum) / 2
+    static func cropToPaper(
+        _ image: CGImage,
+        context: CIContext,
+        minimumArea: CGFloat = 0.3
+    ) -> CGImage {
+        DocumentCorrector.correct(image, context: context, minimumArea: minimumArea)
     }
 }
 

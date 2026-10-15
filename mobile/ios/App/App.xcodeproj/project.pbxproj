@@ -17,6 +17,7 @@
 		D09A00000000000000000002 /* ZipReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09A00000000000000000004 /* ZipReader.swift */; };
 		726E67CBBB28498D943908A0 /* CalendarWriterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */; };
 		0CB97B323C0240D9BEA3CE93 /* SilentCameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */; };
+		B5C0D0C00000000000000001 /* DocumentCorrector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5C0D0C00000000000000002 /* DocumentCorrector.swift */; };
 		0EBACF4F9787F57790F4A0A8 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54417C08DED3D9DAECF1E66F /* ViewController.swift */; };
 		17760D73051BA4D18EB031D0 /* ReceiptScannerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */; };
 		A1C0FFEE0000000000000001 /* PhotoAlbumPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000002 /* PhotoAlbumPlugin.swift */; };
@@ -124,6 +125,7 @@
 		D09A00000000000000000004 /* ZipReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipReader.swift; sourceTree = "<group>"; };
 		453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarWriterPlugin.swift; sourceTree = "<group>"; };
 		6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentCameraViewController.swift; sourceTree = "<group>"; };
+		B5C0D0C00000000000000002 /* DocumentCorrector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentCorrector.swift; sourceTree = "<group>"; };
 		12B22BFA83CC2B191D5EB3E7 /* NextUpWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextUpWidget.swift; sourceTree = "<group>"; };
 		16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridgePlugin.swift; sourceTree = "<group>"; };
 		1AC8F45E959305C8A7517B99 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -266,6 +268,7 @@
 				773B00AE6A4759586908D66D /* ReceiptScannerPlugin.swift */,
 				A1C0FFEE0000000000000002 /* PhotoAlbumPlugin.swift */,
 				6EA00FC24B9548C2A2FE6793 /* SilentCameraViewController.swift */,
+				B5C0D0C00000000000000002 /* DocumentCorrector.swift */,
 				16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */,
 				11C25B49D2B0458F8779C52C /* CalendarReaderPlugin.swift */,
 				D11A00000000000000000002 /* SpeechMemoPlugin.swift */,
@@ -545,6 +548,7 @@
 				17760D73051BA4D18EB031D0 /* ReceiptScannerPlugin.swift in Sources */,
 				A1C0FFEE0000000000000001 /* PhotoAlbumPlugin.swift in Sources */,
 				0CB97B323C0240D9BEA3CE93 /* SilentCameraViewController.swift in Sources */,
+				B5C0D0C00000000000000001 /* DocumentCorrector.swift in Sources */,
 				689B9E964FC64B47BCD87A3C /* WatchBridgePlugin.swift in Sources */,
 				05E66B44B030460C8AFAC486 /* CalendarReaderPlugin.swift in Sources */,
 				D11A00000000000000000001 /* SpeechMemoPlugin.swift in Sources */,

@@ -121,6 +121,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
             picker.dismiss(animated: true)
             return
         }
+        let withPhoto = call.getBool("withPhoto") == true
         pendingImagePick = nil
         picker.dismiss(animated: true)
 
@@ -143,6 +144,19 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
             let orientation = Self.cgImageOrientation(from: image.imageOrientation)
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
+                    if withPhoto {
+                        let context = CIContext()
+                        let upright = Self.uprightCGImage(cgImage, orientation: orientation, context: context)
+                        let corrected = DocumentCorrector.correct(upright, context: context, minimumArea: 0.05)
+                        let boxes = try Self.recognizeImageBoxes(corrected)
+                        call.resolve([
+                            "cancelled": false,
+                            "name": name,
+                            "boxes": boxes,
+                            "photo": DocumentCorrector.jpegBase64(corrected) ?? ""
+                        ])
+                        return
+                    }
                     let lines = try Self.recognizeImage(cgImage, orientation: orientation)
                     call.resolve([
                         "cancelled": false,
@@ -274,6 +288,52 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
         let lines = recognizedLines(from: request.results ?? [])
         guard !lines.isEmpty else { throw imageRecognitionError() }
         return lines
+    }
+
+    /// 名刺用に、文字と画像内の位置を左上原点の割合で返す。文字が無くても空配列を返す。
+    private static func recognizeImageBoxes(_ cgImage: CGImage) throws -> [[String: Any]] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLanguages = ["ja-JP", "en-US"]
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.minimumTextHeight = 0.006
+        do {
+            try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+        } catch {
+            throw imageRecognitionError()
+        }
+
+        return (request.results ?? [])
+            .sorted {
+                if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > 0.01 {
+                    return $0.boundingBox.maxY > $1.boundingBox.maxY
+                }
+                return $0.boundingBox.minX < $1.boundingBox.minX
+            }
+            .compactMap { observation -> [String: Any]? in
+                guard let candidate = observation.topCandidates(1).first else { return nil }
+                let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return nil }
+                let box = observation.boundingBox
+                return [
+                    "text": text,
+                    "x": Double(box.minX),
+                    "y": Double(1 - box.maxY),
+                    "width": Double(box.width),
+                    "height": Double(box.height)
+                ]
+            }
+    }
+
+    /// UIImage の向き情報を画素へ反映し、台形補正と OCR を同じ上向き画像に対して行えるようにする。
+    private static func uprightCGImage(
+        _ cgImage: CGImage,
+        orientation: CGImagePropertyOrientation,
+        context: CIContext
+    ) -> CGImage {
+        guard orientation != .up else { return cgImage }
+        let upright = CIImage(cgImage: cgImage).oriented(orientation)
+        return context.createCGImage(upright, from: upright.extent) ?? cgImage
     }
 
     private static func recognizedLines(
