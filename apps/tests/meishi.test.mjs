@@ -79,6 +79,22 @@ if (M) {
   const strings = M.parse(["株式会社架空", "高橋 次郎"]);
   ok(strings.name === "高橋 次郎", "文字列だけの配列でも氏名を取り出す");
 
+  const departmentSurname = M.parse(["株式会社架空", "服部 太郎"]);
+  ok(departmentSurname.department === "" && departmentSurname.name === "服部 太郎", "部署: 2 文字の姓を部署にしない");
+
+  const longDepartmentSurname = M.parse(["株式会社架空", "長谷部 太郎"]);
+  ok(longDepartmentSurname.department === "" && longDepartmentSurname.name === "長谷部 太郎", "部署: 3 文字以上でも姓と名の行を部署にしない");
+
+  const joinedDepartmentTitle = M.parse(["株式会社架空", "総務課係長", "山田 太郎"]);
+  ok(joinedDepartmentTitle.department === "総務課" && joinedDepartmentTitle.title === "係長" && joinedDepartmentTitle.name === "山田 太郎" && joinedDepartmentTitle.memo === "", "部署: 空白なしの役職と分け、氏名にしない");
+
+  const tallestName = M.parse([
+    { text: "佐藤 花子", height: 0.04 },
+    { text: "株式会社架空", height: 0.03 },
+    { text: "山田 太郎", height: 0.08 }
+  ]);
+  ok(tallestName.name === "山田 太郎" && tallestName.memo === "佐藤 花子", "氏名: 後ろでも文字の高さが最大の行を選ぶ");
+
   const empty = M.parse([]);
   ok(JSON.stringify(empty) === JSON.stringify({
     name: "", company: "", department: "", title: "", phones: [],

@@ -138,17 +138,41 @@
     return { text: normalizeSpaces(text.slice(0, end)), start: 0, length: end };
   }
 
+  function hasNameCharacters(text) {
+    return text.length >= 2 && text.length <= 10 &&
+      /^[一-龯々〆ヵヶぁ-んァ-ヶー]+$/.test(text);
+  }
+
+  function isSpacedName(text) {
+    var parts = normalizeSpaces(text).split(" ");
+    return parts.length === 2 && parts.every(function (part) {
+      return part.length >= 1 && part.length <= 5 && hasNameCharacters(part);
+    });
+  }
+
   function departmentPart(text) {
     var tokens = text.split(" ");
     var offset = 0;
     var i;
     var j;
+    var at;
+    var end;
+    var best;
+
+    if (isSpacedName(text) && !findWord(text, WORDS.title)) return null;
+
     for (i = 0; i < tokens.length; i++) {
+      best = null;
       for (j = 0; j < WORDS.department.length; j++) {
-        if (tokens[i].slice(-WORDS.department[j].length) === WORDS.department[j]) {
-          return { text: tokens[i], start: offset, length: tokens[i].length };
+        at = tokens[i].indexOf(WORDS.department[j]);
+        if (at === -1) continue;
+        end = at + WORDS.department[j].length;
+        if (end < 3) continue;
+        if (!best || end < best.length) {
+          best = { text: tokens[i].slice(0, end), start: offset, length: end };
         }
       }
+      if (best) return best;
       offset += tokens[i].length + 1;
     }
     return null;
@@ -157,8 +181,7 @@
   function isName(text) {
     var normalized = normalizeSpaces(text);
     var compact = normalized.replace(/ /g, "");
-    return compact.length >= 2 && compact.length <= 10 &&
-      /^[一-龯々〆ヵヶぁ-んァ-ヶー]+$/.test(compact);
+    return hasNameCharacters(compact) && !departmentPart(normalized);
   }
 
   function parse(lines) {
