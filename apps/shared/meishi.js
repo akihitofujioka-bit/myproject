@@ -8,7 +8,8 @@
   var WORDS = {
     company: ["株式会社", "(株)", "㈱", "有限会社", "合同会社", "市役所", "町役場", "村役場", "県庁", "議会", "協会", "組合", "法人", "事務所", "大学", "学校"],
     department: ["部", "課", "係", "室", "局", "センター", "委員会", "グループ"],
-    title: ["代表取締役", "取締役", "社長", "部長", "課長", "係長", "主任", "主査", "主事", "参事", "室長", "所長", "局長", "議長", "副議長", "議員", "委員長", "理事", "会長", "教授"]
+    title: ["代表取締役", "取締役", "社長", "部長", "課長", "係長", "主任", "主査", "主事", "参事", "室長", "所長", "局長", "議長", "副議長", "議員", "委員長", "理事", "会長", "教授"],
+    surnamesEndingBu: ["阿部", "安部", "服部", "渡部", "岡部", "長谷部", "矢部", "日下部", "磯部", "建部", "坂部", "武部", "綾部", "刑部", "卜部", "占部", "海部", "三部", "石部", "財部"]
   };
 
   var PREFECTURES = [
@@ -143,13 +144,6 @@
       /^[一-龯々〆ヵヶぁ-んァ-ヶー]+$/.test(text);
   }
 
-  function isSpacedName(text) {
-    var parts = normalizeSpaces(text).split(" ");
-    return parts.length === 2 && parts.every(function (part) {
-      return part.length >= 1 && part.length <= 5 && hasNameCharacters(part);
-    });
-  }
-
   function departmentPart(text) {
     var tokens = text.split(" ");
     var offset = 0;
@@ -159,15 +153,15 @@
     var end;
     var best;
 
-    if (isSpacedName(text) && !findWord(text, WORDS.title)) return null;
-
     for (i = 0; i < tokens.length; i++) {
       best = null;
       for (j = 0; j < WORDS.department.length; j++) {
         at = tokens[i].indexOf(WORDS.department[j]);
         if (at === -1) continue;
         end = at + WORDS.department[j].length;
-        if (end < 3) continue;
+        if (WORDS.department[j] === "部") {
+          if (end < 2 || WORDS.surnamesEndingBu.indexOf(tokens[i].slice(0, end)) !== -1) continue;
+        } else if (end < 3) continue;
         if (!best || end < best.length) {
           best = { text: tokens[i].slice(0, end), start: offset, length: end };
         }

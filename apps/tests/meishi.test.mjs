@@ -82,6 +82,18 @@ if (M) {
   const departmentSurname = M.parse(["株式会社架空", "服部 太郎"]);
   ok(departmentSurname.department === "" && departmentSurname.name === "服部 太郎", "部署: 2 文字の姓を部署にしない");
 
+  const salesDepartment = M.parse(["営業部 山田太郎"]);
+  ok(salesDepartment.department === "営業部" && salesDepartment.name === "山田太郎", "部署: 営業部と氏名を空白から分ける");
+
+  const generalAffairsDepartment = M.parse(["総務課 田中"]);
+  ok(generalAffairsDepartment.department === "総務課", "部署: 総務課と氏名を空白から分ける");
+
+  const abeSurname = M.parse(["阿部 花子"]);
+  ok(abeSurname.department === "" && abeSurname.name === "阿部 花子", "部署: 阿部を部署にしない");
+
+  const personnelDepartment = M.parse(["人事部 鈴木 一郎"]);
+  ok(personnelDepartment.department === "人事部" && personnelDepartment.name === "鈴木 一郎", "部署: 人事部と空白入りの氏名を分ける");
+
   const longDepartmentSurname = M.parse(["株式会社架空", "長谷部 太郎"]);
   ok(longDepartmentSurname.department === "" && longDepartmentSurname.name === "長谷部 太郎", "部署: 3 文字以上でも姓と名の行を部署にしない");
 
