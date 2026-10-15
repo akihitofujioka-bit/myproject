@@ -71,7 +71,7 @@
   }
 
   function normalizeContactText(text) {
-    return String(text).replace(/[０-９]/g, function (character) {
+    return String(text).normalize("NFKC").replace(/[０-９]/g, function (character) {
       return String.fromCharCode(character.charCodeAt(0) - 0xFEE0);
     }).replace(/(\d)\s*[－‐ー―−]\s*(?=\d)/g, "$1-");
   }
@@ -79,9 +79,9 @@
   function isFaxNumber(text, phone) {
     var normalized = normalizeContactText(text);
     var at = normalized.indexOf(phone);
-    if (at === -1) return /(?:FAX|Fax|F\.)/.test(normalized);
-    var faxAt = lastLabelIndex(normalized, /(?:FAX|Fax|F\.)/g, at + 1);
-    var phoneAt = lastLabelIndex(normalized, /(?:TEL|Tel|電話|携帯|Mobile)/g, at + 1);
+    if (at === -1) return /(?:FAX|F\.)/i.test(normalized);
+    var faxAt = lastLabelIndex(normalized, /(?:FAX|F\.)/gi, at + 1);
+    var phoneAt = lastLabelIndex(normalized, /(?:TEL|電話|携帯|Mobile)/gi, at + 1);
     return faxAt !== -1 && faxAt > phoneAt;
   }
 
@@ -152,6 +152,7 @@
     var at;
     var end;
     var best;
+    var titleSuffix;
 
     for (i = 0; i < tokens.length; i++) {
       best = null;
@@ -162,8 +163,14 @@
         if (WORDS.department[j] === "部") {
           if (end < 2 || WORDS.surnamesEndingBu.indexOf(tokens[i].slice(0, end)) !== -1) continue;
         } else if (end < 3) continue;
-        if (!best || end < best.length) {
-          best = { text: tokens[i].slice(0, end), start: offset, length: end };
+        titleSuffix = tokens[i].slice(end).match(/^長(?:代理|代行|補佐)?/);
+        if (!best || end < best.text.length) {
+          best = {
+            text: tokens[i].slice(0, end),
+            start: offset,
+            length: end + (titleSuffix ? titleSuffix[0].length : 0),
+            title: titleSuffix ? WORDS.department[j] + titleSuffix[0] : ""
+          };
         }
       }
       if (best) return best;
@@ -187,13 +194,15 @@
     work.forEach(function (line) {
       var found;
       var hasContact;
+      var contactText;
       if (!global.Contacts || typeof global.Contacts.find !== "function") return;
-      found = global.Contacts.find(line.text);
+      contactText = line.text.normalize("NFKC");
+      found = global.Contacts.find(contactText);
       hasContact = found.phones.length || found.emails.length || found.urls.length;
       if (!hasContact) return;
 
       found.phones.forEach(function (phone) {
-        if (isFaxNumber(line.text, phone)) memo.push("FAX: " + phone);
+        if (isFaxNumber(contactText, phone)) memo.push("FAX: " + phone);
         else addUnique(result.phones, phone);
       });
       if (!result.email && found.emails.length) result.email = found.emails[0];
@@ -239,6 +248,7 @@
       if (!part) return;
       if (!result.department) {
         result.department = part.text;
+        if (!result.title && part.title) result.title = part.title;
         replacePart(line, part.start, part.length);
       }
     });

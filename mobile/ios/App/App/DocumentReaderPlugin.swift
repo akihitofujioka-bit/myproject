@@ -33,6 +33,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
     private static var sharedFile: SharedFile?
     private var pendingPick: CAPPluginCall?
     private var pendingImagePick: CAPPluginCall?
+    private let imageContext = CIContext()
 
     /// SceneDelegate から共有ファイルを受け取り、アプリ専用の一時コピーとして覚える。
     static func receive(url: URL) {
@@ -145,9 +146,8 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     if withPhoto {
-                        let context = CIContext()
-                        let upright = Self.uprightCGImage(cgImage, orientation: orientation, context: context)
-                        let corrected = DocumentCorrector.correct(upright, context: context, minimumArea: 0.05)
+                        let upright = Self.uprightCGImage(cgImage, orientation: orientation, context: self.imageContext)
+                        let corrected = DocumentCorrector.correct(upright, context: self.imageContext, minimumArea: 0.05)
                         let boxes = try Self.recognizeImageBoxes(corrected)
                         call.resolve([
                             "cancelled": false,
@@ -325,15 +325,17 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
             }
     }
 
-    /// UIImage の向き情報を画素へ反映し、台形補正と OCR を同じ上向き画像に対して行えるようにする。
+    /// UIImage の向き情報を画素へ反映し、長辺を最大 3000px に縮める。
     private static func uprightCGImage(
         _ cgImage: CGImage,
         orientation: CGImagePropertyOrientation,
         context: CIContext
     ) -> CGImage {
-        guard orientation != .up else { return cgImage }
         let upright = CIImage(cgImage: cgImage).oriented(orientation)
-        return context.createCGImage(upright, from: upright.extent) ?? cgImage
+        let longestSide = max(upright.extent.width, upright.extent.height)
+        let scale = min(1.0, 3000.0 / longestSide)
+        let resized = upright.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        return context.createCGImage(resized, from: resized.extent) ?? cgImage
     }
 
     private static func recognizedLines(

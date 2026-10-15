@@ -100,6 +100,24 @@ if (M) {
   const joinedDepartmentTitle = M.parse(["株式会社架空", "総務課係長", "山田 太郎"]);
   ok(joinedDepartmentTitle.department === "総務課" && joinedDepartmentTitle.title === "係長" && joinedDepartmentTitle.name === "山田 太郎" && joinedDepartmentTitle.memo === "", "部署: 空白なしの役職と分け、氏名にしない");
 
+  [
+    ["営業部長 山田太郎", "営業部", "部長", "山田太郎"],
+    ["総務課長 佐藤 花子", "総務課", "課長", "佐藤 花子"],
+    ["事務局長 鈴木 一郎", "事務局", "局長", "鈴木 一郎"],
+    ["企画室長 高橋 次郎", "企画室", "室長", "高橋 次郎"],
+    ["企画室長代理 高橋 次郎", "企画室", "室長代理", "高橋 次郎"]
+  ].forEach(([text, department, title, name]) => {
+    const parsed = M.parse([text]);
+    ok(parsed.department === department && parsed.title === title && parsed.name === name && parsed.memo === "", `部署: ${text} を部署・役職・氏名に分ける`);
+  });
+
+  const fullWidthContact = M.parse(["ＴＥＬ 0000-11-2222 ＦＡＸ 0000-11-2223", "山本 見本"]);
+  ok(JSON.stringify(fullWidthContact.phones) === JSON.stringify(["0000-11-2222"]), "連絡先: 全角 TEL の番号を電話にする");
+  ok(fullWidthContact.memo === "FAX: 0000-11-2223", "連絡先: 全角 FAX の番号をメモにする");
+
+  const lowerCaseFax = M.parse(["fax 0000-11-2224", "中島 架空"]);
+  ok(lowerCaseFax.phones.length === 0 && lowerCaseFax.memo === "FAX: 0000-11-2224", "連絡先: 小文字 fax を見分ける");
+
   const tallestName = M.parse([
     { text: "佐藤 花子", height: 0.04 },
     { text: "株式会社架空", height: 0.03 },

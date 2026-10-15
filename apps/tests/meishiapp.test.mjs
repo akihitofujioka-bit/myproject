@@ -121,6 +121,7 @@ await page.addInitScript(fakeNative);
 
 try {
   await reset(page);
+  ok(await page.evaluate(() => typeof window.ScanRouter?.pickLines === "function"), "ScanRouter を receiptscan.js より前に読み込む");
 
   await page.click("#shootBtn");
   await page.waitForFunction(() => !document.getElementById("editView").hidden);
@@ -135,6 +136,28 @@ try {
   await page.click("#saveBtn");
   await page.waitForFunction(() => !document.getElementById("listView").hidden && document.getElementById("cardList").textContent.includes("山田 架空"));
   ok((await page.locator("#cardList").innerText()).includes("架空商事株式会社") && (await page.locator("#cardList").innerText()).includes("課長"), "保存後の一覧に氏名・会社・役職を出す");
+
+  // 保存後に同じ壱師予定がカレンダーと結び付いても、保存済み予定を別候補として足さない。
+  await page.evaluate(() => {
+    const schedules = JSON.parse(localStorage.getItem("schedule.v1"));
+    schedules.find(item => item.id === "schedule-only").calEventId = "cal-only";
+    localStorage.setItem("schedule.v1", JSON.stringify(schedules));
+  });
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("cardList").textContent.includes("山田 架空"));
+  await page.getByRole("button", { name: /山田 架空/ }).click();
+  await page.click("#editBtn");
+  await page.waitForFunction(() => document.querySelectorAll("#meetingOptions input").length > 0);
+  ok(await page.locator("#meetingOptions input").count() === 2, "予定: scheduleId が同じ保存済み予定と候補を重複表示しない");
+  ok(await page.locator('#meetingOptions input[value="schedule-only|cal-only"]:checked').count() === 1, "予定: 後からカレンダー連携した同じ壱師予定を選択状態にする");
+  await page.click("#cancelEditBtn");
+  await page.evaluate(() => {
+    const schedules = JSON.parse(localStorage.getItem("schedule.v1"));
+    schedules.find(item => item.id === "schedule-only").calEventId = "";
+    localStorage.setItem("schedule.v1", JSON.stringify(schedules));
+  });
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("cardList").textContent.includes("山田 架空"));
 
   await page.click("#pickBtn");
   await page.waitForFunction(() => document.getElementById("f-name").value === "佐藤 見本");

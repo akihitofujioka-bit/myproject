@@ -144,6 +144,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
 
 <script src="../shared/contacts.js"></script>
 <script src="../shared/camerapref.js"></script>
+<script src="../shared/scanrouter.js"></script>
 <script src="../shared/receiptscan.js"></script>
 <script src="../shared/documentreader.js"></script>
 <script src="../shared/calendarread.js"></script>
@@ -245,6 +246,11 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
   function meetingKey(meeting) {
     return meeting ? (meeting.scheduleId || "") + "|" + (meeting.calEventId || "") : "";
   }
+  function sameMeeting(a, b) {
+    if (!a || !b) return false;
+    if (a.scheduleId && b.scheduleId) return a.scheduleId === b.scheduleId;
+    return !a.scheduleId && !b.scheduleId && (a.calEventId || "") === (b.calEventId || "");
+  }
   function renderMeetings(selected) {
     var date = document.getElementById("f-receivedOn").value;
     var container = document.getElementById("meetingOptions");
@@ -252,7 +258,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     var savedMeetingMissing = false;
     container.innerHTML = "";
     meetingCandidates = window.Meishi.meetingCandidates(date, scheduleItems, calendarEvents);
-    if (selectedKey && !meetingCandidates.some(function (candidate) { return meetingKey(candidate) === selectedKey; })) {
+    if (selectedKey && !meetingCandidates.some(function (candidate) { return sameMeeting(candidate, selected); })) {
       meetingCandidates.unshift(selected);
       savedMeetingMissing = true;
     }
@@ -263,7 +269,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
       input.type = "radio";
       input.name = "meeting";
       input.value = meetingKey(candidate);
-      input.checked = input.value === selectedKey;
+      input.checked = sameMeeting(candidate, selected);
       text.textContent = savedMeetingMissing && candidate === selected
         ? (candidate.date ? candidate.date + " " : "") + (candidate.title || "（件名なし）")
         : (candidate.time ? candidate.time + " " : "") + (candidate.title || "（件名なし）");
