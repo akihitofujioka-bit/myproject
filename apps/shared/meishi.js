@@ -292,7 +292,7 @@
         calEventId: item.calEventId || "",
         title: item.title || "",
         date: item.dueOn,
-        time: item.time || ""
+        time: item.time || item.startTime || ""
       };
       candidates.push(candidate);
       if (candidate.calEventId) byCalendarId[candidate.calEventId] = candidate;

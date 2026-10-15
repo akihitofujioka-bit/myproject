@@ -161,7 +161,7 @@ if (!M) {
     company: "架空企画",
     department: "営業部",
     title: "架空担当",
-    note: "新規相談",
+    memo: "空想展示会で新規相談",
     meeting: { scheduleId: "", calEventId: "calendar-fiction-1", title: "架空事業の相談会" }
   });
   const listed = await M.list({});
@@ -169,6 +169,7 @@ if (!M) {
   ok((await M.list({ query: "架空商事" })).some(card => card.id === first.id), "会社名で探す");
   ok((await M.list({ query: "ソウム" })).length === 0, "読みが同じ別の文字には一致しない");
   ok((await M.list({ query: "架空　総務" })).length === 1, "複数語がすべて含まれる名刺を探す");
+  ok((await M.list({ query: "空想展示会" })).length === 1, "メモでも探す");
   ok((await M.list({ query: "事業 相談会" })).length === 1, "会った予定の名前でも探す");
 
   const scheduleCards = await M.byMeeting({ scheduleId: "schedule-fiction-1", calEventId: "" });

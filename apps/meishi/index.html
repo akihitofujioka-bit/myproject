@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>名刺</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8; --surface: #fff; --border: #dfe3e8; --text: #1c1f24; --muted: #667080;
+  --accent: #2f6fed; --accent-weak: #e8f0ff; --danger: #b42318; --warn: #9a6700; --warn-weak: #fff4cc; --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c; --surface: #1f2229; --border: #333842; --text: #e8eaed; --muted: #9aa3b0;
+    --accent: #6d9bff; --accent-weak: #22304d; --danger: #ff8a80; --warn: #f4c95d; --warn-weak: #3b321a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 16px; line-height: 1.7;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px calc(92px + env(safe-area-inset-bottom)); }
+[hidden] { display: none !important; }
+h1, h2.view-heading { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+.lead, .note, .empty { color: var(--muted); font-size: 14px; }
+.lead { margin: 0 0 18px; }
+.empty { text-align: center; padding: 28px 8px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
+button, input, textarea, select { font: inherit; color: var(--text); }
+button { min-height: 44px; padding: 9px 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); cursor: pointer; }
+button:hover, button:focus, input:focus, textarea:focus { border-color: var(--accent); }
+button.primary { color: #fff; background: var(--accent); border-color: var(--accent); font-weight: 700; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+.toolbar, .actions, .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.toolbar { margin-bottom: 14px; }
+.toolbar input { flex: 1 1 200px; }
+.actions { margin-top: 16px; }
+.actions button { flex: 1 1 120px; }
+input, textarea { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
+textarea { resize: vertical; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px; }
+.row > div { flex: 1 1 220px; }
+.person-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.person-card { width: 100%; text-align: left; padding: 13px 14px; }
+.person-card strong { display: block; font-size: 17px; }
+.person-card span { color: var(--muted); font-size: 13px; }
+.photo { display: block; width: min(100%, 560px); aspect-ratio: 8 / 5; object-fit: contain; margin: 0 auto 12px; border-radius: 8px; background: var(--accent-weak); }
+.photo-empty { display: flex; align-items: center; justify-content: center; width: min(100%, 560px); aspect-ratio: 8 / 5; margin: 0 auto 12px; border-radius: 8px; background: var(--accent-weak); color: var(--muted); }
+.warn { padding: 9px 10px; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-weak); margin: 0 0 12px; }
+.meeting-options { display: grid; gap: 6px; }
+.meeting-options label { display: flex; align-items: flex-start; gap: 8px; color: var(--text); margin: 0; padding: 8px; border: 1px solid var(--border); border-radius: 7px; }
+.meeting-options input { width: auto; min-height: 0; margin-top: 5px; }
+.details { margin: 0; }
+.details dt { color: var(--muted); font-size: 13px; margin-top: 10px; }
+.details dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.details a { color: var(--accent); }
+.actionbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--border); }
+.actionbar > div { display: flex; gap: 8px; max-width: 760px; margin: 0 auto; }
+.actionbar button { flex: 1; }
+.barback { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; color: inherit; font-weight: 700; text-decoration: none; }
+.toast { position: fixed; left: 50%; bottom: calc(82px + env(safe-area-inset-bottom)); z-index: 40; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: var(--text); color: var(--bg); opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; text-align: center; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section id="listView">
+    <h1>名刺</h1>
+    <p class="lead">名刺の写真と連絡先を端末の中だけに保存します。外部には送信しません。</p>
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="氏名・会社・予定などで探す" aria-label="名刺を検索" autocomplete="off">
+    </div>
+    <ul class="person-list" id="cardList"></ul>
+    <p class="empty" id="emptyMsg">まだ名刺がありません。下のボタンから登録してください。</p>
+  </section>
+
+  <section id="editView" hidden>
+    <h2 class="view-heading" id="editHeading">名刺を確認</h2>
+    <p class="warn" id="readWarning" hidden>文字を読み取れませんでした。手で入力できます</p>
+    <img class="photo" id="editPhoto" alt="名刺の写真" hidden>
+    <div class="photo-empty" id="editPhotoEmpty">写真なし</div>
+    <form id="editForm" autocomplete="off">
+      <div class="row">
+        <div><label for="f-name">氏名</label><input id="f-name" type="text" maxlength="80"></div>
+        <div><label for="f-company">会社</label><input id="f-company" type="text" maxlength="120"></div>
+      </div>
+      <div class="row">
+        <div><label for="f-department">部署</label><input id="f-department" type="text" maxlength="120"></div>
+        <div><label for="f-title">役職</label><input id="f-title" type="text" maxlength="80"></div>
+      </div>
+      <label for="f-phones">電話（複数あるときは1行ずつ）</label>
+      <textarea id="f-phones" rows="2"></textarea>
+      <div class="row">
+        <div><label for="f-email">メール</label><input id="f-email" type="email" maxlength="160"></div>
+        <div><label for="f-url">URL</label><input id="f-url" type="url" maxlength="300"></div>
+      </div>
+      <label for="f-address">住所</label><textarea id="f-address" rows="2" maxlength="300"></textarea>
+      <label for="f-receivedOn">もらった日</label><input id="f-receivedOn" type="date">
+      <fieldset class="card" style="margin-top:12px">
+        <legend>会った予定（任意）</legend>
+        <div class="meeting-options" id="meetingOptions"></div>
+        <p class="note" id="meetingEmpty" hidden>この日の予定はありません。</p>
+      </fieldset>
+      <label for="f-memo">メモ</label><textarea id="f-memo" rows="4"></textarea>
+      <div class="actions">
+        <button type="submit" class="primary" id="saveBtn">保存</button>
+        <button type="button" id="cancelEditBtn">キャンセル</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="detailView" hidden>
+    <h2 class="view-heading" id="detailName">名刺</h2>
+    <img class="photo" id="detailPhoto" alt="名刺の写真" hidden>
+    <div class="photo-empty" id="detailPhotoEmpty">写真なし</div>
+    <dl class="details" id="detailFields"></dl>
+    <div id="detailAddress"></div>
+    <div id="detailMeeting"></div>
+    <div class="actions">
+      <button type="button" id="backToListBtn">一覧へ</button>
+      <button type="button" id="editBtn">編集</button>
+      <button type="button" class="danger" id="deleteBtn">削除</button>
+    </div>
+  </section>
+</div>
+
+<div class="actionbar">
+  <div>
+    <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
+    <button type="button" id="shootBtn">📷 撮る</button>
+    <button type="button" class="primary" id="pickBtn">🖼 写真から</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../shared/contacts.js"></script>
+<script src="../shared/camerapref.js"></script>
+<script src="../shared/receiptscan.js"></script>
+<script src="../shared/documentreader.js"></script>
+<script src="../shared/calendarread.js"></script>
+<script src="../shared/meishi.js"></script>
+<script src="../shared/meishistore.js"></script>
+<script src="../shared/character.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  if (window.Character) window.Character.applyBackground("meishi");
+
+  var editingId = "";
+  var currentCard = null;
+  var editPhoto = null;
+  var editPhotoURL = "";
+  var detailPhotoURL = "";
+  var calendarEvents = [];
+  var meetingCandidates = [];
+  var scheduleItems = [];
+  var listRequestNumber = 0;
+
+  function pad(number) { return String(number).padStart(2, "0"); }
+  function today() {
+    var date = new Date();
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+  }
+  function toast(message) {
+    var element = document.getElementById("toast");
+    element.textContent = message;
+    element.classList.add("show");
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(function () { element.classList.remove("show"); }, 2600);
+  }
+  function show(view) {
+    ["listView", "editView", "detailView"].forEach(function (id) {
+      document.getElementById(id).hidden = id !== view;
+    });
+    var onList = view === "listView";
+    document.getElementById("shootBtn").hidden = !onList;
+    document.getElementById("pickBtn").hidden = !onList;
+    window.scrollTo(0, 0);
+  }
+  function clearURL(name) {
+    if (name === "edit" && editPhotoURL) {
+      URL.revokeObjectURL(editPhotoURL);
+      editPhotoURL = "";
+    }
+    if (name === "detail" && detailPhotoURL) {
+      URL.revokeObjectURL(detailPhotoURL);
+      detailPhotoURL = "";
+    }
+  }
+  function showPhoto(kind, blob) {
+    var image = document.getElementById(kind + "Photo");
+    var empty = document.getElementById(kind + "PhotoEmpty");
+    clearURL(kind);
+    if (blob instanceof Blob) {
+      if (kind === "edit") {
+        editPhotoURL = URL.createObjectURL(blob);
+        image.src = editPhotoURL;
+      } else {
+        detailPhotoURL = URL.createObjectURL(blob);
+        image.src = detailPhotoURL;
+      }
+      image.hidden = false;
+      empty.hidden = true;
+    } else {
+      image.removeAttribute("src");
+      image.hidden = true;
+      empty.hidden = false;
+    }
+  }
+  function base64Blob(value) {
+    if (!value) return null;
+    try {
+      var clean = String(value).replace(/^data:image\/[^;]+;base64,/, "");
+      var binary = atob(clean);
+      var bytes = new Uint8Array(binary.length);
+      var index;
+      for (index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      return new Blob([bytes], { type: "image/jpeg" });
+    } catch (error) {
+      return null;
+    }
+  }
+  function loadScheduleItems() {
+    try {
+      var stored = JSON.parse(localStorage.getItem("schedule.v1") || "null");
+      if (Array.isArray(stored)) return stored;
+      return stored && Array.isArray(stored.items) ? stored.items : [];
+    } catch (error) {
+      return [];
+    }
+  }
+  function hasSchedule(id) {
+    return scheduleItems.some(function (item) { return item && item.id === id; });
+  }
+  function meetingKey(meeting) {
+    return meeting ? (meeting.scheduleId || "") + "|" + (meeting.calEventId || "") : "";
+  }
+  function renderMeetings(selected) {
+    var date = document.getElementById("f-receivedOn").value;
+    var container = document.getElementById("meetingOptions");
+    var selectedKey = meetingKey(selected);
+    container.innerHTML = "";
+    meetingCandidates = window.Meishi.meetingCandidates(date, scheduleItems, calendarEvents);
+    meetingCandidates.forEach(function (candidate) {
+      var label = document.createElement("label");
+      var input = document.createElement("input");
+      var text = document.createElement("span");
+      input.type = "radio";
+      input.name = "meeting";
+      input.value = meetingKey(candidate);
+      input.checked = input.value === selectedKey;
+      text.textContent = (candidate.time ? candidate.time + " " : "") + (candidate.title || "（件名なし）");
+      label.appendChild(input);
+      label.appendChild(text);
+      container.appendChild(label);
+    });
+    document.getElementById("meetingEmpty").hidden = meetingCandidates.length !== 0;
+  }
+  function selectedMeeting() {
+    var input = document.querySelector('#meetingOptions input[name="meeting"]:checked');
+    var candidate;
+    if (!input) return null;
+    candidate = meetingCandidates.filter(function (item) { return meetingKey(item) === input.value; })[0];
+    if (!candidate) return null;
+    return {
+      scheduleId: candidate.scheduleId,
+      calEventId: candidate.calEventId,
+      title: candidate.title,
+      date: candidate.date
+    };
+  }
+  function blankCard(values) {
+    values = values || {};
+    return {
+      name: values.name || "", company: values.company || "", department: values.department || "", title: values.title || "",
+      phones: Array.isArray(values.phones) ? values.phones : [], email: values.email || "", address: values.address || "",
+      url: values.url || "", receivedOn: values.receivedOn || today(), memo: values.memo || "", meeting: values.meeting || null,
+      photo: values.photo instanceof Blob ? values.photo : null
+    };
+  }
+  function fillForm(card, unreadable) {
+    editingId = card.id || "";
+    editPhoto = card.photo || null;
+    document.getElementById("editHeading").textContent = editingId ? "名刺を編集" : "名刺を確認";
+    document.getElementById("readWarning").hidden = !unreadable;
+    ["name", "company", "department", "title", "email", "url", "address", "receivedOn", "memo"].forEach(function (key) {
+      document.getElementById("f-" + key).value = card[key] || "";
+    });
+    document.getElementById("f-phones").value = (card.phones || []).join("\n");
+    showPhoto("edit", editPhoto);
+    renderMeetings(card.meeting);
+    show("editView");
+  }
+  function formCard() {
+    var phones = document.getElementById("f-phones").value.split(/\n/).map(function (phone) {
+      return phone.trim();
+    }).filter(Boolean);
+    return {
+      name: document.getElementById("f-name").value.trim(),
+      company: document.getElementById("f-company").value.trim(),
+      department: document.getElementById("f-department").value.trim(),
+      title: document.getElementById("f-title").value.trim(),
+      phones: phones,
+      email: document.getElementById("f-email").value.trim(),
+      address: document.getElementById("f-address").value.trim(),
+      url: document.getElementById("f-url").value.trim(),
+      receivedOn: document.getElementById("f-receivedOn").value,
+      memo: document.getElementById("f-memo").value.trim(),
+      meeting: selectedMeeting(),
+      photo: editPhoto
+    };
+  }
+  function renderList() {
+    var query = document.getElementById("search").value;
+    var requestNumber = ++listRequestNumber;
+    return window.MeishiStore.list({ query: query }).then(function (cards) {
+      if (requestNumber !== listRequestNumber) return;
+      var list = document.getElementById("cardList");
+      list.innerHTML = "";
+      cards.forEach(function (card) {
+        var item = document.createElement("li");
+        var button = document.createElement("button");
+        var name = document.createElement("strong");
+        var info = document.createElement("span");
+        button.type = "button";
+        button.className = "person-card";
+        button.setAttribute("data-id", card.id);
+        name.textContent = card.name || "（氏名なし）";
+        info.textContent = [card.company, card.title].filter(Boolean).join("／") || "会社・役職なし";
+        button.appendChild(name);
+        button.appendChild(info);
+        item.appendChild(button);
+        list.appendChild(item);
+      });
+      document.getElementById("emptyMsg").hidden = cards.length !== 0;
+    }).catch(function () {
+      if (requestNumber !== listRequestNumber) return;
+      toast("名刺を表示できません");
+    });
+  }
+  function addDetail(list, label, value, link) {
+    var dt;
+    var dd;
+    var anchor;
+    if (!value) return;
+    dt = document.createElement("dt");
+    dd = document.createElement("dd");
+    dt.textContent = label;
+    if (link) {
+      anchor = document.createElement("a");
+      anchor.href = link;
+      anchor.textContent = value;
+      dd.appendChild(anchor);
+    } else {
+      dd.textContent = value;
+    }
+    list.appendChild(dt);
+    list.appendChild(dd);
+  }
+  function openDetail(card) {
+    var fields = document.getElementById("detailFields");
+    var address = document.getElementById("detailAddress");
+    var meeting = document.getElementById("detailMeeting");
+    var definition;
+    var value;
+    var link;
+    currentCard = card;
+    document.getElementById("detailName").textContent = card.name || "（氏名なし）";
+    showPhoto("detail", card.photo);
+    fields.innerHTML = "";
+    addDetail(fields, "会社", card.company);
+    addDetail(fields, "部署", card.department);
+    addDetail(fields, "役職", card.title);
+    (card.phones || []).forEach(function (phone) { addDetail(fields, "電話", phone, "tel:" + phone); });
+    addDetail(fields, "メール", card.email, card.email ? "mailto:" + card.email : "");
+    addDetail(fields, "URL", card.url, card.url);
+    addDetail(fields, "もらった日", card.receivedOn);
+    addDetail(fields, "メモ", card.memo);
+    address.innerHTML = "";
+    if (card.address) {
+      definition = document.createElement("dl");
+      definition.className = "details";
+      addDetail(definition, "住所", card.address);
+      address.appendChild(definition);
+    }
+    meeting.innerHTML = "";
+    if (card.meeting) {
+      definition = document.createElement("dl");
+      definition.className = "details";
+      value = (card.meeting.date ? card.meeting.date + " " : "") + (card.meeting.title || "（件名なし）");
+      link = card.meeting.scheduleId && hasSchedule(card.meeting.scheduleId)
+        ? "../schedule/index.html?id=" + encodeURIComponent(card.meeting.scheduleId) : "";
+      addDetail(definition, "会った予定", value, link);
+      meeting.appendChild(definition);
+    }
+    show("detailView");
+  }
+  function openById(id) {
+    return window.MeishiStore.get(id).then(function (card) {
+      if (!card) {
+        show("listView");
+        toast("名刺が見つかりませんでした");
+        return renderList();
+      }
+      openDetail(card);
+    }).catch(function () {
+      show("listView");
+      toast("名刺を表示できません");
+    });
+  }
+  function scanResult(result, lines) {
+    var parsed;
+    if (!result || result.cancelled) return;
+    parsed = window.Meishi.parse(lines || []);
+    parsed.photo = base64Blob(result.photo);
+    parsed.receivedOn = today();
+    parsed.meeting = null;
+    fillForm(blankCard(parsed), !(lines && lines.length));
+  }
+  function loadCalendar() {
+    if (!window.CalendarRead || !window.CalendarRead.available()) return Promise.resolve();
+    return window.CalendarRead.isSupported().then(function (result) {
+      return result && result.authorized ? { granted: true } : window.CalendarRead.requestAccess();
+    }).then(function (result) {
+      if (!result || !result.granted) return null;
+      return window.CalendarRead.listCalendars();
+    }).then(function (result) {
+      var ids = result && (result.calendars || []).map(function (calendar) { return calendar.id; });
+      if (!ids || !ids.length) return null;
+      return window.CalendarRead.listEvents(ids, 60);
+    }).then(function (result) {
+      calendarEvents = result && Array.isArray(result.events) ? result.events : [];
+      if (!document.getElementById("editView").hidden) renderMeetings(selectedMeeting());
+    }).catch(function () {
+      calendarEvents = [];
+      if (!document.getElementById("editView").hidden) renderMeetings(selectedMeeting());
+    });
+  }
+
+  document.getElementById("search").addEventListener("input", renderList);
+  document.getElementById("cardList").addEventListener("click", function (event) {
+    var button = event.target.closest("button[data-id]");
+    if (button) openById(button.getAttribute("data-id"));
+  });
+  document.getElementById("shootBtn").addEventListener("click", function () {
+    window.ReceiptScan.scan({ purpose: "card" }).then(function (result) {
+      scanResult(result, result && result.lines || []);
+    }).catch(function () { toast("名刺を読み取れませんでした"); });
+  });
+  document.getElementById("pickBtn").addEventListener("click", function () {
+    window.DocumentReader.pickImage({ withPhoto: true }).then(function (result) {
+      scanResult(result, result && (result.boxes || result.lines) || []);
+    }).catch(function () { toast("名刺を読み取れませんでした"); });
+  });
+  document.getElementById("f-receivedOn").addEventListener("change", function () { renderMeetings(null); });
+  document.getElementById("editForm").addEventListener("submit", function (event) {
+    var request;
+    var wasEditing;
+    event.preventDefault();
+    wasEditing = Boolean(editingId);
+    request = editingId ? window.MeishiStore.update(editingId, formCard()) : window.MeishiStore.add(formCard());
+    request.then(function (saved) {
+      currentCard = saved;
+      clearURL("edit");
+      if (wasEditing) {
+        openDetail(saved);
+        renderList();
+      } else {
+        show("listView");
+        renderList();
+      }
+    }).catch(function () { toast("名刺を保存できません"); });
+  });
+  document.getElementById("cancelEditBtn").addEventListener("click", function () {
+    clearURL("edit");
+    if (editingId && currentCard) openDetail(currentCard);
+    else { show("listView"); renderList(); }
+  });
+  document.getElementById("backToListBtn").addEventListener("click", function () { show("listView"); renderList(); });
+  document.getElementById("editBtn").addEventListener("click", function () { if (currentCard) fillForm(currentCard, false); });
+  document.getElementById("deleteBtn").addEventListener("click", function () {
+    if (!currentCard || !window.confirm("この名刺を削除しますか？")) return;
+    window.MeishiStore.remove(currentCard.id).then(function () {
+      currentCard = null;
+      clearURL("detail");
+      show("listView");
+      renderList();
+    }).catch(function () { toast("名刺を削除できません"); });
+  });
+
+  scheduleItems = loadScheduleItems();
+  renderList().then(function () {
+    var id = new URLSearchParams(location.search).get("id");
+    if (id) openById(id);
+  });
+  loadCalendar();
+
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
+}());
+</script>
+</body>
+</html>

@@ -12,7 +12,8 @@
     "docs-tracker": "書類",
     schedule: "予定",
     kakeibo: "家計簿",
-    cards: "ポイントカード"
+    cards: "ポイントカード",
+    meishi: "名刺"
   };
 
   var INTERVALS = [

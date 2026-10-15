@@ -19,12 +19,12 @@
       (plugin() || typeof cap.nativePromise === "function"));
   }
 
-  function invoke(method) {
+  function invoke(method, options) {
     var reader = plugin();
-    if (reader && typeof reader[method] === "function") return reader[method]();
+    if (reader && typeof reader[method] === "function") return reader[method](options || {});
     var cap = global.Capacitor;
     if (cap && typeof cap.nativePromise === "function") {
-      return cap.nativePromise("DocumentReader", method, {});
+      return cap.nativePromise("DocumentReader", method, options || {});
     }
     return null;
   }
@@ -33,8 +33,8 @@
     return invoke("pick") || Promise.resolve({ cancelled: true });
   }
 
-  function pickImage() {
-    return invoke("pickImage") || Promise.resolve({ cancelled: true });
+  function pickImage(options) {
+    return invoke("pickImage", options) || Promise.resolve({ cancelled: true });
   }
 
   function hasShared() {

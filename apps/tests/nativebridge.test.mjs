@@ -84,9 +84,9 @@ console.log("== にせ Capacitor で橋渡しを呼んだとき ==");
   }
   ok(code === "tooLong", "端末内 AI：拒否されたエラーの code を保つ");
 
-  await win.DocumentReader.pickImage();
+  await win.DocumentReader.pickImage({ withPhoto: true });
   const imageCall = calls.find((call) => call.pluginName === "DocumentReader" && call.method === "pickImage");
-  ok(!!imageCall && Object.keys(imageCall.args).length === 0, "写真選択：DocumentReader.pickImage を空の引数で呼ぶ");
+  ok(!!imageCall && imageCall.args.withPhoto === true, "写真選択：DocumentReader.pickImage に写真を返す指定を渡す");
 }
 
 /* ---------- iPhone アプリ（本物の注入ブリッジ）---------- */

@@ -39,7 +39,7 @@
   /**
    * カメラを開いてレシートや手帳を撮り、認識した行の断片を返す。
    * options: { camera: "silent"|"document", purpose: "receipt"|"planner" }（どちらも省略可）
-   * 戻り値: { cancelled: boolean, lines: [{ text, x, y, width, height, confidence }] }
+   * 戻り値: { cancelled: boolean, lines: [{ text, x, y, width, height, confidence }], photo: string }
    * 利用者が閉じたときは cancelled: true（失敗ではない）。
    */
   // 利用者が選んだ撮り方。設定が読み込まれていないときは無音カメラにする
@@ -61,7 +61,7 @@
       if (alternates.length && global.ScanRouter && global.ScanRouter.pickLines) {
         lines = global.ScanRouter.pickLines([lines].concat(alternates));
       }
-      return { cancelled: !!(res && res.cancelled), lines: lines };
+      return { cancelled: !!(res && res.cancelled), lines: lines, photo: res && res.photo || "" };
     });
   }
 

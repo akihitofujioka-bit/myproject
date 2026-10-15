@@ -67,7 +67,7 @@ function nativeWindow(mode) {
       isNativePlatform: () => true,
       nativePromise: (plugin, method, args) => {
         calls.push({ plugin, method, args });
-        return Promise.resolve({ cancelled: false, lines: [], saved: 1 });
+        return Promise.resolve({ cancelled: false, lines: [], saved: 1, photo: "架空の写真" });
       }
     }
   };
@@ -90,8 +90,9 @@ function nativeWindow(mode) {
 }
 {
   const win = nativeWindow("silent");
-  await win.ReceiptScan.scan({ camera: "document" });
+  const result = await win.ReceiptScan.scan({ camera: "document", purpose: "card" });
   ok(win.__calls[0].args.camera === "document", "その場で撮り方を指定すると設定より優先される");
+  ok(win.__calls[0].args.purpose === "card" && result.photo === "架空の写真", "名刺の指定と写真を受け渡す");
 }
 {
   // 設定が読み込まれていない画面でも落ちない

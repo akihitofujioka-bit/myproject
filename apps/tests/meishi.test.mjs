@@ -138,6 +138,11 @@ if (M) {
   ok(candidates[1].calEventId === "c-early" && candidates[2].scheduleId === "s-linked" && candidates[3].scheduleId === "s-late", "予定候補: 時刻順にする");
   ok(candidates[2].scheduleId === "s-linked" && candidates[2].calEventId === "c-linked", "予定候補: 両方の ID を持たせる");
   ok(candidates.every((item) => item.date === "2026-10-14" && "title" in item && "time" in item), "予定候補: 公開する形をそろえる");
+
+  const scheduleTime = M.meetingCandidates("2026-10-14", [
+    { id: "s-start", title: "開始時刻つきの架空会議", dueOn: "2026-10-14", startTime: "08:30" }
+  ], []);
+  ok(scheduleTime[0].time === "08:30", "予定候補: 予定アプリの開始時刻を使う");
 }
 
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて成功");

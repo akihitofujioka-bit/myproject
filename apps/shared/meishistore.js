@@ -161,7 +161,7 @@
           card.company || "",
           card.department || "",
           card.title || "",
-          card.note || "",
+          card.memo || card.note || "",
           meetingTitle
         ].join(" "));
         return words.every(function (word) { return searchable.indexOf(word) !== -1; });
