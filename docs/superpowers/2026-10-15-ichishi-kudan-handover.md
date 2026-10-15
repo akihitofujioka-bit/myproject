@@ -12,7 +12,7 @@
 | 2-1・2-2 | 予定アプリ新設・備蓄削除 | main 済み（PR #75） |
 | 2-3 | 件の読み取り機能（Word・Excel・PDF、連絡先、提案、やること、メモ・音声） | main 済み（PR #76）。実機で一部未確認 |
 | 2-4 | 端末内 AI（秘書・壁打ち・ブレスト）と履歴 | ブランチ `feat/ondevice-ai`、**PR #77 未マージ**。実機確認待ち |
-| 2-5 | 名刺アプリと台形補正の入れ替え | ブランチ `feat/meishi`（`feat/ondevice-ai` から分岐）、**未 push・PR 未作成**。実装・最終点検済み、実機確認待ち |
+| 2-5 | 名刺アプリと台形補正の入れ替え | ブランチ `feat/meishi`（`feat/ondevice-ai` から分岐）、GitHub に送信済み・**PR 未作成**。実装・最終点検済み、実機確認待ち |
 
 - iPhone（端末名「壱師」）に入っている版: **版 2026-10-15 13:03（9027f06）**＝2-3・2-4・2-5 をすべて含む
 - Apple Watch は入れ直し不要（Watch 用のコードは origin/main から変わっていない）。Watch の表示がおかしいときだけ `cd mobile && npm run apple-watch`
@@ -23,7 +23,7 @@
    - 2-4 の指摘は `feat/ondevice-ai` で直し、`feat/meishi` に取り込む
    - 名刺の指摘は `feat/meishi` で直す
 2. PR #77 をマージ（**利用者の承諾を得てから**）
-3. `feat/meishi` を main の上に載せ直して push → PR → マージ（承諾を得てから）
+3. `feat/meishi` を main の上に載せ直して（force push が要る。承諾を得てから）→ PR → マージ（承諾を得てから）
 
 ## 実機の確認表（まとめて 1 回）
 
