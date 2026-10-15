@@ -95,7 +95,7 @@
 ### 台形補正（`SilentCameraViewController.cropToPaper`）
 
 - 順に試す
-  1. `VNDetectDocumentSegmentationRequest`（件の方式）。見つかった四隅の面積が画面の 5% 以上なら採る
+  1. `VNDetectDocumentSegmentationRequest`（件の方式）。見つかった四隅の面積が、名刺のときは画面の 5% 以上、それ以外（書類・手帳・レシート）は今と同じ 3 割以上なら採る（書類の上の付箋などを紙と取り違えないため）
   2. 見つからなければ、今の `VNDetectRectanglesRequest`（3 割以上）
   3. どちらも無ければ、撮ったままの画像
 - 四隅を少し外側に広げてから切り出す今の工夫（`margin 0.06`）は、両方の方式で使う
