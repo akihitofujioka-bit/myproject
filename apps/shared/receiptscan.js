@@ -38,7 +38,7 @@
 
   /**
    * カメラを開いてレシートや手帳を撮り、認識した行の断片を返す。
-   * options: { camera: "silent"|"document", purpose: "receipt"|"planner" }（どちらも省略可）
+   * options: { camera: "silent"|"document", purpose: "receipt"|"planner"|"card" }（どちらも省略可）
    * 戻り値: { cancelled: boolean, lines: [{ text, x, y, width, height, confidence }], photo: string }
    * 利用者が閉じたときは cancelled: true（失敗ではない）。
    */
@@ -51,7 +51,7 @@
   function scan(options) {
     if (!available()) return Promise.resolve({ cancelled: true, lines: [] });
     var args = { camera: cameraMode(options) };
-    // 何を撮るか（"receipt" / "planner"）。案内文と、小さな文字をどこまで拾うかが変わる
+    // 何を撮るか（"receipt" / "planner" / "card"）。案内文と、小さな文字をどこまで拾うかが変わる
     if (options && options.purpose) args.purpose = options.purpose;
     return global.Capacitor.nativePromise(PLUGIN, "scan", args).then(function (res) {
       var lines = (res && res.lines) || [];

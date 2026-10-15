@@ -249,8 +249,13 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     var date = document.getElementById("f-receivedOn").value;
     var container = document.getElementById("meetingOptions");
     var selectedKey = meetingKey(selected);
+    var savedMeetingMissing = false;
     container.innerHTML = "";
     meetingCandidates = window.Meishi.meetingCandidates(date, scheduleItems, calendarEvents);
+    if (selectedKey && !meetingCandidates.some(function (candidate) { return meetingKey(candidate) === selectedKey; })) {
+      meetingCandidates.unshift(selected);
+      savedMeetingMissing = true;
+    }
     meetingCandidates.forEach(function (candidate) {
       var label = document.createElement("label");
       var input = document.createElement("input");
@@ -259,7 +264,9 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
       input.name = "meeting";
       input.value = meetingKey(candidate);
       input.checked = input.value === selectedKey;
-      text.textContent = (candidate.time ? candidate.time + " " : "") + (candidate.title || "（件名なし）");
+      text.textContent = savedMeetingMissing && candidate === selected
+        ? (candidate.date ? candidate.date + " " : "") + (candidate.title || "（件名なし）")
+        : (candidate.time ? candidate.time + " " : "") + (candidate.title || "（件名なし）");
       label.appendChild(input);
       label.appendChild(text);
       container.appendChild(label);
@@ -383,7 +390,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     addDetail(fields, "役職", card.title);
     (card.phones || []).forEach(function (phone) { addDetail(fields, "電話", phone, "tel:" + phone); });
     addDetail(fields, "メール", card.email, card.email ? "mailto:" + card.email : "");
-    addDetail(fields, "URL", card.url, card.url);
+    addDetail(fields, "URL", card.url, /^https?:\/\//i.test(card.url || "") ? card.url : "");
     addDetail(fields, "もらった日", card.receivedOn);
     addDetail(fields, "メモ", card.memo);
     address.innerHTML = "";
@@ -420,12 +427,17 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
   }
   function scanResult(result, lines) {
     var parsed;
+    var readableLines;
     if (!result || result.cancelled) return;
-    parsed = window.Meishi.parse(lines || []);
+    readableLines = (lines || []).filter(function (line) {
+      var text = typeof line === "string" ? line : line && line.text;
+      return typeof text === "string" && text.trim().length !== 0;
+    });
+    parsed = window.Meishi.parse(readableLines);
     parsed.photo = base64Blob(result.photo);
     parsed.receivedOn = today();
     parsed.meeting = null;
-    fillForm(blankCard(parsed), !(lines && lines.length));
+    fillForm(blankCard(parsed), readableLines.length === 0);
   }
   function loadCalendar() {
     if (!window.CalendarRead || !window.CalendarRead.available()) return Promise.resolve();

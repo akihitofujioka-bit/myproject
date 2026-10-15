@@ -150,6 +150,13 @@ try {
   ok(await page.locator("#f-name").inputValue() === "", "0行なら空欄の確認画面を出す");
   await page.click("#cancelEditBtn");
 
+  await page.evaluate(() => { window.__meishiFake.camera = { cancelled: false, lines: [{ text: "   ", height: 8 }], photo: "" }; });
+  await page.click("#shootBtn");
+  await page.waitForFunction(() => !document.getElementById("editView").hidden);
+  ok((await page.locator("#readWarning").innerText()).includes("文字を読み取れませんでした。手で入力できます"), "空白行だけなら手入力できる旨を出す");
+  ok(await page.locator("#f-name").inputValue() === "", "空白行だけなら空欄の確認画面を出す");
+  await page.click("#cancelEditBtn");
+
   // 先の検索が遅れて完了しても、後の検索結果を上書きしない。
   await page.evaluate(() => {
     window.__realMeishiList = window.MeishiStore.list;
@@ -176,7 +183,7 @@ try {
   await page.fill("#search", "架空商事");
   await page.waitForFunction(() => document.querySelectorAll("#cardList .person-card").length === 1);
   await page.click("#cardList .person-card");
-  await page.waitForFunction(() => document.getElementById("detailView").textContent.includes("山田 架空"));
+  await page.waitForFunction(name => document.getElementById("detailName").textContent === name, "山田 架空");
   ok((await page.locator("#detailView").innerText()).includes("山田 架空"), "検索結果から詳細を開く");
   ok((await page.locator('#detailView a[href^="tel:"]').getAttribute("href")) === "tel:090-1111-2222", "電話を tel: リンクにする");
   ok((await page.locator('#detailView a[href^="mailto:"]').getAttribute("href")) === "mailto:sample@example.invalid", "メールを mailto: リンクにする");
@@ -200,6 +207,7 @@ try {
 
   await page.fill("#search", "");
   await page.getByRole("button", { name: /山田 架空/ }).click();
+  await page.waitForFunction(name => document.getElementById("detailName").textContent === name, "山田 架空");
   await page.evaluate(() => { window.confirm = () => true; });
   await page.click("#deleteBtn");
   await waitAsync(page, async cardId => !(await window.MeishiStore.get(cardId)), id);
@@ -220,7 +228,7 @@ try {
   });
   await page.click("#saveBtn");
   await page.waitForFunction(() => document.getElementById("toast").textContent.includes("名刺を保存できません"));
-  ok(!(await page.locator("#editView").getAttribute("hidden")), "保存失敗でも確認画面を閉じない");
+  ok(await page.locator("#editView").isVisible(), "保存失敗でも確認画面を閉じない");
 
   // 日付を変えたとき、古い選択を外して候補を入れ替える。
   await page.fill("#f-receivedOn", "2026-10-15");
@@ -236,16 +244,29 @@ try {
   await page.evaluate(async () => {
     window.MeishiStore.add = window.__realMeishiAdd;
     const base = { name: "予定リンク確認", company: "架空確認社", department: "", title: "", phones: [], email: "", address: "", url: "", receivedOn: "2026-10-15", memo: "", photo: null };
-    await window.MeishiStore.add(Object.assign({}, base, { meeting: { scheduleId: "", calEventId: "cal-only", title: "架空のカレンダー予定", date: "2026-10-15" } }));
-    await window.MeishiStore.add(Object.assign({}, base, { name: "消えた予定確認", meeting: { scheduleId: "missing-schedule", calEventId: "", title: "消えた架空予定", date: "2026-10-15" } }));
+    await window.MeishiStore.add(Object.assign({}, base, { url: "https://example.invalid/meishi", meeting: { scheduleId: "", calEventId: "cal-only", title: "架空のカレンダー予定", date: "2026-10-15" } }));
+    await window.MeishiStore.add(Object.assign({}, base, { name: "消えた予定確認", url: "javascript:alert(1)", meeting: { scheduleId: "missing-schedule", calEventId: "", title: "消えた架空予定", date: "2026-10-15" } }));
   });
   await page.goto(BASE + "meishi/index.html");
   await page.waitForFunction(() => document.querySelectorAll("#cardList .person-card").length === 2);
   await page.getByRole("button", { name: /予定リンク確認/ }).click();
+  await page.waitForFunction(name => document.getElementById("detailName").textContent === name, "予定リンク確認");
   ok(await page.locator("#detailMeeting a").count() === 0, "カレンダーだけの予定は文字だけにする");
+  ok((await page.locator('#detailFields a[href="https://example.invalid/meishi"]').count()) === 1, "http(s) の URL はリンクにする");
   await page.click("#backToListBtn");
   await page.getByRole("button", { name: /消えた予定確認/ }).click();
+  await page.waitForFunction(name => document.getElementById("detailName").textContent === name, "消えた予定確認");
   ok(await page.locator("#detailMeeting a").count() === 0, "消えた壱師の予定は文字だけにする");
+  ok(await page.locator("#detailFields a").filter({ hasText: "javascript:alert(1)" }).count() === 0, "http(s) 以外の URL はリンクにしない");
+  ok((await page.locator("#detailFields").innerText()).includes("javascript:alert(1)"), "http(s) 以外の URL は文字で出す");
+
+  await page.click("#editBtn");
+  ok((await page.locator("#meetingOptions input:checked").count()) === 1, "候補から消えた保存済み予定を編集画面で選択したまま出す");
+  ok((await page.locator("#meetingOptions").innerText()).includes("2026-10-15 消えた架空予定"), "候補から消えた保存済み予定に日付と予定名を出す");
+  await page.click("#saveBtn");
+  await page.waitForFunction(() => !document.getElementById("detailView").hidden);
+  const missingMeeting = await page.evaluate(() => window.MeishiStore.list({ query: "消えた予定確認" }).then(items => items[0].meeting));
+  ok(missingMeeting && missingMeeting.scheduleId === "missing-schedule" && missingMeeting.title === "消えた架空予定", "候補から消えた予定を何も変えずに保存しても保持する");
 
   const home = await browser.newPage();
   await home.goto(BASE + "index.html");
