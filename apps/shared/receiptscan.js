@@ -6,7 +6,7 @@
  *   scanToPhotos()  … 撮って写真アプリに保存する（書類トラッカーの書類撮影）
  *
  * 撮り方は2種類あり、利用者が選べる（camerapref.js の設定を使う）。
- *   無音カメラ   … シャッター音が鳴らない。四隅の自動切り出しはしない
+ *   無音カメラ   … シャッター音が鳴らない。撮影後に四隅を探してゆがみを自動で直す
  *   書類カメラ   … 四隅を自動で切り出すが、シャッター音が鳴る
  *
  * アプリとして動いていて、かつプラグインが登録されているときだけ使える。
@@ -38,8 +38,8 @@
 
   /**
    * カメラを開いてレシートや手帳を撮り、認識した行の断片を返す。
-   * options: { camera: "silent"|"document", purpose: "receipt"|"planner" }（どちらも省略可）
-   * 戻り値: { cancelled: boolean, lines: [{ text, x, y, width, height, confidence }] }
+   * options: { camera: "silent"|"document", purpose: "receipt"|"planner"|"card" }（どちらも省略可）
+   * 戻り値: { cancelled: boolean, lines: [{ text, x, y, width, height, confidence }], photo: string }
    * 利用者が閉じたときは cancelled: true（失敗ではない）。
    */
   // 利用者が選んだ撮り方。設定が読み込まれていないときは無音カメラにする
@@ -51,7 +51,7 @@
   function scan(options) {
     if (!available()) return Promise.resolve({ cancelled: true, lines: [] });
     var args = { camera: cameraMode(options) };
-    // 何を撮るか（"receipt" / "planner"）。案内文と、小さな文字をどこまで拾うかが変わる
+    // 何を撮るか（"receipt" / "planner" / "card"）。案内文と、小さな文字をどこまで拾うかが変わる
     if (options && options.purpose) args.purpose = options.purpose;
     return global.Capacitor.nativePromise(PLUGIN, "scan", args).then(function (res) {
       var lines = (res && res.lines) || [];
@@ -61,7 +61,7 @@
       if (alternates.length && global.ScanRouter && global.ScanRouter.pickLines) {
         lines = global.ScanRouter.pickLines([lines].concat(alternates));
       }
-      return { cancelled: !!(res && res.cancelled), lines: lines };
+      return { cancelled: !!(res && res.cancelled), lines: lines, photo: res && res.photo || "" };
     });
   }
 

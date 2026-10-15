@@ -6,7 +6,7 @@
 //  ・撮り方は2種類あり、利用者が選べる（2026-09-24）。JS から camera で指定する
 //      "silent"   … 自前の無音カメラ（SilentCameraViewController）。
 //                   映像の1コマを取り出す方式のため、シャッター音が鳴らない。
-//                   ただし書類の四隅を自動で切り出す機能は無い
+//                   撮影後に書類の四隅を探し、傾きとゆがみを自動で直す
 //      "document" … VisionKit の書類カメラ。四隅を自動で切り出して歪みも直すが、
 //                   撮影時にシャッター音が鳴る（日本向け iPhone では消せない）
 //  ・文字認識は Vision（iOS 標準・端末内で完結。画像も文字も外部へ送らない）
@@ -38,7 +38,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
     private var pendingCall: CAPPluginCall?
     /// 撮り方。"silent" = 無音カメラ / "document" = VisionKit の書類カメラ
     private var camera: String = "silent"
-    /// 何を撮るか。"receipt"（既定）/ "planner"（手帳）/ "document"（書類）/ "any"（振り分け前で不明）。
+    /// 何を撮るか。"receipt"（既定）/ "planner"（手帳）/ "document"（書類）/ "card"（名刺）/ "any"（振り分け前で不明）。
     /// 案内文と、文字認識で拾う文字の小ささを変える
     private var purpose: String = "receipt"
 
@@ -109,7 +109,10 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
             // 無音カメラ（音は鳴らない。撮ったあと紙の四隅を探して傾きを直す）
             let silent = SilentCameraViewController()
             silent.modalPresentationStyle = .fullScreen
+            silent.minimumDocumentArea = self.purpose == "card" ? 0.05 : 0.3
             switch self.purpose {
+            case "card":
+                silent.guidanceText = "名刺を枠いっぱいに写してください"
             case "planner":
                 silent.guidanceText = "手帳のページ全体（上の「◯月」の見出しも）が入るようにし、真上から「撮る」を押してください。暗いときは「ライト」を使ってください（音は鳴りません）"
             case "document":
@@ -132,13 +135,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
                 self.recognize(image: image, purpose: self.purpose) { result in
                     switch result {
                     case .success(let sets):
-                        call.resolve([
-                            "cancelled": false,
-                            "width": image.size.width,
-                            "height": image.size.height,
-                            "lines": sets.first ?? [],
-                            "alternates": Array(sets.dropFirst())
-                        ])
+                        call.resolve(self.scanResult(image: image, sets: sets))
                     case .failure(let error):
                         call.reject("文字を読み取れませんでした: \(error.localizedDescription)")
                     }
@@ -185,13 +182,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         recognize(image: image, purpose: purpose) { result in
             switch result {
             case .success(let sets):
-                call.resolve([
-                    "cancelled": false,
-                    "width": image.size.width,
-                    "height": image.size.height,
-                    "lines": sets.first ?? [],
-                    "alternates": Array(sets.dropFirst())
-                ])
+                call.resolve(self.scanResult(image: image, sets: sets))
             case .failure(let error):
                 call.reject("文字を読み取れませんでした: \(error.localizedDescription)")
             }
@@ -209,6 +200,21 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         controller.dismiss(animated: true)
         pendingCall?.reject("カメラでエラーが起きました: \(error.localizedDescription)")
         pendingCall = nil
+    }
+
+    /// JS へ返す共通の撮影結果。名刺では補正済み画像も端末内で JPEG にして添える。
+    private func scanResult(image: UIImage, sets: [[[String: Any]]]) -> [String: Any] {
+        var result: [String: Any] = [
+            "cancelled": false,
+            "width": image.size.width,
+            "height": image.size.height,
+            "lines": sets.first ?? [],
+            "alternates": Array(sets.dropFirst())
+        ]
+        if purpose == "card" {
+            result["photo"] = image.cgImage.flatMap { DocumentCorrector.jpegBase64($0) } ?? ""
+        }
+        return result
     }
 
     // MARK: - 写真アプリへの保存
@@ -260,7 +266,7 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
         let base = cgOrientation(from: image.imageOrientation)
         // 手帳の月間ページは、マスの隅の日付の数字や手書きが小さい。
         // 既定のままだと小さな文字を読み飛ばすため、拾う文字の下限を下げる（そのぶん少し時間がかかる）
-        let minimumTextHeight: Float? = (purpose == "planner" || purpose == "any") ? 0.006 : nil
+        let minimumTextHeight: Float? = (purpose == "planner" || purpose == "any" || purpose == "card") ? 0.006 : nil
 
         DispatchQueue.global(qos: .userInitiated).async {
             let orientations = Self.candidateOrientations(cgImage, base: base)

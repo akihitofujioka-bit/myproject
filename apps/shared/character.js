@@ -9,7 +9,7 @@
   var DB_NAME = "character";
   var DB_VERSION = 1;
   var STORE_NAME = "slots";
-  var SLOTS = ["top", "fridge", "docs-tracker", "schedule", "kakeibo", "cards"];
+  var SLOTS = ["top", "fridge", "docs-tracker", "schedule", "kakeibo", "cards", "meishi"];
   var albumStatuses = {};
   var legacyStockCleanup = null;
 

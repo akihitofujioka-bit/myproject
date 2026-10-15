@@ -44,6 +44,7 @@ console.log("== 撮り方の設定 ==");
   ok(win.CameraPref.get() === "document", "切り替えた内容が残る");
   ok(win.CameraPref.set("でたらめ") === "silent", "知らない値が来たら無音カメラに戻す");
   ok(Object.keys(win.CameraPref.modes).join(",") === "silent,document", "選べるのは2種類");
+  ok(win.CameraPref.modes.silent.hint === "音は鳴らない／ゆがみを自動で直す", "無音カメラの説明に自動補正を示す");
 }
 {
   // 保存できない環境（プライベートブラウズなど）でも動く
@@ -67,7 +68,7 @@ function nativeWindow(mode) {
       isNativePlatform: () => true,
       nativePromise: (plugin, method, args) => {
         calls.push({ plugin, method, args });
-        return Promise.resolve({ cancelled: false, lines: [], saved: 1 });
+        return Promise.resolve({ cancelled: false, lines: [], saved: 1, photo: "架空の写真" });
       }
     }
   };
@@ -90,8 +91,9 @@ function nativeWindow(mode) {
 }
 {
   const win = nativeWindow("silent");
-  await win.ReceiptScan.scan({ camera: "document" });
+  const result = await win.ReceiptScan.scan({ camera: "document", purpose: "card" });
   ok(win.__calls[0].args.camera === "document", "その場で撮り方を指定すると設定より優先される");
+  ok(win.__calls[0].args.purpose === "card" && result.photo === "架空の写真", "名刺の指定と写真を受け渡す");
 }
 {
   // 設定が読み込まれていない画面でも落ちない

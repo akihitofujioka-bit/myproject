@@ -64,6 +64,7 @@ const APPS = [
   { name: "schedule", calendar: true },
   { name: "kakeibo", receipt: true },
   { name: "cards", barcode: true },
+  { name: "meishi" },
 ];
 
 for (const { name: app, barcode, calendar, receipt } of APPS) {

@@ -28,12 +28,18 @@ ok(!/開発版/.test(index), "「開発版」の仮表示が残っていない")
 ok(fs.readFileSync(path.join(WWW, "version.txt"), "utf8").trim() === (m && m[1]), "version.txt にも同じ版が書かれる");
 ok(!/data-web-only/.test(index), "ブラウザ専用の案内が取り除かれている");
 ok(/id="characterCard"/.test(index), "ブラウザ専用の案内の前にある節（キャラクター写真の設定）は残る");
-for (const f of ["shared/meeting.js", "shared/planner.js", "shared/inbox.js", "shared/receipt.js", "cards/icon-192.png"]) {
+for (const f of ["shared/meeting.js", "shared/planner.js", "shared/inbox.js", "shared/receipt.js", "cards/icon-192.png", "meishi/icon-192.png"]) {
   ok(fs.existsSync(path.join(WWW, f)), f + " が含まれる");
 }
 ok(fs.existsSync(path.join(WWW, "schedule/index.html")), "予定アプリが含まれる");
 ok(!fs.existsSync(path.join(WWW, "stock")), "備蓄アプリは含まれない");
 ok(!fs.existsSync(path.join(WWW, "fridge/sw.js")), "Service Worker は含まれない");
+
+const documentReader = fs.readFileSync(path.join(ROOT, "mobile/ios/App/App/DocumentReaderPlugin.swift"), "utf8");
+ok(/private\s+let\s+imageContext\s*=\s*CIContext\(\)/.test(documentReader), "DocumentReaderPlugin は CIContext を 1 つだけ保持する");
+ok(/let\s+scale\s*=\s*min\(1(?:\.0)?,\s*3000(?:\.0)?\s*\/\s*longestSide\)/.test(documentReader), "写真の長辺を最大 3000px にする縮尺を求める");
+ok(/transformed\(by:\s*CGAffineTransform\(scaleX:\s*scale,\s*y:\s*scale\)\)/.test(documentReader), "向きを直す処理で CIImage を縮小する");
+ok(!/if\s+withPhoto\s*\{[\s\S]{0,120}let\s+context\s*=\s*CIContext\(\)/.test(documentReader), "pickImage ごとに CIContext を作らない");
 
 console.log(failures ? `\n${failures} 件失敗` : "\nすべて通過");
 process.exit(failures ? 1 : 0);
