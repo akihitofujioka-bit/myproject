@@ -84,7 +84,11 @@ const fakeNative = () => {
     },
     nativePromise: (plugin, method, options) => {
       if (plugin === "ReceiptScanner" && method === "scan") return Promise.resolve(window.__meishiFake.camera);
-      if (plugin === "CalendarReader" && method === "isSupported") return Promise.resolve({ supported: true, authorized: true });
+      if (plugin === "CalendarReader" && method === "isSupported") return Promise.resolve({ supported: true, authorized: localStorage.getItem("test.calendarDenied") !== "1" });
+      if (plugin === "CalendarReader" && method === "requestAccess") {
+        window.__calendarRequests = (window.__calendarRequests || 0) + 1;
+        return Promise.resolve({ granted: false });
+      }
       if (plugin === "CalendarReader" && method === "listCalendars") return Promise.resolve({ calendars: [{ id: "cal-1", title: "架空カレンダー" }] });
       if (plugin === "CalendarReader" && method === "listEvents") return Promise.resolve({ events: [
         { id: "cal-linked", calendarId: "cal-1", title: "架空の連携会議", date: "2026-10-15", startTime: "10:00" },
@@ -290,6 +294,22 @@ try {
   await page.waitForFunction(() => !document.getElementById("detailView").hidden);
   const missingMeeting = await page.evaluate(() => window.MeishiStore.list({ query: "消えた予定確認" }).then(items => items[0].meeting));
   ok(missingMeeting && missingMeeting.scheduleId === "missing-schedule" && missingMeeting.title === "消えた架空予定", "候補から消えた予定を何も変えずに保存しても保持する");
+
+  // 未許可のときは、開いただけでは許可を求めず、確認画面を開いたときに 1 回だけ求める。
+  await page.evaluate(() => localStorage.setItem("test.calendarDenied", "1"));
+  await page.goto(BASE + "meishi/index.html");
+  await page.waitForFunction(() => window.MeishiStore && document.getElementById("listView"));
+  await page.waitForTimeout(200);
+  ok(await page.evaluate(() => (window.__calendarRequests || 0) === 0), "開いただけではカレンダーの許可を求めない");
+  await page.click("#shootBtn");
+  await page.waitForFunction(() => !document.getElementById("editView").hidden);
+  await page.waitForFunction(() => window.__calendarRequests === 1);
+  await page.click("#cancelEditBtn");
+  await page.click("#shootBtn");
+  await page.waitForFunction(() => !document.getElementById("editView").hidden);
+  await page.waitForTimeout(200);
+  ok(await page.evaluate(() => window.__calendarRequests === 1), "確認画面を開いたときに 1 回だけ許可を求める");
+  await page.evaluate(() => localStorage.removeItem("test.calendarDenied"));
 
   const home = await browser.newPage();
   await home.goto(BASE + "index.html");

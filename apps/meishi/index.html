@@ -163,6 +163,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
   var editPhotoURL = "";
   var detailPhotoURL = "";
   var calendarEvents = [];
+  var calendarAsked = false;
   var meetingCandidates = [];
   var scheduleItems = [];
   var listRequestNumber = 0;
@@ -313,6 +314,11 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     showPhoto("edit", editPhoto);
     renderMeetings(card.meeting);
     show("editView");
+    // カレンダーの許可は、会議を選ぶ画面を初めて開いたときに求める。
+    if (!calendarAsked) {
+      calendarAsked = true;
+      loadCalendar(true);
+    }
   }
   function formCard() {
     var phones = document.getElementById("f-phones").value.split(/\n/).map(function (phone) {
@@ -445,10 +451,12 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     parsed.meeting = null;
     fillForm(blankCard(parsed), readableLines.length === 0);
   }
-  function loadCalendar() {
+  // ask が false のときは、許可済みの場合だけ読む（起動時に許可を求めない）。
+  function loadCalendar(ask) {
     if (!window.CalendarRead || !window.CalendarRead.available()) return Promise.resolve();
     return window.CalendarRead.isSupported().then(function (result) {
-      return result && result.authorized ? { granted: true } : window.CalendarRead.requestAccess();
+      if (result && result.authorized) return { granted: true };
+      return ask ? window.CalendarRead.requestAccess() : null;
     }).then(function (result) {
       if (!result || !result.granted) return null;
       return window.CalendarRead.listCalendars();
@@ -521,7 +529,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     var id = new URLSearchParams(location.search).get("id");
     if (id) openById(id);
   });
-  loadCalendar();
+  loadCalendar(false);
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
 }());
