@@ -33,6 +33,10 @@
     return invoke("pick") || Promise.resolve({ cancelled: true });
   }
 
+  function pickImage() {
+    return invoke("pickImage") || Promise.resolve({ cancelled: true });
+  }
+
   function hasShared() {
     return invoke("hasShared") || Promise.resolve({ has: false, name: "" });
   }
@@ -122,6 +126,7 @@
   global.DocumentReader = {
     available: available,
     pick: pick,
+    pickImage: pickImage,
     takeShared: takeShared,
     hasShared: hasShared,
     toMeetings: toMeetings,

@@ -18,7 +18,12 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BRIDGE = path.join(ROOT, "mobile/node_modules/@capacitor/ios/Capacitor/Capacitor/assets/native-bridge.js");
-const MODULES = ["apps/shared/nativescan.js", "apps/shared/receiptscan.js"];
+const MODULES = [
+  "apps/shared/nativescan.js",
+  "apps/shared/receiptscan.js",
+  "apps/shared/ondeviceai.js",
+  "apps/shared/documentreader.js"
+];
 
 let failures = 0;
 const ok = (cond, label) => {
@@ -41,6 +46,47 @@ console.log("== ブラウザで開いたとき（window.Capacitor が無い）==
   loadModules(win);
   ok(win.NativeScan.available() === false, "バーコード読み取り：使えない判定になる");
   ok(win.ReceiptScan.available() === false, "レシート撮影：使えない判定になる");
+  const status = await win.OnDeviceAI.status();
+  ok(status.available === false && status.reason === "unsupported", "端末内 AI：非対応として理由を返す");
+
+  let code = "";
+  try {
+    await win.OnDeviceAI.respond({ instructions: "架空の案内役", prompt: "架空の質問" });
+  } catch (error) {
+    code = error.code;
+  }
+  ok(code === "unavailable", "端末内 AI：Capacitor が無い場合は unavailable で拒否する");
+}
+
+/* ---------- にせ Capacitor（新しい橋渡しの呼び出し）---------- */
+console.log("== にせ Capacitor で橋渡しを呼んだとき ==");
+{
+  const calls = [];
+  const win = {
+    Capacitor: {
+      isNativePlatform() { return true; },
+      nativePromise(pluginName, method, args) {
+        calls.push({ pluginName, method, args });
+        if (pluginName === "OnDeviceAI" && method === "respond") {
+          return Promise.reject(Object.assign(new Error("長すぎます"), { code: "tooLong" }));
+        }
+        return Promise.resolve({ cancelled: true });
+      }
+    }
+  };
+  loadModules(win);
+
+  let code = "";
+  try {
+    await win.OnDeviceAI.respond({ instructions: "架空の案内役", prompt: "架空の予定を整理して" });
+  } catch (error) {
+    code = error.code;
+  }
+  ok(code === "tooLong", "端末内 AI：拒否されたエラーの code を保つ");
+
+  await win.DocumentReader.pickImage();
+  const imageCall = calls.find((call) => call.pluginName === "DocumentReader" && call.method === "pickImage");
+  ok(!!imageCall && Object.keys(imageCall.args).length === 0, "写真選択：DocumentReader.pickImage を空の引数で呼ぶ");
 }
 
 /* ---------- iPhone アプリ（本物の注入ブリッジ）---------- */

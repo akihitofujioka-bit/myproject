@@ -6,17 +6,20 @@
 //
 import Foundation
 import UIKit
+import ImageIO
 import UniformTypeIdentifiers
 import PDFKit
 import Vision
+import PhotosUI
 import Capacitor
 
 @objc(DocumentReaderPlugin)
-public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate {
+public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate, PHPickerViewControllerDelegate, UIAdaptivePresentationControllerDelegate {
     public let identifier = "DocumentReaderPlugin"
     public let jsName = "DocumentReader"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "pick", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pickImage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "hasShared", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "takeShared", returnType: CAPPluginReturnPromise)
     ]
@@ -29,6 +32,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
     private static let sharedLock = NSLock()
     private static var sharedFile: SharedFile?
     private var pendingPick: CAPPluginCall?
+    private var pendingImagePick: CAPPluginCall?
 
     /// SceneDelegate から共有ファイルを受け取り、アプリ専用の一時コピーとして覚える。
     static func receive(url: URL) {
@@ -89,6 +93,75 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
         let shared = Self.sharedFile
         Self.sharedLock.unlock()
         call.resolve(["has": shared != nil, "name": shared?.name ?? ""])
+    }
+
+    @objc func pickImage(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard self.pendingImagePick == nil else {
+                call.reject("すでに写真選択画面を開いています")
+                return
+            }
+            guard let host = self.hostViewController(), host.presentedViewController == nil else {
+                call.reject("ほかの画面が開いています。閉じてからもう一度お試しください")
+                return
+            }
+            var configuration = PHPickerConfiguration(photoLibrary: .shared())
+            configuration.selectionLimit = 1
+            configuration.filter = .images
+            let picker = PHPickerViewController(configuration: configuration)
+            picker.delegate = self
+            picker.presentationController?.delegate = self
+            self.pendingImagePick = call
+            host.present(picker, animated: true)
+        }
+    }
+
+    public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        guard let call = pendingImagePick else {
+            picker.dismiss(animated: true)
+            return
+        }
+        pendingImagePick = nil
+        picker.dismiss(animated: true)
+
+        guard let result = results.first else {
+            call.resolve(["cancelled": true])
+            return
+        }
+        let provider = result.itemProvider
+        let suggestedName = provider.suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = suggestedName?.isEmpty == false ? suggestedName! : "写真"
+        guard provider.canLoadObject(ofClass: UIImage.self) else {
+            call.reject("選んだ写真を読み込めませんでした")
+            return
+        }
+        provider.loadObject(ofClass: UIImage.self) { object, error in
+            guard error == nil, let image = object as? UIImage, let cgImage = image.cgImage else {
+                call.reject("選んだ写真を読み込めませんでした")
+                return
+            }
+            let orientation = Self.cgImageOrientation(from: image.imageOrientation)
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let lines = try Self.recognizeImage(cgImage, orientation: orientation)
+                    call.resolve([
+                        "cancelled": false,
+                        "name": name,
+                        "text": lines.joined(separator: "\n"),
+                        "ocr": true
+                    ])
+                } catch {
+                    call.reject(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        guard presentationController.presentedViewController is PHPickerViewController,
+              let call = pendingImagePick else { return }
+        pendingImagePick = nil
+        call.resolve(["cancelled": true])
     }
 
     @objc func takeShared(_ call: CAPPluginCall) {
@@ -163,20 +236,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                 for: .mediaBox
             )
             guard let cgImage = image.cgImage else { continue }
-            var pageLines: [String] = []
-            let request = VNRecognizeTextRequest { request, error in
-                guard error == nil,
-                      let observations = request.results as? [VNRecognizedTextObservation] else { return }
-                pageLines = observations
-                    .sorted {
-                        if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > 0.01 {
-                            return $0.boundingBox.maxY > $1.boundingBox.maxY
-                        }
-                        return $0.boundingBox.minX < $1.boundingBox.minX
-                    }
-                    .compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-            }
+            let request = VNRecognizeTextRequest()
             request.recognitionLanguages = ["ja-JP"]
             request.recognitionLevel = .accurate
             do {
@@ -188,9 +248,72 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                     userInfo: [NSLocalizedDescriptionKey: "スキャンした PDF の文字を読み取れませんでした"]
                 )
             }
-            lines.append(contentsOf: pageLines)
+            lines.append(contentsOf: recognizedLines(from: request.results ?? []))
         }
         return lines
+    }
+
+    /// 写真 1 枚を端末内の Vision で読み、上から順に文字列を返す。
+    private static func recognizeImage(
+        _ cgImage: CGImage,
+        orientation: CGImagePropertyOrientation
+    ) throws -> [String] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLanguages = ["ja-JP"]
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        do {
+            try VNImageRequestHandler(
+                cgImage: cgImage,
+                orientation: orientation,
+                options: [:]
+            ).perform([request])
+        } catch {
+            throw imageRecognitionError()
+        }
+        let lines = recognizedLines(from: request.results ?? [])
+        guard !lines.isEmpty else { throw imageRecognitionError() }
+        return lines
+    }
+
+    private static func recognizedLines(
+        from observations: [VNRecognizedTextObservation]
+    ) -> [String] {
+        observations
+            .sorted {
+                if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > 0.01 {
+                    return $0.boundingBox.maxY > $1.boundingBox.maxY
+                }
+                return $0.boundingBox.minX < $1.boundingBox.minX
+            }
+            .compactMap {
+                $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func cgImageOrientation(
+        from orientation: UIImage.Orientation
+    ) -> CGImagePropertyOrientation {
+        switch orientation {
+        case .up: return .up
+        case .upMirrored: return .upMirrored
+        case .down: return .down
+        case .downMirrored: return .downMirrored
+        case .left: return .left
+        case .leftMirrored: return .leftMirrored
+        case .right: return .right
+        case .rightMirrored: return .rightMirrored
+        @unknown default: return .up
+        }
+    }
+
+    private static func imageRecognitionError() -> NSError {
+        NSError(
+            domain: "DocumentReader",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "写真の文字を読み取れませんでした"]
+        )
     }
 
     private func hostViewController() -> UIViewController? {

@@ -31,6 +31,9 @@ const d = JSON.parse(s.getItem("docs-tracker.v1"));
 ok(r.ok && r.added === 1 && d.items.length === 2, "足すだけ");
 ok(d.items[1].kind === "やること" && d.items[1].note === "予定: 架空の委員会（10/22）" && d.items[1].scheduleId === "s1", "やることの形");
 ok(d.memos.length === 1 && d.calIds.a === "b", "他の項目を消さない");
+const emptySchedule = T.add(s, [{ title: "架空の単独作業", dueOn: "", scheduleId: "", scheduleTitle: "", scheduleDate: "" }]);
+const afterEmptySchedule = JSON.parse(s.getItem("docs-tracker.v1"));
+ok(emptySchedule.ok && afterEmptySchedule.items.at(-1).note === "", "予定の件名も日付もないやることには空の予定行を付けない");
 const bad = mem(); bad.setItem("docs-tracker.v1", "{壊れた");
 ok(T.add(bad, [{ title: "x", dueOn: "", scheduleId: "", scheduleTitle: "", scheduleDate: "" }]).ok === false && bad.getItem("docs-tracker.v1") === "{壊れた", "壊れたデータは上書きしない");
 

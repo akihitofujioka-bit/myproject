@@ -1,11 +1,13 @@
 /* オフラインでも予定を確認できるよう、画面と共通部品を端末内に控える。 */
-var CACHE = "schedule-v2";
+var CACHE = "schedule-v4";
 var ASSETS = [
   "./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png",
   "../shared/schedulemove.js", "../shared/scheduleview.js", "../shared/receiptscan.js", "../shared/receipt.js",
   "../shared/meeting.js", "../shared/planner.js", "../shared/scanrouter.js", "../shared/calendarread.js",
   "../shared/calendarwrite.js", "../shared/contacts.js", "../shared/suggest.js", "../shared/todos.js",
-  "../shared/scheduletable.js", "../shared/documentreader.js",
+  "../shared/scheduletable.js", "../shared/documentreader.js", "../shared/history.js",
+  "../shared/secretary.js", "../shared/aichat.js", "../shared/ondeviceai.js",
+  "../shared/speechmemo.js",
   "../shared/ics.js", "../shared/native.js", "../shared/watch.js",
   "../shared/character.js", "../shared/deeplink.js"
 ];

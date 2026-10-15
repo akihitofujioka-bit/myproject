@@ -52,6 +52,7 @@
     return {
       title: (ev && ev.title) || "",
       date: (ev && ev.date) || "",
+      endDate: (ev && ev.endDate) || "",
       startTime: (ev && ev.startTime) || "",
       endTime: (ev && ev.endTime) || "",
       place: (ev && ev.place) || "",

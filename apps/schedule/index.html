@@ -157,7 +157,7 @@ button.small {
 }
 .view-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   margin-bottom: 14px;
 }
@@ -169,6 +169,57 @@ button.small {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+.ai-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.ai-mode-switch button[aria-pressed="true"] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ai-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.ai-bubble {
+  max-width: 88%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  overflow-wrap: anywhere;
+}
+.ai-bubble.user {
+  align-self: flex-end;
+  background: var(--accent-weak);
+}
+.ai-bubble.ai {
+  align-self: flex-start;
+}
+.ai-bubble .footnote {
+  display: block;
+  margin-top: 7px;
+}
+.ai-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 7px;
+  align-items: end;
+}
+.ai-input-row textarea {
+  min-height: 72px;
+}
+.ai-source {
+  margin: 8px 0;
+}
+.ai-source-name {
+  font-weight: 700;
 }
 [hidden] {
   display: none !important;
@@ -230,6 +281,14 @@ button.small {
   color: var(--muted);
   text-align: center;
   padding: 22px 8px;
+}
+.history-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.history-meta {
+  color: var(--muted);
+  font-size: 12px;
 }
 .calendar-head {
   display: flex;
@@ -369,6 +428,8 @@ button.small {
   <div class="view-switch" role="group" aria-label="表示方法">
     <button type="button" id="listViewBtn" data-view="list">一覧</button>
     <button type="button" id="calendarViewBtn" data-view="calendar">カレンダー</button>
+    <button type="button" id="aiViewBtn" data-view="ai">AI</button>
+    <button type="button" id="historyViewBtn" data-view="history">履歴</button>
   </div>
 
 
@@ -392,6 +453,65 @@ button.small {
     </section>
     <section class="card"><h2 id="selectedTitle">選んだ日の予定</h2><ul class="items" id="dayItems"></ul></section>
   </main>
+
+  <main id="aiView" hidden>
+    <section class="card" id="aiUnavailable" hidden></section>
+    <section class="card" id="aiWorkspace" hidden>
+      <div class="ai-mode-switch" role="group" aria-label="AI の使い方">
+        <button type="button" data-ai-mode="secretary">秘書</button>
+        <button type="button" data-ai-mode="sparring">壁打ち</button>
+        <button type="button" data-ai-mode="brainstorm">ブレスト</button>
+      </div>
+      <div class="chips">
+        <button type="button" id="aiNewChat">新しい会話</button>
+        <button type="button" id="aiChooseSource">📎 資料を選ぶ</button>
+      </div>
+      <div class="ai-source" id="aiSourceInfo" hidden>
+        <div class="ai-source-name" id="aiSourceName"></div>
+        <div class="footnote" id="aiSourceNotice"></div>
+      </div>
+      <div class="ai-conversation" id="aiConversation" aria-live="polite"></div>
+      <section id="aiTodoConfirm" class="card" hidden>
+        <h3>やることを確認</h3>
+        <div class="row">
+          <div class="field wide"><label for="aiTodoTitle">件名</label><input id="aiTodoTitle" autocomplete="off"></div>
+          <div class="field"><label for="aiTodoDate">期限</label><input id="aiTodoDate" type="date"></div>
+        </div>
+        <div class="chips"><button type="button" class="primary" id="aiTodoAdd">書類・やることに入れる</button><button type="button" class="link" id="aiTodoCancel">やめる</button></div>
+      </section>
+      <div class="ai-input-row">
+        <div><label for="aiQuestion">メッセージ</label><textarea id="aiQuestion" placeholder="聞きたいことを入力"></textarea></div>
+        <button type="button" id="aiSpeech" aria-label="音声入力">🎤</button>
+        <button type="button" class="primary" id="aiSend">送る</button>
+      </div>
+    </section>
+  </main>
+
+  <main id="historyView" hidden>
+    <section class="card">
+      <h2>履歴</h2>
+      <div class="row">
+        <div class="field wide"><label for="historySearch">検索</label><input id="historySearch" type="search" placeholder="題名や本文を検索" autocomplete="off"></div>
+        <div class="field"><label for="historyKind">種類</label><select id="historyKind"><option value="">すべて</option><option value="chat">会話</option><option value="document">書類</option><option value="handwritten">手書きメモ</option></select></div>
+      </div>
+      <div class="chips">
+        <button type="button" class="primary" id="handwrittenScanBtn">✍️ 手書きメモを撮る</button>
+        <button type="button" id="handwrittenImageBtn">写真から</button>
+        <button type="button" class="link" id="historyClearBtn">すべて削除</button>
+      </div>
+      <div id="sourcePickerNotice" hidden><p class="footnote">使う資料を選んでください。</p><button type="button" class="link small" id="sourcePickerCancel">やめる</button></div>
+      <ul class="items" id="historyList"></ul>
+    </section>
+    <section class="card" id="handwrittenEditor" hidden>
+      <h2>手書きメモを保存</h2>
+      <div class="row"><div class="field wide"><label for="handwrittenTitle">題名</label><input id="handwrittenTitle" autocomplete="off"></div></div>
+      <div class="row"><div class="field wide"><label for="handwrittenBody">読み取った文字</label><textarea id="handwrittenBody" rows="8"></textarea></div></div>
+      <div class="chips"><button type="button" class="primary" id="handwrittenSaveBtn">保存</button><button type="button" class="link" id="handwrittenCancelBtn">やめる</button></div>
+    </section>
+    <section class="card" id="historyDetail" hidden></section>
+  </main>
+
+  <div id="scheduleTools">
 
   <section class="card" id="scanCard" hidden>
     <h2>会議の通知・手帳を読み取る</h2>
@@ -481,6 +601,7 @@ button.small {
       </div>
     </form>
   </section>
+  </div>
 </div>
 <div class="toast" id="toast" role="status"></div>
 
@@ -498,6 +619,11 @@ button.small {
 <script src="../shared/todos.js"></script>
 <script src="../shared/scheduletable.js"></script>
 <script src="../shared/documentreader.js"></script>
+<script src="../shared/history.js"></script>
+<script src="../shared/secretary.js"></script>
+<script src="../shared/aichat.js"></script>
+<script src="../shared/ondeviceai.js"></script>
+<script src="../shared/speechmemo.js"></script>
 <div class="actionbar">
   <div>
     <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
@@ -528,15 +654,21 @@ if (window.Character) {
 
 var state = load();
 var externalItems = [];
+var calendarEvents = [];
 var calendarInfo = {};
 var editingId = null;
 var today = new Date();
 var shownMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 var selectedYmd = ymd(today);
-var currentView = localStorage.getItem(VIEW_KEY) === "calendar" ? "calendar" : "list";
+var savedView = localStorage.getItem(VIEW_KEY);
+var currentView = ["list", "calendar", "ai", "history"].indexOf(savedView) !== -1 ? savedView : "list";
 var scannedMeetings = [];
 var plannerResult = null;
 var calendarCandidates = [];
+var currentDocumentHistoryId = null;
+var currentDocumentHistorySave = null;
+var sourcePickerCallback = null;
+window.currentDocumentHistoryId = null;
 var CALENDAR_PICK_IDS_KEY = "schedule.calendarPickIds";
 
 function uid() {
@@ -759,12 +891,623 @@ document.getElementById("hintsCard").addEventListener("click", function (event) 
   render();
 });
 
+/* ---------- AI・書類・手書きメモの履歴 ---------- */
+
+var historyFailureNotified = { display: false, save: false };
+
+function historySucceeded(kind) {
+  historyFailureNotified[kind] = false;
+}
+
+function historyError() {
+  if (historyFailureNotified.save) return;
+  historyFailureNotified.save = true;
+  toast("履歴を保存できません");
+}
+
+function historyDisplayError() {
+  if (historyFailureNotified.display) return;
+  historyFailureNotified.display = true;
+  toast("履歴を表示できません");
+}
+
+function historyKindLabel(kind) {
+  return { chat: "会話", document: "書類", handwritten: "手書きメモ" }[kind] || "履歴";
+}
+
+function usableChatMessages(messages) {
+  var usable = [];
+  (messages || []).forEach(function (message) {
+    if (message.role === "ai" && message.text === "（答えを作れませんでした）") {
+      if (usable.length && usable[usable.length - 1].role === "user") usable.pop();
+      return;
+    }
+    usable.push(message);
+  });
+  return usable;
+}
+
+function resetDocumentHistory() {
+  currentDocumentHistoryId = null;
+  currentDocumentHistorySave = null;
+  window.currentDocumentHistoryId = null;
+}
+
+function showScheduleResultView() {
+  if (currentView === "ai" || currentView === "history") setView("list");
+}
+
+function saveDocumentHistory(name, text) {
+  var body = String(text || "").trim();
+  resetDocumentHistory();
+  if (!body || !window.AIHistory) {
+    return Promise.resolve(null);
+  }
+  var savePromise = window.AIHistory.add({
+    kind: "document",
+    title: String(name || "").trim() || window.AIHistory.titleFrom(body),
+    body: body,
+    mode: "",
+    messages: [],
+    sourceId: "",
+    eventTitles: []
+  }).then(function (entry) {
+    historySucceeded("save");
+    if (currentDocumentHistorySave === savePromise) {
+      currentDocumentHistoryId = entry.id;
+      window.currentDocumentHistoryId = entry.id;
+    }
+    return entry;
+  }).catch(function () {
+    historyError();
+    return null;
+  });
+  currentDocumentHistorySave = savePromise;
+  return currentDocumentHistorySave;
+}
+
+function addEventTitlesToDocument(items) {
+  var titles = (items || []).map(function (item) { return item.title; }).filter(Boolean);
+  var historyId = currentDocumentHistoryId;
+  var historySave = currentDocumentHistorySave;
+  if (!titles.length || !window.AIHistory || !historySave) return;
+  historySave.then(function (entry) {
+    var id = historyId || (entry && entry.id);
+    if (!id) return null;
+    return window.AIHistory.get(id).then(function (saved) {
+      if (!saved) return null;
+      var eventTitles = Array.isArray(saved.eventTitles) ? saved.eventTitles.slice() : [];
+      titles.forEach(function (title) {
+        if (eventTitles.indexOf(title) === -1) eventTitles.push(title);
+      });
+      return window.AIHistory.update(id, { eventTitles: eventTitles }).then(function (updated) {
+        historySucceeded("save");
+        return updated;
+      });
+    });
+  }).catch(historyError);
+}
+
+function historyEntryHtml(entry) {
+  var action = sourcePickerCallback && entry.kind !== "chat"
+    ? '<button type="button" class="primary small" data-history-select="' + esc(entry.id) + '">この資料を選ぶ</button>'
+    : '<button type="button" class="small" data-history-open="' + esc(entry.id) + '">開く</button>';
+  return '<li class="item" data-history-id="' + esc(entry.id) + '"><div class="item-head"><span class="badge">' +
+    esc(historyKindLabel(entry.kind)) + '</span><span class="item-title">' + esc(entry.title || "題名なし") +
+    '</span></div><div class="actions">' + action +
+    '<button type="button" class="link small" data-history-remove="' + esc(entry.id) + '">削除</button></div></li>';
+}
+
+function renderHistory() {
+  if (!window.AIHistory) return Promise.resolve();
+  var kind = document.getElementById("historyKind").value;
+  var query = document.getElementById("historySearch").value;
+  return window.AIHistory.list({ kind: kind, query: query }).then(function (entries) {
+    historySucceeded("display");
+    if (sourcePickerCallback) {
+      entries = entries.filter(function (entry) { return entry.kind === "document" || entry.kind === "handwritten"; });
+    }
+    document.getElementById("historyList").innerHTML = entries.length
+      ? entries.map(historyEntryHtml).join("")
+      : '<li class="empty">履歴はありません。</li>';
+  }).catch(function () {
+    document.getElementById("historyList").innerHTML = '<li class="empty">履歴を表示できません。</li>';
+    historyDisplayError();
+  });
+}
+
+function openHistory(id) {
+  if (!window.AIHistory) return;
+  window.AIHistory.get(id).then(function (entry) {
+    historySucceeded("display");
+    if (!entry) return;
+    var detail = document.getElementById("historyDetail");
+    var content;
+    if (entry.kind === "chat") {
+      content = entry.sourceId ? '<p class="history-meta" data-history-source>' + esc("資料を確認しています") + '</p>' : '';
+      content += usableChatMessages(entry.messages).map(function (message) {
+        return '<div class="scan-result"><strong>' + esc(message.role === "user" ? "自分" : "AI") +
+          '</strong><div class="history-body">' + esc(message.text || "") + '</div></div>';
+      }).join("") || '<p class="empty">やりとりはありません。</p>';
+      content += '<div class="actions"><button type="button" class="primary" data-history-continue="' + esc(entry.id) + '">続きから話す</button></div>';
+    } else {
+      content = '<div class="history-body">' + esc(entry.body || "") + '</div>';
+      if (entry.eventTitles && entry.eventTitles.length) {
+        content += '<h3>登録した予定</h3><ul>' + entry.eventTitles.map(function (title) { return '<li>' + esc(title) + '</li>'; }).join("") + '</ul>';
+      }
+      content += '<div class="actions"><button type="button" class="primary" data-history-ai="sparring" data-history-entry="' + esc(entry.id) + '">この資料で壁打ち</button>' +
+        '<button type="button" data-history-ai="brainstorm" data-history-entry="' + esc(entry.id) + '">この資料でブレスト</button></div>';
+    }
+    detail.innerHTML = '<h2>' + esc(entry.title || "題名なし") + '</h2><p class="history-meta">' + esc(historyKindLabel(entry.kind)) + '</p>' + content;
+    detail.setAttribute("data-history-detail-id", entry.id);
+    detail.hidden = false;
+    detail.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (entry.kind === "chat" && entry.sourceId) {
+      window.AIHistory.get(entry.sourceId).then(function (source) {
+        if (detail.getAttribute("data-history-detail-id") !== entry.id) return;
+        var label = detail.querySelector("[data-history-source]");
+        if (label) label.textContent = "資料: " + (source ? source.title || "題名なし" : "削除された資料");
+      }).catch(function () {
+        if (detail.getAttribute("data-history-detail-id") !== entry.id) return;
+        var label = detail.querySelector("[data-history-source]");
+        if (label) label.textContent = "資料: 削除された資料";
+      });
+    }
+  }).catch(historyDisplayError);
+}
+
+function chooseSource(callback) {
+  sourcePickerCallback = typeof callback === "function" ? callback : null;
+  document.getElementById("historySearch").value = "";
+  document.getElementById("historyKind").value = "";
+  document.getElementById("sourcePickerNotice").hidden = !sourcePickerCallback;
+  document.getElementById("historyDetail").hidden = true;
+  setView("history");
+  renderHistory();
+}
+
+function showHandwrittenEditor(text, title) {
+  document.getElementById("handwrittenTitle").value = title || "";
+  document.getElementById("handwrittenBody").value = text || "";
+  document.getElementById("handwrittenEditor").hidden = false;
+  document.getElementById("handwrittenEditor").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* ---------- 端末内 AI ---------- */
+
+var aiMode = "secretary";
+var aiMessages = [];
+var aiConversationId = null;
+var aiSource = null;
+var aiSourceLabel = "";
+var aiSessionNumber = 0;
+var aiAppendQueues = {};
+var pendingTodoDraft = null;
+var aiErrorMessage = "";
+var aiStatusRequestNumber = 0;
+
+function aiToday() {
+  return ymd(new Date());
+}
+
+function aiAppend(id, message) {
+  if (!id || !window.AIHistory) return Promise.resolve(null);
+  var previous = aiAppendQueues[id] || Promise.resolve();
+  var next = previous.catch(function () {}).then(function () {
+    return window.AIHistory.appendMessage(id, message);
+  }).then(function (entry) {
+    historySucceeded("save");
+    return entry;
+  });
+  aiAppendQueues[id] = next;
+  next.then(function () {
+    if (aiAppendQueues[id] === next) delete aiAppendQueues[id];
+  }, function () {
+    if (aiAppendQueues[id] === next) delete aiAppendQueues[id];
+  });
+  return next;
+}
+
+function renderAISource() {
+  var info = document.getElementById("aiSourceInfo");
+  var label = aiSource ? aiSource.title : aiSourceLabel;
+  info.hidden = !label;
+  document.getElementById("aiSourceName").innerHTML = label ? esc("資料: " + label) : "";
+  var cut = aiSource ? window.AIChat.clip(aiSource.body || "", 3000).cut : false;
+  document.getElementById("aiSourceNotice").innerHTML = esc(window.AIChat.sourceNotice(cut));
+}
+
+function renderAIConversation() {
+  var conversation = document.getElementById("aiConversation");
+  var html = aiMessages.map(function (message, index) {
+    var role = message.role === "user" ? "user" : "ai";
+    var bubble = '<div class="ai-bubble ' + role + '">' + esc(message.text || "").replace(/\n/g, "<br>");
+    if (role === "ai" && message.draftPending) {
+      bubble += '<div class="footnote">' + esc("下書きを作っています…") + '</div>';
+    }
+    if (role === "ai" && message.draft) {
+      if (message.draft.invalid) {
+        bubble += '<div class="footnote">' + esc("下書きを作れませんでした。登録画面を空で開きますか？") + '</div>' +
+          '<button type="button" class="small" data-ai-empty-draft="' + index + '">' + esc("予定の登録画面を空で開く") + '</button>';
+      } else if (message.draft.kind === "todo") {
+        bubble += '<div><button type="button" class="small" data-ai-todo-draft="' + index + '">' + esc("やることとして開く") + '</button></div>';
+      } else {
+        bubble += '<div><button type="button" class="small" data-ai-event-draft="' + index + '">' + esc("予定の登録画面で開く") + '</button></div>';
+      }
+    }
+    if (role === "ai") {
+      bubble += '<span class="footnote">' + esc("端末内 AI の答えです。日時は予定一覧で確かめてください") + '</span>';
+    }
+    return bubble + "</div>";
+  }).join("");
+  if (aiErrorMessage) {
+    html += '<div class="footnote ai-conversation-error" role="status">' + esc(aiErrorMessage) + '</div>';
+  }
+  conversation.innerHTML = html;
+}
+
+function selectAIMode(mode) {
+  aiMode = window.AIChat.MODES[mode] ? mode : "secretary";
+  Array.prototype.forEach.call(document.querySelectorAll("[data-ai-mode]"), function (button) {
+    button.setAttribute("aria-pressed", String(button.getAttribute("data-ai-mode") === aiMode));
+  });
+  document.getElementById("aiChooseSource").hidden = aiMode === "secretary";
+}
+
+function newAIConversation(clearSource) {
+  aiSessionNumber++;
+  aiMessages = [];
+  aiConversationId = null;
+  pendingTodoDraft = null;
+  aiErrorMessage = "";
+  document.getElementById("aiTodoConfirm").hidden = true;
+  document.getElementById("aiQuestion").value = "";
+  document.getElementById("aiSend").disabled = false;
+  if (clearSource) {
+    aiSource = null;
+    aiSourceLabel = "";
+  }
+  renderAISource();
+  renderAIConversation();
+}
+
+function readAITodos() {
+  try {
+    var data = JSON.parse(localStorage.getItem("docs-tracker.v1") || "null");
+    return data && Array.isArray(data.items) ? data.items.filter(function (item) {
+      return item && item.dueOn;
+    }) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function secretaryData(question) {
+  var range = window.Secretary.range(question, aiToday());
+  var data = {
+    items: state.items,
+    calendarEvents: calendarEvents,
+    todos: readAITodos()
+  };
+  var helpers = {
+    timeOf: timeOf,
+    endTimeOf: endTimeOfItem
+  };
+  var lines = window.Secretary.lines(range, data, helpers, { maxChars: 1800 });
+  var retryLines = window.Secretary.lines(range, data, helpers, { maxChars: 900 });
+  var context = lines.text;
+  var retryContext = retryLines.text;
+  if (lines.cut) context += (context ? "\n" : "") + "一覧は一部です";
+  if (retryLines.cut) retryContext += (retryContext ? "\n" : "") + "一覧は一部です";
+  if (window.Secretary.wantsFree(question)) {
+    var linked = {};
+    state.items.forEach(function (item) {
+      if (item.calEventId) linked[String(item.calEventId)] = true;
+    });
+    var busy = state.items.map(function (item) {
+      return { date: item.dueOn, start: timeOf(item), end: endTimeOfItem(item), allDay: !timeOf(item) };
+    }).concat(window.Secretary.expandEvents(range, calendarEvents).filter(function (event) {
+      return !linked[String(event.id || "")];
+    }));
+    var free = window.Secretary.freeSlots(range, busy);
+    var compactFree = window.Secretary.freeSlots(range, busy, { compact: true });
+    if (free) context += (context ? "\n" : "") + free;
+    if (compactFree) retryContext += (retryContext ? "\n" : "") + compactFree;
+  }
+  return { context: context, retryContext: retryContext };
+}
+
+function createAIConversation(question, requestMode, requestSource, sessionNumber) {
+  if (aiConversationId) return Promise.resolve(aiConversationId);
+  if (!window.AIHistory) return Promise.resolve(null);
+  return window.AIHistory.add({
+    kind: "chat",
+    title: window.AIHistory.titleFrom(question),
+    body: "",
+    mode: requestMode,
+    messages: [],
+    sourceId: requestSource ? requestSource.id : "",
+    eventTitles: []
+  }).then(function (entry) {
+    historySucceeded("save");
+    if (aiSessionNumber === sessionNumber && !aiConversationId) aiConversationId = entry.id;
+    return entry.id;
+  }).catch(function () {
+    historyError();
+    return null;
+  });
+}
+
+function requestDraft(question) {
+  if (!window.Secretary.wantsDraft(question)) return Promise.resolve(null);
+  return window.OnDeviceAI.respond({
+    instructions: window.Secretary.draftInstructions(aiToday()),
+    prompt: question
+  }).then(function (answer) {
+    var checked = window.Secretary.checkDraft(answer && answer.text, question, aiToday());
+    return checked.ok ? checked.draft : { invalid: true };
+  }).catch(function () {
+    return { invalid: true };
+  });
+}
+
+function sendAIQuestion() {
+  var input = document.getElementById("aiQuestion");
+  var sendButton = document.getElementById("aiSend");
+  if (sendButton.disabled) return;
+  var question = input.value.trim();
+  if (!question) {
+    toast("メッセージを入力してください");
+    return;
+  }
+  var requestMode = aiMode;
+  var requestSource = aiSource;
+  var requestMessages = aiMessages;
+  var earlierMessages = requestMessages.slice();
+  var sessionNumber = aiSessionNumber;
+  var userMessage = { role: "user", text: question };
+  aiErrorMessage = "";
+  requestMessages.push(userMessage);
+  renderAIConversation();
+  sendButton.disabled = true;
+
+  createAIConversation(question, requestMode, requestSource, sessionNumber).then(function (conversationId) {
+    return aiAppend(conversationId, { role: "user", text: question }).catch(historyError).then(function () {
+      var secretaryContext = requestMode === "secretary" ? secretaryData(question) : { context: "", retryContext: "" };
+      return window.AIChat.ask(window.OnDeviceAI, {
+          mode: requestMode,
+          today: aiToday(),
+          context: secretaryContext.context,
+          retryContext: secretaryContext.retryContext,
+          source: requestSource,
+          messages: earlierMessages,
+          question: question
+        }).then(function (answer) {
+        var needsDraft = requestMode === "secretary" && window.Secretary.wantsDraft(question);
+        var message = { role: "ai", text: answer.text, draftPending: needsDraft };
+        requestMessages.push(message);
+        if (aiMessages === requestMessages) {
+          input.value = "";
+          renderAIConversation();
+        }
+        return aiAppend(conversationId, { role: "ai", text: message.text }).catch(historyError).then(function () {
+          if (!needsDraft) return null;
+          return requestDraft(question).then(function (draft) {
+            message.draftPending = false;
+            message.draft = draft;
+            if (aiMessages === requestMessages) renderAIConversation();
+          });
+        });
+      }).catch(function (error) {
+        var messageIndex = requestMessages.indexOf(userMessage);
+        if (messageIndex !== -1) requestMessages.splice(messageIndex, 1);
+        var errorText = window.AIChat.errorMessage(error && error.code) || window.AIChat.errorMessage("failed");
+        if (aiMessages === requestMessages) {
+          aiErrorMessage = errorText;
+          renderAIConversation();
+          toast(errorText);
+        }
+        return aiAppend(conversationId, { role: "ai", text: "（答えを作れませんでした）" }).catch(historyError);
+      });
+    });
+  }).then(function () {
+    if (aiMessages === requestMessages) sendButton.disabled = false;
+  });
+}
+
+function openDraftForm(draft) {
+  stopEditing();
+  setView("list");
+  draft = draft || {};
+  document.getElementById("f-title").value = draft.title || "";
+  document.getElementById("f-date").value = draft.date || "";
+  document.getElementById("f-start").value = draft.start || "";
+  document.getElementById("f-end").value = draft.end || "";
+  document.getElementById("f-place").value = draft.place || "";
+  document.getElementById("f-note").value = draft.memo || "";
+  allDay.checked = !draft.start;
+  updateExtraFields();
+  document.getElementById("addCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("f-title").focus({ preventScroll: true });
+}
+
+function showTodoDraft(draft) {
+  pendingTodoDraft = draft;
+  document.getElementById("aiTodoTitle").value = draft.title || "";
+  document.getElementById("aiTodoDate").value = draft.date || "";
+  document.getElementById("aiTodoConfirm").hidden = false;
+  document.getElementById("aiTodoConfirm").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function startAIWithSource(mode, entry) {
+  newAIConversation(true);
+  var sessionNumber = aiSessionNumber;
+  document.getElementById("aiSend").disabled = true;
+  selectAIMode(mode);
+  setView("ai");
+  var sourcePromise = entry && entry.id && window.AIHistory
+    ? window.AIHistory.get(entry.id)
+    : Promise.resolve(entry || null);
+  sourcePromise.then(function (source) {
+    if (aiSessionNumber !== sessionNumber) return;
+    aiSource = source;
+    aiSourceLabel = source ? source.title || "題名なし" : "削除された資料";
+    renderAISource();
+    document.getElementById("aiSend").disabled = false;
+  }).catch(function () {
+    if (aiSessionNumber !== sessionNumber) return;
+    aiSource = null;
+    aiSourceLabel = "削除された資料";
+    renderAISource();
+    document.getElementById("aiSend").disabled = false;
+  });
+}
+
+function continueAIChat(entry) {
+  newAIConversation(true);
+  var sessionNumber = aiSessionNumber;
+  document.getElementById("aiSend").disabled = true;
+  selectAIMode(entry && entry.mode);
+  aiConversationId = entry && entry.id;
+  aiMessages = usableChatMessages(entry && entry.messages).map(function (message) {
+    return { role: message.role, text: message.text || "" };
+  });
+  renderAIConversation();
+  setView("ai");
+  if (entry && entry.sourceId && window.AIHistory) {
+    window.AIHistory.get(entry.sourceId).then(function (source) {
+      if (aiSessionNumber !== sessionNumber) return;
+      aiSource = source;
+      aiSourceLabel = source ? source.title || "題名なし" : "削除された資料";
+      renderAISource();
+      document.getElementById("aiSend").disabled = false;
+    }).catch(function () {
+      if (aiSessionNumber !== sessionNumber) return;
+      aiSource = null;
+      aiSourceLabel = "削除された資料";
+      renderAISource();
+      document.getElementById("aiSend").disabled = false;
+    });
+  } else {
+    document.getElementById("aiSend").disabled = false;
+  }
+}
+
+document.querySelector(".ai-mode-switch").addEventListener("click", function (event) {
+  var mode = event.target.getAttribute("data-ai-mode");
+  if (!mode || mode === aiMode) return;
+  newAIConversation(true);
+  selectAIMode(mode);
+});
+document.getElementById("aiNewChat").addEventListener("click", function () { newAIConversation(false); });
+document.getElementById("aiChooseSource").addEventListener("click", function () {
+  chooseSource(function (entry) {
+    aiSource = entry;
+    aiSourceLabel = entry.title || "題名なし";
+    renderAISource();
+    setView("ai");
+  });
+});
+document.getElementById("aiSend").addEventListener("click", sendAIQuestion);
+document.getElementById("aiQuestion").addEventListener("keydown", function (event) {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") sendAIQuestion();
+});
+document.getElementById("aiConversation").addEventListener("click", function (event) {
+  var eventButton = event.target.closest("[data-ai-event-draft]");
+  var todoButton = event.target.closest("[data-ai-todo-draft]");
+  var emptyButton = event.target.closest("[data-ai-empty-draft]");
+  if (eventButton) openDraftForm(aiMessages[Number(eventButton.getAttribute("data-ai-event-draft"))].draft);
+  if (todoButton) showTodoDraft(aiMessages[Number(todoButton.getAttribute("data-ai-todo-draft"))].draft);
+  if (emptyButton) openDraftForm({});
+});
+document.getElementById("aiTodoAdd").addEventListener("click", function () {
+  if (!pendingTodoDraft) return;
+  var title = document.getElementById("aiTodoTitle").value.trim();
+  var dueOn = document.getElementById("aiTodoDate").value;
+  if (!title) {
+    toast("件名を入力してください");
+    return;
+  }
+  var result = window.Todos.add(localStorage, [{ title: title, dueOn: dueOn }]);
+  if (!result.ok) {
+    toast("やることを保存できませんでした");
+    return;
+  }
+  pendingTodoDraft = null;
+  document.getElementById("aiTodoConfirm").hidden = true;
+  toast("書類・やることに追加しました");
+});
+document.getElementById("aiTodoCancel").addEventListener("click", function () {
+  pendingTodoDraft = null;
+  document.getElementById("aiTodoConfirm").hidden = true;
+});
+
+(function setupAISpeech() {
+  if (!window.SpeechMemo) return;
+  var button = document.getElementById("aiSpeech");
+  var listening = false;
+  window.SpeechMemo.available().then(function (supported) {
+    button.hidden = !supported;
+  });
+  button.addEventListener("click", function () {
+    if (listening) {
+      button.disabled = true;
+      window.SpeechMemo.stop().then(function (text) {
+        document.getElementById("aiQuestion").value = text;
+      }).catch(function (error) {
+        toast((error && error.message) || String(error));
+      }).then(function () {
+        listening = false;
+        button.disabled = false;
+        button.textContent = "🎤";
+      });
+      return;
+    }
+    listening = true;
+    button.textContent = "●";
+    window.SpeechMemo.start(function (text) {
+      document.getElementById("aiQuestion").value = text;
+    }).catch(function (error) {
+      listening = false;
+      button.textContent = "🎤";
+      toast((error && error.message) || String(error));
+    });
+  });
+})();
+
+selectAIMode(aiMode);
+newAIConversation(false);
+
+function refreshAIStatus() {
+  var requestNumber = ++aiStatusRequestNumber;
+  return window.OnDeviceAI.status().then(function (status) {
+    if (requestNumber !== aiStatusRequestNumber) return;
+    var available = !!(status && status.available);
+    document.getElementById("aiWorkspace").hidden = !available;
+    document.getElementById("aiUnavailable").hidden = available;
+    if (!available) document.getElementById("aiUnavailable").innerHTML = esc(window.AIChat.errorMessage(status && status.reason));
+  }).catch(function () {
+    if (requestNumber !== aiStatusRequestNumber) return;
+    document.getElementById("aiWorkspace").hidden = true;
+    document.getElementById("aiUnavailable").hidden = false;
+    document.getElementById("aiUnavailable").innerHTML = esc(window.AIChat.errorMessage("unsupported"));
+  });
+}
+
+refreshAIStatus();
+
 function setView(view) {
-  currentView = view === "calendar" ? "calendar" : "list";
+  currentView = ["list", "calendar", "ai", "history"].indexOf(view) !== -1 ? view : "list";
   document.getElementById("listView").hidden = currentView !== "list";
   document.getElementById("calendarView").hidden = currentView !== "calendar";
+  document.getElementById("aiView").hidden = currentView !== "ai";
+  document.getElementById("historyView").hidden = currentView !== "history";
+  document.getElementById("scheduleTools").hidden = currentView === "ai" || currentView === "history";
+  document.querySelector(".actionbar").hidden = currentView === "ai" || currentView === "history";
   document.getElementById("listViewBtn").setAttribute("aria-pressed", String(currentView === "list"));
   document.getElementById("calendarViewBtn").setAttribute("aria-pressed", String(currentView === "calendar"));
+  document.getElementById("aiViewBtn").setAttribute("aria-pressed", String(currentView === "ai"));
+  document.getElementById("historyViewBtn").setAttribute("aria-pressed", String(currentView === "history"));
   try {
     localStorage.setItem(VIEW_KEY, currentView);
   } catch (e) {
@@ -772,12 +1515,118 @@ function setView(view) {
   }
   if (currentView === "calendar") {
     renderCalendar();
+  } else if (currentView === "ai") {
+    refreshAIStatus();
+  } else if (currentView === "history") {
+    renderHistory();
   }
 }
 
 document.querySelector(".view-switch").addEventListener("click", function (event) {
   var view = event.target.getAttribute("data-view");
   if (view) setView(view);
+});
+document.getElementById("historySearch").addEventListener("input", renderHistory);
+document.getElementById("historyKind").addEventListener("change", renderHistory);
+document.getElementById("historyList").addEventListener("click", function (event) {
+  var openButton = event.target.closest("button[data-history-open]");
+  var removeButton = event.target.closest("button[data-history-remove]");
+  var selectButton = event.target.closest("button[data-history-select]");
+  if (openButton) openHistory(openButton.getAttribute("data-history-open"));
+  if (removeButton && confirm("この履歴を削除しますか？")) {
+    var removedId = removeButton.getAttribute("data-history-remove");
+    window.AIHistory.remove(removedId).then(function () {
+      historySucceeded("save");
+      if (aiConversationId === removedId) newAIConversation(false);
+      document.getElementById("historyDetail").hidden = true;
+      renderHistory();
+    }).catch(historyError);
+  }
+  if (selectButton && sourcePickerCallback) {
+    window.AIHistory.get(selectButton.getAttribute("data-history-select")).then(function (entry) {
+      historySucceeded("display");
+      var callback = sourcePickerCallback;
+      sourcePickerCallback = null;
+      document.getElementById("sourcePickerNotice").hidden = true;
+      if (entry && callback) callback(entry);
+    }).catch(historyDisplayError);
+  }
+});
+document.getElementById("historyDetail").addEventListener("click", function (event) {
+  var aiButton = event.target.closest("button[data-history-ai]");
+  var continueButton = event.target.closest("button[data-history-continue]");
+  var id = aiButton ? aiButton.getAttribute("data-history-entry") : continueButton && continueButton.getAttribute("data-history-continue");
+  if (!id) return;
+  window.AIHistory.get(id).then(function (entry) {
+    historySucceeded("display");
+    if (!entry) return;
+    if (aiButton && typeof window.startAIWithSource === "function") {
+      window.startAIWithSource(aiButton.getAttribute("data-history-ai"), entry);
+    } else if (continueButton && typeof window.continueAIChat === "function") {
+      window.continueAIChat(entry);
+    }
+  }).catch(historyDisplayError);
+});
+document.getElementById("historyClearBtn").addEventListener("click", function () {
+  if (!confirm("履歴をすべて削除しますか？")) return;
+  window.AIHistory.clear().then(function () {
+    historySucceeded("save");
+    if (aiConversationId) newAIConversation(false);
+    document.getElementById("historyDetail").hidden = true;
+    renderHistory();
+  }).catch(historyError);
+});
+document.getElementById("sourcePickerCancel").addEventListener("click", function () {
+  sourcePickerCallback = null;
+  document.getElementById("sourcePickerNotice").hidden = true;
+  renderHistory();
+});
+document.getElementById("handwrittenScanBtn").addEventListener("click", function () {
+  var button = this;
+  button.disabled = true;
+  window.ReceiptScan.scan({ purpose: "planner" }).then(function (result) {
+    if (result && !result.cancelled) {
+      showHandwrittenEditor((result.lines || []).map(function (line) { return line.text || ""; }).join("\n"), "");
+    }
+  }).catch(function (error) {
+    toast(error && error.message ? error.message : "写真の文字を読み取れませんでした");
+  }).then(function () { button.disabled = false; });
+});
+document.getElementById("handwrittenImageBtn").addEventListener("click", function () {
+  var button = this;
+  button.disabled = true;
+  window.DocumentReader.pickImage().then(function (result) {
+    if (result && !result.cancelled) showHandwrittenEditor(result.text || "", "");
+  }).catch(function (error) {
+    toast(error && error.message ? error.message : "写真の文字を読み取れませんでした");
+  }).then(function () { button.disabled = false; });
+});
+document.getElementById("handwrittenSaveBtn").addEventListener("click", function () {
+  var body = document.getElementById("handwrittenBody").value.trim();
+  var title = document.getElementById("handwrittenTitle").value.trim();
+  if (!body) {
+    toast("文字を入力してください");
+    return;
+  }
+  window.AIHistory.add({
+    kind: "handwritten",
+    title: title || window.AIHistory.titleFrom(body),
+    body: body,
+    mode: "",
+    messages: [],
+    sourceId: "",
+    eventTitles: []
+  }).then(function () {
+    historySucceeded("save");
+    document.getElementById("handwrittenEditor").hidden = true;
+    document.getElementById("handwrittenTitle").value = "";
+    document.getElementById("handwrittenBody").value = "";
+    toast("手書きメモを保存しました");
+    renderHistory();
+  }).catch(historyError);
+});
+document.getElementById("handwrittenCancelBtn").addEventListener("click", function () {
+  document.getElementById("handwrittenEditor").hidden = true;
 });
 document.getElementById("prevMonth").addEventListener("click", function () {
   shownMonth = new Date(shownMonth.getFullYear(), shownMonth.getMonth() - 1, 1);
@@ -1086,7 +1935,10 @@ function loadPhoneCalendar() {
     return window.CalendarRead.listEvents(ids, 60);
   }).then(function (result) {
     if (!result) return;
-    externalItems = (result.events || []).filter(function (event) {
+    calendarEvents = (result.events || []).filter(function (event) {
+      return event && event.date;
+    });
+    externalItems = calendarEvents.filter(function (event) {
       return event && event.date;
     }).map(function (event, index) {
       return {
@@ -1189,7 +2041,14 @@ function meetingNote(meeting) {
 }
 function renderMeetings(list, options) {
   var renderOptions = options || {};
-  scannedMeetings = list || [];
+  scannedMeetings = (list || []).map(function (meeting) {
+    if (!meeting._origin) {
+      meeting._origin = meeting.source === "manual" ? "manual" :
+        (currentDocumentHistorySave ? "document" : "manual");
+    }
+    return meeting;
+  });
+  if (!scannedMeetings.length) resetDocumentHistory();
   var box = document.getElementById("meetingConfirm");
   box.hidden = !scannedMeetings.length;
   document.getElementById("meetingConfirmTitle").textContent = renderOptions.source === "file"
@@ -1210,7 +2069,7 @@ function renderMeetings(list, options) {
     var hints = window.Suggest.check([suggestItem], allItems().map(toSuggestItem));
     var contactLine = window.Contacts.noteLine(window.Contacts.find(rawText));
     var todos = window.Todos.candidates(rawText, meeting.date, ymd(new Date()));
-    return '<div class="scan-result" data-index="' + index + '">' +
+    return '<div class="scan-result" data-index="' + index + '" data-origin="' + esc(meeting._origin) + '">' +
       '<label class="check"><input type="checkbox" class="m-use" checked> ' +
         (index + 1) + '件目</label>' +
       '<div class="row"><div class="field wide"><label>会議名</label>' +
@@ -1256,6 +2115,7 @@ function collectMeetings() {
         place: get("m-place"),
         social: { has: row.querySelector(".m-social").checked, fee: null },
         source: original.source || "",
+        origin: row.getAttribute("data-origin") || "manual",
         calEventId: original.calEventId || "",
         contactLine: contact && contact.checked ? contact.parentNode.querySelector("span").textContent : "",
         todos: Array.prototype.map.call(row.querySelectorAll(".m-todo:checked"), function (todo) {
@@ -1284,16 +2144,23 @@ function meetingItems(list) {
   });
 }
 function applyMeetingScan(lines) {
+  showScheduleResultView();
   var rows = window.Receipt.rowsFromLines(lines).map(function (row) {
     return row.text;
   });
+  saveDocumentHistory("", rows.join("\n"));
   var found = window.Meeting.parse(rows, {});
   renderMeetings(found);
   toast(found.length ? found.length + "件を読み取りました" : "会議を見つけられませんでした");
   return found;
 }
 function showDocumentResult(result) {
+  showScheduleResultView();
   var converted = window.DocumentReader.toMeetings(result, ymd(new Date()));
+  var historyText = converted.text || (result.tables || []).map(function (table) {
+    return (table || []).map(function (row) { return (row || []).join(" "); }).join("\n");
+  }).join("\n");
+  saveDocumentHistory(result.name || "", historyText);
   var textCard = document.getElementById("documentTextCard");
   textCard.hidden = true;
   if (converted.meetings.length) {
@@ -1335,8 +2202,10 @@ function registerMeetingMode(mode, button) {
   }
   var items = meetingItems(list);
   var todosById = {};
+  var documentItems = {};
   items.forEach(function (item, index) {
     todosById[item.id] = list[index].todos || [];
+    if (list[index].origin === "document") documentItems[item.id] = true;
   });
   function addTodos(targets) {
     var entries = [];
@@ -1367,6 +2236,7 @@ function registerMeetingMode(mode, button) {
     save();
     render();
     if (!items.length) return;
+    addEventTitlesToDocument(items.filter(function (item) { return documentItems[item.id]; }));
     todoResult = addTodos(items);
   }
   if (mode === "app") {
@@ -1377,8 +2247,11 @@ function registerMeetingMode(mode, button) {
   button.disabled = true;
   writeEvents(items.map(calendarEvent), "会議", "meetings").then(function (result) {
     button.disabled = false;
+    if (mode === "calendar") {
+      todoResult = addTodos(items);
+      addEventTitlesToDocument(items.filter(function (item) { return documentItems[item.id]; }));
+    }
     renderMeetings([]);
-    if (mode === "calendar") todoResult = addTodos(items);
     toast((result.how === "direct" ? "カレンダーに登録しました" : "予定ファイルを用意しました") + todoNotice(todoResult));
   }, function () {
     button.disabled = false;
@@ -1444,6 +2317,8 @@ function plannerItems(list) {
   });
 }
 function applyPlannerScan(lines) {
+  showScheduleResultView();
+  resetDocumentHistory();
   var result = window.Planner.parse(lines);
   renderPlanner(result);
   toast(result.kind
@@ -1596,12 +2471,14 @@ document.getElementById("meetingScanBtn").addEventListener("click", function () 
   scan(this, {}, applyMeetingScan);
 });
 document.getElementById("plannerScanBtn").addEventListener("click", function () {
+  resetDocumentHistory();
   scan(this, { purpose: "planner" }, applyPlannerScan);
 });
 document.getElementById("documentReadBtn").addEventListener("click", function () {
   readDocument(window.DocumentReader.pick(), this);
 });
 document.getElementById("documentManualBtn").addEventListener("click", function () {
+  resetDocumentHistory();
   document.getElementById("documentTextCard").hidden = true;
   document.getElementById("addCard").scrollIntoView({ behavior: "smooth", block: "start" });
   document.getElementById("f-title").focus({ preventScroll: true });
@@ -1667,6 +2544,7 @@ if (pendingMeeting && pendingMeeting.length) {
 }
 var pendingMemo = window.ScanRouter && window.ScanRouter.takeHandoff("memo");
 if (pendingMemo && pendingMemo.length) {
+  showScheduleResultView();
   renderMeetings(window.Meeting.parse(pendingMemo, {}).map(function (meeting) {
     meeting.source = "memo";
     return meeting;
@@ -1687,13 +2565,27 @@ window.scheduleApp = {
   applyPlannerScan: applyPlannerScan,
   collectPlanner: collectPlanner
 };
+window.setView = setView;
+window.openHistory = openHistory;
+window.chooseSource = chooseSource;
+window.openDraftForm = openDraftForm;
+window.startAIWithSource = startAIWithSource;
+window.continueAIChat = continueAIChat;
+if (window.AIHistory) {
+  window.AIHistory.open().catch(function () {
+    /* 一覧では通知せず、履歴を開いたときに renderHistory から知らせる。 */
+  });
+}
 setView(currentView);
 render();
 loadPhoneCalendar();
 // ほかのアプリ（カレンダーアプリなど）から戻ってきたときも読み直す。
 // 読み直さないと、カレンダーアプリで消した予定がオレンジで残ってしまう
 document.addEventListener("visibilitychange", function () {
-  if (document.visibilityState === "visible") loadPhoneCalendar();
+  if (document.visibilityState === "visible") {
+    loadPhoneCalendar();
+    refreshAIStatus();
+  }
 });
 // 画面下の操作バー: 「予定を登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
 document.getElementById("jumpAdd").addEventListener("click", function () {
