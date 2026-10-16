@@ -209,6 +209,8 @@ li.item.done { opacity: .62; }
   opacity: 0; transition: opacity .2s; pointer-events: none;
 }
 .toast.show { opacity: 1; }
+.ai-suggestion { border: 1px solid var(--accent); background: var(--accent-weak); border-radius: 8px; padding: 10px; margin: 0 0 10px; }
+.ai-suggestion p { margin: 3px 0; }
 
 /* ---- スマートフォン対応 ---- */
 .wrap { padding-bottom: 104px; }
@@ -278,6 +280,11 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
     </details>
 
     <form id="itemForm">
+      <div class="ai-suggestion" id="aiSuggestion" hidden>
+        <p class="footnote"><strong>端末内 AI で提案</strong>（保存前に内容を確認してください）</p>
+        <p id="aiSuggestionText"></p>
+        <button type="button" class="small" id="useAiSuggestion">提案を使う</button>
+      </div>
       <div class="row">
         <div class="field wide">
           <label for="f-title">書類名（必須）</label>
@@ -358,13 +365,17 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   <ul class="items" id="list"></ul>
 
   <section class="card" id="docPhotoCard" hidden>
-    <h2>書類を撮って写真に保存</h2>
+    <h2>書類を撮る</h2>
     <p class="footnote" style="margin:0 0 10px">
-      回覧や掲示物を撮って、iPhone の写真アプリに保存します。撮った画像はこのアプリには残らず、写真アプリにだけ保存されます。<br>
+      撮影または写真からの取り込みで文字を端末内で読み、登録内容を提案します。読み取りに使った画像は保存しません。「写真だけ保存する」は iPhone の写真アプリに保存し、このアプリには残しません。<br>
       撮り方は下で選べます。<strong>「無音で撮る」はシャッター音が鳴りません</strong>が、書類の四隅は自分で枠に合わせてください。
       <strong>「自動で切り出す」は四隅を見つけて歪みを直します</strong>が、シャッター音が鳴ります。
     </p>
-    <button type="button" class="primary" id="docPhotoBtn">📄 書類を撮る</button>
+    <div class="row">
+      <button type="button" class="primary" id="docReadBtn">📄 書類を撮って読み取る</button>
+      <button type="button" id="docImageBtn">写真から読み取る</button>
+      <button type="button" id="docPhotoBtn">写真だけ保存する</button>
+    </div>
     <div id="cameraPref" style="margin-top:10px"></div>
   </section>
 
@@ -449,6 +460,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/todos.js"></script>
 <script src="../shared/scanrouter.js"></script>
 <script src="../shared/speechmemo.js"></script>
+<script src="../shared/ondeviceai.js"></script>
+<script src="../shared/docsai.js"></script>
 <script>
 "use strict";
 if (window.Character) window.Character.applyBackground("docs-tracker");
@@ -867,6 +880,7 @@ document.getElementById("memoList").addEventListener("click", function (event) {
   }
   if (action === "todo") {
     if (editingId) stopEditing();
+    resetManualEdits();
     var candidates = window.Todos ? window.Todos.candidates(memo.text, "", todayStr()) : [];
     document.getElementById("f-title").value = String(memo.text.split(/\r?\n/)[0] || "").trim().slice(0, 40);
     document.getElementById("f-kind").value = "やること";
@@ -914,6 +928,7 @@ form.addEventListener("submit", function (e) {
     }
     toast("登録しました");
     form.reset();
+    resetManualEdits();
   }
   save();
   render();
@@ -921,6 +936,7 @@ form.addEventListener("submit", function (e) {
 });
 
 function startEditing(item) {
+  resetManualEdits();
   editingId = item.id;
   document.getElementById("f-title").value = item.title;
   document.getElementById("f-kind").value = item.kind;
@@ -938,6 +954,7 @@ function startEditing(item) {
 function stopEditing() {
   editingId = null;
   form.reset();
+  resetManualEdits();
   document.getElementById("formTitle").textContent = "書類を登録";
   document.getElementById("submitBtn").textContent = "登録する";
   document.getElementById("cancelEdit").hidden = true;
@@ -1339,12 +1356,6 @@ function openDocById(id) {
 }
 window.openDocById = openDocById;
 
-(function () {
-  var id = new URLSearchParams(location.search).get("id");
-  if (id) openDocById(id);
-})();
-
-
 /* ==========================================================================
  * 入力を減らすための仕組み（すべて端末の中だけで動く。外部には何も送らない）
  *
@@ -1400,6 +1411,7 @@ document.getElementById("recentChips").addEventListener("click", function (e) {
   });
   if (!last) return;
   if (editingId) stopEditing();
+  resetManualEdits();
   document.getElementById("f-title").value = last.title;
   document.getElementById("f-kind").value = last.kind || "その他";
   document.getElementById("f-dest").value = last.dest || "";
@@ -1495,23 +1507,117 @@ function guessTitle(text) {
   return lines[0].slice(0, 60);
 }
 
+var aiSuggestion = null;
+var aiRequestNumber = 0;
+var manuallyEdited = {};
+
+function resetManualEdits() { manuallyEdited = {}; }
+
+["f-title", "f-due", "f-kind", "f-note"].forEach(function (id) {
+  var el = document.getElementById(id);
+  var mark = function () { manuallyEdited[id] = true; };
+  el.addEventListener("input", mark);
+  el.addEventListener("change", mark);
+});
+
+function formValues() {
+  return {
+    title: document.getElementById("f-title").value,
+    dueOn: document.getElementById("f-due").value,
+    kind: document.getElementById("f-kind").value,
+    summary: document.getElementById("f-note").value
+  };
+}
+
+function hideAiSuggestion() {
+  aiSuggestion = null;
+  document.getElementById("aiSuggestion").hidden = true;
+}
+
+function showAiSuggestion(value, baseline) {
+  aiSuggestion = { value: value, baseline: baseline };
+  document.getElementById("aiSuggestionText").textContent =
+    "件名：" + value.title + "／期限：" + (value.dueOn || "なし") +
+    "／種別：" + value.kind + "／要約：" + value.summary;
+  document.getElementById("aiSuggestion").hidden = false;
+}
+
+function withTimeout(promise, ms) {
+  return new Promise(function (resolve, reject) {
+    var timer = setTimeout(function () { reject(new Error("timeout")); }, ms);
+    Promise.resolve(promise).then(function (value) {
+      clearTimeout(timer);
+      resolve(value);
+    }, function (error) {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function requestAiSuggestion(text) {
+  hideAiSuggestion();
+  if (!window.OnDeviceAI || !window.DocsAI) return;
+  var requestNumber = ++aiRequestNumber;
+  var baseline = formValues();
+  var work = window.OnDeviceAI.status().then(function (status) {
+    if (!status || !status.available) throw new Error("unavailable");
+    return window.OnDeviceAI.respond({
+      instructions: "書類の文字から登録項目を提案してください。回答は説明を付けず、title（件名）、dueOn（提出期限。実在する日付のYYYY-MM-DD。不明なら空文字）、kind（申請、回覧、提出、支払い、やること、その他のどれか）、summary（日本語1〜2文）の4項目を持つJSONオブジェクトだけにしてください。",
+      prompt: "今日は " + todayStr() + " です。次の書類文字を整理してください。\n\n" + String(text).slice(0, 6000)
+    });
+  }).then(function (answer) {
+    var value = window.DocsAI.parse(answer && answer.text);
+    if (!value) throw new Error("invalid-response");
+    if (requestNumber === aiRequestNumber) showAiSuggestion(value, baseline);
+  });
+  withTimeout(work, 15000).catch(function () {
+    // 期限後に回答が届いても提案を出さず、従来の読み取り結果をそのまま残す。
+    if (requestNumber === aiRequestNumber) aiRequestNumber++;
+  });
+}
+
+function applyRuleSuggestions(text) {
+  var title = guessTitle(text);
+  var due = guessDueDate(text);
+  if (editingId) stopEditing();
+  if (title) document.getElementById("f-title").value = title;
+  if (due) document.getElementById("f-due").value = due;
+  return { title: title, dueOn: due };
+}
+
+document.getElementById("useAiSuggestion").addEventListener("click", function () {
+  if (!aiSuggestion) return;
+  var value = aiSuggestion.value;
+  var baseline = aiSuggestion.baseline;
+  var fields = [
+    { id: "f-title", key: "title" }, { id: "f-due", key: "dueOn" },
+    { id: "f-kind", key: "kind" }, { id: "f-note", key: "summary" }
+  ];
+  fields.forEach(function (field) {
+    var el = document.getElementById(field.id);
+    if (!manuallyEdited[field.id] && el.value === baseline[field.key]) el.value = value[field.key];
+  });
+  hideAiSuggestion();
+  toast("提案を入力しました。内容を確認してください");
+  document.getElementById("f-title").focus();
+});
+
 document.getElementById("pasteParse").addEventListener("click", function () {
   var text = document.getElementById("pasteText").value;
   if (!text.trim()) { toast("文面を貼り付けてください"); return; }
 
-  var title = guessTitle(text);
-  var due = guessDueDate(text);
-  if (!title && !due) { toast("書類名も期限も見つかりませんでした。手で入れてください"); return; }
-
-  if (editingId) stopEditing();
-  if (title) document.getElementById("f-title").value = title;
-  if (due) document.getElementById("f-due").value = due;
+  var found = applyRuleSuggestions(text);
+  var title = found.title;
+  var due = found.dueOn;
+  if (!title && !due) toast("書類名も期限も見つかりませんでした。手で入れてください");
 
   var msg = [];
   if (title) msg.push("書類名");
   if (due) msg.push("期限（" + due + "）");
-  toast(msg.join("と") + "を入れました。内容を確認してください");
+  if (msg.length) toast(msg.join("と") + "を入れました。内容を確認してください");
   document.getElementById("f-title").focus();
+  requestAiSuggestion(text);
 });
 
 document.getElementById("pasteClear").addEventListener("click", function () {
@@ -1558,13 +1664,70 @@ document.getElementById("pasteClear").addEventListener("click", function () {
 /* ---------- 書類を撮って写真に保存 ---------- */
 
 var photographing = false;
+var readingDocument = false;
 
 function setDocPhotoState(on) {
   photographing = on;
   var el = document.getElementById("docPhotoBtn");
   el.disabled = on;
-  el.textContent = on ? "カメラを起動しています…" : "📄 書類を撮る";
+  el.textContent = on ? "カメラを起動しています…" : "写真だけ保存する";
 }
+
+function setDocReadState(on) {
+  readingDocument = on;
+  var el = document.getElementById("docReadBtn");
+  el.disabled = on;
+  el.textContent = on ? "カメラを起動しています…" : "📄 書類を撮って読み取る";
+}
+
+function useRecognizedDocumentText(text) {
+  if (!String(text || "").trim()) { toast("文字を読み取れませんでした。手で入力してください"); return; }
+  var found = applyRuleSuggestions(text);
+  if (found.title || found.dueOn) toast("読み取った内容を入れました。確認してください");
+  else toast("登録項目を見つけられませんでした。手で入力してください");
+  requestAiSuggestion(text);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  document.getElementById("f-title").focus();
+}
+
+document.getElementById("docReadBtn").addEventListener("click", function () {
+  if (readingDocument) return;
+  if (!window.ReceiptScan || !window.ReceiptScan.available()) { toast("この環境では書類の撮影を使えません"); return; }
+  setDocReadState(true);
+  toast("カメラを起動しています…");
+  var stuck = setTimeout(function () {
+    if (!readingDocument) return;
+    setDocReadState(false);
+    toast("カメラが開かないときは、アプリを開き直してからもう一度お試しください");
+  }, 12000);
+  window.ReceiptScan.scan({ purpose: "document" }).then(function (res) {
+    clearTimeout(stuck);
+    setDocReadState(false);
+    if (res.cancelled) return;
+    var text = (res.lines || []).map(function (line) { return String(line && line.text || "").trim(); })
+      .filter(function (line) { return !!line; }).join("\n");
+    useRecognizedDocumentText(text);
+  }).catch(function (err) {
+    clearTimeout(stuck);
+    setDocReadState(false);
+    toast("読み取れませんでした：" + (err && err.message ? err.message : "原因不明"));
+  });
+});
+
+document.getElementById("docImageBtn").addEventListener("click", function () {
+  if (!window.DocumentReader || !window.DocumentReader.available()) { toast("この環境では写真の取り込みを使えません"); return; }
+  var button = this;
+  button.disabled = true;
+  button.textContent = "写真を開いています…";
+  window.DocumentReader.pickImage().then(function (result) {
+    if (result && !result.cancelled) useRecognizedDocumentText(result.text || "");
+  }).catch(function (err) {
+    toast("読み取れませんでした：" + (err && err.message ? err.message : "原因不明"));
+  }).then(function () {
+    button.disabled = false;
+    button.textContent = "写真から読み取る";
+  });
+});
 
 document.getElementById("docPhotoBtn").addEventListener("click", function () {
   if (photographing) return;
@@ -1595,6 +1758,43 @@ if (window.ReceiptScan && window.ReceiptScan.available()) {
   // 撮り方（無音／自動で切り出す）の選択。どのアプリでも同じ設定が使われる
   if (window.CameraPref) window.CameraPref.mount(document.getElementById("cameraPref"));
 }
+
+/* ---------- Siri・ショートカットからの起動 ---------- */
+window.applyDeepAction = function (params) {
+  params = params || {};
+  if (params.id) {
+    openDocById(String(params.id));
+    return;
+  }
+  if (params.action === "scan") {
+    document.getElementById("docReadBtn").click();
+    return;
+  }
+  if (typeof params.todo === "string") {
+    if (editingId) stopEditing();
+    else form.reset();
+    resetManualEdits();
+    hideAiSuggestion();
+    pendingTodoMemoId = null;
+    showPanel("docs");
+    document.getElementById("f-title").value = params.todo.trim();
+    document.getElementById("f-kind").value = "やること";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.getElementById("f-title").focus();
+  }
+};
+
+(function applyInitialDeepAction() {
+  var search = new URLSearchParams(location.search);
+  var params = {};
+  if (search.has("id")) params.id = search.get("id");
+  if (search.has("action")) params.action = search.get("action");
+  if (search.has("todo")) params.todo = search.get("todo");
+  if (Object.keys(params).length) {
+    window.applyDeepAction(params);
+    if (history.replaceState) history.replaceState(null, "", location.pathname + location.hash);
+  }
+})();
 
 </script>
 </body>

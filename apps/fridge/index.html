@@ -156,6 +156,12 @@ li.item.none { border-left-color: var(--border); }
 .item-note { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
 .item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+.menu-results { margin-top: 12px; }
+.menu-result { border-top: 1px solid var(--border); padding: 10px 0; }
+.menu-result:first-child { border-top: 0; padding-top: 0; }
+.menu-result h3 { font-size: 15px; margin: 0 0 4px; }
+.menu-result p { margin: 3px 0; }
+.menu-result mark { background: var(--warn-weak); color: var(--text); border-radius: 4px; padding: 1px 4px; }
 .footnote { font-size: 12px; color: var(--muted); }
 .toast {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
@@ -301,6 +307,13 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 
   <ul class="items" id="list"></ul>
 
+  <section class="card" id="menuCard" hidden>
+    <h2>今ある食材で献立</h2>
+    <button type="button" class="primary" id="menuSuggest">献立を考える</button>
+    <p class="footnote" id="menuStatus" role="status" aria-live="polite" style="margin:8px 0 0">端末内 AI で提案します。在庫は変更しません。</p>
+    <div class="menu-results" id="menuResults" hidden aria-live="polite"></div>
+  </section>
+
   <section class="card">
     <h2>データの持ち出し・引き継ぎ</h2>
     <div class="chips">
@@ -362,6 +375,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="ean.js"></script>
 <script src="../shared/nativescan.js"></script>
 <script src="../shared/character.js"></script>
+<script src="../shared/ondeviceai.js"></script>
+<script src="../shared/fridgeai.js"></script>
 <script>
 "use strict";
 if (window.Character) window.Character.applyBackground("fridge");
@@ -647,6 +662,69 @@ function render() {
   fillDatalist("nameList", pastValues("name"));
   fillDatalist("noteList", pastValues("note"));
   renderRecentChips();
+}
+
+/* ---------- 端末内 AI の献立提案 ---------- */
+
+var menuBusy = false;
+
+function withMenuTimeout(promise) {
+  return new Promise(function (resolve, reject) {
+    var timer = setTimeout(function () { reject(new Error("timeout")); }, 15000);
+    promise.then(function (value) {
+      clearTimeout(timer);
+      resolve(value);
+    }, function (error) {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function renderMenus(menus) {
+  var el = document.getElementById("menuResults");
+  el.innerHTML = '<p class="footnote">端末内 AI で提案</p>' + menus.map(function (menu) {
+    return '<article class="menu-result"><h3>' + esc(menu.name) + '</h3>' +
+      '<p class="footnote">使う在庫：' + menu.ingredients.map(function (name) {
+        return "<mark>" + esc(name) + "</mark>";
+      }).join(" ") + "</p><p>" + esc(menu.description) + "</p></article>";
+  }).join("");
+  el.hidden = false;
+}
+
+function setMenuReady() {
+  menuBusy = false;
+  document.getElementById("menuSuggest").disabled = false;
+}
+
+document.getElementById("menuSuggest").addEventListener("click", function () {
+  if (menuBusy) return;
+  if (!state.items.length) { toast("在庫を登録してからお試しください"); return; }
+  menuBusy = true;
+  this.disabled = true;
+  document.getElementById("menuStatus").textContent = "献立を考えています…";
+  document.getElementById("menuResults").hidden = true;
+
+  var request = window.FridgeAI.buildRequest(state.items, todayStr());
+  withMenuTimeout(window.OnDeviceAI.respond({
+    instructions: request.instructions,
+    prompt: request.prompt
+  })).then(function (answer) {
+    var menus = window.FridgeAI.parseResponse(answer && answer.text, state.items);
+    if (!menus) throw new Error("invalid-response");
+    renderMenus(menus);
+    document.getElementById("menuStatus").textContent = "提案内容を確認してお使いください。在庫は変更していません。";
+  }).catch(function () {
+    document.getElementById("menuStatus").textContent = "献立を提案できませんでした。時間をおいて、もう一度お試しください。";
+  }).then(setMenuReady, setMenuReady);
+});
+
+if (window.OnDeviceAI && window.FridgeAI) {
+  window.OnDeviceAI.status().then(function (status) {
+    document.getElementById("menuCard").hidden = !status || !status.available;
+  }).catch(function () {
+    document.getElementById("menuCard").hidden = true;
+  });
 }
 
 /* ---------- 操作 ---------- */
@@ -1193,6 +1271,26 @@ document.addEventListener("visibilitychange", function () {
 // テストから読み取り結果を差し込むための入口（カメラのない環境で動作を確認するため）
 window.fridgeApp = { acceptCode: acceptCode };
 
+/* ---------- Siri・ショートカットから食材を追加 ---------- */
+
+window.applyDeepAction = function (params) {
+  var name = params && params.add != null ? String(params.add).trim() : "";
+  if (!name) return false;
+  if (editingId) stopEditing();
+  document.getElementById("f-name").value = name;
+  document.getElementById("itemForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("f-name").focus();
+  toast("品名を入れました。確認して追加してください");
+  return true;
+};
+
+function applyInitialDeepAction() {
+  var params = new URLSearchParams(location.search);
+  if (!params.has("add")) return;
+  window.applyDeepAction({ add: params.get("add") });
+  if (history.replaceState) history.replaceState(null, "", location.pathname + location.hash);
+}
+
 /* ---------- オフラインで使えるようにする ---------- */
 if ("serviceWorker" in navigator && window.isSecureContext) {
   window.addEventListener("load", function () {
@@ -1201,6 +1299,7 @@ if ("serviceWorker" in navigator && window.isSecureContext) {
 }
 
 render();
+applyInitialDeepAction();
 </script>
 <script src="../shared/deeplink.js"></script>
 <script src="../shared/documentreader.js"></script>
