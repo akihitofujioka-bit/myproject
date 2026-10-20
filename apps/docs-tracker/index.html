@@ -181,6 +181,9 @@ li.item.done { opacity: .62; }
 .memo-check-line label { min-width: 0; flex: 1; padding: 9px 0; cursor: pointer; color: inherit; font-size: inherit; margin: 0; }
 .memo-check-line.checked label { color: var(--muted); text-decoration: line-through; }
 .memo-marks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.todo-check { display: flex; align-items: flex-start; gap: 10px; }
+.todo-check input[type="checkbox"] { width: 26px; height: 26px; flex: none; margin: 1px 0 0; }
+.todo-check .item-head { flex: 1; min-width: 0; }
 
 /* ---- QRコードの表示（紙の書類に貼って、アプリから開けるようにする） ---- */
 .modal {
@@ -254,7 +257,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   </div>
 
   <div class="tab-switch" role="group" aria-label="表示する内容">
-    <button type="button" id="docsTab" aria-pressed="true">書類・TODO</button>
+    <button type="button" id="docsTab" aria-pressed="true">書類</button>
+    <button type="button" id="todoTab" aria-pressed="false">TODO</button>
     <button type="button" id="memoTab" aria-pressed="false">メモ</button>
   </div>
 
@@ -300,7 +304,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
           <label for="f-kind">種別</label>
           <select id="f-kind" name="kind">
             <option>申請</option><option>回覧</option><option>提出</option>
-            <option>支払い</option><option>TODO</option><option>その他</option>
+            <option>支払い</option><option>その他</option>
           </select>
         </div>
       </div>
@@ -352,7 +356,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
         <select id="kindFilter">
           <option value="すべて">すべて</option>
           <option>申請</option><option>回覧</option><option>提出</option>
-          <option>支払い</option><option>TODO</option><option>その他</option>
+          <option>支払い</option><option>その他</option>
         </select>
       </div>
       <div class="field">
@@ -402,6 +406,44 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       保存した JSON を <code>data/deadlines.json</code> に置くと、朝のブリーフ（<code>/brief</code>）が今日の締切として拾います。読み込むと今のデータは置き換わります。
     </p>
   </section>
+  </div>
+
+  <div id="todoPanel" hidden>
+    <section class="card">
+      <h2 id="todoFormTitle">TODO を追加</h2>
+      <form id="todoForm">
+        <div class="row">
+          <div class="field wide">
+            <label for="todo-title">件名（必須）</label>
+            <input id="todo-title" name="title" required autocomplete="off" placeholder="例：架空の資料を準備">
+          </div>
+          <div class="field date">
+            <label for="todo-due">期限（任意）</label>
+            <input id="todo-due" name="dueOn" type="date">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field wide">
+            <label for="todo-note">メモ（任意）</label>
+            <textarea id="todo-note" name="note"></textarea>
+          </div>
+        </div>
+        <div class="row" style="align-items:center">
+          <div class="chips" aria-label="期限のクイック入力">
+            <button type="button" class="chip" data-todo-plus="0">今日</button>
+            <button type="button" class="chip" data-todo-plus="1">明日</button>
+            <button type="button" class="chip" data-todo-plus="7">1週間後</button>
+          </div>
+          <div style="flex:1"></div>
+          <button type="submit" class="primary" id="todoSubmitBtn">追加する</button>
+          <button type="button" id="todoCancelEdit" hidden>やめる</button>
+        </div>
+      </form>
+    </section>
+    <h2>未完了</h2>
+    <ul class="items" id="todoList"></ul>
+    <h2>完了</h2>
+    <ul class="items" id="todoDoneList"></ul>
   </div>
 
   <div id="memoPanel" hidden>
@@ -482,8 +524,10 @@ var PRIORITY_ORDER = { "高": 0, "中": 1, "低": 2 };
 
 var state = load();
 var editingId = null;
+var editingTodoId = null;
 var editingMemoId = null;
 var pendingTodoMemoId = null;
+var activePanel = "docs";
 // due: 上の件数のボタンで選んだ期限の絞り込み（"" / "expired" / "today" / "week"）
 var filters = { q: "", status: "未完了", kind: "すべて", sort: "due", due: "" };
 
@@ -638,6 +682,7 @@ function dueMatches(item, due) {
 function visibleItems() {
   var q = filters.q.trim().toLowerCase();
   var list = state.items.filter(function (it) {
+    if (it.kind === "TODO") return false;
     if (filters.status === "未完了") { if (!isOpen(it)) return false; }
     else if (filters.status !== "すべて" && it.status !== filters.status) return false;
     if (filters.kind !== "すべて" && it.kind !== filters.kind) return false;
@@ -668,7 +713,7 @@ function visibleItems() {
 }
 
 function renderStats() {
-  var open = state.items.filter(isOpen);
+  var open = state.items.filter(function (it) { return it.kind !== "TODO" && isOpen(it); });
   var expired = 0, today = 0, week = 0;
   open.forEach(function (it) {
     var d = daysUntil(it.dueOn);
@@ -730,6 +775,38 @@ function renderList() {
   }).join("");
 }
 
+function todoByDue(a, b) {
+  var da = daysUntil(a.dueOn), db = daysUntil(b.dueOn);
+  if (da === null && db === null) return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+  if (da === null) return 1;
+  if (db === null) return -1;
+  return da === db ? String(a.createdAt || "").localeCompare(String(b.createdAt || "")) : da - db;
+}
+
+function todoRow(it) {
+  var lv = dueLevel(it);
+  return '<li class="item ' + lv + (isOpen(it) ? '' : ' done') + '" data-id="' + esc(it.id) + '">' +
+    '<div class="todo-check"><input type="checkbox" data-todo-check aria-label="' + esc(it.title) + 'を完了"' +
+      (it.status === "完了" ? ' checked' : '') + '><div class="item-head">' +
+      '<span class="item-name">' + esc(it.title) + '</span>' +
+      '<span class="due ' + lv + '">' + esc(dueText(it)) + '</span></div></div>' +
+    (it.note ? '<div class="item-note">' + esc(it.note) + '</div>' : '') +
+    '<div class="item-actions"><button type="button" class="small link" data-action="edit">編集</button>' +
+      '<button type="button" class="small link" data-action="delete">削除</button></div></li>';
+}
+
+function renderTodos() {
+  var todos = state.items.filter(function (it) { return it.kind === "TODO"; });
+  var open = todos.filter(isOpen).sort(todoByDue);
+  var done = todos.filter(function (it) { return !isOpen(it); }).sort(function (a, b) {
+    return String(b.doneAt || "").localeCompare(String(a.doneAt || ""));
+  });
+  document.getElementById("todoList").innerHTML = open.length
+    ? open.map(todoRow).join("") : '<li class="empty">未完了の TODO はありません。</li>';
+  document.getElementById("todoDoneList").innerHTML = done.length
+    ? done.map(todoRow).join("") : '<li class="empty">完了した TODO はありません。</li>';
+}
+
 function render() {
   renderStats();
   renderFilters();
@@ -737,6 +814,7 @@ function render() {
   fillDatalist("titleList", pastValues("title"));
   fillDatalist("destList", pastValues("dest"));
   renderRecentChips();
+  renderTodos();
   renderMemos();
 }
 
@@ -744,12 +822,19 @@ function render() {
 
 function showPanel(name) {
   var memo = name === "memo";
-  document.getElementById("docsPanel").hidden = memo;
+  var todo = name === "todo";
+  activePanel = name;
+  document.getElementById("docsPanel").hidden = memo || todo;
+  document.getElementById("todoPanel").hidden = !todo;
   document.getElementById("memoPanel").hidden = !memo;
-  // メモのタブでは書類用のボタンだけ隠し、「← 一覧」は残す
+  // メモのタブでは登録用のボタンだけ隠し、「← ホーム」は残す
   document.getElementById("docsBarButtons").hidden = memo;
-  document.getElementById("docsTab").setAttribute("aria-pressed", String(!memo));
+  document.getElementById("docsTab").setAttribute("aria-pressed", String(name === "docs"));
+  document.getElementById("todoTab").setAttribute("aria-pressed", String(todo));
   document.getElementById("memoTab").setAttribute("aria-pressed", String(memo));
+  document.getElementById("jumpAdd").textContent = todo ? "追加する" : "書類を登録する";
+  document.getElementById("jumpDue").textContent = todo ? "期限が近い順" : "期限が近い順";
+  if (todo) renderTodos();
   if (memo) renderMemos();
 }
 
@@ -816,6 +901,7 @@ function markMemoMoved(id, destination) {
 }
 
 document.getElementById("docsTab").addEventListener("click", function () { showPanel("docs"); });
+document.getElementById("todoTab").addEventListener("click", function () { showPanel("todo"); });
 document.getElementById("memoTab").addEventListener("click", function () { showPanel("memo"); });
 document.getElementById("memoCancel").addEventListener("click", stopMemoEditing);
 document.getElementById("memoInsertCheckAll").addEventListener("click", function () {
@@ -945,17 +1031,15 @@ document.getElementById("memoList").addEventListener("click", function (event) {
     return;
   }
   if (action === "todo") {
-    if (editingId) stopEditing();
-    resetManualEdits();
+    if (editingTodoId) stopTodoEditing();
     var todoText = window.MemoCheck ? window.MemoCheck.strip(memo.text) : memo.text;
     var candidates = window.Todos ? window.Todos.candidates(todoText, "", todayStr()) : [];
-    document.getElementById("f-title").value = String(todoText.split(/\r?\n/)[0] || "").trim().slice(0, 40);
-    document.getElementById("f-kind").value = "TODO";
-    document.getElementById("f-due").value = candidates.length ? candidates[0].dueOn : "";
-    document.getElementById("f-note").value = memo.text;
+    document.getElementById("todo-title").value = String(todoText.split(/\r?\n/)[0] || "").trim().slice(0, 40);
+    document.getElementById("todo-due").value = candidates.length ? candidates[0].dueOn : "";
+    document.getElementById("todo-note").value = memo.text;
     pendingTodoMemoId = id;
-    showPanel("docs");
-    document.getElementById("f-title").focus();
+    showPanel("todo");
+    document.getElementById("todo-title").focus();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 });
@@ -976,6 +1060,119 @@ document.getElementById("memoList").addEventListener("change", function (event) 
 /* ---------- 操作 ---------- */
 
 var form = document.getElementById("itemForm");
+var todoForm = document.getElementById("todoForm");
+
+function stopTodoEditing() {
+  editingTodoId = null;
+  todoForm.reset();
+  document.getElementById("todoFormTitle").textContent = "TODO を追加";
+  document.getElementById("todoSubmitBtn").textContent = "追加する";
+  document.getElementById("todoCancelEdit").hidden = true;
+}
+
+function startTodoEditing(item) {
+  editingTodoId = item.id;
+  document.getElementById("todo-title").value = item.title;
+  document.getElementById("todo-due").value = item.dueOn;
+  document.getElementById("todo-note").value = item.note;
+  document.getElementById("todoFormTitle").textContent = "TODO を編集";
+  document.getElementById("todoSubmitBtn").textContent = "更新する";
+  document.getElementById("todoCancelEdit").hidden = false;
+  showPanel("todo");
+  document.getElementById("todo-title").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+todoForm.addEventListener("submit", function (e) {
+  e.preventDefault();
+  var title = document.getElementById("todo-title").value.trim();
+  if (!title) return;
+  var values = {
+    title: title,
+    kind: "TODO",
+    dest: "",
+    dueOn: document.getElementById("todo-due").value,
+    priority: "中",
+    note: document.getElementById("todo-note").value.trim()
+  };
+  if (editingTodoId) {
+    var target = state.items.find(function (it) { return it.id === editingTodoId; });
+    if (target) Object.assign(target, values);
+    toast("TODO を更新しました");
+    stopTodoEditing();
+  } else {
+    values.id = uid();
+    values.scheduleId = "";
+    values.icsSeq = 0;
+    values.planKey = "";
+    values.status = "未着手";
+    values.createdAt = new Date().toISOString();
+    values.doneAt = "";
+    state.items.push(values);
+    if (pendingTodoMemoId) {
+      markMemoMoved(pendingTodoMemoId, "todo");
+      pendingTodoMemoId = null;
+    }
+    toast("TODO を追加しました");
+    todoForm.reset();
+  }
+  save();
+  render();
+  document.getElementById("todo-title").focus();
+});
+
+document.getElementById("todoCancelEdit").addEventListener("click", stopTodoEditing);
+
+todoForm.addEventListener("click", function (e) {
+  if (!e.target.getAttribute) return;
+  var plus = e.target.getAttribute("data-todo-plus");
+  if (plus === null || plus === undefined) return;
+  var d = new Date();
+  d.setDate(d.getDate() + Number(plus));
+  document.getElementById("todo-due").value = fmtDate(d);
+});
+
+function todoListEventItem(target) {
+  var row = target.closest("li.item");
+  var id = row && row.getAttribute("data-id");
+  return state.items.find(function (it) { return it.id === id && it.kind === "TODO"; });
+}
+
+function handleTodoListClick(e) {
+  var button = e.target.closest("button[data-action]");
+  if (!button) return;
+  var item = todoListEventItem(button);
+  if (!item) return;
+  var action = button.getAttribute("data-action");
+  if (action === "edit") {
+    startTodoEditing(item);
+    return;
+  }
+  if (action === "delete") {
+    if (!confirm("「" + item.title + "」を削除しますか？")) return;
+    state.items = state.items.filter(function (it) { return it.id !== item.id; });
+    if (editingTodoId === item.id) stopTodoEditing();
+    save();
+    renderTodos();
+    toast("TODO を削除しました");
+  }
+}
+
+function handleTodoCheck(e) {
+  var checkbox = e.target.closest("input[data-todo-check]");
+  if (!checkbox) return;
+  var item = todoListEventItem(checkbox);
+  if (!item) return;
+  item.status = checkbox.checked ? "完了" : "未着手";
+  item.doneAt = checkbox.checked ? new Date().toISOString() : "";
+  save();
+  renderTodos();
+}
+
+["todoList", "todoDoneList"].forEach(function (id) {
+  document.getElementById(id).addEventListener("click", handleTodoListClick);
+  document.getElementById(id).addEventListener("change", handleTodoCheck);
+});
 
 form.addEventListener("submit", function (e) {
   e.preventDefault();
@@ -1002,10 +1199,6 @@ form.addEventListener("submit", function (e) {
     values.createdAt = new Date().toISOString();
     values.doneAt = "";
     state.items.push(values);
-    if (pendingTodoMemoId) {
-      markMemoMoved(pendingTodoMemoId, "todo");
-      pendingTodoMemoId = null;
-    }
     toast("登録しました");
     form.reset();
     resetManualEdits();
@@ -1269,11 +1462,11 @@ function writeCalendarFile(events, target) {
 }
 
 document.getElementById("calendarAll").addEventListener("click", function () {
-  registerToCalendar(state.items);
+  registerToCalendar(state.items.filter(function (it) { return it.kind !== "TODO"; }));
 });
 
 document.getElementById("calendarOnly").addEventListener("click", function () {
-  registerToCalendar(state.items, { calendarOnly: true });
+  registerToCalendar(state.items.filter(function (it) { return it.kind !== "TODO"; }), { calendarOnly: true });
 });
 
 /*
@@ -1286,7 +1479,7 @@ if (window.Native && window.Native.available()) {
 }
 
 document.getElementById("copyDue").addEventListener("click", function () {
-  var open = state.items.filter(isOpen).sort(function (a, b) {
+  var open = state.items.filter(function (it) { return it.kind !== "TODO" && isOpen(it); }).sort(function (a, b) {
     var da = daysUntil(a.dueOn), db = daysUntil(b.dueOn);
     if (da === null) return 1;
     if (db === null) return -1;
@@ -1358,12 +1551,12 @@ document.getElementById("importFile").addEventListener("change", function (e) {
 
 document.getElementById("jumpAdd").addEventListener("click", function () {
   window.scrollTo({ top: 0, behavior: "smooth" });
-  document.getElementById("f-title").focus();
+  document.getElementById(activePanel === "todo" ? "todo-title" : "f-title").focus();
 });
 document.getElementById("jumpDue").addEventListener("click", function () {
-  var first = document.querySelector("#list li.item");
+  var first = document.querySelector(activePanel === "todo" ? "#todoList li.item" : "#list li.item");
   if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
-  else toast("未処理の書類はありません");
+  else toast(activePanel === "todo" ? "未完了の TODO はありません" : "未処理の書類はありません");
 });
 
 /* ---------- オフラインで使えるようにする ---------- */
@@ -1429,6 +1622,17 @@ function openDocById(id) {
   var item = null;
   for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) item = state.items[i];
   if (!item) { toast("QRの書類が見つかりませんでした"); return; }
+  if (item.kind === "TODO") {
+    showPanel("todo");
+    renderTodos();
+    var todoRow = Array.prototype.find.call(document.querySelectorAll("#todoPanel li[data-id]"), function (row) {
+      return row.getAttribute("data-id") === item.id;
+    });
+    if (todoRow) todoRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    toast("「" + item.title + "」を開きました");
+    return;
+  }
+  showPanel("docs");
   document.getElementById("q").value = item.title;
   filters.q = item.title;
   render();
@@ -1450,6 +1654,7 @@ window.openDocById = openDocById;
 function pastValues(field) {
   var count = {};
   state.items.forEach(function (it) {
+    if (it.kind === "TODO") return;
     var v = String(it[field] || "").trim();
     if (v) count[v] = (count[v] || 0) + 1;
   });
@@ -1485,7 +1690,7 @@ document.getElementById("recentChips").addEventListener("click", function (e) {
   var title = btn.getAttribute("data-recent");
   var last = null;
   state.items.forEach(function (it) {
-    if (it.title === title) {
+    if (it.kind !== "TODO" && it.title === title) {
       if (!last || String(it.createdAt || "") > String(last.createdAt || "")) last = it;
     }
   });
@@ -1643,7 +1848,7 @@ function requestAiSuggestion(text) {
   var work = window.OnDeviceAI.status().then(function (status) {
     if (!status || !status.available) throw new Error("unavailable");
     return window.OnDeviceAI.respond({
-      instructions: "書類の文字から登録項目を提案してください。回答は説明を付けず、title（件名）、dueOn（提出期限。実在する日付のYYYY-MM-DD。不明なら空文字）、kind（申請、回覧、提出、支払い、TODO、その他のどれか）、summary（日本語1〜2文）の4項目を持つJSONオブジェクトだけにしてください。",
+      instructions: "書類の文字から登録項目を提案してください。回答は説明を付けず、title（件名）、dueOn（提出期限。実在する日付のYYYY-MM-DD。不明なら空文字）、kind（申請、回覧、提出、支払い、その他のどれか）、summary（日本語1〜2文）の4項目を持つJSONオブジェクトだけにしてください。",
       prompt: "今日は " + todayStr() + " です。次の書類文字を整理してください。\n\n" + String(text).slice(0, 6000)
     });
   }).then(function (answer) {
@@ -1730,10 +1935,7 @@ document.getElementById("pasteClear").addEventListener("click", function () {
         var item = null;
         for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) item = state.items[i];
         if (!item) { toast("QRの書類が見つかりませんでした"); return; }
-        document.getElementById("q").value = item.title;
-        filters.q = item.title;
-        render();
-        toast("「" + item.title + "」を開きました");
+        openDocById(id);
       })
       .catch(function (err) {
         toast("カメラを開けませんでした：" + (err && err.message ? err.message : "原因不明"));
@@ -1847,20 +2049,18 @@ window.applyDeepAction = function (params) {
     return;
   }
   if (params.action === "scan") {
+    showPanel("docs");
     document.getElementById("docReadBtn").click();
     return;
   }
   if (typeof params.todo === "string") {
-    if (editingId) stopEditing();
-    else form.reset();
-    resetManualEdits();
-    hideAiSuggestion();
+    if (editingTodoId) stopTodoEditing();
+    else todoForm.reset();
     pendingTodoMemoId = null;
-    showPanel("docs");
-    document.getElementById("f-title").value = params.todo.trim();
-    document.getElementById("f-kind").value = "TODO";
+    showPanel("todo");
+    document.getElementById("todo-title").value = params.todo.trim();
     window.scrollTo({ top: 0, behavior: "smooth" });
-    document.getElementById("f-title").focus();
+    document.getElementById("todo-title").focus();
   }
 };
 

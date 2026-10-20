@@ -47,7 +47,8 @@ ok((await page.locator('a[href="docs-tracker/index.html"] .name').textContent())
 await page.goto(base + "docs-tracker/index.html");
 ok((await page.title()) === "書類・TODO", "画面の題名");
 ok((await page.locator("h1").textContent()).trim() === "書類・TODO", "画面の見出し");
-ok(await page.locator('#f-kind option', { hasText: "TODO" }).count() === 1, "種別にTODOがある");
+ok(await page.locator('#f-kind option', { hasText: "TODO" }).count() === 0, "書類の種別にTODOがない");
+ok(await page.locator("#todoTab").count() === 1, "TODOタブがある");
 
 await page.evaluate(() => {
   localStorage.clear();
@@ -62,11 +63,13 @@ await page.evaluate(() => {
   }));
 });
 await page.reload();
-ok((await page.locator("#list").textContent()).includes("架空の準備"), "旧表現のデータが一覧に出る");
-ok((await page.locator("#list").textContent()).includes("TODO"), "旧表現の種別をTODOとして表示する");
-ok((await page.locator("#stats .stat").first().locator(".num").textContent()).trim() === "1", "TODOを未処理件数に数える");
+ok(!(await page.locator("#list").textContent()).includes("架空の準備"), "旧表現のTODOは書類一覧に出ない");
+ok((await page.locator("#stats .stat").first().locator(".num").textContent()).trim() === "0", "TODOを書類の未処理件数に数えない");
+await page.click("#todoTab");
+ok((await page.locator("#todoList").textContent()).includes("架空の準備"), "旧表現のデータがTODO一覧に出る");
 ok(await page.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1")).items[0].kind) === "TODO", "読み込み時に旧表現の保存値をTODOへ置き換える");
 
+await page.click("#docsTab");
 await page.fill("#f-title", "架空の申請書");
 await page.selectOption("#f-kind", { label: "申請" });
 await page.click("#submitBtn");
@@ -122,10 +125,10 @@ await page.goto(base + "docs-tracker/index.html");
 await page.click("#memoTab");
 const todoMemo = page.locator(".memo-item", { hasText: "10月22日 14時から 架空の打合せ 第2会議室" });
 await todoMemo.locator('button[data-action="todo"]').click();
-ok(await page.locator("#f-title").inputValue() === "10月22日 14時から 架空の打合せ 第2会議室".slice(0, 40), "印を外したTODOの件名を入力欄に入れる");
-ok(await page.locator("#f-kind").inputValue() === "TODO", "種別をTODOにする");
-ok((await page.locator("#f-note").inputValue()).startsWith("☑ 10月22日"), "元の印を含む本文をメモ欄に入れる");
-await page.click("#submitBtn");
+ok(await page.locator("#todoTab").getAttribute("aria-pressed") === "true", "TODOタブを開く");
+ok(await page.locator("#todo-title").inputValue() === "10月22日 14時から 架空の打合せ 第2会議室".slice(0, 40), "印を外したTODOの件名を入力欄に入れる");
+ok((await page.locator("#todo-note").inputValue()).startsWith("☑ 10月22日"), "元の印を含む本文をメモ欄に入れる");
+await page.click("#todoSubmitBtn");
 await page.click("#memoTab");
 ok((await page.locator(".memo-item", { hasText: "10月22日 14時から 架空の打合せ 第2会議室" }).textContent()).includes("TODOにした"), "登録後にTODOにした印が出る");
 
