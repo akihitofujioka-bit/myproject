@@ -411,6 +411,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
       <textarea id="memoText" rows="5" placeholder="気づいたことや予定、期限のあるTODOを書きます"></textarea>
       <div class="chips" style="margin-top:8px">
         <button type="button" id="memoInsertCheck">□ を入れる</button>
+        <button type="button" id="memoInsertCheckAll">全部の行に □</button>
         <span id="speechMemoSlot"></span>
         <button type="button" class="primary" id="memoSave">保存する</button>
         <button type="button" id="memoCancel" hidden>やめる</button>
@@ -791,6 +792,7 @@ function renderMemos() {
       '</div><div class="item-actions">' +
         (canMove ? '<button type="button" class="small" data-action="schedule">予定に入れる</button>' +
           '<button type="button" class="small" data-action="todo">TODOにする</button>' : '') +
+        (window.MemoCheck && window.MemoCheck.hasUnmarked(memo.text) ? '<button type="button" class="small" data-action="checkall">全部の行に □</button>' : '') +
         (moved.indexOf("schedule") >= 0 ? '<a class="memo-schedule-link" href="../schedule/index.html">予定アプリを開く</a>' : '') +
         '<button type="button" class="small link" data-action="edit">編集</button>' +
         '<button type="button" class="small link" data-action="delete">削除</button>' +
@@ -816,6 +818,12 @@ function markMemoMoved(id, destination) {
 document.getElementById("docsTab").addEventListener("click", function () { showPanel("docs"); });
 document.getElementById("memoTab").addEventListener("click", function () { showPanel("memo"); });
 document.getElementById("memoCancel").addEventListener("click", stopMemoEditing);
+document.getElementById("memoInsertCheckAll").addEventListener("click", function () {
+  var input = document.getElementById("memoText");
+  if (window.MemoCheck) input.value = window.MemoCheck.markAll(input.value);
+  input.focus();
+});
+
 document.getElementById("memoInsertCheck").addEventListener("click", function () {
   var input = document.getElementById("memoText");
   var value = input.value;
@@ -914,6 +922,14 @@ document.getElementById("memoList").addEventListener("click", function (event) {
     save();
     renderMemos();
     toast("メモを削除しました");
+    return;
+  }
+  if (action === "checkall") {
+    if (!window.MemoCheck) return;
+    memo.text = window.MemoCheck.markAll(memo.text);
+    memo.updatedAt = new Date().toISOString();
+    save();
+    renderMemos();
     return;
   }
   if (action === "schedule") {

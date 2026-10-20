@@ -25,5 +25,8 @@ ok(M.toggle("□ 対象\n□ そのまま", 0, false) === "□ 対象\n□ そ�
 ok(M.toggle("普通の行\n□ 対象", 0, true) === "普通の行\n□ 対象", "印のない行は書き換えない");
 ok(M.strip("☑ 完了\n普通\n- [ ] 未完了") === "完了\n普通\n未完了", "件名用に各行の印を外す");
 
+ok(M.markAll("買う物\r\n\n☑ 済み\n・卵\n牛乳") === "□ 買う物\r\n\n☑ 済み\n・卵\n□ 牛乳", "全部の行に印を入れ、空行と印のある行は変えない");
+ok(M.hasUnmarked("□ 印あり\n印なし") && !M.hasUnmarked("□ 印あり\n\n☑ 済み"), "印のない行があるかを判定する");
+
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて通過");
 process.exit(failures ? 1 : 0);

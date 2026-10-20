@@ -41,5 +41,17 @@
     });
   }
 
-  global.MemoCheck = { parse: parse, toggle: toggle, strip: strip };
+  // 空行と、すでに印のある行はそのままにして、残りの行頭に「□ 」を入れる
+  function markAll(text) {
+    return mapLines(text, function (line, index) {
+      if (!line.trim() || parseLine(line, index).marked) return line;
+      return "□ " + line;
+    });
+  }
+
+  function hasUnmarked(text) {
+    return parse(text).some(function (line) { return line.raw.trim() && !line.marked; });
+  }
+
+  global.MemoCheck = { parse: parse, toggle: toggle, strip: strip, markAll: markAll, hasUnmarked: hasUnmarked };
 })(typeof window !== "undefined" ? window : this);
