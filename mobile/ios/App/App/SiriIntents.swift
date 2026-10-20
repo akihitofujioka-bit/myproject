@@ -75,7 +75,7 @@ struct ScanCardIntent: AppIntent {
 @available(iOS 16.0, *)
 struct ScanDocumentIntent: AppIntent {
     static var title: LocalizedStringResource = "書類を撮る"
-    static var description = IntentDescription("書類・やることアプリを開いて撮影を始めます。")
+    static var description = IntentDescription("書類・TODO アプリを開いて撮影を始めます。")
     static var openAppWhenRun = true
 
     @MainActor
@@ -119,8 +119,8 @@ struct AddFridgeItemIntent: AppIntent {
 
 @available(iOS 16.0, *)
 struct AddTodoIntent: AppIntent {
-    static var title: LocalizedStringResource = "やることを追加"
-    static var description = IntentDescription("書類・やることアプリの入力欄に件名を入れて開きます。保存は画面で押します。")
+    static var title: LocalizedStringResource = "TODO を追加"
+    static var description = IntentDescription("書類・TODO アプリの入力欄に件名を入れて開きます。保存は画面で押します。")
     static var openAppWhenRun = true
 
     @Parameter(title: "件名", requestValueDialog: "何をやりますか？")
@@ -168,7 +168,7 @@ struct TodayMeetingsIntent: AppIntent {
 @available(iOS 16.0, *)
 struct UpcomingDeadlinesIntent: AppIntent {
     static var title: LocalizedStringResource = "期限の近い書類"
-    static var description = IntentDescription("1週間以内に期限が来る書類・やることを読み上げます。")
+    static var description = IntentDescription("1週間以内に期限が来る書類・TODO を読み上げます。")
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -221,6 +221,8 @@ struct DailyAppsShortcuts: AppShortcutsProvider {
             "\(.applicationName)で冷蔵庫に追加", "\(.applicationName)の冷蔵庫に追加して"
         ])
         AppShortcut(intent: AddTodoIntent(), phrases: [
+            "\(.applicationName)でTODOを追加", "\(.applicationName)のTODOに追加して",
+            // 「TODO」は聞き取りにくいことがあるため、前の言い方でも反応させる
             "\(.applicationName)でやることを追加", "\(.applicationName)のやることに追加して"
         ])
         AppShortcut(intent: TodayMeetingsIntent(), phrases: [

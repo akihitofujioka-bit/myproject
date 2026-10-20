@@ -148,6 +148,7 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
       items: [
         { id: "3", title: "○○協議会の回答", kind: "回覧", dest: "総務課", dueOn: day(3), status: "対応中" },
         { id: "4", title: "期限切れの届出", kind: "提出", dest: "県", dueOn: day(-2), status: "未着手" },
+        { id: "7", title: "架空の旧TODO", kind: "やること", dest: "", dueOn: day(2), status: "未着手" },
         { id: "5", title: "終わった書類", kind: "提出", dest: "県", dueOn: day(1), status: "完了" },
         { id: "6", title: "ずっと先の提出", kind: "提出", dest: "県", dueOn: day(40), status: "未着手" }
       ]
@@ -183,6 +184,7 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
   ok(!titles.includes("ずっと先の提出"), "期限：2週間より先は送らない");
   ok(!titles.includes("架空の定例会"), "期限：予定は期限の欄に重ねない");
   ok(snap.deadlines[0].title === "期限切れの届出", "期限：差し迫った順に並ぶ");
+  ok(snap.deadlines.find((item) => item.id === "7").kind === "TODO", "期限：旧表現の種別をTODOとして送る");
 
   const shopping = snap.shopping.map((s) => s.name);
   ok(shopping.includes("牛乳"), "買い物：使い切って在庫に無いものを送る");

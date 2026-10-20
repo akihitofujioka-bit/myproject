@@ -75,7 +75,7 @@ if (!S) {
   ok(list.text.split("\n")[0] === "10/20(火) 9:00-9:30 架空の外部予定 @第2会議室", "日付・開始時刻順で予定を書く");
   ok(list.text.includes("10/20(火) 10:00-12:00 架空の委員会 @第1会議室"), "予定アプリの時刻と場所を書く");
   ok(list.text.includes("10/21(水) 架空の終日行事 @中央広場"), "開始時刻が空のカレンダー予定を終日の行として書く");
-  ok(list.text.includes("10/22(木) 期限 架空の資料提出（やること）"), "期限付きのやることを書く");
+  ok(list.text.includes("10/22(木) 期限 架空の資料提出（TODO）"), "期限付きのTODOを書く");
 
   const helped = S.lines(
     { from: "2026-10-20", to: "2026-10-20" },
@@ -125,14 +125,17 @@ if (!S) {
     { compact: true }
   ) === "10/20(火) 空きあり\n10/22(木) 空きあり", "短縮時は空きのある日だけを書く");
   ok(S.wantsFree("来週は空いていますか") && !S.wantsFree("来週の予定"), "空き時間を求める言葉を判定する");
-  ok(!S.wantsDraft("今日のやることを教えて"), "やることを尋ねるだけなら下書きにしない");
-  ok(!S.wantsDraft("やることある？"), "やることの有無を尋ねるだけなら下書きにしない");
+  ok(!S.wantsDraft("今日のTODOを教えて"), "TODOを尋ねるだけなら下書きにしない");
+  ok(!S.wantsDraft("TODOある？"), "TODOの有無を尋ねるだけなら下書きにしない");
   ok(!S.wantsDraft("登録済みの予定を教えて"), "登録済みの予定を尋ねるだけなら下書きにしない");
   ok(!S.wantsDraft("登録済みの予定を教えてください"), "丁寧な言い方で尋ねるだけなら下書きにしない");
   ok(!S.wantsDraft("追加の予定はありますか"), "ありますかで尋ねるだけなら下書きにしない");
   ok(S.wantsDraft("来週火曜10時に打合せを入れてもらえますか？"), "？で終わっても頼む言い方なら下書きにする");
   ok(!S.wantsDraft("追加の予定は？"), "追加の予定の有無を尋ねるだけなら下書きにしない");
-  ok(S.wantsDraft("金曜までに資料提出をやることに追加して"), "やることへの追加依頼を下書きにする");
+  ok(S.wantsDraft("金曜までに資料提出をTODOに追加して"), "TODOへの追加依頼を下書きにする");
+  ok(S.wantsDraft("資料提出をToDoに追加して"), "英字の大小が違うTODOも判定する");
+  ok(S.wantsDraft("資料提出をトゥードゥーに追加して"), "読み上げたTODOも判定する");
+  ok(S.wantsDraft("資料提出をやることに追加して"), "旧表現の追加依頼も判定する");
   ok(S.wantsDraft("来週火曜10時に打合せを入れて"), "予定への追加依頼を下書きにする");
 
   const charLimitedSource = S.lines(
@@ -170,10 +173,16 @@ if (!S) {
 
   const todoDraft = S.checkDraft(
     '{"kind":"todo","title":"架空の資料確認","date":"2026-10-20"}',
-    "架空の資料確認をやることに追加",
+    "架空の資料確認をTODOに追加",
     "2026-10-13"
   );
-  ok(todoDraft.ok && todoDraft.draft.kind === "todo", "やることの下書きを保つ");
+  ok(todoDraft.ok && todoDraft.draft.kind === "todo", "TODOの下書きを保つ");
+  const oldTodoDraft = S.checkDraft(
+    '{"kind":"やること","title":"架空の旧回答","date":"2026-10-20"}',
+    "架空の旧回答をTODOに追加",
+    "2026-10-13"
+  );
+  ok(oldTodoDraft.ok && oldTodoDraft.draft.kind === "todo", "AIの旧表現をTODOとして受け付ける");
 
   const reversedTime = S.checkDraft(
     '{"kind":"event","title":"架空の面談","date":"2026-10-20","start":"10:00","end":"09:30"}',
@@ -197,7 +206,7 @@ if (!S) {
     { from: "2026-10-20", to: "2026-10-20" },
     [{ date: "2026-10-20", start: "08:30", end: "17:15" }]
   ) === "10/20(火) 空きなし", "勤務時間内に空きがない日を示す");
-  ok(S.draftInstructions("2026-10-13").includes("2026-10-13") && S.draftInstructions("2026-10-13").includes('"kind":"event|todo"'), "JSONだけを返す下書き指示を作る");
+  ok(S.draftInstructions("2026-10-13").includes("2026-10-13") && S.draftInstructions("2026-10-13").includes('"kind":"event|TODO"'), "JSONだけを返す下書き指示を作る");
 }
 
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて通過");

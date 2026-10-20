@@ -89,7 +89,7 @@
       return { text: "レシートを撮る", button: "開く" };
     }
     if (route.params.add !== undefined) return { text: "冷蔵庫に『" + route.params.add + "』を追加", button: "開く" };
-    if (route.params.todo !== undefined) return { text: "やること『" + route.params.todo + "』を追加", button: "開く" };
+    if (route.params.todo !== undefined) return { text: "TODO『" + route.params.todo + "』を追加", button: "開く" };
     return { text: "書類が見つかりました", button: "書類を開く" };
   }
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>書類・やること</title>
+<title>書類・TODO</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2f6fed">
 <meta name="mobile-web-app-capable" content="yes">
@@ -175,6 +175,11 @@ li.item.done { opacity: .62; }
 .tab-switch button[aria-pressed="true"] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
 .memo-item { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px; margin-bottom: 8px; }
 .memo-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.memo-line { min-height: 1.5em; }
+.memo-check-line { display: flex; align-items: center; min-height: 44px; gap: 8px; }
+.memo-check-line input[type="checkbox"] { width: 26px; height: 26px; flex: none; margin: 0; }
+.memo-check-line label { min-width: 0; flex: 1; padding: 9px 0; cursor: pointer; color: inherit; font-size: inherit; margin: 0; }
+.memo-check-line.checked label { color: var(--muted); text-decoration: line-through; }
 .memo-marks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
 /* ---- QRコードの表示（紙の書類に貼って、アプリから開けるようにする） ---- */
@@ -240,8 +245,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <div class="wrap">
   <p class="backlink"><a href="../index.html">← アプリ一覧にもどる</a></p>
   <header>
-    <h1>書類・やること</h1>
-    <p class="lead">提出期限のある書類・回覧・申請と、やることを管理します。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
+    <h1>書類・TODO</h1>
+    <p class="lead">提出期限のある書類・回覧・申請と、TODOを管理します。データはこの端末の中だけに保存され、外部には一切送信しません。</p>
   </header>
 
   <div class="notice">
@@ -249,7 +254,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   </div>
 
   <div class="tab-switch" role="group" aria-label="表示する内容">
-    <button type="button" id="docsTab" aria-pressed="true">書類・やること</button>
+    <button type="button" id="docsTab" aria-pressed="true">書類・TODO</button>
     <button type="button" id="memoTab" aria-pressed="false">メモ</button>
   </div>
 
@@ -295,7 +300,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
           <label for="f-kind">種別</label>
           <select id="f-kind" name="kind">
             <option>申請</option><option>回覧</option><option>提出</option>
-            <option>支払い</option><option>やること</option><option>その他</option>
+            <option>支払い</option><option>TODO</option><option>その他</option>
           </select>
         </div>
       </div>
@@ -347,7 +352,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
         <select id="kindFilter">
           <option value="すべて">すべて</option>
           <option>申請</option><option>回覧</option><option>提出</option>
-          <option>支払い</option><option>やること</option><option>その他</option>
+          <option>支払い</option><option>TODO</option><option>その他</option>
         </select>
       </div>
       <div class="field">
@@ -403,8 +408,9 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
     <section class="card">
       <h2 id="memoFormTitle">メモを書く</h2>
       <label for="memoText">メモ</label>
-      <textarea id="memoText" rows="5" placeholder="気づいたことや予定、期限のあるやることを書きます"></textarea>
+      <textarea id="memoText" rows="5" placeholder="気づいたことや予定、期限のあるTODOを書きます"></textarea>
       <div class="chips" style="margin-top:8px">
+        <button type="button" id="memoInsertCheck">□ を入れる</button>
         <span id="speechMemoSlot"></span>
         <button type="button" class="primary" id="memoSave">保存する</button>
         <button type="button" id="memoCancel" hidden>やめる</button>
@@ -458,6 +464,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/schedulemove.js"></script>
 <script src="../shared/meeting.js"></script>
 <script src="../shared/todos.js"></script>
+<script src="../shared/memocheck.js"></script>
 <script src="../shared/scanrouter.js"></script>
 <script src="../shared/speechmemo.js"></script>
 <script src="../shared/ondeviceai.js"></script>
@@ -483,7 +490,20 @@ function load() {
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { v: 1, items: [], calIds: {}, memos: [] };
-    return normalize(JSON.parse(raw));
+    var data = JSON.parse(raw);
+    var migrated = false;
+    if (data && Array.isArray(data.items)) {
+      data.items.forEach(function (item) {
+        if (item && item.kind === "やること") {
+          item.kind = "TODO";
+          migrated = true;
+        }
+      });
+    }
+    if (migrated) {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (ignore) {}
+    }
+    return normalize(data);
   } catch (e) {
     return { v: 1, items: [], calIds: {}, memos: [] };
   }
@@ -517,7 +537,7 @@ function normalize(data) {
       return {
         id: it.id || uid(),
         title: String(it.title),
-        kind: it.kind || "その他",
+        kind: it.kind === "やること" ? "TODO" : (it.kind || "その他"),
         dest: it.dest || "",
         dueOn: it.dueOn || "",
         status: STATUSES.indexOf(it.status) >= 0 ? it.status : "未着手",
@@ -733,9 +753,22 @@ function showPanel(name) {
 }
 
 function memoMoveCandidate(text) {
-  if (window.Meeting && window.Meeting.findDate(String(text || ""))) return true;
+  var clean = window.MemoCheck ? window.MemoCheck.strip(text) : String(text || "");
+  if (window.Meeting && window.Meeting.findDate(clean)) return true;
   if (!window.Todos) return false;
-  return window.Todos.candidates(text, "", todayStr()).some(function (item) { return !!item.dueOn; });
+  return window.Todos.candidates(clean, "", todayStr()).some(function (item) { return !!item.dueOn; });
+}
+
+function memoTextHtml(memo, memoIndex) {
+  if (!window.MemoCheck) return '<div class="memo-line">' + esc(memo.text) + '</div>';
+  return window.MemoCheck.parse(memo.text).map(function (line) {
+    if (!line.marked) return '<div class="memo-line">' + (line.text ? esc(line.text) : '<br>') + '</div>';
+    var inputId = "memo-check-" + memoIndex + "-" + line.index;
+    return '<div class="memo-check-line' + (line.checked ? ' checked' : '') + '">' +
+      '<input type="checkbox" id="' + inputId + '" data-memo-check data-line-index="' + line.index + '"' +
+        (line.checked ? ' checked' : '') + '>' +
+      '<label for="' + inputId + '">' + esc(line.text) + '</label></div>';
+  }).join("");
 }
 
 function renderMemos() {
@@ -747,17 +780,17 @@ function renderMemos() {
     el.innerHTML = '<div class="card empty">メモはまだありません。</div>';
     return;
   }
-  el.innerHTML = list.map(function (memo) {
+  el.innerHTML = list.map(function (memo, memoIndex) {
     var canMove = memoMoveCandidate(memo.text);
     var moved = memo.movedTo || [];
     return '<article class="memo-item" data-id="' + esc(memo.id) + '">' +
-      '<div class="memo-text">' + esc(memo.text) + '</div>' +
+      '<div class="memo-text">' + memoTextHtml(memo, memoIndex) + '</div>' +
       '<div class="memo-marks">' +
         (moved.indexOf("schedule") >= 0 ? '<span class="badge">予定に入れた</span>' : '') +
-        (moved.indexOf("todo") >= 0 ? '<span class="badge">やることにした</span>' : '') +
+        (moved.indexOf("todo") >= 0 ? '<span class="badge">TODOにした</span>' : '') +
       '</div><div class="item-actions">' +
         (canMove ? '<button type="button" class="small" data-action="schedule">予定に入れる</button>' +
-          '<button type="button" class="small" data-action="todo">やることにする</button>' : '') +
+          '<button type="button" class="small" data-action="todo">TODOにする</button>' : '') +
         (moved.indexOf("schedule") >= 0 ? '<a class="memo-schedule-link" href="../schedule/index.html">予定アプリを開く</a>' : '') +
         '<button type="button" class="small link" data-action="edit">編集</button>' +
         '<button type="button" class="small link" data-action="delete">削除</button>' +
@@ -783,6 +816,22 @@ function markMemoMoved(id, destination) {
 document.getElementById("docsTab").addEventListener("click", function () { showPanel("docs"); });
 document.getElementById("memoTab").addEventListener("click", function () { showPanel("memo"); });
 document.getElementById("memoCancel").addEventListener("click", stopMemoEditing);
+document.getElementById("memoInsertCheck").addEventListener("click", function () {
+  var input = document.getElementById("memoText");
+  var value = input.value;
+  var cursor = input.selectionStart == null ? value.length : input.selectionStart;
+  var lineStart = Math.max(value.lastIndexOf("\n", cursor - 1), value.lastIndexOf("\r", cursor - 1)) + 1;
+  var lineEnd = value.slice(lineStart).search(/[\r\n]/);
+  lineEnd = lineEnd < 0 ? value.length : lineStart + lineEnd;
+  var line = value.slice(lineStart, lineEnd);
+  if (window.MemoCheck && window.MemoCheck.parse(line)[0].marked) {
+    input.focus();
+    return;
+  }
+  input.value = value.slice(0, lineStart) + "□ " + value.slice(lineStart);
+  input.setSelectionRange(cursor + 2, cursor + 2);
+  input.focus();
+});
 
 // 対応する iPhone でだけ音声ボタンを作る。認識後も保存は利用者が行う。
 (function setupSpeechMemo() {
@@ -868,7 +917,8 @@ document.getElementById("memoList").addEventListener("click", function (event) {
     return;
   }
   if (action === "schedule") {
-    if (!window.ScanRouter || !window.ScanRouter.handoff("memo", memo.text.split("\n"))) {
+    var scheduleText = window.MemoCheck ? window.MemoCheck.strip(memo.text) : memo.text;
+    if (!window.ScanRouter || !window.ScanRouter.handoff("memo", scheduleText.split(/\r?\n/))) {
       toast("予定アプリへ渡せませんでした");
       return;
     }
@@ -881,9 +931,10 @@ document.getElementById("memoList").addEventListener("click", function (event) {
   if (action === "todo") {
     if (editingId) stopEditing();
     resetManualEdits();
-    var candidates = window.Todos ? window.Todos.candidates(memo.text, "", todayStr()) : [];
-    document.getElementById("f-title").value = String(memo.text.split(/\r?\n/)[0] || "").trim().slice(0, 40);
-    document.getElementById("f-kind").value = "やること";
+    var todoText = window.MemoCheck ? window.MemoCheck.strip(memo.text) : memo.text;
+    var candidates = window.Todos ? window.Todos.candidates(todoText, "", todayStr()) : [];
+    document.getElementById("f-title").value = String(todoText.split(/\r?\n/)[0] || "").trim().slice(0, 40);
+    document.getElementById("f-kind").value = "TODO";
     document.getElementById("f-due").value = candidates.length ? candidates[0].dueOn : "";
     document.getElementById("f-note").value = memo.text;
     pendingTodoMemoId = id;
@@ -891,6 +942,19 @@ document.getElementById("memoList").addEventListener("click", function (event) {
     document.getElementById("f-title").focus();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+});
+
+document.getElementById("memoList").addEventListener("change", function (event) {
+  var checkbox = event.target.closest("input[data-memo-check]");
+  if (!checkbox || !window.MemoCheck) return;
+  var row = checkbox.closest(".memo-item");
+  var id = row && row.getAttribute("data-id");
+  var memo = state.memos.find(function (item) { return item.id === id; });
+  if (!memo) return;
+  memo.text = window.MemoCheck.toggle(memo.text, Number(checkbox.getAttribute("data-line-index")), checkbox.checked);
+  memo.updatedAt = new Date().toISOString();
+  save();
+  renderMemos();
 });
 
 /* ---------- 操作 ---------- */
@@ -1082,7 +1146,7 @@ function toCalendarEvent(item) {
   var parts = [];
   if (item.note) parts.push(item.note);
   parts.push("状態：" + item.status);
-  parts.push("（書類・やることから登録）");
+  parts.push("（書類・TODOから登録）");
   return {
     uid: item.id + "@docs-tracker",
     title: "【" + item.kind + "】" + item.title,
@@ -1563,7 +1627,7 @@ function requestAiSuggestion(text) {
   var work = window.OnDeviceAI.status().then(function (status) {
     if (!status || !status.available) throw new Error("unavailable");
     return window.OnDeviceAI.respond({
-      instructions: "書類の文字から登録項目を提案してください。回答は説明を付けず、title（件名）、dueOn（提出期限。実在する日付のYYYY-MM-DD。不明なら空文字）、kind（申請、回覧、提出、支払い、やること、その他のどれか）、summary（日本語1〜2文）の4項目を持つJSONオブジェクトだけにしてください。",
+      instructions: "書類の文字から登録項目を提案してください。回答は説明を付けず、title（件名）、dueOn（提出期限。実在する日付のYYYY-MM-DD。不明なら空文字）、kind（申請、回覧、提出、支払い、TODO、その他のどれか）、summary（日本語1〜2文）の4項目を持つJSONオブジェクトだけにしてください。",
       prompt: "今日は " + todayStr() + " です。次の書類文字を整理してください。\n\n" + String(text).slice(0, 6000)
     });
   }).then(function (answer) {
@@ -1778,7 +1842,7 @@ window.applyDeepAction = function (params) {
     pendingTodoMemoId = null;
     showPanel("docs");
     document.getElementById("f-title").value = params.todo.trim();
-    document.getElementById("f-kind").value = "やること";
+    document.getElementById("f-kind").value = "TODO";
     window.scrollTo({ top: 0, behavior: "smooth" });
     document.getElementById("f-title").focus();
   }

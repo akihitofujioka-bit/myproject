@@ -72,8 +72,8 @@ const fakeNative = reason => {
         });
       }
       if (options.prompt.includes("JSON失敗")) return Promise.resolve({ text: "JSONではありません" });
-      if (options.prompt.includes("やること")) {
-        return Promise.resolve({ text: JSON.stringify({ kind: "todo", title: "架空の資料を出す", date: "2026-10-16", start: "", end: "", place: "", memo: "" }) });
+      if (options.prompt.includes("TODO")) {
+        return Promise.resolve({ text: JSON.stringify({ kind: "TODO", title: "架空の資料を出す", date: "2026-10-16", start: "", end: "", place: "", memo: "" }) });
       }
       return Promise.resolve({ text: JSON.stringify({ kind: "event", title: "架空の打合せ", date: "2026-10-20", start: "10:00", end: "11:00", place: "架空会議室", memo: "架空メモ" }) });
     }
@@ -212,15 +212,15 @@ try {
 
   await page.click("#aiViewBtn");
   await page.click("#aiNewChat");
-  await page.fill("#aiQuestion", "金曜までに架空の資料を出す、やることに追加して");
+  await page.fill("#aiQuestion", "金曜までに架空の資料を出す、TODOに追加して");
   await page.click("#aiSend");
   await page.waitForFunction(() => document.querySelector("[data-ai-todo-draft]"));
   await page.click("[data-ai-todo-draft]");
-  ok(await page.locator("#aiTodoTitle").inputValue() === "架空の資料を出す" && await page.locator("#aiTodoDate").inputValue() === "2026-10-16", "やることの件名と期限を直せる欄へ入れる");
+  ok(await page.locator("#aiTodoTitle").inputValue() === "架空の資料を出す" && await page.locator("#aiTodoDate").inputValue() === "2026-10-16", "TODOの件名と期限を直せる欄へ入れる");
   await page.fill("#aiTodoTitle", "直した架空の資料");
   await page.click("#aiTodoAdd");
   const todoData = await page.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1")));
-  ok(todoData.items.length === 2 && todoData.items[0].title === "既存の架空項目" && todoData.items[1].title === "直した架空の資料", "既存項目を残してやることを1件足す");
+  ok(todoData.items.length === 2 && todoData.items[0].title === "既存の架空項目" && todoData.items[1].title === "直した架空の資料" && todoData.items[1].kind === "TODO", "既存項目を残してTODOを1件足す");
   ok(todoData.memos[0].text === "残すメモ" && todoData.calIds.old === "calendar-1", "既存のメモと設定を残す");
 
   await page.click("#aiNewChat");

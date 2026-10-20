@@ -195,7 +195,7 @@
     var parts = [displayDate(row.date)];
     if (row.todo) parts.push("期限");
     else if (row.start || row.end) parts.push((row.start || "") + (row.end ? "-" + row.end : ""));
-    parts.push(row.title + (row.todo ? "（やること）" : ""));
+    parts.push(row.title + (row.todo ? "（TODO）" : ""));
     if (row.place) parts.push("@" + row.place);
     return parts.filter(Boolean).join(" ");
   }
@@ -345,16 +345,16 @@
     var text = String(question || "");
     var request = DRAFT_REQUEST_WORDS.some(function (word) {
       return text.indexOf(word) >= 0;
-    }) || /やることに(?:追加|入れ|して)/.test(text) || /(?:登録|追加)(?:して|してください|してほしい|をお願い)/.test(text);
+    }) || /(?:TODO|トゥードゥー|やること)に(?:追加|入れ|して)/i.test(text) || /(?:登録|追加)(?:して|してください|してほしい|をお願い)/.test(text);
     if (/(?:教えて(?:ください|下さい|ほしい)?|は|ある|あります(?:か)?)[？?。]?\s*$/.test(text) || /[？?]\s*$/.test(text)) return request;
     return DRAFT_REQUEST_WORDS.concat(["登録", "追加"]).some(function (word) {
       return text.indexOf(word) >= 0;
-    }) || /やることに(?:追加|入れ|して)/.test(text);
+    }) || /(?:TODO|トゥードゥー|やること)に(?:追加|入れ|して)/i.test(text);
   }
 
   function draftInstructions(today) {
     return "今日は " + String(today || "") + " です。質問から登録用の下書きを作り、説明や囲みを付けず次の形のJSONだけを返してください。" +
-      '{"kind":"event|todo","title":"…","date":"YYYY-MM-DD","start":"HH:mm","end":"HH:mm","place":"…","memo":"…"}';
+      '{"kind":"event|TODO","title":"…","date":"YYYY-MM-DD","start":"HH:mm","end":"HH:mm","place":"…","memo":"…"}';
   }
 
   function firstObject(text) {
@@ -399,7 +399,7 @@
     return {
       ok: true,
       draft: {
-        kind: value.kind === "todo" ? "todo" : "event",
+        kind: String(value.kind || "").toLowerCase() === "todo" || value.kind === "やること" ? "todo" : "event",
         title: title,
         date: date,
         start: start,

@@ -30,6 +30,8 @@ ok(!D.validDate("2026-04-31"), "存在しない月末日を拒む");
 const parsed = D.parse('提案です。```json\n{"title":"架空商事への回答書","dueOn":"2026-11-06","kind":"提出","summary":"架空の調査に回答する書類です。期限までに提出します。"}\n```');
 ok(parsed && parsed.title === "架空商事への回答書" && parsed.kind === "提出", "説明付き回答から正しい提案を読む");
 ok(D.parse('{"title":"架空の回覧","dueOn":"","kind":"回覧","summary":"架空の案内を回覧します。"}').dueOn === "", "期限不明の空文字を受け付ける");
+ok(D.parse('{"title":"架空の確認","dueOn":"","kind":"TODO","summary":"架空の確認作業です。"}').kind === "TODO", "TODOの種別を受け付ける");
+ok(D.parse('{"title":"架空の旧データ","dueOn":"","kind":"やること","summary":"架空の確認作業です。"}').kind === "TODO", "AIの旧表現をTODOとして受け付ける");
 ok(D.parse('{"title":"架空の申請","dueOn":"2026-02-30","kind":"申請","summary":"架空の申請です。"}') === null, "実在しない提案日を拒む");
 ok(D.parse('{"title":"架空の申請","dueOn":"2026-10-30","kind":"会議","summary":"架空の会議です。"}') === null, "選択肢にない種別を拒む");
 ok(D.parse('{"title":123,"dueOn":"2026-10-30","kind":"申請","summary":"架空の申請です。"}') === null, "型が違う回答を拒む");

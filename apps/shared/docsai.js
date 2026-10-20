@@ -5,7 +5,7 @@
 (function (global) {
   "use strict";
 
-  var KINDS = ["申請", "回覧", "提出", "支払い", "やること", "その他"];
+  var KINDS = ["申請", "回覧", "提出", "支払い", "TODO", "その他"];
 
   function firstObject(text) {
     var source = String(text == null ? "" : text);
@@ -51,10 +51,11 @@
     var title = value.title.trim();
     var dueOn = value.dueOn.trim();
     var summary = value.summary.trim();
+    var kind = value.kind === "やること" ? "TODO" : value.kind;
     var sentences = summary.split(/[。！？!?]+/).filter(function (part) { return !!part.trim(); });
-    if (!title || title.length > 100 || KINDS.indexOf(value.kind) < 0 ||
+    if (!title || title.length > 100 || KINDS.indexOf(kind) < 0 ||
         (dueOn && !validDate(dueOn)) || !summary || summary.length > 400 || sentences.length > 2) return null;
-    return { title: title, dueOn: dueOn, kind: value.kind, summary: summary };
+    return { title: title, dueOn: dueOn, kind: kind, summary: summary };
   }
 
   global.DocsAI = {
