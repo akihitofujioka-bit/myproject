@@ -236,7 +236,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   background: var(--surface); border-top: 1px solid var(--border);
 }
 .actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
-.actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+.actionbar button { flex: 1; min-height: 48px; font-weight: 700; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
 .barback { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: inherit; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .bargroup { display: contents; }
 .bargroup[hidden] { display: none; }
@@ -483,10 +483,10 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
   <div>
     <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
     <span class="bargroup" id="docsBarButtons">
-    <button type="button" class="primary" id="jumpAdd">書類を登録する</button>
+    <button type="button" class="primary" id="jumpAdd">登録する</button>
     <!-- QR の読み取りは端末側の機能を使うため、アプリとして開いたときだけ出す -->
-    <button type="button" id="qrScanBtn" hidden>QRで開く</button>
-    <button type="button" id="jumpDue">期限が近い順</button>
+    <button type="button" id="qrScanBtn" hidden>QR</button>
+    <button type="button" id="jumpDue">期限順</button>
     </span>
   </div>
 </div>
@@ -865,8 +865,8 @@ function showPanel(name) {
   document.getElementById("docsTab").setAttribute("aria-pressed", String(name === "docs"));
   document.getElementById("todoTab").setAttribute("aria-pressed", String(todo));
   document.getElementById("memoTab").setAttribute("aria-pressed", String(memo));
-  document.getElementById("jumpAdd").textContent = todo ? "追加する" : "書類を登録する";
-  document.getElementById("jumpDue").textContent = "期限が近い順";
+  document.getElementById("jumpAdd").textContent = todo ? "追加する" : "登録する";
+  document.getElementById("jumpDue").textContent = "期限順";
   // QR で開くのは書類だけなので、TODO のタブでは隠す（下のボタンが詰まらないようにする）
   document.getElementById("docsActionbar").classList.toggle("todo-mode", todo);
   if (todo) renderTodos();
