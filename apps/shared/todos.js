@@ -1,5 +1,5 @@
 /*
- * 通知の文章からやること候補を見つけ、確認後に書類トラッカーへ足す。
+ * 通知の文章からTODO候補を見つけ、確認後に書類トラッカーへ足す。
  * 読めない保存データは上書きせず、既存の項目やほかの鍵も残す。
  */
 (function (global) {
@@ -86,7 +86,7 @@
       data.items.push({
         id: uid(),
         title: String(item.title).trim(),
-        kind: "やること",
+        kind: "TODO",
         dest: "",
         dueOn: String(item.dueOn || ""),
         status: "未着手",

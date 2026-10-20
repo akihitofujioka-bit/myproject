@@ -37,7 +37,7 @@ const n = C.normalize({ photos: "壊れた値" }, "fridge");
 ok(n.slot === "fridge" && n.interval === "day" && n.veil === undefined && Array.isArray(n.photos) && n.photos.length === 0, "壊れた記録を最初の値で埋める");
 ok(/^\d{4}-\d{2}-\d{2}$/.test(n.startDate), "startDate が無ければ今日");
 ok(C.todayString(new Date(2026, 0, 5)) === "2026-01-05", "地域の日付で YYYY-MM-DD");
-ok(C.SLOTS.join(",") === "top,fridge,docs-tracker,schedule,kakeibo,cards", "6 つの枠");
+ok(C.SLOTS.join(",") === "top,fridge,docs-tracker,schedule,kakeibo,cards,meishi", "7 つの枠");
 
 const D = C.albumDiff(["a", "b", "c"], ["b", "c", "d"]);
 ok(D.keep.join() === "b,c" && D.add.join() === "d" && D.order.join() === "b,c,d", "albumDiff: 増えた d だけ add、消えた a は除く");

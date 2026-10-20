@@ -92,7 +92,7 @@
         title: it.title,
         date: it.dueOn,
         days: days,
-        kind: it.kind || "",
+        kind: it.kind === "やること" ? "TODO" : (it.kind || ""),
         dest: it.dest || "",
         status: it.status || ""
       });

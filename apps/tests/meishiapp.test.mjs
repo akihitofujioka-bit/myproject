@@ -50,6 +50,7 @@ const ok = (condition, label) => {
 const fakeNative = () => {
   const photo = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9k=";
   window.__meishiFake = {
+    scans: 0,
     camera: {
       cancelled: false,
       photo: photo,
@@ -83,7 +84,15 @@ const fakeNative = () => {
       }
     },
     nativePromise: (plugin, method, options) => {
-      if (plugin === "ReceiptScanner" && method === "scan") return Promise.resolve(window.__meishiFake.camera);
+      if (plugin === "ReceiptScanner" && method === "scan") {
+        window.__meishiFake.scans++;
+        return Promise.resolve(window.__meishiFake.camera);
+      }
+      if (plugin === "OnDeviceAI" && method === "status") return Promise.resolve({ available: true });
+      if (plugin === "OnDeviceAI" && method === "respond") {
+        window.__meishiFake.aiCalls = (window.__meishiFake.aiCalls || 0) + 1;
+        return Promise.resolve({ text: '端末内の提案 {"name":"山田 架空","company":"架空商事株式会社","department":"未来企画部","title":"課長","phones":["090-1111-2222"],"email":"sample@example.invalid","address":"〒100-0000 東京都架空区見本1-2","url":""}' });
+      }
       if (plugin === "CalendarReader" && method === "isSupported") return Promise.resolve({ supported: true, authorized: localStorage.getItem("test.calendarDenied") !== "1" });
       if (plugin === "CalendarReader" && method === "requestAccess") {
         window.__calendarRequests = (window.__calendarRequests || 0) + 1;
@@ -127,11 +136,29 @@ try {
   await reset(page);
   ok(await page.evaluate(() => typeof window.ScanRouter?.pickLines === "function"), "ScanRouter を receiptscan.js より前に読み込む");
 
+  await page.goto(BASE + "meishi/index.html?action=scan");
+  await page.waitForFunction(() => !document.getElementById("editView").hidden);
+  ok(await page.evaluate(() => window.__meishiFake.scans === 1), "?action=scan で撮影ボタンと同じ処理を呼ぶ");
+  ok(new URL(page.url()).search === "", "撮影開始後に action を URL から消す");
+  ok(await page.evaluate(() => typeof window.applyDeepAction === "function"), "applyDeepAction を公開する");
+  await page.click("#cancelEditBtn");
+  await page.evaluate(() => window.applyDeepAction({ action: "scan" }));
+  await page.waitForFunction(() => !document.getElementById("editView").hidden);
+  ok(await page.evaluate(() => window.__meishiFake.scans === 2), "applyDeepAction から撮影を始める");
+  await page.click("#cancelEditBtn");
+
   await page.click("#shootBtn");
   await page.waitForFunction(() => !document.getElementById("editView").hidden);
   ok(await page.locator("#f-name").inputValue() === "山田 架空", "撮影結果を氏名へ振り分ける");
   ok(await page.locator("#f-company").inputValue() === "架空商事株式会社", "撮影結果を会社へ振り分ける");
   ok((await page.locator("#editPhoto").getAttribute("src") || "").startsWith("blob:"), "確認画面に写真を出す");
+  await page.waitForFunction(() => !document.getElementById("aiSuggestion").hidden);
+  ok((await page.locator("#aiSuggestion").innerText()).includes("端末内 AI で提案"), "端末内 AI の提案だと表示する");
+  await page.fill("#f-title", "手入力役職");
+  await page.click("#useAiBtn");
+  ok(await page.locator("#f-title").inputValue() === "手入力役職", "手で直した欄を AI で上書きしない");
+  ok(await page.locator("#f-name").inputValue() === "山田 架空", "AI の振り分けを未編集の欄へ反映する");
+  await page.fill("#f-title", "課長");
   await page.fill("#f-receivedOn", "2026-10-15");
   await page.dispatchEvent("#f-receivedOn", "change");
   await page.waitForFunction(() => document.querySelectorAll("#meetingOptions input").length === 3);

@@ -124,7 +124,7 @@ ok((await page.locator("li.item[data-id]").count()) === 1, "再読込後もデ�
 /* ---------------- 書類トラッカー ---------------- */
 console.log("== apps/docs-tracker ==");
 await page.goto("file://" + path.join(ROOT, "apps/docs-tracker/index.html"));
-ok((await page.title()) === "書類・やること", "タイトル");
+ok((await page.title()) === "書類・TODO", "タイトル");
 
 const addDoc = async (title, due, kind = "提出", pri = "中") => {
   await page.fill("#f-title", title);
@@ -507,7 +507,7 @@ console.log("== 書類の撮影（apps/docs-tracker）==");
   ok((await docPage.evaluate(() => window.__called)) === "ReceiptScanner.scanToPhotos",
     "写真に保存する方の呼び出しを使う");
   ok((await docPage.locator("#toast").textContent()).includes("2枚"), "保存した枚数を知らせる");
-  ok((await docPage.locator("#docPhotoBtn").textContent()) === "📄 書類を撮る", "終わるとボタンが戻る");
+  ok((await docPage.locator("#docPhotoBtn").textContent()) === "写真だけ保存する", "終わるとボタンが戻る");
 
   // 利用者が閉じたときは何も言わない
   const ctx2 = await browser.newContext();

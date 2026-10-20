@@ -1,6 +1,6 @@
 {
-  "name": "書類・やること",
-  "short_name": "書類・やること",
+  "name": "書類・TODO",
+  "short_name": "書類・TODO",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",

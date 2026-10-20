@@ -1,9 +1,10 @@
 /* 名刺アプリを通信できないときも開けるよう、必要なファイルを端末に控える。 */
-var CACHE = "meishi-v4";
+var CACHE = "meishi-v7";
 var ASSETS = [
   "./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png",
   "../shared/contacts.js", "../shared/camerapref.js", "../shared/scanrouter.js", "../shared/receiptscan.js", "../shared/documentreader.js",
-  "../shared/calendarread.js", "../shared/meishi.js", "../shared/meishistore.js", "../shared/character.js"
+  "../shared/calendarread.js", "../shared/meishi.js", "../shared/ondeviceai.js", "../shared/meishiai.js", "../shared/deeplink.js",
+  "../shared/meishistore.js", "../shared/character.js"
 ];
 
 self.addEventListener("install", function (event) {

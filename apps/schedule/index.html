@@ -477,12 +477,12 @@ button.small {
       </div>
       <div class="ai-conversation" id="aiConversation" aria-live="polite"></div>
       <section id="aiTodoConfirm" class="card" hidden>
-        <h3>やることを確認</h3>
+        <h3>TODOを確認</h3>
         <div class="row">
           <div class="field wide"><label for="aiTodoTitle">件名</label><input id="aiTodoTitle" autocomplete="off"></div>
           <div class="field"><label for="aiTodoDate">期限</label><input id="aiTodoDate" type="date"></div>
         </div>
-        <div class="chips"><button type="button" class="primary" id="aiTodoAdd">書類・やることに入れる</button><button type="button" class="link" id="aiTodoCancel">やめる</button></div>
+        <div class="chips"><button type="button" class="primary" id="aiTodoAdd">書類・TODOに入れる</button><button type="button" class="link" id="aiTodoCancel">やめる</button></div>
       </section>
       <div class="ai-input-row">
         <div><label for="aiQuestion">メッセージ</label><textarea id="aiQuestion" placeholder="聞きたいことを入力"></textarea></div>
@@ -1141,7 +1141,7 @@ function renderAIConversation() {
         bubble += '<div class="footnote">' + esc("下書きを作れませんでした。登録画面を空で開きますか？") + '</div>' +
           '<button type="button" class="small" data-ai-empty-draft="' + index + '">' + esc("予定の登録画面を空で開く") + '</button>';
       } else if (message.draft.kind === "todo") {
-        bubble += '<div><button type="button" class="small" data-ai-todo-draft="' + index + '">' + esc("やることとして開く") + '</button></div>';
+        bubble += '<div><button type="button" class="small" data-ai-todo-draft="' + index + '">' + esc("TODOとして開く") + '</button></div>';
       } else {
         bubble += '<div><button type="button" class="small" data-ai-event-draft="' + index + '">' + esc("予定の登録画面で開く") + '</button></div>';
       }
@@ -1441,12 +1441,12 @@ document.getElementById("aiTodoAdd").addEventListener("click", function () {
   }
   var result = window.Todos.add(localStorage, [{ title: title, dueOn: dueOn }]);
   if (!result.ok) {
-    toast("やることを保存できませんでした");
+    toast("TODOを保存できませんでした");
     return;
   }
   pendingTodoDraft = null;
   document.getElementById("aiTodoConfirm").hidden = true;
-  toast("書類・やることに追加しました");
+  toast("書類・TODOに追加しました");
 });
 document.getElementById("aiTodoCancel").addEventListener("click", function () {
   pendingTodoDraft = null;
@@ -2264,8 +2264,8 @@ function registerMeetingMode(mode, button) {
     return entries.length ? window.Todos.add(localStorage, entries) : { ok: true, added: 0 };
   }
   function todoNotice(result) {
-    if (!result.ok) return "。やることを入れられませんでした（書類・やることのデータが読めません）";
-    return result.added ? "。やること " + result.added + " 件を書類・やることに入れました" : "";
+    if (!result.ok) return "。TODOを入れられませんでした（書類・TODOのデータが読めません）";
+    return result.added ? "。TODO " + result.added + " 件を書類・TODOに入れました" : "";
   }
   var todoResult = null;
   if (mode !== "calendar") {

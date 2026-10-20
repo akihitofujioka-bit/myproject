@@ -56,6 +56,8 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
 .photo { display: block; width: min(100%, 560px); aspect-ratio: 8 / 5; object-fit: contain; margin: 0 auto 12px; border-radius: 8px; background: var(--accent-weak); }
 .photo-empty { display: flex; align-items: center; justify-content: center; width: min(100%, 560px); aspect-ratio: 8 / 5; margin: 0 auto 12px; border-radius: 8px; background: var(--accent-weak); color: var(--muted); }
 .warn { padding: 9px 10px; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-weak); margin: 0 0 12px; }
+.ai-suggestion { padding: 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-weak); margin: 0 0 12px; }
+.ai-suggestion span { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
 .meeting-options { display: grid; gap: 6px; }
 .meeting-options label { display: flex; align-items: flex-start; gap: 8px; color: var(--text); margin: 0; padding: 8px; border: 1px solid var(--border); border-radius: 7px; }
 .meeting-options input { width: auto; min-height: 0; margin-top: 5px; }
@@ -86,6 +88,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
   <section id="editView" hidden>
     <h2 class="view-heading" id="editHeading">名刺を確認</h2>
     <p class="warn" id="readWarning" hidden>文字を読み取れませんでした。手で入力できます</p>
+    <div class="ai-suggestion" id="aiSuggestion" hidden>
+      <span>端末内 AI で提案</span>
+      <button type="button" id="useAiBtn">端末内 AI の振り分けを使う</button>
+    </div>
     <img class="photo" id="editPhoto" alt="名刺の写真" hidden>
     <div class="photo-empty" id="editPhotoEmpty">写真なし</div>
     <form id="editForm" autocomplete="off">
@@ -149,8 +155,11 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
 <script src="../shared/documentreader.js"></script>
 <script src="../shared/calendarread.js"></script>
 <script src="../shared/meishi.js"></script>
+<script src="../shared/ondeviceai.js"></script>
+<script src="../shared/meishiai.js"></script>
 <script src="../shared/meishistore.js"></script>
 <script src="../shared/character.js"></script>
+<script src="../shared/deeplink.js"></script>
 <script>
 (function () {
   "use strict";
@@ -167,6 +176,13 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
   var meetingCandidates = [];
   var scheduleItems = [];
   var listRequestNumber = 0;
+  var aiRequestNumber = 0;
+  var aiProposal = null;
+  var aiEdited = {};
+  var aiFieldById = {
+    "f-name": "name", "f-company": "company", "f-department": "department", "f-title": "title",
+    "f-phones": "phones", "f-email": "email", "f-address": "address", "f-url": "url"
+  };
 
   function pad(number) { return String(number).padStart(2, "0"); }
   function today() {
@@ -339,6 +355,33 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
       photo: editPhoto
     };
   }
+  function resetAISuggestion() {
+    aiRequestNumber++;
+    aiProposal = null;
+    aiEdited = {};
+    document.getElementById("aiSuggestion").hidden = true;
+  }
+  function requestAISuggestion(lines) {
+    var requestNumber;
+    if (!window.MeishiAI || !lines.length) return;
+    requestNumber = ++aiRequestNumber;
+    window.MeishiAI.suggest(lines).then(function (proposal) {
+      if (requestNumber !== aiRequestNumber || document.getElementById("editView").hidden) return;
+      aiProposal = proposal;
+      document.getElementById("aiSuggestion").hidden = false;
+    }).catch(function () {
+      // AI が使えない場合は、規則で振り分けた確認画面をそのまま使う。
+    });
+  }
+  function applyAIProposal() {
+    if (!aiProposal) return;
+    ["name", "company", "department", "title", "email", "address", "url"].forEach(function (key) {
+      if (!aiEdited[key]) document.getElementById("f-" + key).value = aiProposal[key] || "";
+    });
+    if (!aiEdited.phones) document.getElementById("f-phones").value = (aiProposal.phones || []).join("\n");
+    document.getElementById("aiSuggestion").hidden = true;
+    toast("端末内 AI の提案を反映しました");
+  }
   function renderList() {
     var query = document.getElementById("search").value;
     var requestNumber = ++listRequestNumber;
@@ -445,11 +488,13 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
       var text = typeof line === "string" ? line : line && line.text;
       return typeof text === "string" && text.trim().length !== 0;
     });
+    resetAISuggestion();
     parsed = window.Meishi.parse(readableLines);
     parsed.photo = base64Blob(result.photo);
     parsed.receivedOn = today();
     parsed.meeting = null;
     fillForm(blankCard(parsed), readableLines.length === 0);
+    requestAISuggestion(readableLines);
   }
   // ask が false のときは、許可済みの場合だけ読む（起動時に許可を求めない）。
   function loadCalendar(ask) {
@@ -478,21 +523,31 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     var button = event.target.closest("button[data-id]");
     if (button) openById(button.getAttribute("data-id"));
   });
-  document.getElementById("shootBtn").addEventListener("click", function () {
+  function startScan() {
     window.ReceiptScan.scan({ purpose: "card" }).then(function (result) {
       scanResult(result, result && result.lines || []);
     }).catch(function () { toast("名刺を読み取れませんでした"); });
-  });
+  }
+  window.applyDeepAction = function (params) {
+    if (params && params.action === "scan") startScan();
+  };
+  document.getElementById("shootBtn").addEventListener("click", startScan);
   document.getElementById("pickBtn").addEventListener("click", function () {
     window.DocumentReader.pickImage({ withPhoto: true }).then(function (result) {
       scanResult(result, result && (result.boxes || result.lines) || []);
     }).catch(function () { toast("名刺を読み取れませんでした"); });
   });
   document.getElementById("f-receivedOn").addEventListener("change", function () { renderMeetings(null); });
+  document.getElementById("editForm").addEventListener("input", function (event) {
+    var key = aiFieldById[event.target && event.target.id];
+    if (key && aiRequestNumber) aiEdited[key] = true;
+  });
+  document.getElementById("useAiBtn").addEventListener("click", applyAIProposal);
   document.getElementById("editForm").addEventListener("submit", function (event) {
     var request;
     var wasEditing;
     event.preventDefault();
+    resetAISuggestion();
     wasEditing = Boolean(editingId);
     request = editingId ? window.MeishiStore.update(editingId, formCard()) : window.MeishiStore.add(formCard());
     request.then(function (saved) {
@@ -508,12 +563,17 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     }).catch(function () { toast("名刺を保存できません"); });
   });
   document.getElementById("cancelEditBtn").addEventListener("click", function () {
+    resetAISuggestion();
     clearURL("edit");
     if (editingId && currentCard) openDetail(currentCard);
     else { show("listView"); renderList(); }
   });
   document.getElementById("backToListBtn").addEventListener("click", function () { show("listView"); renderList(); });
-  document.getElementById("editBtn").addEventListener("click", function () { if (currentCard) fillForm(currentCard, false); });
+  document.getElementById("editBtn").addEventListener("click", function () {
+    if (!currentCard) return;
+    resetAISuggestion();
+    fillForm(currentCard, false);
+  });
   document.getElementById("deleteBtn").addEventListener("click", function () {
     if (!currentCard || !window.confirm("この名刺を削除しますか？")) return;
     window.MeishiStore.remove(currentCard.id).then(function () {
@@ -526,8 +586,12 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
 
   scheduleItems = loadScheduleItems();
   renderList().then(function () {
-    var id = new URLSearchParams(location.search).get("id");
-    if (id) openById(id);
+    var params = new URLSearchParams(location.search);
+    var id = params.get("id");
+    if (params.get("action") === "scan") {
+      history.replaceState(null, "", location.pathname + location.hash);
+      window.applyDeepAction({ action: "scan" });
+    } else if (id) openById(id);
   });
   loadCalendar(false);
 

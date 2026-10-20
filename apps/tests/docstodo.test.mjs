@@ -1,5 +1,5 @@
 /*
- * 書類・やることの名前、種別、保存データ、メモ機能の画面テスト。
+ * 書類・TODOの名前、種別、保存データ、メモ機能の画面テスト。
  *
  *   NODE_PATH=<playwright の場所> CHROMIUM_PATH=<headless_shell> node apps/tests/docstodo.test.mjs
  */
@@ -42,12 +42,13 @@ const ok = (condition, label) => {
 };
 
 await page.goto(base + "index.html");
-ok((await page.locator('a[href="docs-tracker/index.html"] .name').textContent()).trim() === "書類・やること", "トップ画面のアプリ名");
+ok((await page.locator('a[href="docs-tracker/index.html"] .name').textContent()).trim() === "書類・TODO", "トップ画面のアプリ名");
 
 await page.goto(base + "docs-tracker/index.html");
-ok((await page.title()) === "書類・やること", "画面の題名");
-ok((await page.locator("h1").textContent()).trim() === "書類・やること", "画面の見出し");
-ok(await page.locator('#f-kind option', { hasText: "やること" }).count() === 1, "種別にやることがある");
+ok((await page.title()) === "書類・TODO", "画面の題名");
+ok((await page.locator("h1").textContent()).trim() === "書類・TODO", "画面の見出し");
+ok(await page.locator('#f-kind option', { hasText: "TODO" }).count() === 0, "書類の種別にTODOがない");
+ok(await page.locator("#todoTab").count() === 1, "TODOタブがある");
 
 await page.evaluate(() => {
   localStorage.clear();
@@ -62,28 +63,46 @@ await page.evaluate(() => {
   }));
 });
 await page.reload();
-ok((await page.locator("#list").textContent()).includes("架空の準備"), "やることが一覧に出る");
-ok((await page.locator("#stats .stat").first().locator(".num").textContent()).trim() === "1", "やることを未処理件数に数える");
+ok(!(await page.locator("#list").textContent()).includes("架空の準備"), "旧表現のTODOは書類一覧に出ない");
+ok((await page.locator("#stats .stat").first().locator(".num").textContent()).trim() === "0", "TODOを書類の未処理件数に数えない");
+await page.click("#todoTab");
+ok((await page.locator("#todoList").textContent()).includes("架空の準備"), "旧表現のデータがTODO一覧に出る");
+ok(await page.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1")).items[0].kind) === "TODO", "読み込み時に旧表現の保存値をTODOへ置き換える");
 
+await page.click("#docsTab");
 await page.fill("#f-title", "架空の申請書");
 await page.selectOption("#f-kind", { label: "申請" });
 await page.click("#submitBtn");
 const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1")));
 ok(saved.memos.length === 1 && saved.memos[0].text === "架空のメモ", "別の書類を登録してもメモが残る");
 ok(saved.items.find(it => it.id === "d1").scheduleId === "s1", "別の書類を登録しても予定の番号が残る");
+ok(saved.items.find(it => it.id === "d1").kind === "TODO", "旧表現の保存データをTODOへ置き換える");
 
-// メモの保存と、予定・やることへの移動
+// メモの保存と、予定・TODOへの移動
 await page.evaluate(() => localStorage.clear());
 await page.reload();
 await page.click("#memoTab");
 ok(!(await page.locator("#jumpAdd").isVisible()) && await page.locator("#docsActionbar .barback").isVisible(), "メモのタブでは書類のボタンを隠し、一覧へ戻るボタンは残す");
-await page.fill("#memoText", "10月22日 14時から 架空の打合せ 第2会議室");
+await page.fill("#memoText", "□ 10月22日 14時から 架空の打合せ 第2会議室");
 await page.click("#memoSave");
 let memo = page.locator(".memo-item").first();
 ok((await memo.textContent()).includes("10月22日 14時から 架空の打合せ 第2会議室"), "保存したメモが一覧の先頭に出る");
+ok(await memo.locator('input[type="checkbox"]').count() === 1 && !(await memo.locator('input[type="checkbox"]').isChecked()), "未チェックの印を本物のチェックボックスで出す");
 ok(await memo.locator('button[data-action="schedule"]').count() === 1, "日付のあるメモに予定に入れるボタンが出る");
-ok(await memo.locator('button[data-action="todo"]').count() === 1, "日付のあるメモにやることにするボタンが出る");
+ok(await memo.locator('button[data-action="todo"]').count() === 1, "日付のあるメモにTODOにするボタンが出る");
 
+const beforeCheck = await page.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1")).memos[0].updatedAt);
+await memo.locator('input[type="checkbox"]').check();
+const afterCheck = await page.evaluate(() => JSON.parse(localStorage.getItem("docs-tracker.v1")).memos[0]);
+ok(afterCheck.text.startsWith("☑ 10月22日") && afterCheck.updatedAt !== beforeCheck, "チェック時に対象行の印と更新日時を保存する");
+ok(await memo.locator(".memo-check-line").getAttribute("class").then(value => value.includes("checked")), "チェック済みの行に表示用の状態を付ける");
+
+await page.fill("#memoText", "一行目\n二行目");
+await page.locator("#memoText").evaluate(input => input.setSelectionRange(input.value.length, input.value.length));
+await page.click("#memoInsertCheck");
+ok(await page.locator("#memoText").inputValue() === "一行目\n□ 二行目", "カーソルのある行頭に未チェック印を入れる");
+await page.click("#memoInsertCheck");
+ok(await page.locator("#memoText").inputValue() === "一行目\n□ 二行目", "すでに印がある行は変えない");
 await page.fill("#memoText", "架空の思いつき");
 await page.click("#memoSave");
 memo = page.locator(".memo-item", { hasText: "架空の思いつき" });
@@ -93,6 +112,7 @@ const datedMemo = page.locator(".memo-item", { hasText: "10月22日 14時から 
 await datedMemo.locator('button[data-action="schedule"]').click();
 const pending = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pendingScan")));
 ok(pending.type === "memo", "予定に入れるとメモとして受け渡す");
+ok(pending.lines[0] === "10月22日 14時から 架空の打合せ 第2会議室", "予定へ渡す件名からチェック印を外す");
 await datedMemo.locator("a.memo-schedule-link").click();
 await page.waitForSelector("#meetingConfirm:not([hidden])");
 ok(await page.locator("#meetingForms .scan-result").count() === 1, "予定アプリの確認欄に1件出る");
@@ -105,12 +125,12 @@ await page.goto(base + "docs-tracker/index.html");
 await page.click("#memoTab");
 const todoMemo = page.locator(".memo-item", { hasText: "10月22日 14時から 架空の打合せ 第2会議室" });
 await todoMemo.locator('button[data-action="todo"]').click();
-ok(await page.locator("#f-title").inputValue() === "10月22日 14時から 架空の打合せ 第2会議室".slice(0, 40), "やることの件名を入力欄に入れる");
-ok(await page.locator("#f-kind").inputValue() === "やること", "種別をやることにする");
-ok(await page.locator("#f-note").inputValue() === "10月22日 14時から 架空の打合せ 第2会議室", "本文をメモ欄に入れる");
-await page.click("#submitBtn");
+ok(await page.locator("#todoTab").getAttribute("aria-pressed") === "true", "TODOタブを開く");
+ok(await page.locator("#todo-title").inputValue() === "10月22日 14時から 架空の打合せ 第2会議室".slice(0, 40), "印を外したTODOの件名を入力欄に入れる");
+ok((await page.locator("#todo-note").inputValue()).startsWith("☑ 10月22日"), "元の印を含む本文をメモ欄に入れる");
+await page.click("#todoSubmitBtn");
 await page.click("#memoTab");
-ok((await page.locator(".memo-item", { hasText: "10月22日 14時から 架空の打合せ 第2会議室" }).textContent()).includes("やることにした"), "登録後にやることにした印が出る");
+ok((await page.locator(".memo-item", { hasText: "10月22日 14時から 架空の打合せ 第2会議室" }).textContent()).includes("TODOにした"), "登録後にTODOにした印が出る");
 
 let ideaMemo = page.locator(".memo-item", { hasText: "架空の思いつき" });
 await ideaMemo.locator('button[data-action="edit"]').click();

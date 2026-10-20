@@ -123,7 +123,7 @@ try {
   await pg.click("#documentReadBtn");
   await pg.waitForFunction(() => document.querySelectorAll("#meetingForms .scan-result").length === 1);
   ok(await pg.locator(".m-date").inputValue() === "2026-10-22", "Task 10: 通知の日付");
-  ok(await pg.locator(".m-todo").count() === 2, "Task 10: 通知のやること候補が 2 件");
+  ok(await pg.locator(".m-todo").count() === 2, "Task 10: 通知のTODO候補が 2 件");
   ok((await pg.locator("#meetingForms").innerText()).includes("問い合わせ: 電話 03-0000-0000"), "Task 10: 通知の連絡先");
 
   await pg.evaluate(result => { window.__doc.pickResult = { ...result, ocr: true }; }, noticeResult);
@@ -172,8 +172,8 @@ try {
   ok(formText.includes("10/22 は木曜ですが、通知には水曜とあります"), "Task 7: 曜日の食い違いが出る");
   ok(formText.includes("問い合わせ: 電話 03-0000-0000"), "Task 7: 連絡先の行が出る");
   ok(await pg.locator(".m-contact").isChecked(), "Task 7: 連絡先は最初から選ばれている");
-  ok(await pg.locator(".m-todo").count() === 2, "Task 7: やること候補が 2 件出る");
-  ok(await pg.locator(".m-todo:checked").count() === 2, "Task 7: やること候補は最初から選ばれている");
+  ok(await pg.locator(".m-todo").count() === 2, "Task 7: TODO候補が 2 件出る");
+  ok(await pg.locator(".m-todo:checked").count() === 2, "Task 7: TODO候補は最初から選ばれている");
 
   await pg.locator(".m-todo").first().uncheck();
   await pg.click('[data-meeting-mode="app"]');
@@ -182,7 +182,7 @@ try {
     docs: JSON.parse(localStorage.getItem("docs-tracker.v1"))
   }));
   ok(saved.schedule.items.length === 1 && saved.schedule.items[0].note.includes("問い合わせ: 電話 03-0000-0000"), "Task 7: 予定のメモに選んだ連絡先が入る");
-  ok(saved.docs.items.length === 1 && saved.docs.items[0].kind === "やること", "Task 7: 選んだやること 1 件だけが増える");
+  ok(saved.docs.items.length === 1 && saved.docs.items[0].kind === "TODO", "Task 7: 選んだTODO 1 件だけが増える");
   ok(errs.length === 0, "Task 7: JS エラーなし " + errs.join(" / "));
 
   // 今日から 30 日以内の重なりだけを「気づいたこと」に出す。

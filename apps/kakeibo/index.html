@@ -1338,6 +1338,13 @@ function scanReceipt() {
   });
 }
 
+// Siri・ショートカットから来たときも、撮影ボタンと同じ処理を使う。
+function applyDeepAction(params) {
+  if (!params || params.action !== "scan") return;
+  scanReceipt();
+}
+window.applyDeepAction = applyDeepAction;
+
 document.getElementById("scanReceipt").addEventListener("click", scanReceipt);
 document.getElementById("scanReceiptBar").addEventListener("click", scanReceipt);
 if (window.ReceiptScan && window.ReceiptScan.available()) {
@@ -1354,6 +1361,17 @@ if (window.ReceiptScan && window.ReceiptScan.available()) {
 (function () {
   var handed = window.ScanRouter && window.ScanRouter.takeHandoff("receipt");
   if (handed && handed.length) applyReceipt(handed);
+})();
+
+// URLの指示は一度だけ実行し、再読み込みで撮影が繰り返されないように消す。
+(function () {
+  var match = /(?:^|&)action=([^&]*)/.exec((window.location.search || "").replace(/^\?/, ""));
+  if (!match) return;
+  var action;
+  try { action = decodeURIComponent(match[1]); } catch (e) { return; }
+  if (action !== "scan") return;
+  window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+  applyDeepAction({ action: action });
 })();
 
 /* ---------- オフラインで使えるようにする ---------- */
@@ -1377,5 +1395,6 @@ document.getElementById("f-date").value = todayStr();
 renderSettings();
 render();
 </script>
+<script src="../shared/deeplink.js"></script>
 </body>
 </html>
