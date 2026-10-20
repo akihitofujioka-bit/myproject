@@ -176,6 +176,7 @@ li.item.done { opacity: .62; }
 .memo-item { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px; margin-bottom: 8px; }
 .memo-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .memo-line { min-height: 1.5em; }
+#docsActionbar.todo-mode #qrScanBtn { display: none; }
 .memo-check-line { display: flex; align-items: center; min-height: 44px; gap: 8px; }
 .memo-check-line input[type="checkbox"] { width: 26px; height: 26px; flex: none; margin: 0; }
 .memo-check-line label { min-width: 0; flex: 1; padding: 9px 0; cursor: pointer; color: inherit; font-size: inherit; margin: 0; }
@@ -184,6 +185,11 @@ li.item.done { opacity: .62; }
 .todo-check { display: flex; align-items: flex-start; gap: 10px; }
 .todo-check input[type="checkbox"] { width: 26px; height: 26px; flex: none; margin: 1px 0 0; }
 .todo-check .item-head { flex: 1; min-width: 0; }
+.todo-subitems { list-style: none; margin: 7px 0 0 36px; padding: 0; }
+.todo-subitem { display: flex; align-items: center; gap: 8px; min-height: 38px; }
+.todo-subitem input[type="checkbox"] { width: 22px; height: 22px; flex: none; margin: 0; }
+.todo-subitem label { color: inherit; font-size: 14px; margin: 0; padding: 7px 0; cursor: pointer; }
+.todo-subitem.checked label { color: var(--muted); text-decoration: line-through; }
 
 /* ---- QRコードの表示（紙の書類に貼って、アプリから開けるようにする） ---- */
 .modal {
@@ -428,6 +434,16 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
             <textarea id="todo-note" name="note"></textarea>
           </div>
         </div>
+        <div class="row">
+          <div class="field wide">
+            <label for="todo-checklist">小さな項目（1行に1つ）</label>
+            <textarea id="todo-checklist" name="checklist" rows="5"></textarea>
+            <div class="chips" style="margin-top:8px;align-items:center">
+              <button type="button" id="todoAiBtn" hidden>AI で作る</button>
+              <span class="footnote">端末内 AI で提案</span>
+            </div>
+          </div>
+        </div>
         <div class="row" style="align-items:center">
           <div class="chips" aria-label="期限のクイック入力">
             <button type="button" class="chip" data-todo-plus="0">今日</button>
@@ -511,6 +527,7 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 <script src="../shared/scanrouter.js"></script>
 <script src="../shared/speechmemo.js"></script>
 <script src="../shared/ondeviceai.js"></script>
+<script src="../shared/todochecklist.js"></script>
 <script src="../shared/docsai.js"></script>
 <script>
 "use strict";
@@ -527,6 +544,7 @@ var editingId = null;
 var editingTodoId = null;
 var editingMemoId = null;
 var pendingTodoMemoId = null;
+var pendingTodoChecklist = [];
 var activePanel = "docs";
 // due: 上の件数のボタンで選んだ期限の絞り込み（"" / "expired" / "today" / "week"）
 var filters = { q: "", status: "未完了", kind: "すべて", sort: "due", due: "" };
@@ -579,10 +597,11 @@ function normalize(data) {
     items: items.filter(function (it) {
       return it && it.title && it.kind !== "会議" && it.kind !== "予定";
     }).map(function (it) {
-      return {
+      var kind = it.kind === "やること" ? "TODO" : (it.kind || "その他");
+      var item = {
         id: it.id || uid(),
         title: String(it.title),
-        kind: it.kind === "やること" ? "TODO" : (it.kind || "その他"),
+        kind: kind,
         dest: it.dest || "",
         dueOn: it.dueOn || "",
         status: STATUSES.indexOf(it.status) >= 0 ? it.status : "未着手",
@@ -595,6 +614,8 @@ function normalize(data) {
         planKey: it.planKey || "",
         scheduleId: it.scheduleId || ""
       };
+      if (kind === "TODO" && window.TodoChecklist) item.checklist = window.TodoChecklist.normalize(it.checklist);
+      return item;
     })
   };
 }
@@ -785,13 +806,25 @@ function todoByDue(a, b) {
 
 function todoRow(it) {
   var lv = dueLevel(it);
+  var checklist = window.TodoChecklist ? window.TodoChecklist.normalize(it.checklist) : [];
+  var checked = checklist.filter(function (item) { return item.done; }).length;
+  var smallItems = checklist.length ? '<ul class="todo-subitems">' + checklist.map(function (item, index) {
+    var inputId = "todo-small-" + it.id + "-" + index;
+    return '<li class="todo-subitem' + (item.done ? ' checked' : '') + '">' +
+      '<input type="checkbox" id="' + esc(inputId) + '" data-checklist-id="' + esc(item.id) + '"' +
+        (item.done ? ' checked' : '') + '><label for="' + esc(inputId) + '">' + esc(item.text) + '</label></li>';
+  }).join("") + '</ul>' : '';
   return '<li class="item ' + lv + (isOpen(it) ? '' : ' done') + '" data-id="' + esc(it.id) + '">' +
     '<div class="todo-check"><input type="checkbox" data-todo-check aria-label="' + esc(it.title) + 'を完了"' +
       (it.status === "完了" ? ' checked' : '') + '><div class="item-head">' +
       '<span class="item-name">' + esc(it.title) + '</span>' +
+      (checklist.length ? '<span class="badge">' + checked + '/' + checklist.length + '</span>' : '') +
       '<span class="due ' + lv + '">' + esc(dueText(it)) + '</span></div></div>' +
+    smallItems +
     (it.note ? '<div class="item-note">' + esc(it.note) + '</div>' : '') +
-    '<div class="item-actions"><button type="button" class="small link" data-action="edit">編集</button>' +
+    '<div class="item-actions">' +
+      (checklist.length && checked === checklist.length && isOpen(it) ? '<button type="button" class="small" data-action="complete-todo">TODO も完了にする</button>' : '') +
+      '<button type="button" class="small link" data-action="edit">編集</button>' +
       '<button type="button" class="small link" data-action="delete">削除</button></div></li>';
 }
 
@@ -833,7 +866,9 @@ function showPanel(name) {
   document.getElementById("todoTab").setAttribute("aria-pressed", String(todo));
   document.getElementById("memoTab").setAttribute("aria-pressed", String(memo));
   document.getElementById("jumpAdd").textContent = todo ? "追加する" : "書類を登録する";
-  document.getElementById("jumpDue").textContent = todo ? "期限が近い順" : "期限が近い順";
+  document.getElementById("jumpDue").textContent = "期限が近い順";
+  // QR で開くのは書類だけなので、TODO のタブでは隠す（下のボタンが詰まらないようにする）
+  document.getElementById("docsActionbar").classList.toggle("todo-mode", todo);
   if (todo) renderTodos();
   if (memo) renderMemos();
 }
@@ -1034,9 +1069,14 @@ document.getElementById("memoList").addEventListener("click", function (event) {
     if (editingTodoId) stopTodoEditing();
     var todoText = window.MemoCheck ? window.MemoCheck.strip(memo.text) : memo.text;
     var candidates = window.Todos ? window.Todos.candidates(todoText, "", todayStr()) : [];
-    document.getElementById("todo-title").value = String(todoText.split(/\r?\n/)[0] || "").trim().slice(0, 40);
+    var converted = window.TodoChecklist && window.MemoCheck ?
+      window.TodoChecklist.fromMemo(memo.text, window.MemoCheck.parse(memo.text), uid) : null;
+    document.getElementById("todo-title").value = converted ? converted.title : String(todoText.split(/\r?\n/)[0] || "").trim().slice(0, 40);
     document.getElementById("todo-due").value = candidates.length ? candidates[0].dueOn : "";
     document.getElementById("todo-note").value = memo.text;
+    document.getElementById("todo-checklist").value = converted && converted.checklist.length ?
+      window.TodoChecklist.toLines(converted.checklist) : "";
+    pendingTodoChecklist = converted ? converted.checklist : [];
     pendingTodoMemoId = id;
     showPanel("todo");
     document.getElementById("todo-title").focus();
@@ -1064,6 +1104,7 @@ var todoForm = document.getElementById("todoForm");
 
 function stopTodoEditing() {
   editingTodoId = null;
+  pendingTodoChecklist = [];
   todoForm.reset();
   document.getElementById("todoFormTitle").textContent = "TODO を追加";
   document.getElementById("todoSubmitBtn").textContent = "追加する";
@@ -1072,9 +1113,11 @@ function stopTodoEditing() {
 
 function startTodoEditing(item) {
   editingTodoId = item.id;
+  pendingTodoChecklist = [];
   document.getElementById("todo-title").value = item.title;
   document.getElementById("todo-due").value = item.dueOn;
   document.getElementById("todo-note").value = item.note;
+  document.getElementById("todo-checklist").value = window.TodoChecklist ? window.TodoChecklist.toLines(item.checklist) : "";
   document.getElementById("todoFormTitle").textContent = "TODO を編集";
   document.getElementById("todoSubmitBtn").textContent = "更新する";
   document.getElementById("todoCancelEdit").hidden = false;
@@ -1087,16 +1130,19 @@ todoForm.addEventListener("submit", function (e) {
   e.preventDefault();
   var title = document.getElementById("todo-title").value.trim();
   if (!title) return;
+  var target = editingTodoId ? state.items.find(function (it) { return it.id === editingTodoId; }) : null;
   var values = {
     title: title,
     kind: "TODO",
     dest: "",
     dueOn: document.getElementById("todo-due").value,
     priority: "中",
-    note: document.getElementById("todo-note").value.trim()
+    note: document.getElementById("todo-note").value.trim(),
+    checklist: window.TodoChecklist ? window.TodoChecklist.fromLines(
+      document.getElementById("todo-checklist").value, target ? target.checklist : pendingTodoChecklist, uid
+    ) : []
   };
   if (editingTodoId) {
-    var target = state.items.find(function (it) { return it.id === editingTodoId; });
     if (target) Object.assign(target, values);
     toast("TODO を更新しました");
     stopTodoEditing();
@@ -1114,6 +1160,7 @@ todoForm.addEventListener("submit", function (e) {
       pendingTodoMemoId = null;
     }
     toast("TODO を追加しました");
+    pendingTodoChecklist = [];
     todoForm.reset();
   }
   save();
@@ -1132,6 +1179,42 @@ todoForm.addEventListener("click", function (e) {
   document.getElementById("todo-due").value = fmtDate(d);
 });
 
+(function setupTodoAI() {
+  var button = document.getElementById("todoAiBtn");
+  if (!window.OnDeviceAI || !window.TodoChecklist) return;
+  window.OnDeviceAI.status().then(function (status) {
+    if (status && status.available) button.hidden = false;
+  }).catch(function () {});
+
+  button.addEventListener("click", function () {
+    var title = document.getElementById("todo-title").value.trim();
+    var note = document.getElementById("todo-note").value.trim();
+    var input = document.getElementById("todo-checklist");
+    if (!title) { toast("先に件名を入れてください"); return; }
+    if (input.value.trim() && !confirm("今の項目を置き換えますか？")) return;
+    var original = input.value;
+    button.disabled = true;
+    button.textContent = "作っています…";
+    var work = window.OnDeviceAI.respond({
+      instructions: "件名の用事に必要な手順・持ち物を、短い日本語で3〜12個提案してください。説明を付けず、JSON {\"items\":[\"…\"]} だけで返してください。",
+      prompt: "件名：" + title + (note ? "\nメモ：" + note : "")
+    }).then(function (answer) {
+      var items = window.TodoChecklist.parseAI(answer && answer.text);
+      if (!items || !items.length) throw new Error("invalid-response");
+      return items;
+    });
+    withTimeout(work, 15000).then(function (items) {
+      input.value = items.join("\n");
+    }, function () {
+      input.value = original;
+      toast("AI で作れませんでした");
+    }).then(function () {
+      button.disabled = false;
+      button.textContent = "AI で作る";
+    });
+  });
+})();
+
 function todoListEventItem(target) {
   var row = target.closest("li.item");
   var id = row && row.getAttribute("data-id");
@@ -1148,6 +1231,14 @@ function handleTodoListClick(e) {
     startTodoEditing(item);
     return;
   }
+  if (action === "complete-todo") {
+    item.status = "完了";
+    item.doneAt = new Date().toISOString();
+    save();
+    renderTodos();
+    toast("TODO を完了にしました");
+    return;
+  }
   if (action === "delete") {
     if (!confirm("「" + item.title + "」を削除しますか？")) return;
     state.items = state.items.filter(function (it) { return it.id !== item.id; });
@@ -1159,6 +1250,19 @@ function handleTodoListClick(e) {
 }
 
 function handleTodoCheck(e) {
+  var small = e.target.closest("input[data-checklist-id]");
+  if (small) {
+    var parent = todoListEventItem(small);
+    if (!parent || !Array.isArray(parent.checklist)) return;
+    var checklistItem = parent.checklist.find(function (item) {
+      return item.id === small.getAttribute("data-checklist-id");
+    });
+    if (!checklistItem) return;
+    checklistItem.done = small.checked;
+    save();
+    renderTodos();
+    return;
+  }
   var checkbox = e.target.closest("input[data-todo-check]");
   if (!checkbox) return;
   var item = todoListEventItem(checkbox);
