@@ -1800,15 +1800,44 @@ function itemAction(event) {
     startEditing(item);
   } else if (action === "delete") {
     if (!confirm("「" + item.title + "」を削除しますか？")) return;
-    state.items = state.items.filter(function (candidate) {
-      return candidate.id !== item.id;
-    });
-    save();
-    render();
-    toast("削除しました");
+    deleteItem(item);
   } else if (action === "calendar") {
     writeItemsToCalendar([item]);
   }
+}
+/*
+ * 予定を消す。カレンダーへ書き込んだ（または結び付けた）予定があれば、そちらも消すか確かめる。
+ * 消さないと、カレンダー側の予定だけが「カレンダーの予定」として一覧に残る。
+ */
+function calendarEventIdOf(item) {
+  if (item.calEventId) return String(item.calEventId);
+  var key = item.planKey || item.calKey;
+  return key && state.calIds[key] ? String(state.calIds[key]) : "";
+}
+function deleteItem(item) {
+  var eventId = calendarEventIdOf(item);
+  var alsoCalendar = !!eventId && !!window.CalendarWrite && window.CalendarWrite.available() &&
+    confirm("iPhone のカレンダーにある同じ予定も削除しますか？\n" +
+      "Google カレンダーと同期している場合は、そちらからも消えます。\n" +
+      "「キャンセル」を押すと、この一覧からだけ削除します。");
+  state.items = state.items.filter(function (candidate) {
+    return candidate.id !== item.id;
+  });
+  if (alsoCalendar) {
+    Object.keys(state.calIds).forEach(function (key) {
+      if (String(state.calIds[key]) === eventId) delete state.calIds[key];
+    });
+    calendarEvents = calendarEvents.filter(function (event) { return String(event.id || "") !== eventId; });
+    externalItems = externalItems.filter(function (ext) { return String(ext.eventId || "") !== eventId; });
+  }
+  save();
+  render();
+  if (!alsoCalendar) { toast("削除しました"); return; }
+  window.CalendarWrite.remove([eventId]).then(function (result) {
+    if (result.ok) toast("カレンダーからも削除しました");
+    else if (result.reason === "not-authorized") toast("カレンダーの許可が無いため、一覧からだけ削除しました");
+    else toast("カレンダーの予定は削除できませんでした。カレンダーのアプリで消してください");
+  });
 }
 document.getElementById("listGroups").addEventListener("click", itemAction);
 document.getElementById("dayItems").addEventListener("click", itemAction);

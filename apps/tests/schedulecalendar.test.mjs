@@ -37,6 +37,8 @@ await pg.addInitScript((d) => {
       return Promise.resolve({ ok: true, saved: args.events.map(ev => { const id = ev.eventId || "NEW" + c.saves.length;
         const hit = c.events.find(e => e.id === id); const data = { id, calendarId: "C1", title: ev.title, date: ev.date, startTime: ev.startTime, endTime: ev.endTime, place: ev.location };
         if (hit) Object.assign(hit, data); else c.events.push(data); return { key: ev.key, eventId: id }; }) }); }
+    if (method === "deleteEvents") { const ids = args.eventIds; c.deletes = (c.deletes || []).concat(ids);
+      c.events = c.events.filter(e => ids.indexOf(e.id) < 0); return Promise.resolve({ ok: true, deleted: ids, missing: [], failed: [] }); }
     return Promise.resolve({ cancelled: true });
   } };
 }, today);
@@ -64,5 +66,20 @@ ok((await orange()).length === 1, "カレンダーに足した予定は、戻っ
 await pg.evaluate(() => { window.__cal.events = window.__cal.events.filter((e) => e.id !== "E50"); });
 await pg.evaluate(() => document.dispatchEvent(new Event("visibilitychange"))); await pg.waitForTimeout(500);
 ok((await orange()).length === 0, "カレンダーで消して戻ってくると、オレンジの表示も消える");
+// 予定を消すとき、カレンダーの予定も消すか聞き、はいならカレンダーからも消す
+await pg.click('#listView li[data-id="a1"] button[data-action="delete"]'); await pg.waitForTimeout(600);
+ok(await pg.evaluate(() => (window.__cal.deletes || []).join(",")) === "E9", "削除するとカレンダーの予定（E9）も消す");
+ok((await orange()).length === 0, "削除したあと、カレンダーの予定がオレンジで残らない（" + (await orange()).join(",") + "）");
+ok(await pg.evaluate(() => Object.values(JSON.parse(localStorage.getItem("schedule.v1")).calIds).indexOf("E9") < 0), "消した予定の番号を覚えたままにしない");
+// 2 つ目の確認で「キャンセル」なら、一覧からだけ消し、カレンダーの予定は残す
+await pg.evaluate((d) => { window.__cal.events.push({ id: "E60", calendarId: "C1", title: "架空の会議", date: d, startTime: "15:00", endTime: "16:00", place: "" });
+  const data = JSON.parse(localStorage.getItem("schedule.v1")); data.items.push({ id: "a2", kind: "予定", title: "架空の会議", dueOn: d, note: "15:00〜16:00 開始", calEventId: "E60" });
+  localStorage.setItem("schedule.v1", JSON.stringify(data)); }, today);
+await pg.reload(); await pg.waitForTimeout(600);
+pg.removeAllListeners("dialog"); let asked = 0;
+pg.on("dialog", d => { asked++; if (asked === 1) d.accept(); else d.dismiss(); });
+await pg.click('#listView li[data-id="a2"] button[data-action="delete"]'); await pg.waitForTimeout(600);
+ok(asked === 2 && await pg.evaluate(() => (window.__cal.deletes || []).indexOf("E60") < 0), "キャンセルならカレンダーの予定は消さない");
+ok((await orange()).length === 1, "一覧からだけ消すと、カレンダーの予定はオレンジで出る");
 ok(errs.length === 0, "JS エラーなし " + errs.join(" / "));
 await b.close(); srv.close(); process.exit(fail ? 1 : 0);

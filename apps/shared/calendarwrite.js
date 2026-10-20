@@ -80,10 +80,38 @@
     });
   }
 
+  /**
+   * 前に書き込んだ（または読み取った）予定を、iPhone のカレンダーから消す。
+   * 同期しているカレンダー（Google カレンダーなど）からも消える。
+   *
+   * 戻り値: { ok, reason, deleted: [id], missing: [id], failed: [{ id, reason }] }
+   * 許可が無いときは許可を求めず ok:false を返す（消すために新しく許可を求めない）。
+   */
+  function remove(eventIds) {
+    var ids = (eventIds || []).filter(function (id) { return typeof id === "string" && id; });
+    if (!ids.length) return Promise.resolve({ ok: true, reason: "", deleted: [], missing: [], failed: [] });
+    if (!available()) return Promise.resolve({ ok: false, reason: "not-native", deleted: [], missing: [], failed: [] });
+    return isSupported().then(function (res) {
+      if (!res || !res.authorized) return { ok: false, reason: "not-authorized", deleted: [], missing: [], failed: [] };
+      return global.Capacitor.nativePromise(PLUGIN, "deleteEvents", { eventIds: ids }).then(function (r) {
+        return {
+          ok: !!(r && r.ok),
+          reason: (r && r.reason) || "",
+          deleted: (r && r.deleted) || [],
+          missing: (r && r.missing) || [],
+          failed: (r && r.failed) || []
+        };
+      }, function (e) {
+        return { ok: false, reason: (e && e.message) || "delete-failed", deleted: [], missing: [], failed: [] };
+      });
+    });
+  }
+
   global.CalendarWrite = {
     available: available,
     isSupported: isSupported,
     requestAccess: requestAccess,
-    save: save
+    save: save,
+    remove: remove
   };
 })(typeof window !== "undefined" ? window : this);

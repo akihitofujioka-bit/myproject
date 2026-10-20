@@ -1,5 +1,5 @@
 /* オフラインでも予定を確認できるよう、画面と共通部品を端末内に控える。 */
-var CACHE = "schedule-v6";
+var CACHE = "schedule-v7";
 var ASSETS = [
   "./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png",
   "../shared/schedulemove.js", "../shared/scheduleview.js", "../shared/receiptscan.js", "../shared/receipt.js",
