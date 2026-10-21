@@ -2673,6 +2673,10 @@ document.addEventListener("visibilitychange", function () {
     refreshAIStatus();
   }
 });
+// 開いたままでも、終わった予定が「終了した予定」へ移るよう 1 分ごとに一覧を描き直す
+setInterval(function () {
+  if (document.visibilityState === "visible") renderList();
+}, 60000);
 // 画面下の操作バー: 「予定を登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
 document.getElementById("jumpAdd").addEventListener("click", function () {
   var card = document.getElementById("addCard");

@@ -59,7 +59,8 @@ struct ContentView: View {
 
     @ViewBuilder
     private var meetingSection: some View {
-        let list = store.snapshot.meetings ?? []
+        // 終わった予定は出さない（iPhone のアプリを開くまで一覧が届かないため、Watch 側でも外す）
+        let list = (store.snapshot.meetings ?? []).filter { !$0.hasEnded() }
         if !list.isEmpty {
             Section("予定") {
                 ForEach(list) { m in

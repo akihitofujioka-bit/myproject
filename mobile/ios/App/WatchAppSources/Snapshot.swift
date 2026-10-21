@@ -147,6 +147,12 @@ extension Meeting {
         return (start, start.addingTimeInterval(3600))
     }
 
+    /// 終わった予定か（終日の予定はその日が終わるまで終わらない）
+    func hasEnded(at now: Date = Date()) -> Bool {
+        guard let range = startEnd else { return false }
+        return range.end <= now
+    }
+
     /// 次の予定から外す時刻。時刻のある予定は開始の時刻、終日の予定はその日の終わり
     var leavesAt: Date? {
         guard let range = startEnd else { return nil }

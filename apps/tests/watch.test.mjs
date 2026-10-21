@@ -206,5 +206,22 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
   ok(snap.shopping.length === 0 && snap.meetings.length === 0, "壊れたデータは空として扱う");
 }
 
+{
+  // 今日の会議は、終わった時刻を過ぎたら送らない（終日の予定は残す）
+  const now = new Date(2026, 9, 21, 13, 30);
+  const today = "2026-10-21";
+  const store = { "schedule.v1": { items: [
+    { id: "e", title: "架空の朝会", kind: "会議", dueOn: today, note: "9:00〜10:00 開始", status: "未着手" },
+    { id: "r", title: "架空の打合せ", kind: "会議", dueOn: today, note: "13:00〜14:00 開始", status: "未着手" },
+    { id: "s", title: "架空の短い会議", kind: "会議", dueOn: today, note: "12:00 開始", status: "未着手" },
+    { id: "a", title: "架空の終日行事", kind: "予定", dueOn: today, note: "", status: "未着手" }
+  ] } };
+  const win = { localStorage: { getItem: (k) => (store[k] ? JSON.stringify(store[k]) : null) }, addEventListener: () => {} };
+  load(win, "apps/shared/watch.js");
+  const titles = win.Watch.snapshot({ now: now.getTime() }).meetings.map((m) => m.title);
+  ok(!titles.includes("架空の朝会") && !titles.includes("架空の短い会議"), "予定：終わった今日の会議は送らない（" + titles.join(",") + "）");
+  ok(titles.includes("架空の打合せ") && titles.includes("架空の終日行事"), "予定：開催中と終日の予定は送る");
+}
+
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて通過");
 process.exit(failures ? 1 : 0);
