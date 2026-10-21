@@ -164,7 +164,17 @@ struct UpNextItem {
     let title: String
     let days: Int
     let docId: String?
+    /// 時刻のある予定の開始時刻（"13:00"）。終日の予定と期限は nil
+    var startTime: String? = nil
 }
+
+private let hmFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.timeZone = .current
+    f.dateFormat = "H:mm"
+    return f
+}()
 
 /*
  * 会議と期限のうち、これから来る一番近いものをひとつ選ぶ。
@@ -179,8 +189,9 @@ func upNext(from snapshot: Snapshot, at now: Date = Date()) -> UpNextItem? {
     var past: [UpNextItem] = []
     for m in snapshot.meetings ?? [] {
         guard let days = remainingDays(date: m.date, stored: m.days, from: now) else { continue }
-        let item = UpNextItem(title: m.title ?? "（会議）", days: days, docId: m.docId)
+        var item = UpNextItem(title: m.title ?? "（会議）", days: days, docId: m.docId)
         if let range = m.startEnd {
+            if !m.isAllDay { item.startTime = hmFormatter.string(from: range.start) }
             // 終日の予定は、同じ日の時刻のある予定より後ろ（期限より前）に並べる
             let key = m.isAllDay ? (dateAt(m.date, 23, 58) ?? range.start) : range.start
             if !m.hasStarted(at: now) { upcoming.append((key, item)) }

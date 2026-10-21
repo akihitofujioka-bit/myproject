@@ -49,7 +49,9 @@ struct NextUpProvider: TimelineProvider {
         guard let item = upNext(from: snapshot, at: date) else {
             return NextUpEntry(date: date, title: "予定なし", dayLabel: "", hasItem: false, docId: nil)
         }
-        return NextUpEntry(date: date, title: item.title, dayLabel: dayLabel(item.days), hasItem: true, docId: item.docId)
+        // 今日の時刻のある予定は「今日」ではなく開始時刻を出す（手首で一目で分かるように）
+        let label = item.days == 0 ? (item.startTime ?? dayLabel(item.days)) : dayLabel(item.days)
+        return NextUpEntry(date: date, title: item.title, dayLabel: label, hasItem: true, docId: item.docId)
     }
 }
 
