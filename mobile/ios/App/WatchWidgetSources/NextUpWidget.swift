@@ -29,46 +29,28 @@ struct NextUpProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<NextUpEntry>) -> Void) {
-        // 残り日数は日付が変わると変わるため、次の正時と翌0時の早いほうで更新する
-        let hourLater = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date().addingTimeInterval(3600)
-        let midnight = Calendar.current.nextDate(after: Date(), matching: DateComponents(hour: 0, minute: 0),
+        // 予定が始まった時刻に次の予定へ切り替えるため、その時刻ごとの表示を先に並べておく。
+        // 残り日数は日付が変わると変わるため、次の正時と翌0時の早いほうで一覧を作り直す
+        let now = Date()
+        let snapshot = SharedDefaults.loadSnapshot()
+        let hourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now.addingTimeInterval(3600)
+        let midnight = Calendar.current.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0),
                                                  matchingPolicy: .nextTime) ?? hourLater
         let next = min(hourLater, midnight)
-        completion(Timeline(entries: [currentEntry()], policy: .after(next)))
+        let times = [now] + upNextChangeTimes(from: snapshot, after: now)
+        completion(Timeline(entries: times.map { entry(snapshot, at: $0) }, policy: .after(next)))
     }
 
     private func currentEntry() -> NextUpEntry {
-        guard let item = nextItem(from: SharedDefaults.loadSnapshot()) else {
-            return NextUpEntry(date: Date(), title: "予定なし", dayLabel: "", hasItem: false, docId: nil)
+        entry(SharedDefaults.loadSnapshot(), at: Date())
+    }
+
+    private func entry(_ snapshot: Snapshot, at date: Date) -> NextUpEntry {
+        guard let item = upNext(from: snapshot, at: date) else {
+            return NextUpEntry(date: date, title: "予定なし", dayLabel: "", hasItem: false, docId: nil)
         }
-        return NextUpEntry(date: Date(), title: item.title, dayLabel: dayLabel(item.days), hasItem: true, docId: item.docId)
+        return NextUpEntry(date: date, title: item.title, dayLabel: dayLabel(item.days), hasItem: true, docId: item.docId)
     }
-}
-
-private struct NextItem {
-    let title: String
-    let days: Int
-    let docId: String?
-}
-
-/// 会議と期限をまとめて、一番近い（days が小さい）ものをひとつ選ぶ。
-private func nextItem(from snapshot: Snapshot) -> NextItem? {
-    var candidates: [NextItem] = []
-    for m in snapshot.meetings ?? [] {
-        guard let days = m.remaining else { continue }
-        candidates.append(NextItem(title: m.title ?? "（会議）", days: days, docId: m.docId))
-    }
-    for d in snapshot.deadlines ?? [] {
-        guard let days = d.remaining else { continue }
-        candidates.append(NextItem(title: d.title ?? "（書類）", days: days, docId: d.docId))
-    }
-    // これから来るもののうち一番近いものを選ぶ。
-    // 過ぎたものしか無いときだけ、その中で今日に近いものを出す
-    // （アプリをしばらく開いていないと、終わった会議がいつまでも残るため）。
-    if let soonest = candidates.filter({ $0.days >= 0 }).min(by: { $0.days < $1.days }) {
-        return soonest
-    }
-    return candidates.max { $0.days < $1.days }
 }
 
 private extension View {
