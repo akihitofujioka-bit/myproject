@@ -3,7 +3,7 @@
  * 方針は stale-while-revalidate（まずキャッシュを返し、裏で最新版を取りに行く）。
  * そのためアプリを更新したときは、次に開いたときに反映される。
  */
-var CACHE = "docs-tracker-v24";
+var CACHE = "docs-tracker-v26";
 var ASSETS = ["./", "./index.html", "../shared/qr.js", "../shared/deeplink.js", "../shared/documentreader.js", "../shared/nativescan.js", "../shared/character.js", "../shared/camerapref.js", "../shared/receiptscan.js", "../shared/schedulemove.js", "../shared/calendarwrite.js", "../shared/ics.js", "../shared/native.js", "../shared/watch.js", "../shared/meeting.js", "../shared/todos.js", "../shared/memocheck.js", "../shared/scanrouter.js", "../shared/speechmemo.js", "../shared/ondeviceai.js", "../shared/todochecklist.js", "../shared/docsai.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
 
 self.addEventListener("install", function (e) {

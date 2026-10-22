@@ -60,9 +60,19 @@
     return { time: time, social: social };
   }
 
+  // 今日の会議が終わったか（「10:00〜11:00」の 11:00、無ければ開始の 1 時間後を過ぎたか）。終日は終わらない
+  function meetingEnded(time, nowMinutes) {
+    var m = /^(\d{1,2}):(\d{2})(?:\s*[〜~-]\s*(\d{1,2}):(\d{2}))?/.exec(String(time || ""));
+    if (!m) return false;
+    var start = Number(m[1]) * 60 + Number(m[2]);
+    var end = m[3] ? Number(m[3]) * 60 + Number(m[4]) : start + 60;
+    if (end <= start) end = start + 60;
+    return end <= nowMinutes;
+  }
+
   function isOpen(item) { return OPEN_STATUSES.indexOf(item && item.status) >= 0; }
 
-  function scheduleAndDocsLists(today) {
+  function scheduleAndDocsLists(today, nowMinutes) {
     var schedule = read("schedule.v1");
     var docs = read("docs-tracker.v1");
     var meetings = [], deadlines = [];
@@ -72,6 +82,8 @@
       if (days === null) return;
       if (days < 0 || days > MEETING_DAYS) return;
       var d = meetingDetail(it.note);
+      // 終わった今日の会議は Apple Watch に送らない
+      if (days === 0 && nowMinutes !== null && meetingEnded(d.time, nowMinutes)) return;
       meetings.push({
         id: it.id,
         title: it.title,
@@ -127,7 +139,10 @@
     var opts = options || {};
     var now = opts.now || Date.now();
     var today = opts.today || ymd(new Date(now));
-    var lists = scheduleAndDocsLists(today);
+    var nowDate = new Date(now);
+    // 「今日」を指定されたときは、その日の時刻の比べ方が分からないので終わった会議も残す
+    var nowMinutes = today === ymd(nowDate) ? nowDate.getHours() * 60 + nowDate.getMinutes() : null;
+    var lists = scheduleAndDocsLists(today, nowMinutes);
     return {
       version: 1,
       today: today,

@@ -25,9 +25,23 @@ function item(id, dueOn, note = "") {
     item("past8", "2026-09-27")
   ], today);
 
-  assert.deepEqual(Array.from(groups, (g) => g.label), ["今日", "明日", "今週", "それ以降", "過ぎた予定"]);
-  assert.deepEqual(Array.from(groups[4].items, (x) => x.id), ["past", "past7"]);
+  assert.deepEqual(Array.from(groups, (g) => g.label), ["明日", "今週", "それ以降", "終了した予定"]);
+  // 12 時の時点で 10:00 開始（11:00 終わり）の今日の予定は終わっているので、最後の欄の先頭に回す
+  assert.deepEqual(Array.from(groups[3].items, (x) => x.id), ["today", "past", "past7"]);
   assert.equal(groups.some((g) => g.items.some((x) => x.id === "past8")), false);
+}
+
+{
+  const today = new Date(2026, 9, 5, 13, 30);
+  const groups = groupForList([
+    item("ended", "2026-10-05", "9:00〜10:00 開始"),
+    item("ended2", "2026-10-05", "12:00〜13:30 開始"),
+    item("running", "2026-10-05", "13:00〜14:00 開始"),
+    item("later", "2026-10-05", "15:00 開始"),
+    item("allday", "2026-10-05")
+  ], today);
+  assert.deepEqual(Array.from(groups.find((g) => g.label === "今日").items, (x) => x.id), ["running", "later", "allday"]);
+  assert.deepEqual(Array.from(groups.find((g) => g.label === "終了した予定").items, (x) => x.id), ["ended2", "ended"]);
 }
 
 {

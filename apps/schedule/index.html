@@ -417,7 +417,7 @@ button.small {
   background: var(--surface); border-top: 1px solid var(--border);
 }
 .actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
-.actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+.actionbar button { flex: 1; min-height: 48px; font-weight: 700; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
 .barback { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: inherit; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .wrap { padding-bottom: 104px; }
 </style>
@@ -637,7 +637,7 @@ button.small {
 <div class="actionbar">
   <div>
     <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
-    <button type="button" class="primary" id="jumpAdd">予定を登録する</button>
+    <button type="button" class="primary" id="jumpAdd">登録する</button>
     <button type="button" id="jumpToday">今日の予定へ</button>
   </div>
 </div>
@@ -1800,15 +1800,44 @@ function itemAction(event) {
     startEditing(item);
   } else if (action === "delete") {
     if (!confirm("「" + item.title + "」を削除しますか？")) return;
-    state.items = state.items.filter(function (candidate) {
-      return candidate.id !== item.id;
-    });
-    save();
-    render();
-    toast("削除しました");
+    deleteItem(item);
   } else if (action === "calendar") {
     writeItemsToCalendar([item]);
   }
+}
+/*
+ * 予定を消す。カレンダーへ書き込んだ（または結び付けた）予定があれば、そちらも消すか確かめる。
+ * 消さないと、カレンダー側の予定だけが「カレンダーの予定」として一覧に残る。
+ */
+function calendarEventIdOf(item) {
+  if (item.calEventId) return String(item.calEventId);
+  var key = item.planKey || item.calKey;
+  return key && state.calIds[key] ? String(state.calIds[key]) : "";
+}
+function deleteItem(item) {
+  var eventId = calendarEventIdOf(item);
+  var alsoCalendar = !!eventId && !!window.CalendarWrite && window.CalendarWrite.available() &&
+    confirm("iPhone のカレンダーにある同じ予定も削除しますか？\n" +
+      "Google カレンダーと同期している場合は、そちらからも消えます。\n" +
+      "「キャンセル」を押すと、この一覧からだけ削除します。");
+  state.items = state.items.filter(function (candidate) {
+    return candidate.id !== item.id;
+  });
+  if (alsoCalendar) {
+    Object.keys(state.calIds).forEach(function (key) {
+      if (String(state.calIds[key]) === eventId) delete state.calIds[key];
+    });
+    calendarEvents = calendarEvents.filter(function (event) { return String(event.id || "") !== eventId; });
+    externalItems = externalItems.filter(function (ext) { return String(ext.eventId || "") !== eventId; });
+  }
+  save();
+  render();
+  if (!alsoCalendar) { toast("削除しました"); return; }
+  window.CalendarWrite.remove([eventId]).then(function (result) {
+    if (result.ok) toast("カレンダーからも削除しました");
+    else if (result.reason === "not-authorized") toast("カレンダーの許可が無いため、一覧からだけ削除しました");
+    else toast("カレンダーの予定は削除できませんでした。カレンダーのアプリで消してください");
+  });
 }
 document.getElementById("listGroups").addEventListener("click", itemAction);
 document.getElementById("dayItems").addEventListener("click", itemAction);
@@ -2644,7 +2673,11 @@ document.addEventListener("visibilitychange", function () {
     refreshAIStatus();
   }
 });
-// 画面下の操作バー: 「予定を登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
+// 開いたままでも、終わった予定が「終了した予定」へ移るよう 1 分ごとに一覧を描き直す
+setInterval(function () {
+  if (document.visibilityState === "visible") renderList();
+}, 60000);
+// 画面下の操作バー: 「登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
 document.getElementById("jumpAdd").addEventListener("click", function () {
   var card = document.getElementById("addCard");
   card.scrollIntoView({ behavior: "smooth", block: "start" });

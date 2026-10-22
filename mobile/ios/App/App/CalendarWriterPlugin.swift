@@ -24,7 +24,8 @@ public class CalendarWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestAccess", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "saveEvents", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "saveEvents", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "deleteEvents", returnType: CAPPluginReturnPromise)
     ]
 
     private let store = EKEventStore()
@@ -142,6 +143,50 @@ public class CalendarWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         call.resolve(["ok": failed.isEmpty, "reason": "", "saved": saved, "failed": failed])
+    }
+
+    /*
+     * 予定アプリで消した予定を、iPhone のカレンダーからも消す。
+     * Google カレンダーなどと同期しているカレンダーなら、同期先からも消える。
+     *
+     * eventIds: 書き込んだとき（または読み取ったとき）の識別子の配列
+     * 戻り値: { ok, deleted: [id], missing: [id], failed: [{ id, reason }] }
+     *   missing … すでに無い予定（エラーにはしない）
+     */
+    @objc func deleteEvents(_ call: CAPPluginCall) {
+        guard Self.isAuthorized() else {
+            call.resolve(["ok": false, "reason": "not-authorized", "deleted": [], "missing": [], "failed": []])
+            return
+        }
+        let ids = (call.getArray("eventIds", String.self) ?? []).filter { !$0.isEmpty }
+        var deleted: [String] = []
+        var missing: [String] = []
+        var failed: [[String: Any]] = []
+
+        for id in ids {
+            guard let event = store.event(withIdentifier: id) else {
+                missing.append(id)
+                continue
+            }
+            guard event.calendar.allowsContentModifications else {
+                failed.append(["id": id, "reason": "read-only"])
+                continue
+            }
+            do {
+                try store.remove(event, span: .thisEvent, commit: false)
+                deleted.append(id)
+            } catch {
+                failed.append(["id": id, "reason": error.localizedDescription])
+            }
+        }
+
+        do {
+            try store.commit()
+        } catch {
+            call.resolve(["ok": false, "reason": error.localizedDescription, "deleted": [], "missing": missing, "failed": failed])
+            return
+        }
+        call.resolve(["ok": failed.isEmpty, "reason": "", "deleted": deleted, "missing": missing, "failed": failed])
     }
 
     /// "2026-09-24" と "13:30" を、端末の時間帯での日時にする（時刻が空なら0時）

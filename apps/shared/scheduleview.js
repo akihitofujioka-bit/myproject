@@ -28,6 +28,18 @@
     return found ? found[1].padStart(5, "0") : "";
   }
 
+  // 終わりの時刻。「10:00〜11:00」の 11:00、無ければ開始の 1 時間後。終日の予定は null
+  function endMinutes(item) {
+    var start = timeOf(item);
+    if (!start) return null;
+    var direct = /^\d{1,2}:\d{2}$/.exec(String((item && item.endTime) || ""));
+    var found = direct ? [null, direct[0]] : /(?:^|\n)\s*\d{1,2}:\d{2}〜(\d{1,2}:\d{2})/.exec(String((item && item.note) || ""));
+    var toMin = function (hm) { var p = hm.split(":"); return Number(p[0]) * 60 + Number(p[1]); };
+    var startMin = toMin(start);
+    var end = found ? toMin(found[1]) : startMin + 60;
+    return end > startMin ? end : startMin + 60;
+  }
+
   function compareItems(a, b) {
     var dateCompare = String(a.dueOn || a.date || "").localeCompare(String(b.dueOn || b.date || ""));
     if (dateCompare) return dateCompare;
@@ -41,27 +53,33 @@
     var base = today && typeof today.getTime === "function" && !isNaN(today.getTime()) ? today : new Date();
     var baseDay = dayNumber(base);
     var daysToSunday = (7 - base.getDay()) % 7;
+    var nowMinutes = base.getHours() * 60 + base.getMinutes();
     var buckets = {
-      "今日": [], "明日": [], "今週": [], "それ以降": [], "過ぎた予定": []
+      "今日": [], "明日": [], "今週": [], "それ以降": [], "終了した予定": []
     };
 
     (items || []).forEach(function (item) {
       var date = parseYmd(item && (item.dueOn || item.date));
       if (!date) return;
       var diff = dayNumber(date) - baseDay;
-      if (diff === 0) buckets["今日"].push(item);
+      // 今日の予定でも、終わりの時刻を過ぎたものは「終了した予定」として最後に回す
+      if (diff === 0) {
+        var end = endMinutes(item);
+        buckets[end !== null && end <= nowMinutes ? "終了した予定" : "今日"].push(item);
+      }
       else if (diff === 1) buckets["明日"].push(item);
       else if (diff >= 2 && diff <= daysToSunday) buckets["今週"].push(item);
       else if (diff > daysToSunday) buckets["それ以降"].push(item);
-      else if (diff >= -7) buckets["過ぎた予定"].push(item);
+      else if (diff >= -7) buckets["終了した予定"].push(item);
     });
 
-    var labels = ["今日", "明日", "今週", "それ以降", "過ぎた予定"];
+    var labels = ["今日", "明日", "今週", "それ以降", "終了した予定"];
     return labels.filter(function (label) { return buckets[label].length; }).map(function (label) {
-      if (label === "過ぎた予定") {
+      if (label === "終了した予定") {
+        // 終わったばかりのものを上にする（日付も時刻も新しい順）
         buckets[label].sort(function (a, b) {
           var dateCompare = String(b.dueOn || b.date || "").localeCompare(String(a.dueOn || a.date || ""));
-          return dateCompare || compareItems(a, b);
+          return dateCompare || compareItems(b, a);
         });
       } else {
         buckets[label].sort(compareItems);
