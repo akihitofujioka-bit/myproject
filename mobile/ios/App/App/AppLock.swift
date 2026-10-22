@@ -167,9 +167,17 @@ final class AppLock {
         cover = view
     }
 
+    /// 背景のイラストは日替わり。壱師と各アプリのアイコンの絵（LockBackground〜LockBackground7）を順に使う
+    private static func todaysBackgroundName(_ date: Date = Date()) -> String {
+        let names = ["LockBackground"] + (2...7).map { "LockBackground\($0)" }
+        let day = Calendar.current.ordinality(of: .day, in: .era, for: date) ?? 0
+        return names[day % names.count]
+    }
+
     /// 背景のイラストを軽くぼかす（絵柄は分かる程度。強さは radius で決める）
     private static func softenedBackground() -> UIImage? {
-        guard let image = UIImage(named: "LockBackground"), let input = CIImage(image: image) else { return nil }
+        let image = UIImage(named: todaysBackgroundName()) ?? UIImage(named: "LockBackground")
+        guard let image = image, let input = CIImage(image: image) else { return nil }
         let filter = CIFilter(name: "CIGaussianBlur")
         filter?.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
         filter?.setValue(6, forKey: kCIInputRadiusKey)
