@@ -18,8 +18,9 @@ final class AppLock {
     /// ほかのアプリへ移ってから、この秒数を過ぎて戻ったら確かめる
     private let graceSeconds: TimeInterval = 5 * 60
 
-    /// 移った時刻。端末の時計（利用者が変えられる）ではなく、起動してからの経過時間で測る
-    private var backgroundUptime: TimeInterval?
+    /// 移った時刻。スリープ中も進む時計（CLOCK_MONOTONIC。利用者は変えられない）と、端末の時計の両方で覚える
+    private var backgroundMonotonic: UInt64?
+    private var backgroundWallClock: Date?
     private var locked = true          // 起動直後は確かめる
     private var authenticating = false
     private weak var window: UIWindow?
@@ -30,22 +31,38 @@ final class AppLock {
     func attach(to window: UIWindow?) {
         self.window = window
         if locked { showCover() }
+        // iPhone 本体がロックされたら、アプリもロックする
+        NotificationCenter.default.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            self?.locked = true
+            self?.showCover()
+        }
+    }
+
+    private static func monotonicNow() -> UInt64 {
+        clock_gettime_nsec_np(CLOCK_MONOTONIC)
     }
 
     /// ほかのアプリへ移ったとき
     func didEnterBackground() {
-        backgroundUptime = ProcessInfo.processInfo.systemUptime
+        backgroundMonotonic = Self.monotonicNow()
+        backgroundWallClock = Date()
         showCover()
     }
 
     /// 戻ってきたとき（起動直後も含む）
     func didBecomeActive() {
-        if let at = backgroundUptime {
-            let elapsed = ProcessInfo.processInfo.systemUptime - at
-            // 測れないずれ（マイナス）が出たときも、ロックする側に倒す
-            if elapsed >= graceSeconds || elapsed < 0 { locked = true }
+        if let at = backgroundMonotonic, let wall = backgroundWallClock {
+            let now = Self.monotonicNow()
+            let monotonic = now >= at ? TimeInterval(now - at) / 1_000_000_000 : -1
+            let wallElapsed = Date().timeIntervalSince(wall)
+            // どちらかで 5 分を過ぎたとき、または時計が戻っていたときは、ロックする側に倒す
+            if monotonic < 0 || wallElapsed < 0 || monotonic >= graceSeconds || wallElapsed >= graceSeconds {
+                locked = true
+            }
         }
-        backgroundUptime = nil
+        backgroundMonotonic = nil
+        backgroundWallClock = nil
         if locked { authenticate() } else { hideCover() }
     }
 
