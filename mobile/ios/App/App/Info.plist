@@ -54,6 +54,8 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<false/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>アプリを開くときに、本人であることを確かめるために使います。顔の情報はアプリには渡らず、外部へも送りません。</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>会議や書類の期限をカレンダーに登録し、カレンダーの予定を会議として取り込むために使用します。内容は端末の中だけで処理され、どこにも送信しません。書き込むのは、このアプリから登録した予定だけです。</string>
 	<key>NSCalendarsUsageDescription</key>

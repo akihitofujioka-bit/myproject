@@ -14,6 +14,7 @@
 		E10D00000000000000000001 /* DocumentReaderPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10D00000000000000000002 /* DocumentReaderPlugin.swift */; };
 		E10D00000000000000000003 /* OnDeviceAIPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10D00000000000000000004 /* OnDeviceAIPlugin.swift */; };
 		E10D00000000000000000005 /* SiriIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10D00000000000000000006 /* SiriIntents.swift */; };
+		E10D00000000000000000007 /* AppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10D00000000000000000008 /* AppLock.swift */; };
 		D09A00000000000000000001 /* DocumentText.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09A00000000000000000003 /* DocumentText.swift */; };
 		D09A00000000000000000002 /* ZipReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09A00000000000000000004 /* ZipReader.swift */; };
 		726E67CBBB28498D943908A0 /* CalendarWriterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */; };
@@ -123,6 +124,7 @@
 		E10D00000000000000000002 /* DocumentReaderPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentReaderPlugin.swift; sourceTree = "<group>"; };
 		E10D00000000000000000004 /* OnDeviceAIPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceAIPlugin.swift; sourceTree = "<group>"; };
 		E10D00000000000000000006 /* SiriIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriIntents.swift; sourceTree = "<group>"; };
+		E10D00000000000000000008 /* AppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLock.swift; sourceTree = "<group>"; };
 		D09A00000000000000000003 /* DocumentText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentText.swift; sourceTree = "<group>"; };
 		D09A00000000000000000004 /* ZipReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipReader.swift; sourceTree = "<group>"; };
 		453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarWriterPlugin.swift; sourceTree = "<group>"; };
@@ -277,6 +279,7 @@
 				E10D00000000000000000002 /* DocumentReaderPlugin.swift */,
 				E10D00000000000000000004 /* OnDeviceAIPlugin.swift */,
 				E10D00000000000000000006 /* SiriIntents.swift */,
+				E10D00000000000000000008 /* AppLock.swift */,
 				D09A00000000000000000005 /* DocumentText */,
 				453C49E5F7EC4E61BBB697EE /* CalendarWriterPlugin.swift */,
 				54417C08DED3D9DAECF1E66F /* ViewController.swift */,
@@ -558,6 +561,7 @@
 				E10D00000000000000000001 /* DocumentReaderPlugin.swift in Sources */,
 				E10D00000000000000000003 /* OnDeviceAIPlugin.swift in Sources */,
 				E10D00000000000000000005 /* SiriIntents.swift in Sources */,
+				E10D00000000000000000007 /* AppLock.swift in Sources */,
 				D09A00000000000000000001 /* DocumentText.swift in Sources */,
 				D09A00000000000000000002 /* ZipReader.swift in Sources */,
 				726E67CBBB28498D943908A0 /* CalendarWriterPlugin.swift in Sources */,
