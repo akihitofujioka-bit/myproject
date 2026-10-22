@@ -11,6 +11,7 @@
 //
 import UIKit
 import LocalAuthentication
+import CoreImage
 
 final class AppLock {
     static let shared = AppLock()
@@ -109,16 +110,17 @@ final class AppLock {
         view.backgroundColor = .black
 
         // 背景に壱師のアイコンのイラストを敷き、ぼかして暗めにする（中身は見せない）
-        let background = UIImageView(image: UIImage(named: "LockBackground"))
+        let background = UIImageView(image: Self.softenedBackground())
         background.frame = view.bounds
         background.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         background.contentMode = .scaleAspectFill
         background.clipsToBounds = true
         view.addSubview(background)
-        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
-        blur.frame = view.bounds
-        blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(blur)
+        // 文字が読めるよう、薄く暗くする
+        let shade = UIView(frame: view.bounds)
+        shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        shade.backgroundColor = UIColor.black.withAlphaComponent(0.3)
+        view.addSubview(shade)
 
         let stack = UIStackView()
         stack.axis = .vertical
@@ -143,6 +145,14 @@ final class AppLock {
         button.isHidden = true
         button.tag = 1
 
+        // 絵の上でも文字が読めるよう、薄い影を付ける
+        for item in [icon, title, button] as [UIView] {
+            item.layer.shadowColor = UIColor.black.cgColor
+            item.layer.shadowOpacity = 0.6
+            item.layer.shadowRadius = 4
+            item.layer.shadowOffset = .zero
+        }
+
         stack.addArrangedSubview(icon)
         stack.addArrangedSubview(title)
         stack.addArrangedSubview(button)
@@ -155,6 +165,17 @@ final class AppLock {
         overlay.makeKeyAndVisible()
         lockWindow = overlay
         cover = view
+    }
+
+    /// 背景のイラストを軽くぼかす（絵柄は分かる程度。強さは radius で決める）
+    private static func softenedBackground() -> UIImage? {
+        guard let image = UIImage(named: "LockBackground"), let input = CIImage(image: image) else { return nil }
+        let filter = CIFilter(name: "CIGaussianBlur")
+        filter?.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+        filter?.setValue(6, forKey: kCIInputRadiusKey)
+        guard let output = filter?.outputImage?.cropped(to: input.extent),
+              let cg = CIContext().createCGImage(output, from: input.extent) else { return image }
+        return UIImage(cgImage: cg)
     }
 
     /// Face ID を取り消したときなどは、もう一度試すボタンを出す
