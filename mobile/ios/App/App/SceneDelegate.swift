@@ -13,6 +13,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // ViewController が使われず、プラグインの登録コードが一度も動いていなかった。
         window?.rootViewController = ViewController()
         window?.makeKeyAndVisible()
+        // 開くときに Face ID で確かめる（AppLock.swift）
+        AppLock.shared.attach(to: window)
 
         connectionOptions.urlContexts.forEach { context in
             if context.url.isFileURL {
@@ -33,6 +35,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if !otherContexts.isEmpty {
             SceneDelegateProxy.shared.scene(scene, openURLContexts: otherContexts)
         }
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        AppLock.shared.didBecomeActive()
+    }
+
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        AppLock.shared.didEnterBackground()
     }
 
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
