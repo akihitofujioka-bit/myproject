@@ -106,7 +106,19 @@ final class AppLock {
         overlay.rootViewController = UIViewController()
         let view = UIView(frame: overlay.bounds)
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .black
+
+        // 背景に壱師のアイコンのイラストを敷き、ぼかして暗めにする（中身は見せない）
+        let background = UIImageView(image: UIImage(named: "LockBackground"))
+        background.frame = view.bounds
+        background.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        background.contentMode = .scaleAspectFill
+        background.clipsToBounds = true
+        view.addSubview(background)
+        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
+        blur.frame = view.bounds
+        blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(blur)
 
         let stack = UIStackView()
         stack.axis = .vertical
@@ -115,16 +127,18 @@ final class AppLock {
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let icon = UIImageView(image: UIImage(systemName: "lock.fill"))
-        icon.tintColor = .secondaryLabel
+        icon.tintColor = UIColor.white.withAlphaComponent(0.85)
         icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 40)
 
         let title = UILabel()
         title.text = "壱師"
         title.font = .systemFont(ofSize: 28, weight: .bold)
+        title.textColor = .white
 
         let button = UIButton(type: .system)
         button.setTitle("Face ID で開く", for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
+        button.tintColor = .white
         button.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
         button.isHidden = true
         button.tag = 1
