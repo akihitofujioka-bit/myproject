@@ -18,10 +18,13 @@ final class AppLock {
     /// ほかのアプリへ移ってから、この秒数を過ぎて戻ったら確かめる
     private let graceSeconds: TimeInterval = 5 * 60
 
-    private var backgroundAt: Date?
+    /// 移った時刻。端末の時計（利用者が変えられる）ではなく、起動してからの経過時間で測る
+    private var backgroundUptime: TimeInterval?
     private var locked = true          // 起動直後は確かめる
     private var authenticating = false
     private weak var window: UIWindow?
+    /// 覆いは専用の窓に出す。今の画面に重ねるだけだと、後から出た画面（カメラなど）が上に来てしまうため
+    private var lockWindow: UIWindow?
     private var cover: UIView?
 
     func attach(to window: UIWindow?) {
@@ -31,14 +34,18 @@ final class AppLock {
 
     /// ほかのアプリへ移ったとき
     func didEnterBackground() {
-        backgroundAt = Date()
+        backgroundUptime = ProcessInfo.processInfo.systemUptime
         showCover()
     }
 
     /// 戻ってきたとき（起動直後も含む）
     func didBecomeActive() {
-        if let at = backgroundAt, Date().timeIntervalSince(at) >= graceSeconds { locked = true }
-        backgroundAt = nil
+        if let at = backgroundUptime {
+            let elapsed = ProcessInfo.processInfo.systemUptime - at
+            // 測れないずれ（マイナス）が出たときも、ロックする側に倒す
+            if elapsed >= graceSeconds || elapsed < 0 { locked = true }
+        }
+        backgroundUptime = nil
         if locked { authenticate() } else { hideCover() }
     }
 
@@ -69,12 +76,18 @@ final class AppLock {
     // MARK: - 覆い
 
     private func showCover() {
-        guard let window = window else { return }
-        if let cover = cover {
-            window.bringSubviewToFront(cover)
+        guard let window = window, let scene = window.windowScene else { return }
+        // 覆っているあいだは、読み上げ機能（VoiceOver）にも元の画面の中身を見せない
+        window.accessibilityElementsHidden = true
+        if lockWindow != nil, cover != nil {
+            lockWindow?.isHidden = false
+            lockWindow?.makeKeyAndVisible()
             return
         }
-        let view = UIView(frame: window.bounds)
+        let overlay = UIWindow(windowScene: scene)
+        overlay.windowLevel = .alert + 1
+        overlay.rootViewController = UIViewController()
+        let view = UIView(frame: overlay.bounds)
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.backgroundColor = .systemBackground
 
@@ -107,7 +120,9 @@ final class AppLock {
             stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
-        window.addSubview(view)
+        overlay.rootViewController?.view.addSubview(view)
+        overlay.makeKeyAndVisible()
+        lockWindow = overlay
         cover = view
     }
 
@@ -118,8 +133,11 @@ final class AppLock {
     }
 
     private func hideCover() {
-        cover?.removeFromSuperview()
         cover = nil
+        lockWindow?.isHidden = true
+        lockWindow = nil
+        window?.accessibilityElementsHidden = false
+        window?.makeKeyAndVisible()
     }
 
     @objc private func retryTapped() {
