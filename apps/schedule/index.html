@@ -417,7 +417,7 @@ button.small {
   background: var(--surface); border-top: 1px solid var(--border);
 }
 .actionbar > div { display: flex; gap: 8px; width: 100%; max-width: 880px; margin: 0 auto; }
-.actionbar button { flex: 1; min-height: 48px; font-weight: 700; }
+.actionbar button { flex: 1; min-height: 48px; font-weight: 700; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
 .barback { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: inherit; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .wrap { padding-bottom: 104px; }
 </style>
@@ -637,7 +637,7 @@ button.small {
 <div class="actionbar">
   <div>
     <a class="barback" href="../index.html" aria-label="アプリ一覧にもどる">← ホーム</a>
-    <button type="button" class="primary" id="jumpAdd">予定を登録する</button>
+    <button type="button" class="primary" id="jumpAdd">登録する</button>
     <button type="button" id="jumpToday">今日の予定へ</button>
   </div>
 </div>
@@ -2677,7 +2677,7 @@ document.addEventListener("visibilitychange", function () {
 setInterval(function () {
   if (document.visibilityState === "visible") renderList();
 }, 60000);
-// 画面下の操作バー: 「予定を登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
+// 画面下の操作バー: 「登録する」は登録の欄へ移り、「今日の予定へ」は一覧の先頭に戻る
 document.getElementById("jumpAdd").addEventListener("click", function () {
   var card = document.getElementById("addCard");
   card.scrollIntoView({ behavior: "smooth", block: "start" });
