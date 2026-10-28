@@ -34,7 +34,7 @@ class ConversionTest(unittest.TestCase):
         self.assertIn("【大見出し】架空の行政報告", pages[layout.GYOSEI][0])
         self.assertIn("問　内容は。", pages[layout.YOSAN][0])
         self.assertIn("【大見出し】見本委員会", pages[layout.IINKAI][0])
-        self.assertIn("【大見出し・横】架空の防災", pages[layout.IPPAN][0])
+        self.assertIn("【大見出し】架空の防災", pages[layout.IPPAN][0])
         self.assertIn("【顔写真枠】", pages[layout.IPPAN][0])
         self.assertIn("答　見本課長　進めます。", pages[layout.IPPAN][0])
         self.assertIn("【大見出し】架空の特集", pages[layout.TOKUSHU][0])

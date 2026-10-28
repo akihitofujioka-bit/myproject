@@ -178,7 +178,8 @@ def committee_text(values: Iterable[dict]) -> str:
 
 def question_text(value: dict) -> str:
     """一般質問1人分。顔写真は印刷所差し替え用の枠を必ず入れる。"""
-    lines = ["【大見出し・横】" + _text(value.get("title")), "【顔写真枠】"]
+    # 一般質問の題は、ほかの記事の大見出しと同じ縦書きの囲み（V5 設計図 §3.3）。
+    lines = ["【大見出し】" + _text(value.get("title")), "【顔写真枠】"]
     member = _text(value.get("member"))
     if member:
         lines.append("▲" + member + "議員")
