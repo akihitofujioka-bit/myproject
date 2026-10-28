@@ -446,34 +446,59 @@ class App:
         votes = self.data.get("votes", [])
         if votes:
             # 議員ごとの ○・● も並べて、エクセルと見比べられるようにする
-            members = list(self.work.settings.vote_members)
-            columns = ["kind", "title"] + [f"m{i}" for i in range(len(members))] + ["result"]
-            table = ttk.Treeview(self.inner, columns=columns, show="headings",
-                                 height=min(10, len(votes)))
-            table.heading("kind", text="区分")
-            table.column("kind", width=70, stretch=False)
-            table.heading("title", text="議案番号・件名")
-            table.column("title", width=320)
-            for index, name in enumerate(members):
-                table.heading(f"m{index}", text=name)
-                table.column(f"m{index}", width=max(48, 13 * len(name)), anchor="center", stretch=False)
-            table.heading("result", text="議決結果")
-            table.column("result", width=80, anchor="center", stretch=False)
-            for vote in votes:
-                marks = vote.get("marks", {})
-                table.insert("", "end", values=[vote.get("kind", ""), vote.get("title", "")]
-                             + [marks.get(name, "") for name in members]
-                             + [items.templates.vote_result(vote.get("result", ""))])
-            scroll = ttk.Scrollbar(self.inner, orient="horizontal", command=table.xview)
-            table.configure(xscrollcommand=scroll.set)
-            table.pack(fill="x", pady=(5, 0))
-            scroll.pack(fill="x")
+            ttk.Button(self.inner, text="表を大きく見る（別の窓）",
+                       command=lambda: self._votes_window(votes)).pack(anchor="w", pady=(8, 2))
+            box = ttk.Frame(self.inner)
+            box.pack(fill="x", pady=(2, 0))
+            self._votes_table(box, votes, min(12, len(votes)))
             ttk.Label(self.inner, text="この表は確認用です。直すときはExcelを直して、もう一度取り込んでください。",
                       wraplength=900).pack(anchor="w")
         warnings = self.data.get("votes_warnings", [])
         if warnings:
             ttk.Label(self.inner, text="注意\n・" + "\n・".join(warnings),
                       foreground="#a33", justify="left", wraplength=900).pack(anchor="w", pady=8)
+
+    def _votes_table(self, parent, votes, height: int) -> None:
+        """取り込んだ賛否の確認用の表。縦横のスクロールバー付き。"""
+        members = list(self.work.settings.vote_members)
+        columns = ["kind", "title"] + [f"m{i}" for i in range(len(members))] + ["result"]
+        table = ttk.Treeview(parent, columns=columns, show="headings", height=height)
+        table.heading("kind", text="区分")
+        table.column("kind", width=70, minwidth=50, stretch=False)
+        table.heading("title", text="議案番号・件名")
+        # 件名は狭めずに出す。入りきらないときは横のスクロールバーで見る。
+        longest = max([len(str(v.get("title", ""))) for v in votes] + [8])
+        table.column("title", width=min(560, 15 * longest), minwidth=160, stretch=False)
+        for index, name in enumerate(members):
+            table.heading(f"m{index}", text=name)
+            table.column(f"m{index}", width=max(56, 14 * len(name)), minwidth=40, anchor="center", stretch=False)
+        table.heading("result", text="議決結果")
+        table.column("result", width=80, minwidth=60, anchor="center", stretch=False)
+        for vote in votes:
+            marks = vote.get("marks", {})
+            table.insert("", "end", values=[vote.get("kind", ""), vote.get("title", "")]
+                         + [marks.get(name, "") for name in members]
+                         + [items.templates.vote_result(vote.get("result", ""))])
+        down = ttk.Scrollbar(parent, orient="vertical", command=table.yview)
+        across = ttk.Scrollbar(parent, orient="horizontal", command=table.xview)
+        table.configure(yscrollcommand=down.set, xscrollcommand=across.set)
+        table.grid(row=0, column=0, sticky="nsew")
+        down.grid(row=0, column=1, sticky="ns")
+        across.grid(row=1, column=0, sticky="ew")
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+
+    def _votes_window(self, votes) -> None:
+        """表全体を別の大きな窓で見る。窓を広げると表も広がる。"""
+        window = tk.Toplevel(self.root)
+        window.title("議案と賛否（取り込んだ内容）")
+        width = min(self.root.winfo_screenwidth() - 40, 1600)
+        height = min(self.root.winfo_screenheight() - 80, 900)
+        window.geometry(f"{width}x{height}+20+20")
+        frame = ttk.Frame(window, padding=8)
+        frame.pack(fill="both", expand=True)
+        self._votes_table(frame, votes, 30)
+        ttk.Button(window, text="閉じる", command=window.destroy).pack(anchor="e", padx=8, pady=6)
 
     def _step_7(self):
         self._title("審議したこと")
