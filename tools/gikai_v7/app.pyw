@@ -221,8 +221,8 @@ class App:
     def _step_1(self):
         self._title("号の情報")
         value = self.data.setdefault("issue", {})
-        self._entry("号数", value.get("number", ""), lambda v: value.__setitem__("number", int(v or 0)))
-        self._entry("発行月", value.get("month", 4), lambda v: value.__setitem__("month", int(v or 0)))
+        self._entry("号数", value.get("number", ""), lambda v: value.__setitem__("number", _number(v)))
+        self._entry("発行月", value.get("month", 4), lambda v: value.__setitem__("month", _number(v)))
         self._entry("発行日", value.get("date", ""), lambda v: value.__setitem__("date", v))
         if self.work:
             name = items.templates.meeting_name(items.issue_from_data(self.data, self.work.issue))
@@ -685,6 +685,13 @@ class App:
             messagebox.showinfo("号を選んでください", "最初に新しい号を作るか、続きを開いてください。")
             self.show(0)
             return
+        # 入力欄の内容を先に読み込んでから空欄を確かめる（読む前だと入れた値も空に見える）。
+        try:
+            for getter in self.getters:
+                getter()
+        except Exception as error:
+            messagebox.showerror("入力を確かめてください", str(error), parent=self.root)
+            return
         missing = self._missing_reason()
         if missing and not messagebox.askyesno("空欄があります", missing + "\n\n空のまま進みますか？", parent=self.root):
             return
@@ -698,9 +705,11 @@ class App:
     def _missing_reason(self) -> str:
         if self.step == 1:
             issue = self.data.get("issue", {})
+            if int(issue.get("month") or 0) not in layout.MONTHS:
+                return "発行月は 4・5・7・10・1 のどれかを数字で入れてください。"
             if not issue.get("number") or not issue.get("date"):
                 return "号数または発行日が空です。表紙と出力名に必要です。"
-        if self.step == 2 and self.work and not self.work.settings.members:
+        if self.step == 2 and not getattr(self, "_member_text", "").strip():
             return "議員名簿が空です。賛否表の列を作れません。"
         if self.step == 9 and not self.data.get("questions"):
             return "一般質問が0人です。一般質問ページは作られません。"
@@ -892,6 +901,15 @@ def main() -> int:
     App(root)
     root.mainloop()
     return 0
+
+
+def _number(text) -> int:
+    """「２０５」「第205号」「4月」のように書いても数字だけを読む。空なら 0。"""
+    digits = "".join(ch for ch in str(text).translate(_ZEN_TO_HAN) if ch.isdigit())
+    return int(digits) if digits else 0
+
+
+_ZEN_TO_HAN = str.maketrans("０１２３４５６７８９", "0123456789")
 
 
 if __name__ == "__main__":
