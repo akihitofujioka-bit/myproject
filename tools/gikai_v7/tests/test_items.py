@@ -34,7 +34,8 @@ class ConversionTest(unittest.TestCase):
         self.assertIn("【大見出し】架空の行政報告", pages[layout.GYOSEI][0])
         # 当初予算は決まった型の見開きなので、流し込みの原稿は作らない
         self.assertNotIn(layout.YOSAN, pages)
-        self.assertIn("【大見出し】見本委員会", pages[layout.IINKAI][0])
+        # 記事の見出しを大見出しに、委員会名をその次の見出しにする（第204号の形）
+        self.assertIn("【大見出し】調査\n【見出し】見本委員会", pages[layout.IINKAI][0])
         self.assertIn("【大見出し】架空の防災", pages[layout.IPPAN][0])
         self.assertIn("【顔写真枠】", pages[layout.IPPAN][0])
         self.assertIn("答　見本課長　進めます。", pages[layout.IPPAN][0])

@@ -80,8 +80,10 @@ def main() -> int:
         [{"kind": kind, "title": f"{number}　{title}", "result": result}
          for kind, number, title, result in bills], MEMBERS, CHAIR)
     data["committees"] = [
-        {"committee": "架空総務委員会", "heading": "防災の調査", "body": _long(9)},
-        {"committee": "架空産業委員会", "heading": "農業の調査", "body": _long(8)}]
+        {"committee": "架空総務常任委員会", "heading": "見本施設の整備を国・県にも要望",
+         "body": "【見出し】調査日\n" + _long(4) + "\n【見出し】所感\n" + _long(4)},
+        {"committee": "架空産業厚生常任委員会", "heading": "見本農園の取り組みを調査",
+         "body": "【見出し】調査日\n" + _long(4) + "\n【見出し】所感\n" + _long(3)}]
     data["questions"] = [
         {"member": name, "title": f"暮らしを守る架空の施策（{n}）", "questions": [
             {"heading": f"質問の見出し{n}の{k}", "question": _long(1),

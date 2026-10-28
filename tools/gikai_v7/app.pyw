@@ -483,8 +483,10 @@ class App:
     def _step_8(self):
         self._title("委員会報告")
         self._list_editor("報告", self.data.setdefault("committees", []),
-                          [("committee", "委員会名", False), ("heading", "見出し", False), ("body", "本文", True)],
-                          lambda v: v.get("committee") or v.get("heading") or "（名称なし）")
+                          [("heading", "記事の見出し（大きく囲む。例 国・省等にも要望）", False),
+                           ("committee", "委員会名（見出しの左に入る。例 総務常任委員会）", False),
+                           ("body", "本文（途中の小見出しは、行の頭に【見出し】を付ける）", True)],
+                          lambda v: f"{v.get('committee', '')}　{v.get('heading', '')}".strip() or "（名称なし）")
         self._word_button()
 
     def _step_9(self):

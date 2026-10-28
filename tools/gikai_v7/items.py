@@ -235,10 +235,11 @@ def committee_text(values: Iterable[dict]) -> str:
     for report in values or []:
         committee = _text(report.get("committee"))
         heading = _text(report.get("heading"))
-        if committee:
-            lines.append("【大見出し】" + committee)
-        if heading:
-            lines.append("【見出し】" + heading)
+        # 第204号の形: 記事の見出しを大きく囲み、委員会名はその左に小さめの見出しで入れる。
+        if heading or committee:
+            lines.append("【大見出し】" + (heading or committee))
+        if committee and heading:
+            lines.append("【見出し】" + committee)
         if _text(report.get("body")):
             lines.append(_text(report.get("body")))
     return "\n".join(lines)
