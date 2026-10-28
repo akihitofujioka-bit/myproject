@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import datetime
+import json
 import re
 import sys
 import tkinter as tk
@@ -43,10 +44,45 @@ class App:
         root.bind_class("Text", "<Tab>", _focus_next)
         root.bind_class("Text", "<Shift-Tab>", _focus_previous)
         root.bind_class("Text", "<ISO_Left_Tab>", _focus_previous)
+        root.protocol("WM_DELETE_WINDOW", self.close)
         if len(sys.argv) > 1:
             self.open_issue(sys.argv[1])
         else:
+            self._resume()
+
+    # ---- 閉じたところから再開する ----
+    def _resume(self) -> None:
+        """前に閉じたときの号と手順を開く。号フォルダが無くなっていれば最初の画面にする。"""
+        last = _read_resume()
+        folder = Path(last.get("folder", "")) if last.get("folder") else None
+        if not folder or not (folder / "号情報.json").is_file():
             self.show(0)
+            if folder:
+                self.fit_label.configure(text="前回の号のフォルダが見つかりません: " + str(folder))
+            return
+        self.open_issue(str(folder), step=_number(last.get("step")) or 1)
+        if self.work:
+            self.fit_label.configure(
+                text=f"前回の続き（{self.work.issue.title}・{self.step + 1}. {guide.STEPS[self.step]}）から開きました")
+
+    def _remember(self) -> None:
+        if not self.work:
+            return
+        try:
+            RESUME_PATH.write_text(json.dumps({"folder": str(self.work.folder), "step": self.step},
+                                              ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass   # 覚えられなくても作業は続けられる
+
+    def close(self) -> None:
+        """閉じる前に入力中の内容を保存し、次に開く場所を覚える。"""
+        if self.work and not self.save(silent=True):
+            if not messagebox.askyesno("保存できませんでした",
+                                       "入力中の内容を保存できませんでした。このまま閉じますか？",
+                                       parent=self.root):
+                return
+        self._remember()
+        self.root.destroy()
 
     def _style(self) -> None:
         style = ttk.Style()
@@ -117,6 +153,7 @@ class App:
             button.configure(text=f"{mark}{index + 1}. {guide.STEPS[index]}",
                              style="Now.TButton" if index == self.step else "TButton")
         getattr(self, "_step_" + str(self.step), self._not_ready)()
+        self._remember()
         self.canvas.yview_moveto(0)
         self._fit_summary()
 
@@ -901,7 +938,7 @@ class App:
         except Exception as error:
             messagebox.showerror("作成できません", str(error), parent=self.root)
 
-    def open_issue(self, folder=None) -> None:
+    def open_issue(self, folder=None, step: int = 1) -> None:
         folder = folder or filedialog.askdirectory(title="号フォルダを選ぶ", parent=self.root)
         if not folder:
             return
@@ -909,7 +946,7 @@ class App:
             self.work = edition.Edition.open(Path(folder))
             self.data = self.work.item_data()
             self.issue_label.configure(text=self.work.issue.title)
-            self.show(1)
+            self.show(step)
         except Exception as error:
             messagebox.showerror("開けません", str(error), parent=self.root)
 
@@ -1074,6 +1111,18 @@ def main() -> int:
     App(root)
     root.mainloop()
     return 0
+
+
+# 最後に開いていた号フォルダと手順。号の中身は入れない（号フォルダの項目.json にある）。
+RESUME_PATH = Path(__file__).resolve().parent / "前回の続き.json"
+
+
+def _read_resume() -> dict:
+    try:
+        value = json.loads(RESUME_PATH.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 
 def _focus_next(event):
