@@ -192,13 +192,18 @@ def summary_text(counts, month: Optional[int] = None) -> str:
             kind, count = item.get("kind", ""), item.get("count", 0)
         else:
             kind, count = item[0], item[1]
-        if str(kind).strip() and int(count or 0):
+        if int(count or 0):   # 区分が空の件数も合計に入れる
             pairs.append((str(kind).strip(), int(count)))
     total = sum(count for _, count in pairs)
-    detail = "、".join(f"{kind}{count}件" for kind, count in pairs)
+    named = [(kind, count) for kind, count in pairs if kind]
+    detail = "、".join(f"{kind}{count}件" for kind, count in named)
     head = f"{month}月議会" if month else "議会"
+    if not pairs:
+        return ""
     # 横書きの文なので、数字はすべて全角にする（縦中横の決まりは縦書きだけ）。
-    return _full_digits(f"{head}では、{detail}の計{total}件の議案等が決まった。") if pairs else ""
+    if not named:   # 区分の列が無いエクセルでも、件数だけは出す
+        return _full_digits(f"{head}では、計{total}件の議案等が決まった。")
+    return _full_digits(f"{head}では、{detail}の計{total}件の議案等が決まった。")
 
 
 def _full_digits(text: str) -> str:
@@ -336,6 +341,7 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
            align="中央", name="賛否表見出し", warnings=warnings)
     _htext(page, _box(15, top + 7, 180, 5), "○：賛成　　●：反対", 8,
            align="右", name="賛否凡例", warnings=warnings)
+    table_overflow = 0
     if not settings.vote_members:
         _htext(page, _box(15, table_top, 180, 45), "設定で議員名簿を入れてください", 12,
                align="中央", border=True, name="賛否表", warnings=warnings)
@@ -351,22 +357,38 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
                         + [str(marks.get(name, "")) for name in members]
                         + [vote_result(item.get("result", ""))])
         cell_pts = [[8.0] * len(rows[0])]
-        cell_pts.extend([[11.0, 11.0] + [8.0] * len(members) + [11.0]
+        # 件名は 9pt、区分と議決結果は 10pt にして、議案が多くても 1 ページに収まりやすくする。
+        cell_pts.extend([[10.0, 9.0] + [8.0] * len(members) + [10.0]
                          for _row in rows[1:]])
         # 見出し行の議員名は縦書き。いちばん長い名前が入る高さにする。
         longest = max(len(name) for name in members)
         header_pt = longest * 8.0 * 1.15 + 6.0
         vertical = {(0, 2 + index) for index in range(len(members))}
-        heights = [header_pt] + [VOTE_ROW_PT] * (len(rows) - 1)
+        # 長い件名は列の幅で改行を入れ、その行数に合わせて行を高くする（Word と紙面の見本で同じ高さ）。
+        heights = [header_pt]
+        for row in rows[1:]:
+            line_counts = []
+            for column, pt in ((0, 10.0), (1, 9.0), (len(row) - 1, 10.0)):
+                units = max(1, int((widths[column] - 4) / pt))
+                lines = _fit_lines(" ".join(str(row[column]).split("\n")), units)
+                row[column] = "\n".join(lines)
+                line_counts.append(len(lines))
+            heights.append(max(15.0, max(line_counts) * 9.0 * 1.4 + 4))
         page.items.append(dx.Table(_box(15, table_top, 180, table_h), widths, rows, 8.0,
                                    dx.GOTHIC, True, "賛否表", cell_pts, vertical, heights))
-        fit_rows = int((mm2pt(table_h) - header_pt) // VOTE_ROW_PT)
+        room = mm2pt(table_h) - header_pt
+        fit_rows = 0
+        for height in heights[1:]:
+            if room < height:
+                break
+            room -= height
+            fit_rows += 1
         table_overflow = max(0, len(rows) - 1 - fit_rows)
         if table_overflow:
-            warnings.append(f"賛否表が{table_overflow}行あふれています。件名をまとめるか、行を減らしてください。")
-            overflow += table_overflow
+            warnings.append(f"賛否表が{table_overflow}行（議案{table_overflow}件ぶん）ページに入りません。件名を短くするか、行を減らしてください。")
     if overflow:
         warnings.append(f"審議本文が{overflow}行あふれています。本文を短くするか、表現をまとめてください。")
+    overflow += table_overflow
     warnings.extend(dx.page_textbox_warnings(page))
     return compose.PageResult(page, overflow, max(0, capacity - used), warnings, placements)
 

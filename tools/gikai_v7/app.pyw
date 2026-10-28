@@ -448,8 +448,8 @@ class App:
             # 議員ごとの ○・● も並べて、エクセルと見比べられるようにする
             box = ttk.Frame(self.inner)
             box.pack(fill="x", pady=(8, 0))
-            # 議案を全件見せる（30 件まで。多いときは表の中でスクロール）
-            self._votes_table(box, votes, min(30, len(votes)))
+            # 議案を全件見せる（画面ごと下へスクロールして見る）
+            self._votes_table(box, votes)
             ttk.Label(self.inner, text="この表は確認用です。直すときはExcelを直して、もう一度取り込んでください。",
                       wraplength=900).pack(anchor="w")
         warnings = self.data.get("votes_warnings", [])
@@ -457,37 +457,68 @@ class App:
             ttk.Label(self.inner, text="注意\n・" + "\n・".join(warnings),
                       foreground="#a33", justify="left", wraplength=900).pack(anchor="w", pady=8)
 
-    def _votes_table(self, parent, votes, height: int) -> None:
-        """取り込んだ賛否の確認用の表。縦横のスクロールバー付き。"""
+    def _votes_table(self, parent, votes, height: int = 0) -> None:
+        """取り込んだ賛否の確認用の表。紙面と同じく議員名は縦書き、件名は折り返し、画面の幅いっぱいに描く。"""
         members = list(self.work.settings.vote_members)
-        columns = ["kind", "title"] + [f"m{i}" for i in range(len(members))] + ["result"]
-        table = ttk.Treeview(parent, columns=columns, show="headings", height=height)
-        table.heading("kind", text="区分")
-        table.column("kind", width=70, minwidth=50, stretch=False)
-        table.heading("title", text="議案番号・件名")
-        # 件名は狭めずに出す。入りきらないときは横のスクロールバーで見る。
-        def one_line(value) -> str:   # セルの中の改行は、表では全角空白にして 1 行で見せる
+        self.root.update_idletasks()
+        total = max(900, self.inner.winfo_width() - 30)
+        size = 15                                  # 1 字の大きさ（画面の点）
+        kind_w, result_w = 80, 80
+        member_w = max(30, min(44, (total - kind_w - result_w - 260) // max(1, len(members))))
+        title_w = max(260, total - kind_w - result_w - member_w * len(members))
+        width = kind_w + title_w + member_w * len(members) + result_w
+
+        def one_line(value) -> str:
             return "　".join(part.strip() for part in str(value or "").splitlines() if part.strip())
-        longest = max([len(one_line(v.get("title", ""))) for v in votes] + [8])
-        table.column("title", width=min(900, 15 * longest + 20), minwidth=160, stretch=False)
-        for index, name in enumerate(members):
-            table.heading(f"m{index}", text=name)
-            table.column(f"m{index}", width=max(56, 14 * len(name)), minwidth=40, anchor="center", stretch=False)
-        table.heading("result", text="議決結果")
-        table.column("result", width=80, minwidth=60, anchor="center", stretch=False)
+
+        def wrap(text: str, room: int) -> list:
+            per = max(1, room // size)
+            text = one_line(text)
+            return [text[i:i + per] for i in range(0, len(text), per)] or [""]
+
+        header_h = max(len(one_line(name)) for name in members + ["議決結果"]) * size + 14
+        rows = []
         for vote in votes:
             marks = vote.get("marks", {})
-            table.insert("", "end", values=[one_line(vote.get("kind", "")), one_line(vote.get("title", ""))]
-                         + [one_line(marks.get(name, "")) for name in members]
-                         + [one_line(items.templates.vote_result(vote.get("result", "")))])
-        down = ttk.Scrollbar(parent, orient="vertical", command=table.yview)
-        across = ttk.Scrollbar(parent, orient="horizontal", command=table.xview)
-        table.configure(yscrollcommand=down.set, xscrollcommand=across.set)
-        table.grid(row=0, column=0, sticky="nsew")
-        down.grid(row=0, column=1, sticky="ns")
-        across.grid(row=1, column=0, sticky="ew")
-        parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(0, weight=1)
+            title = wrap(vote.get("title", ""), title_w - 12)
+            rows.append((one_line(vote.get("kind", "")), title,
+                         [one_line(marks.get(name, "")) for name in members],
+                         one_line(items.templates.vote_result(vote.get("result", ""))),
+                         len(title) * (size + 5) + 12))
+        canvas = tk.Canvas(parent, width=width, height=header_h + sum(r[4] for r in rows) + 2,
+                           bg="white", highlightthickness=0)
+        canvas.pack(anchor="w")
+        font, small = (self.font, 11), (self.font, 10)
+        xs = [0, kind_w, kind_w + title_w] + [kind_w + title_w + member_w * (i + 1) for i in range(len(members))]
+        xs.append(width)
+
+        def cell(x1, y1, x2, y2, fill="white"):
+            canvas.create_rectangle(x1, y1, x2, y2, outline="#555", fill=fill)
+
+        cell(0, 0, kind_w, header_h, "#eef2f6")
+        canvas.create_text(kind_w / 2, header_h / 2, text="区分", font=small)
+        cell(kind_w, 0, kind_w + title_w, header_h, "#eef2f6")
+        canvas.create_text(kind_w + title_w / 2, header_h / 2, text="議案番号・件名", font=small)
+        for index, name in enumerate(members):
+            x = xs[2 + index]
+            cell(x, 0, x + member_w, header_h, "#eef2f6")
+            canvas.create_text(x + member_w / 2, 7, text="\n".join("".join(one_line(name).split())),
+                               font=small, anchor="n")
+        cell(xs[-2], 0, width, header_h, "#eef2f6")
+        canvas.create_text(xs[-2] + result_w / 2, 7, text="\n".join("議決結果"), font=small, anchor="n")
+        y = header_h
+        for kind, title, marks, result, row_h in rows:
+            cell(0, y, kind_w, y + row_h)
+            canvas.create_text(kind_w / 2, y + row_h / 2, text=kind, font=font, width=kind_w - 6)
+            cell(kind_w, y, kind_w + title_w, y + row_h)
+            canvas.create_text(kind_w + 6, y + 6, text="\n".join(title), font=font, anchor="nw")
+            for index, mark in enumerate(marks):
+                x = xs[2 + index]
+                cell(x, y, x + member_w, y + row_h)
+                canvas.create_text(x + member_w / 2, y + row_h / 2, text=mark, font=small if len(mark) > 1 else font)
+            cell(xs[-2], y, width, y + row_h)
+            canvas.create_text(xs[-2] + result_w / 2, y + row_h / 2, text=result, font=font)
+            y += row_h
 
     def _step_7(self):
         self._title("審議したこと")
