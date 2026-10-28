@@ -29,7 +29,7 @@ from settings import Settings
 from grid import Geometry, Rect, to_box
 
 
-FLOW_SECTIONS = frozenset((layout.GYOSEI, layout.YOSAN, layout.KESSAN,
+FLOW_SECTIONS = frozenset((layout.GYOSEI, layout.YOSAN,
                            layout.IINKAI, layout.TOKUSHU))
 
 
@@ -155,6 +155,7 @@ class Edition:
             layout.COVER: copy.deepcopy(data.get("cover", {})),
             layout.SHINGI: item_templates.shingi_form(data, self.issue),
             layout.LAST: copy.deepcopy(data.get("last", {})),
+            layout.KESSAN: item_templates.kessan_form(data, self.issue, self.folder / "写真"),
         }
         for page in self.pages:
             if page["section"] in forms:
@@ -595,6 +596,8 @@ class Edition:
         name = Path(filename).name
         if not (self.folder / "写真" / name).is_file():
             raise ValueError("写真フォルダに写真が見つかりません: " + name)
+        if page["section"] == layout.KESSAN:
+            raise ValueError("決算のページの写真は、「予算・決算」の手順で選びます（置く場所は決まっています）。")
         size = size or ("顔" if page["section"] == layout.IPPAN else "中")
         if size not in C.PHOTO_WIDTH_MM:
             raise ValueError("写真の大きさは 特大・大・中・小・顔 のいずれかです")
@@ -1151,6 +1154,8 @@ class Edition:
                 if page["section"] == layout.COVER and page["form"].get("photo"):
                     entries.append((page["form"]["photo"], "表紙",
                                     str(page["form"].get("photo_caption", "")), "表紙写真"))
+                elif page["section"] == layout.KESSAN and page["form"].get("photo"):
+                    entries.append((page["form"]["photo"], "決算", "", "決算写真"))
                 elif page["section"] == layout.LAST:
                     for number, value in enumerate(page["form"].get("editorial_photos", []) or [], 1):
                         entries.append((value, "小", str(value.get("caption", "")),

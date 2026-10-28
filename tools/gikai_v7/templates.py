@@ -42,6 +42,16 @@ FIELDS = {
         FormField("body", "審議本文", "印を付けて1つの欄へ書きます。", "【区分】予算\n◎見本条例\n質疑\n問　質問文\n答　答弁文", multiline=True),
         FormField("votes", "議案・発議案と賛否", "行ごとに区分・件名・結果・各議員の印を入れます。", []),
     ],
+    layout.KESSAN: [
+        FormField("title", "題", "囲みの左に入る題です。発行年から自動で入ります。", "令和７年度決算認定"),
+        FormField("kinds", "会計の種類", "囲みの右に1行に1つ書きます。",
+                  default="一般会計\n特別会計\n公営企業会計", multiline=True),
+        FormField("photo", "写真", "幅いっぱいに入る写真です（決算審査の様子など）。"),
+        FormField("chart_note", "円グラフの指示", "楕円の囲みに入る、印刷所への指示です。",
+                  default="一般会計の円グラフはひだか広報１１月号のを使用"),
+        FormField("accounts", "会計別決算額", "会計ごとの歳入・歳出です。", []),
+        FormField("body", "決算の質疑", "【会計名】／問　…／答　… の形です。", multiline=True),
+    ],
     layout.LAST: [
         FormField("editorial", "編集後記", "1段目に入る本文です。", multiline=True),
         FormField("editorial_photos", "編集後記の写真", "0～2枚の写真と説明を選びます。", []),
@@ -346,6 +356,117 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
     return compose.PageResult(page, overflow, max(0, capacity - used), warnings, placements)
 
 
+KESSAN_ROW_PT = 17.0   # 会計別決算額の 1 行の高さ
+
+
+def kessan_title(issue: layout.Issue) -> str:
+    """10 月号は前の年度の決算を載せる（令和８年１０月号 → 令和７年度決算認定）。"""
+    match = re.search(r"令和\s*([0-9０-９]+)年", issue.date or "")
+    if not match:
+        return "決算認定"
+    year = int(match.group(1).translate(str.maketrans("０１２３４５６７８９", "0123456789"))) - 1
+    return _full_digits(f"令和{year}年度決算認定")
+
+
+def _account_table(accounts) -> tuple:
+    """会計別決算額の表を作る。まとめ（特別会計など）は縦につなぐ。
+
+    列は 0: 短いまとめ（縦書き）、1〜2: 会計名、3: 歳入、4: 歳出。
+    まとめが 4 字までなら列 0 に縦書き、長ければ（簡易水道事業会計など）列 0〜1 に横書きで入れる。
+    """
+    rows = [["会　計　名", "", "", "歳　入", "歳　出"]]
+    spans = {(0, 0): 3}
+    merges, vertical = {}, set()
+    items = [a for a in accounts or [] if any(str(a.get(k, "")).strip()
+                                                 for k in ("group", "name", "revenue", "expense"))]
+    index = 0
+    while index < len(items):
+        group = str(items[index].get("group", "")).strip()
+        count = 1
+        while (group and index + count < len(items)
+               and str(items[index + count].get("group", "")).strip() == group):
+            count += 1
+        short = len(group) <= 4
+        for offset in range(count):
+            account = items[index + offset]
+            row = len(rows)
+            name = str(account.get("name", "")).strip()
+            values = ["", "", "", str(account.get("revenue", "")).strip(),
+                      str(account.get("expense", "")).strip()]
+            if not group:
+                values[0] = name
+                spans[(row, 0)] = 3
+            elif short:
+                values[0] = group if offset == 0 else ""
+                values[1] = name
+                spans[(row, 1)] = 2
+                vertical.add((row, 0))
+                if count > 1:
+                    merges[(row, 0)] = "restart" if offset == 0 else "continue"
+            else:
+                # 長いまとめは半分で改行する（簡易水道事業会計 → 簡易水道／事業会計）
+                half = (len(group) + 1) // 2
+                values[0] = (group[:half] + "\n" + group[half:]) if offset == 0 else ""
+                values[2] = name
+                spans[(row, 0)] = 2
+                if count > 1:
+                    merges[(row, 0)] = "restart" if offset == 0 else "continue"
+            rows.append(values)
+        index += count
+    return rows, spans, merges, vertical
+
+
+def _kessan(form: dict, issue: layout.Issue, g: Geometry) -> compose.PageResult:
+    """決算のページ（第204号の形）: 題の囲み・写真・円グラフの指示・会計別決算額・決算の質疑。"""
+    page, warnings, placements = dx.Page(), [], []
+    page.items.append(dx.TextBox(_box(18, 18, 174, 27), [""], dx.GOTHIC, 11, 15.4,
+                                 border=True, name="決算の囲み", vertical=False))
+    _htext(page, _box(28, 21, 90, 10), form.get("title") or kessan_title(issue), 20,
+           name="決算の題", warnings=warnings)
+    _htext(page, _box(118, 19, 64, 25), str(form.get("kinds", "")), 16, align="中央",
+           name="会計の種類", warnings=warnings)
+    _image(page, form.get("photo", ""), _box(18, 46, 174, 95), "決算写真", warnings)
+    note = dx.TextBox(_box(42, 150, 130, 28), _fit_lines(_full_digits(form.get("chart_note", "")), 30),
+                      dx.GOTHIC, 11, 15.4, border=True, name="円グラフの指示", vertical=False,
+                      align="中央", shape="ellipse")
+    note.lines = [""] * max(0, (4 - len(note.lines)) // 2 + 1) + note.lines   # 楕円の中ほどへ下げる
+    page.items.append(note)
+    _htext(page, _box(15, 183, 180, 6), "会　計　別　決　算　額", 11, align="中央",
+           name="会計別決算額の見出し", warnings=warnings)
+    rows, spans, merges, vertical = _account_table(form.get("accounts", []))
+    widths = [mm2pt(value) for value in (8.0, 14.0, 43.0, 42.0, 40.0)]
+    heights = [15.0] + [KESSAN_ROW_PT] * (len(rows) - 1)
+    table_h = (sum(heights) + 6) * 25.4 / 72
+    page.items.append(dx.Table(_box(35, 191, 147, table_h), widths, rows, 11.0, dx.GOTHIC, True,
+                               "会計別決算額", None, vertical, heights, spans, merges))
+    dan5_top = to_box(g, Rect(4, 0, 1, 1)).y * 25.4 / 72
+    if 191 + table_h > dan5_top:
+        warnings.append("会計別決算額の表が長く、下の決算の質疑に重なります。会計の行を減らしてください。")
+
+    # 下の段（5 段目）: 右に「決算の質疑」の囲み、その左に【会計名】と問・答を縦書きで流す。
+    dan = g.dans - 1
+    heading_rect = Rect(dan, 0, 1, 3)
+    page.items.append(dx.TextBox(to_box(g, heading_rect), ["決算の質疑"], dx.GOTHIC, 16,
+                                 g.line_pitch_pt, True, True, "決算の質疑"))
+    used, capacity = 3, g.lines_per_dan
+    for index, part in enumerate(_body_parts(form.get("body", ""))):
+        heading = part.kind == "中見出し"
+        text = part.text if not heading else "【" + part.text.strip("【】") + "】"
+        lines = split_lines(text, g.chars_per_line, indent=part.kind == "本文")
+        take = min(len(lines), max(0, capacity - used))
+        if take:
+            rect = Rect(dan, used, 1, take)
+            page.items.append(dx.TextBox(to_box(g, rect), lines[:take], dx.GOTHIC, 11.0,
+                                         g.line_pitch_pt, False, False, part.kind))
+            placements.append(compose.Placement(part, rect, index))
+        used += len(lines)
+    overflow = max(0, used - capacity)
+    if overflow:
+        warnings.append(f"決算の質疑が{overflow}行あふれています。問・答を短くしてください。")
+    warnings.extend(dx.page_textbox_warnings(page))
+    return compose.PageResult(page, overflow, max(0, capacity - used), warnings, placements)
+
+
 def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
     page, warnings = dx.Page(), []
     page.items.append(dx.TextBox(to_box(g, Rect(0, 0, 1, 4)), ["編　集", "後　記"],
@@ -413,6 +534,8 @@ def build(section: str, form: dict, issue: layout.Issue, plan: layout.Plan,
         return _shingi(values, issue, settings, g)
     if section == layout.LAST:
         return _last(values, settings, g)
+    if section == layout.KESSAN:
+        return _kessan(values, issue, g)
     raise ValueError("書き込み式ではない区分です: " + section)
 
 

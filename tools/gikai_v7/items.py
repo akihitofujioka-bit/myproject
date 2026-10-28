@@ -40,6 +40,7 @@ def default_data(issue: Optional[layout.Issue] = None) -> dict:
         "gyosei": {"title": GYOSEI_TITLE, "reports": []},
         "budget_kind": budget_name,
         "budget": {"title": budget_name, "summary": "", "questions": []},
+        "kessan": default_kessan(),
         "shingi": {"meeting": templates.meeting_name(issue), "period": "",
                    "counts": [], "bills": []},
         "votes": [],
@@ -58,13 +59,47 @@ def default_data(issue: Optional[layout.Issue] = None) -> dict:
 TEMPLATES = {
     layout.GYOSEI: ("title", "reports"),
     layout.YOSAN: ("title", "summary", "questions"),
-    layout.KESSAN: ("title", "summary", "questions"),
+    layout.KESSAN: ("title", "kinds", "photo", "chart_note", "accounts", "questions"),
     layout.SHINGI: ("meeting", "period", "counts", "bills"),
     "賛否表": ("votes",),
     layout.IINKAI: ("committees",),
     layout.IPPAN: ("questions",),
     layout.TOKUSHU: ("title", "body"),
 }
+
+
+def default_kessan() -> dict:
+    """決算ページ（10 月号）の入力欄。会計の並びは第204号の表に合わせた見本で、金額は空。"""
+    accounts = [("特別会計", "国民健康保険特別会計"), ("特別会計", "介護保険特別会計"),
+                ("特別会計", "後期高齢者医療特別会計"),
+                ("簡易水道事業会計", "収益的収支"), ("簡易水道事業会計", "資本的収支")]
+    return {"title": "", "kinds": "一般会計\n特別会計\n公営企業会計", "photo": "",
+            "chart_note": "一般会計の円グラフはひだか広報１１月号のを使用",
+            "accounts": [{"group": group, "name": name, "revenue": "", "expense": ""}
+                         for group, name in accounts],
+            "questions": []}
+
+
+def kessan_form(data: dict, issue: layout.Issue, photo_folder: Optional[Path] = None) -> dict:
+    """決算ページの入力を、templates の決算の型へ渡す形にする。"""
+    value = dict(default_kessan())
+    value.update(data.get("kessan", {}) or {})
+    lines: List[str] = []
+    for question in value.get("questions", []) or []:
+        account = _text(question.get("heading") or question.get("account"))
+        if account:
+            lines.append("【区分】" + account.strip("【】"))
+        if _text(question.get("question")):
+            lines.append("問　" + _text(question.get("question")))
+        if _text(question.get("answer")):
+            lines.append("答　" + _text(question.get("answer")))
+    photo = _text(value.get("photo"))
+    if photo and photo_folder is not None:
+        photo = str(Path(photo_folder) / Path(photo).name)
+    return {"title": _text(value.get("title")) or templates.kessan_title(issue),
+            "kinds": value.get("kinds", ""), "photo": photo,
+            "chart_note": value.get("chart_note", ""),
+            "accounts": list(value.get("accounts", []) or []), "body": "\n".join(lines)}
 
 
 def parse_bulk(text: str) -> dict:
@@ -92,6 +127,15 @@ def parse_bulk(text: str) -> dict:
                 current["answer"] = value
             else:
                 body.append(line)
+            continue
+        stripped = line.strip()
+        if (stripped.startswith(("【", "［", "[")) and stripped.endswith(("】", "］", "]"))
+                and len(stripped) <= 30):
+            # 【一般会計】のような見出しは、答の続きにせず次の問の見出しにする。
+            if heading:
+                body.append(heading)
+            heading = stripped.strip("【】［］[]")
+            current = None
             continue
         if current is not None and line.strip().startswith("答弁者"):
             current["answerer"] = line.strip().replace("答弁者", "", 1).lstrip(" ：:　")
@@ -235,14 +279,16 @@ def build_votes(rows: Iterable[dict], members: Iterable[str], chair: str = "") -
 
 def marked_pages(data: dict, issue: layout.Issue) -> Dict[str, List[str]]:
     """区分ごとのページ原稿を返す。流し込み区分は先頭ページ分だけを返す。"""
-    budget_section = layout.KESSAN if issue.month == 10 else layout.YOSAN
-    return {
+    pages = {
         layout.GYOSEI: [gyosei_text(data.get("gyosei", {}))],
-        budget_section: [budget_text(data.get("budget", {}), budget_section)],
         layout.IINKAI: [committee_text(data.get("committees", []))],
         layout.IPPAN: [question_text(value) for value in data.get("questions", [])],
         layout.TOKUSHU: [feature_text(data.get("feature", {}))],
     }
+    # 決算（10 月号）は決まった型のページなので、流し込みの原稿は当初予算だけ作る。
+    if issue.month != 10:
+        pages[layout.YOSAN] = [budget_text(data.get("budget", {}), layout.YOSAN)]
+    return pages
 
 
 def issue_from_data(data: dict, fallback: layout.Issue) -> layout.Issue:

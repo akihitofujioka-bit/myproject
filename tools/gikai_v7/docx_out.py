@@ -75,6 +75,7 @@ class TextBox:
     # 行ごとの (文字, 書体) の並び。None の行は font を使う。
     # 行分けそのものは lines が正で、書体を変えても字数計算には影響させない。
     line_runs: list[list[tuple[str, str]]] | None = None
+    shape: str = "rect"               # 囲みの形。rect（四角）か ellipse（楕円）
 
 
 @dataclass
@@ -90,6 +91,8 @@ class Table:
     cell_pts: object = None             # 行×列の字の大きさ。無ければ pt
     vertical_cells: object = None       # 縦書きにするセル (行, 列) の集まり
     row_heights: object = None          # 行ごとの最低の高さ(pt)。None の行は Word に任せる
+    col_spans: object = None            # {(行, 列): 列数} 右の列とつなぐセル
+    v_merge: object = None              # {(行, 列): "restart" か "continue"} 下の行とつなぐセル
 
 
 @dataclass
@@ -223,10 +226,20 @@ def _table_xml(table: Table) -> str:
         f'<w:{side} w:val="{border}" w:sz="4" w:space="0" w:color="000000"/>'
         for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
     rows = []
+    spans = table.col_spans or {}
+    merges = table.v_merge or {}
     for row_index, values in enumerate(table.rows):
         cells = []
+        covered = set()
+        for start, count in ((c, n) for (r, c), n in spans.items() if r == row_index and n > 1):
+            covered.update(range(start + 1, start + count))
         for index, width in enumerate(widths):
-            value = values[index] if index < len(values) else ""
+            if index in covered:
+                continue
+            span = max(1, int(spans.get((row_index, index), 1)))
+            width = sum(widths[index:index + span])
+            merge = merges.get((row_index, index))
+            value = "" if merge == "continue" else (values[index] if index < len(values) else "")
             pt = table.pt
             if table.cell_pts and row_index < len(table.cell_pts) and index < len(table.cell_pts[row_index]):
                 pt = table.cell_pts[row_index][index]
@@ -234,11 +247,16 @@ def _table_xml(table: Table) -> str:
             para = ('<w:p><w:pPr><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/>'
                     '<w:snapToGrid w:val="0"/><w:spacing w:before="0" w:after="0"/>'
                     '<w:jc w:val="center"/></w:pPr>'
-                    f'<w:r>{rpr}<w:t xml:space="preserve">{escape(value)}</w:t></w:r></w:p>')
+                    + f'<w:r>{rpr}<w:br/></w:r>'.join(
+                        f'<w:r>{rpr}<w:t xml:space="preserve">{escape(part)}</w:t></w:r>'
+                        for part in str(value).split("\n")) + '</w:p>')
             vertical = bool(table.vertical_cells) and (row_index, index) in table.vertical_cells
             direction = '<w:textDirection w:val="tbRlV"/>' if vertical else ""
+            grid_span = f'<w:gridSpan w:val="{span}"/>' if span > 1 else ""
+            v_merge = ('<w:vMerge w:val="restart"/>' if merge == "restart"
+                       else '<w:vMerge/>' if merge == "continue" else "")
             cells.append(f'<w:tc><w:tcPr><w:tcW w:w="{twip(width)}" w:type="dxa"/>'
-                         f'{direction}<w:vAlign w:val="center"/></w:tcPr>{para}</w:tc>')
+                         f'{grid_span}{v_merge}{direction}<w:vAlign w:val="center"/></w:tcPr>{para}</w:tc>')
         height = None
         if table.row_heights and row_index < len(table.row_heights):
             height = table.row_heights[row_index]
@@ -267,7 +285,8 @@ def _anchor(idx: int, box: Box, graphic: str, *, behind: bool = False, name: str
     )
 
 
-def _shape(box: Box, *, line: str, inner: str = "", body: str = "", fill: str = "") -> str:
+def _shape(box: Box, *, line: str, inner: str = "", body: str = "", fill: str = "",
+           prst: str = "rect") -> str:
     fill_xml = f'<a:solidFill><a:srgbClr val="{fill}"/></a:solidFill>' if fill else "<a:noFill/>"
     txbx = f"<wps:txbx><w:txbxContent>{inner}</w:txbxContent></wps:txbx>" if inner else ""
     # f 文字列の式の中に \ は書けない（Python 3.11 まで）ので外で作る
@@ -275,7 +294,7 @@ def _shape(box: Box, *, line: str, inner: str = "", body: str = "", fill: str = 
     return (
         f'<wps:wsp>{cnv}'
         f'<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{emu(box.w)}" cy="{emu(box.h)}"/></a:xfrm>'
-        f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{fill_xml}{line}</wps:spPr>'
+        f'<a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom>{fill_xml}{line}</wps:spPr>'
         f'{txbx}{body or "<wps:bodyPr/>"}</wps:wsp>'
     )
 
@@ -375,7 +394,7 @@ def _item_xml(item, idx: int, ids: list[int], rel_id: str = "") -> tuple[str, in
             return text, 1
         # 囲み線は広げる前の位置・大きさのまま、別の図形として重ねる。
         border_line = '<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>'
-        border = _anchor(idx + 1, old_box, _shape(old_box, line=border_line),
+        border = _anchor(idx + 1, old_box, _shape(old_box, line=border_line, prst=item.shape),
                          name=item.name + "_border")
         return text + border, 2
     if isinstance(item, Table):

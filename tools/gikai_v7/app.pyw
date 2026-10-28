@@ -340,14 +340,44 @@ class App:
         self._word_button()
 
     def _step_5(self):
+        if int(self.data.get("issue", {}).get("month", 4)) == 10:
+            self._kessan_step()
+            return
         self._title("当初予算または決算")
         value = self.data.setdefault("budget", {"title": "", "summary": "", "questions": []})
-        section = layout.KESSAN if int(self.data.get("issue", {}).get("month", 4)) == 10 else layout.YOSAN
+        section = layout.YOSAN
         self._entry("大見出し", value.get("title") or section, lambda v: value.__setitem__("title", v))
         self._text("概要本文", value.get("summary", ""), lambda v: value.__setitem__("summary", v), 6)
         self._list_editor("質疑", value.setdefault("questions", []),
                           [("heading", "見出し", False), ("question", "問", True), ("answer", "答", True)],
                           lambda v: v.get("heading") or v.get("question", "")[:30])
+        ttk.Button(self.inner, text="まとめて貼る", command=lambda: self.bulk_into(value)).pack(anchor="e")
+
+    def _kessan_step(self):
+        """10 月号の決算のページ。第204号と同じ決まった型に入れる。"""
+        self._title("決算")
+        value = self.data.setdefault("kessan", items.default_kessan())
+        auto = items.templates.kessan_title(items.issue_from_data(self.data, self.work.issue))
+        self._entry("題", value.get("title") or auto, lambda v: value.__setitem__("title", v))
+        self._text("会計の種類（1行に1つ）", value.get("kinds", ""), lambda v: value.__setitem__("kinds", v), 3)
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text="写真", width=20).pack(side="left")
+        names = [""] + [photo["name"] for photo in self.work.photo_files()]
+        photo_var = tk.StringVar(value=value.get("photo", ""))
+        ttk.Combobox(row, textvariable=photo_var, values=names, state="readonly", width=40).pack(side="left")
+        ttk.Label(row, text="（写真は「写真」の手順か、ここへのドロップで写真フォルダに入れてから選ぶ）").pack(side="left", padx=6)
+        self.getters.append(lambda: value.__setitem__("photo", photo_var.get()))
+        self._entry("円グラフの指示", value.get("chart_note", ""), lambda v: value.__setitem__("chart_note", v))
+        self._list_editor("会計別決算額", value.setdefault("accounts", []),
+                          [("group", "まとめ（特別会計など）", False), ("name", "会計名", False),
+                           ("revenue", "歳入（例 7億 731万円）", False), ("expense", "歳出", False)],
+                          lambda v: f"{v.get('group', '')}　{v.get('name', '')}　歳入 {v.get('revenue', '') or '（空）'}"
+                                    f"　歳出 {v.get('expense', '') or '（空）'}")
+        self._list_editor("決算の質疑", value.setdefault("questions", []),
+                          [("heading", "会計名（例 一般会計）", False), ("question", "問", True),
+                           ("answer", "答", True)],
+                          lambda v: f"【{v.get('heading', '')}】{v.get('question', '')[:24]}")
         ttk.Button(self.inner, text="まとめて貼る", command=lambda: self.bulk_into(value)).pack(anchor="e")
 
     def _step_6(self):
@@ -840,7 +870,7 @@ class App:
             self.import_question_word(path)
         elif suffix in (".xlsx", ".xls") and self.step == 6:
             self.import_votes(path)
-        elif suffix in (".jpg", ".jpeg", ".png", ".heic") and self.step == 12:
+        elif suffix in (".jpg", ".jpeg", ".png", ".heic") and self.step in (5, 12):
             self.add_photos(path)
         else:
             messagebox.showinfo(
@@ -848,7 +878,7 @@ class App:
                 "落とせるファイルは手順ごとに決まっています。\n"
                 "・Word: 行政報告・委員会報告・一般質問・特集\n"
                 "・エクセル: 議案と賛否\n"
-                "・写真: 写真", parent=self.root)
+                "・写真: 写真（10月号は 予算・決算 でも）", parent=self.root)
 
     def bulk_into(self, value: dict) -> None:
         text = simpledialog.askstring("まとめて貼る", "見出し、問、答を含む文章を貼り付けてください。", parent=self.root)
@@ -975,7 +1005,7 @@ class App:
             self.work.save_items(self.data)
             notice = result["warning"] or f"解像度の目安は {result['dpi']}dpi です。"
             messagebox.showinfo("写真を追加しました", f"{result['path']}\n{notice}", parent=self.root)
-            self.show(12)
+            self.show(self.step)
         except Exception as error:
             messagebox.showerror("写真を追加できません", str(error), parent=self.root)
 
@@ -1176,7 +1206,8 @@ def _draw_items(canvas, items, scale: float, ox: float, oy: float, family: str) 
         x2, y2 = x1 + box.w * scale, y1 + box.h * scale
         if isinstance(item, dx.TextBox):
             if item.border:
-                canvas.create_rectangle(x1, y1, x2, y2, outline="#222")
+                draw = canvas.create_oval if getattr(item, "shape", "rect") == "ellipse" else canvas.create_rectangle
+                draw(x1, y1, x2, y2, outline="#222")
             _draw_text(canvas, item, x1, y1, x2, y2, scale, family)
         elif isinstance(item, dx.Table):
             _draw_table(canvas, item, x1, y1, scale, family)
@@ -1227,11 +1258,29 @@ def _draw_table(canvas, table, x, y, scale, family) -> None:
     for index, _row in enumerate(table.rows):
         given = table.row_heights[index] if table.row_heights and index < len(table.row_heights) else None
         heights.append((given or 15.0) * scale)
+    spans, merges = table.col_spans or {}, table.v_merge or {}
     top = y
     for row_index, row in enumerate(table.rows):
         left = x
+        covered = set()
+        for (r, c), count in spans.items():
+            if r == row_index:
+                covered.update(range(c + 1, c + count))
         for column, width in enumerate(widths):
-            canvas.create_rectangle(left, top, left + width, top + heights[row_index], outline="#444")
+            if column in covered:
+                continue
+            span = spans.get((row_index, column), 1)
+            width = sum(widths[column:column + span])
+            if merges.get((row_index, column)) == "continue":
+                left += width
+                continue
+            height = heights[row_index]
+            if merges.get((row_index, column)) == "restart":
+                below = row_index + 1
+                while merges.get((below, column)) == "continue":
+                    height += heights[below]
+                    below += 1
+            canvas.create_rectangle(left, top, left + width, top + height, outline="#444")
             value = row[column] if column < len(row) else ""
             pt = table.pt
             if table.cell_pts and row_index < len(table.cell_pts) and column < len(table.cell_pts[row_index]):
@@ -1239,7 +1288,7 @@ def _draw_table(canvas, table, x, y, scale, family) -> None:
             size = max(4, round(pt * scale))
             vertical = bool(table.vertical_cells) and (row_index, column) in table.vertical_cells
             text = "\n".join(value) if vertical else value
-            canvas.create_text(left + width / 2, top + heights[row_index] / 2, text=text,
+            canvas.create_text(left + width / 2, top + height / 2, text=text,
                                font=(family, -size), width=max(10, width - 2))
             left += width
         top += heights[row_index]

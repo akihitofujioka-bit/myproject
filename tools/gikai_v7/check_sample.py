@@ -93,5 +93,33 @@ def main() -> int:
     return 0
 
 
+def make_kessan() -> int:
+    """10 月号（決算のページあり）の確かめ用の見本（架空の第997号）を作る。金額はすべて架空。"""
+    root = Path(__file__).resolve().parent
+    issue = layout.Issue(997, 10, "令和8年10月31日")
+    work = edition.Edition.create(root / "試し出力" / "確かめ用_第997号", issue)
+    work.settings = Settings(list(MEMBERS), CHAIR, "見本広報委員会")
+    data = items.default_data(issue)
+    amounts = [("７億　７３１万円", "７億　　８８万円"), ("７億　４１０万円", "６億９，１７８万円"),
+               ("１億１，６１４万円", "１億１，２６０万円"), ("１億６，１７０万円", "１億４，３９３万円"),
+               ("３，７１０万円", "１億　３４２万円")]
+    for account, (revenue, expense) in zip(data["kessan"]["accounts"], amounts):
+        account.update({"revenue": revenue, "expense": expense})
+    data["kessan"]["questions"] = [
+        {"heading": "一般会計", "question": "架空住宅の使用料の未納が増えているが、対応はどうか。",
+         "answer": "令和７年度は１０人のうち４人が納付済みとなった。引き続き納付を呼びかけていく。"},
+        {"heading": "簡易水道事業会計", "question": "施設の耐震化に向け、料金の見直しは考えているか。",
+         "answer": "現在、経営計画を取りまとめており、早ければ１２月議会に提案できるよう調整している。"}]
+    (work.folder / "写真" / "架空の決算審査.png").write_bytes(samples._png(1600, 900))
+    data["kessan"]["photo"] = "架空の決算審査.png"
+    work.save_items(data)
+    for path in work.export():
+        print("書き出しました: " + str(path))
+    for line in work.check():
+        print("確認: " + line)
+    return 0
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
+    raise SystemExit(make_kessan())
