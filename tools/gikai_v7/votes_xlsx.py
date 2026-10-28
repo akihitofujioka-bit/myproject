@@ -55,27 +55,65 @@ def _member_for(plain: str, wanted: dict, chair: str):
     return matches[0] if len(matches) == 1 else None
 
 
+def _header_key(plain: str):
+    """見出しの文字から、区分・議案番号・件名・議決結果のどれかを決める。言葉が少し違ってもよい。"""
+    for key, words in HEADER_WORDS.items():
+        if plain in words:
+            return key
+    if not plain or len(plain) > 10:      # 表の題（第3回定例会議案・発議案と賛否 など）は見出しにしない
+        return None
+    if "件名" in plain or "案件" in plain or "議案" in plain:
+        return "件名"
+    if "結果" in plain:
+        return "議決結果"
+    if "区分" in plain or "種類" in plain or "種別" in plain:
+        return "区分"
+    if "番号" in plain:
+        return "議案番号"
+    return None
+
+
 def _find_header(rows, names, chair: str = "") -> tuple:
-    """見出しの行を探す。議員名と見出しの言葉がいちばん多く並ぶ行を選ぶ。"""
+    """見出しの行を探す。議員名と見出しの言葉がいちばん多く並ぶ行を選ぶ。
+
+    見出しが 2〜3 段に分かれている（上の段に区分・件名・議決結果、下の段に議員名 など）ときは、
+    上下の段からも見出しの言葉を拾う。戻り値は（データが始まる行の位置, 列→見出し）。
+    """
     wanted = {_plain(name): name for name in names}
+
+    def meaning(value):
+        plain = _plain(value)
+        return _header_key(plain) or _member_for(plain, wanted, chair)
+
     best, best_score = 0, -1
     for index, row in enumerate(rows[:HEADER_SEARCH_ROWS]):
-        score = 0
-        for value in row.values():
-            plain = _plain(value)
-            if (_member_for(plain, wanted, chair) or plain in ("議長",)
-                    or any(plain in words for words in HEADER_WORDS.values())):
-                score += 1
+        score = sum(1 for value in row.values() if meaning(value))
         if score > best_score:
             best, best_score = index, score
     header = {}
     for column, value in rows[best].items():
-        plain = _plain(value)
-        if not plain:
+        if _plain(value):
+            header[column] = meaning(value) or str(value).strip()
+    last = best
+    # 上の段（2 段まで）と下の段（1 段）から、まだ意味の分からない列の見出しを拾う
+    for index in (best - 1, best - 2, best + 1):
+        if not 0 <= index < len(rows):
             continue
-        key = next((key for key, words in HEADER_WORDS.items() if plain in words), None)
-        header[column] = key or _member_for(plain, wanted, chair) or str(value).strip()
-    return best, header
+        found = {column: meaning(value) for column, value in rows[index].items() if meaning(value)}
+        marks = {"○", "●"} | set(MARK_WORDS)   # 「議長」「欠席」は見出しにもなるので含めない
+        # ○・● などの印が入っている行はデータの行なので、見出しにしない
+        is_header_row = (found and all(len(_plain(v)) <= 15 for v in rows[index].values())
+                         and not any(_plain(v) in marks for v in rows[index].values()))
+        if not is_header_row:
+            continue
+        for column, key in found.items():
+            if header.get(column) not in (HEADERS + tuple(names)):
+                header[column] = key
+        if index > last:
+            last = index
+    return last, header
+
+
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -269,6 +307,18 @@ def read_votes(path, members, chair) -> Tuple[List[dict], List[dict], List[str]]
     by_name = {}
     for column, value in header.items():
         by_name.setdefault(value, column)
+    if "件名" not in by_name:
+        # 件名の見出しが見つからないときは、議員・区分などの列以外で、いちばん長い文が入る列を件名とみなす
+        known = {column for column, value in header.items() if value in HEADERS or value in names}
+        lengths: Dict[int, int] = {}
+        for row in rows[header_index + 1:]:
+            for column, value in row.items():
+                if column not in known:
+                    lengths[column] = lengths.get(column, 0) + len(str(value))
+        if lengths:
+            guess = max(lengths, key=lengths.get)
+            by_name["件名"] = guess
+            warnings.append(f"件名の見出しが見つからないため、{_column(guess + 1)}列を件名として読みました。違うときはエクセルの見出しを「件名」にしてください。")
     for name in sorted(set(by_name) - set(HEADERS) - set(names)):
         warnings.append(f"名簿に無い議員の列があります: {name}")
     for name in names:
@@ -304,6 +354,8 @@ def read_votes(path, members, chair) -> Tuple[List[dict], List[dict], List[str]]
         title = f"{bill_no}　{subject}" if bill_no else subject
         votes.append({"kind": kind, "title": title, "result": result, "marks": marks})
         counts[kind] = counts.get(kind, 0) + 1
+    if not votes and any(any(row.values()) for row in rows[header_index + 1:]):
+        warnings.insert(0, "議案を1件も読めませんでした。エクセルの見出しに「件名」（または「議案・発議案」）と議員名があるか確かめてください。")
     return votes, [{"kind": kind, "count": count} for kind, count in counts.items()], warnings
 
 

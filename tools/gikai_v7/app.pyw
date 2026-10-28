@@ -445,16 +445,29 @@ class App:
                       justify="left").pack(anchor="w", pady=5)
         votes = self.data.get("votes", [])
         if votes:
-            table = ttk.Treeview(self.inner, columns=("kind", "title", "result"),
-                                 show="headings", height=min(8, len(votes)))
-            for key, text, width in (("kind", "区分", 100), ("title", "議案番号・件名", 500),
-                                     ("result", "議決結果", 130)):
-                table.heading(key, text=text)
-                table.column(key, width=width)
+            # 議員ごとの ○・● も並べて、エクセルと見比べられるようにする
+            members = list(self.work.settings.vote_members)
+            columns = ["kind", "title"] + [f"m{i}" for i in range(len(members))] + ["result"]
+            table = ttk.Treeview(self.inner, columns=columns, show="headings",
+                                 height=min(10, len(votes)))
+            table.heading("kind", text="区分")
+            table.column("kind", width=70, stretch=False)
+            table.heading("title", text="議案番号・件名")
+            table.column("title", width=320)
+            for index, name in enumerate(members):
+                table.heading(f"m{index}", text=name)
+                table.column(f"m{index}", width=max(48, 13 * len(name)), anchor="center", stretch=False)
+            table.heading("result", text="議決結果")
+            table.column("result", width=80, anchor="center", stretch=False)
             for vote in votes:
-                table.insert("", "end", values=(vote.get("kind", ""), vote.get("title", ""),
-                                                  vote.get("result", "")))
-            table.pack(fill="x", pady=5)
+                marks = vote.get("marks", {})
+                table.insert("", "end", values=[vote.get("kind", ""), vote.get("title", "")]
+                             + [marks.get(name, "") for name in members]
+                             + [items.templates.vote_result(vote.get("result", ""))])
+            scroll = ttk.Scrollbar(self.inner, orient="horizontal", command=table.xview)
+            table.configure(xscrollcommand=scroll.set)
+            table.pack(fill="x", pady=(5, 0))
+            scroll.pack(fill="x")
             ttk.Label(self.inner, text="この表は確認用です。直すときはExcelを直して、もう一度取り込んでください。",
                       wraplength=900).pack(anchor="w")
         warnings = self.data.get("votes_warnings", [])

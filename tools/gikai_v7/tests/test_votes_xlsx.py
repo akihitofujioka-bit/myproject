@@ -168,3 +168,48 @@ class ChairColumnTest(unittest.TestCase):
             votes, _counts, warnings = votes_xlsx.read_votes(path, s.vote_members, s.chair)
         self.assertEqual(votes[0]["marks"]["見本 次郎"], "議長")
         self.assertFalse(any("名簿" in w for w in warnings), warnings)
+
+
+def _two_row_header_xlsx(path, subject_label="議案・発議案名"):
+    """見出しが 2 段の架空のエクセル: 上の段に区分・件名・議決結果、下の段に議員名。"""
+    import zipfile as z
+    ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    def c(ref, text):
+        return f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'
+    rows = (f'<row r="1">{c("A1", "第３回定例会議案・発議案と賛否")}</row>'
+            f'<row r="2">{c("A2", "区分")}{c("B2", subject_label)}{c("C2", "議員名")}{c("F2", "議決結果")}</row>'
+            f'<row r="3">{c("C3", "見本太郎")}{c("D3", "見本花子")}{c("E3", "議長")}</row>'
+            f'<row r="4">{c("A4", "議案")}{c("B4", "議案第１号　架空の条例")}{c("C4", "〇")}{c("D4", "○")}{c("F4", "原案可決")}</row>'
+            f'<row r="5">{c("B5", "議案第２号　架空の予算")}{c("C5", "●")}{c("D5", "○")}{c("F5", "可決")}</row>')
+    with z.ZipFile(path, "w") as package:
+        package.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+        package.writestr("xl/workbook.xml", f'<workbook {ns} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        package.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+        package.writestr("xl/worksheets/sheet1.xml", f'<worksheet {ns}><sheetData>{rows}</sheetData></worksheet>')
+    return path
+
+
+class TwoRowHeaderTest(unittest.TestCase):
+    def read(self, label):
+        with tempfile.TemporaryDirectory() as folder:
+            path = _two_row_header_xlsx(Path(folder) / "賛否_架空.xlsx", label)
+            return votes_xlsx.read_votes(path, ["見本 太郎", "見本 花子", "見本 次郎"], "見本 次郎")
+
+    def test_two_row_header_is_read(self):
+        votes, counts, warnings = self.read("議案・発議案名")
+        self.assertEqual([v["title"] for v in votes], ["議案第１号　架空の条例", "議案第２号　架空の予算"])
+        self.assertEqual(votes[1]["kind"], "議案")                      # 区分の結合セルを引き継ぐ
+        self.assertEqual(votes[0]["marks"], {"見本 太郎": "○", "見本 花子": "○", "見本 次郎": "議長"})
+        self.assertEqual(counts, [{"kind": "議案", "count": 2}])
+        self.assertFalse(any("名簿" in w or "件名" in w for w in warnings), warnings)
+
+    def test_unknown_subject_label_is_guessed_and_told(self):
+        votes, _counts, warnings = self.read("内容")
+        self.assertEqual(len(votes), 2)
+        self.assertTrue(any("B列を件名として読みました" in w for w in warnings), warnings)
+
+    def test_nothing_read_is_explained(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = _two_row_header_xlsx(Path(folder) / "賛否_架空.xlsx")
+            votes, _counts, warnings = votes_xlsx.read_votes(path, ["別人 一郎"], "")
+        self.assertTrue(warnings and warnings[0].startswith("議案を1件も読めませんでした") or votes)
