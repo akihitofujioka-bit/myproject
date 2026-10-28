@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import calendar
+import datetime
+import re
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -122,6 +125,34 @@ class App:
         ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True)
         self.getters.append(lambda v=var, s=setter: s(v.get().strip()))
 
+    def _month_choice(self, value: dict) -> None:
+        """発行月は決まった月だけから選ぶ。打ち間違いをなくすため、手で書き込めない形にする。"""
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text="発行月", width=20).pack(side="left")
+        labels = [_month_label(month) for month in layout.MONTHS]
+        current = int(value.get("month") or 4)
+        var = tk.StringVar(value=_month_label(current) if current in layout.MONTHS else "")
+        box = ttk.Combobox(row, textvariable=var, values=labels, state="readonly", width=34)
+        box.pack(side="left")
+        self.getters.append(lambda v=var: value.__setitem__("month", _number(v.get().split("月")[0])))
+        return var
+
+    def _year_choice(self, value: dict) -> tk.StringVar:
+        """発行年を令和で選ぶ。前に入れた発行日があればその年、無ければ今年を最初に出す。"""
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text="発行年", width=20).pack(side="left")
+        this_year = datetime.date.today().year - 2018
+        match = re.search(r"令和\s*([0-9０-９]+)年", str(value.get("date", "")))
+        current = _number(match.group(1)) if match else this_year
+        years = [f"令和{year}年" for year in range(this_year - 1, this_year + 3)]
+        if f"令和{current}年" not in years:
+            years.insert(0, f"令和{current}年")
+        var = tk.StringVar(value=f"令和{current}年")
+        ttk.Combobox(row, textvariable=var, values=years, state="readonly", width=12).pack(side="left")
+        return var
+
     def _text(self, label: str, value, setter, height: int = 5) -> None:
         row = ttk.Frame(self.inner)
         row.pack(fill="both", expand=True, pady=3)
@@ -222,11 +253,24 @@ class App:
         self._title("号の情報")
         value = self.data.setdefault("issue", {})
         self._entry("号数", value.get("number", ""), lambda v: value.__setitem__("number", _number(v)))
-        self._entry("発行月", value.get("month", 4), lambda v: value.__setitem__("month", _number(v)))
-        self._entry("発行日", value.get("date", ""), lambda v: value.__setitem__("date", v))
-        if self.work:
-            name = items.templates.meeting_name(items.issue_from_data(self.data, self.work.issue))
-            ttk.Label(self.inner, text="定例会名（自動）: " + name).pack(anchor="w", pady=8)
+        year_var = self._year_choice(value)
+        month_var = self._month_choice(value)
+        # 発行日は発行月の末日に決まっているので、年と月から自動で決める。
+        shown = ttk.Label(self.inner, text="")
+        shown.pack(anchor="w", pady=8)
+
+        def refresh(*_args) -> None:
+            year, month = _number(year_var.get()), _number(month_var.get().split("月")[0])
+            date = _last_day(year, month)
+            value["date"] = date
+            issue = layout.Issue(0, month, date)
+            shown.configure(text=f"発行日（自動・月の末日）: {date}\n"
+                                 f"定例会名（自動）: {items.templates.meeting_name(issue)}")
+
+        year_var.trace_add("write", refresh)
+        month_var.trace_add("write", refresh)
+        refresh()
+        self.getters.append(refresh)
 
     def _step_2(self):
         self._title("議員名簿")
@@ -901,6 +945,21 @@ def main() -> int:
     App(root)
     root.mainloop()
     return 0
+
+
+def _last_day(reiwa_year: int, month: int) -> str:
+    """令和の年と月から、その月の末日を「令和8年10月31日」の形で返す。"""
+    if not reiwa_year or month not in range(1, 13):
+        return ""
+    last = calendar.monthrange(2018 + reiwa_year, month)[1]
+    return f"令和{reiwa_year}年{month}月{last}日"
+
+
+def _month_label(month: int) -> str:
+    """プルダウンに出す文。どの定例会を載せる号かを添える。"""
+    meeting = layout.TEIREIKAI.get(month)
+    note = "（議長改選で4月号が遅れる年）" if month == 5 else ""
+    return f"{month}月号　{meeting}月定例会{note}"
 
 
 def _number(text) -> int:
