@@ -43,7 +43,6 @@ class App:
         # 複数行の欄でも TAB で次の欄、Shift+TAB で前の欄へ移る（字の間にタブを入れない）。
         root.bind_class("Text", "<Tab>", _focus_next)
         root.bind_class("Text", "<Shift-Tab>", _focus_previous)
-        root.bind_class("Text", "<ISO_Left_Tab>", _focus_previous)
         root.protocol("WM_DELETE_WINDOW", self.close)
         if len(sys.argv) > 1:
             self.open_issue(sys.argv[1])
@@ -1107,10 +1106,34 @@ class App:
 
 
 def main() -> int:
-    root = tk.Tk()
-    App(root)
+    try:
+        root = tk.Tk()
+        App(root)
+    except Exception:
+        _report_start_error()
+        return 1
     root.mainloop()
     return 0
+
+
+def _report_start_error() -> None:
+    """app.pyw は黒い窓を出さないので、起動で失敗した理由をファイルと窓で知らせる。"""
+    import traceback
+    detail = traceback.format_exc()
+    path = Path(__file__).resolve().parent / "起動エラー.txt"
+    try:
+        path.write_text(detail, encoding="utf-8")
+    except OSError:
+        pass
+    try:
+        window = tk.Tk()
+        window.withdraw()
+        messagebox.showerror("議会だより編集 V7 を起動できません",
+                             "起動の途中で止まりました。次のファイルの中身を担当者に見せてください。\n"
+                             f"{path}\n\n{detail[-600:]}")
+        window.destroy()
+    except Exception:
+        pass
 
 
 # 最後に開いていた号フォルダと手順。号の中身は入れない（号フォルダの項目.json にある）。
