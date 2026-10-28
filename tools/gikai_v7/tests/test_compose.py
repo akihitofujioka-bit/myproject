@@ -77,6 +77,12 @@ class PlacementTest(unittest.TestCase):
         body = next(p for p in result.placements if p.part.kind == "本文")
         self.assertFalse(heading.rect.overlaps(body.rect))
 
+    def test_tatechuyoko_uses_vert_not_combine(self):
+        # 2〜3 桁の数字は縦中横（w:vert）。割注（w:combine）だと字が小さく 2 行に潰れる。
+        runs = "".join(dx._line_runs("約30分と100人", dx.GOTHIC, 11.0, [0]))
+        self.assertEqual(runs.count('w:vert="1" w:vertCompress="1"'), 2)
+        self.assertNotIn("w:combine", runs)
+
     def test_same_format_is_combined(self):
         parts = [I.Part("本文", "一つ目。"), I.Part("答弁", "答　二つ目。")]
         result = C.compose_page(layout.GYOSEI, parts, {}, self.g)

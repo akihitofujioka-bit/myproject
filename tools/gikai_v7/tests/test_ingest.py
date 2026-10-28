@@ -65,7 +65,7 @@ class DocxReadTest(unittest.TestCase):
         parts = I.ingest(self.path).parts
         joined = "\n".join(p.text for p in parts)
         self.assertIn("年２回", joined)
-        self.assertIn("2026年度に３地区", joined)
+        self.assertIn("２０２６年度に３地区", joined)
 
     def test_doctype_is_rejected(self):
         bad = Path(self.temp.name) / "bad.docx"
@@ -82,7 +82,9 @@ class DocxReadTest(unittest.TestCase):
 class TextReadTest(unittest.TestCase):
     def test_normalize_number_rules(self):
         self.assertEqual(I.normalize_numbers("1人・１２人・781－2194・0889-24-7777"),
-                         "１人・12人・781－2194・0889-24-7777")
+                         "１人・12人・７８１－２１９４・０８８９－２４－７７７７")
+        self.assertEqual(I.normalize_numbers("2026年・100人・1,500円・3.5％"),
+                         "２０２６年・100人・１，５００円・３．５％")
 
     def test_txt_marks_are_certain(self):
         with tempfile.TemporaryDirectory() as d:

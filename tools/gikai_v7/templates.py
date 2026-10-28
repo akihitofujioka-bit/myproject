@@ -41,7 +41,6 @@ FIELDS = {
         FormField("counts", "議案等の種類と件数", "種類と件数を一覧で入力します。", []),
         FormField("body", "審議本文", "印を付けて1つの欄へ書きます。", "【区分】予算\n◎見本条例\n質疑\n問　質問文\n答　答弁文", multiline=True),
         FormField("votes", "議案・発議案と賛否", "行ごとに区分・件名・結果・各議員の印を入れます。", []),
-        FormField("attachment", "表の下の案内", "表の下へ入れる文です。"),
     ],
     layout.LAST: [
         FormField("editorial", "編集後記", "1段目に入る本文です。", multiline=True),
@@ -220,7 +219,8 @@ def _cover(form: dict, issue: layout.Issue, plan: layout.Plan, g: Geometry) -> c
 
 def _body_parts(text: str) -> List[ingest.Part]:
     parts = []
-    for raw in str(text or "").splitlines():
+    # ほかの記事と同じく、2〜3 桁は縦中横、1 桁と 4 桁以上は全角にそろえる。
+    for raw in ingest.normalize_numbers(str(text or "")).splitlines():
         line = raw.strip()
         if not line:
             continue
@@ -237,6 +237,15 @@ def _body_parts(text: str) -> List[ingest.Part]:
         else:
             parts.append(ingest.Part("本文", line, True, "書き込み欄"))
     return parts
+
+
+VOTE_ROW_PT = 17.0    # 賛否表の 1 行の高さ（11pt の字が欠けない高さ）
+
+
+def vote_result(value) -> str:
+    """議決結果は「可決」「否決」などだけを出す。「原案可決」の「原案」は付けない。"""
+    text = str(value or "").strip()
+    return text[2:] if text.startswith("原案") and len(text) > 2 else text
 
 
 def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) -> compose.PageResult:
@@ -279,12 +288,17 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
     overflow = max(0, used - capacity)
 
     title = f"第{str({3: 1, 6: 2, 9: 3, 12: 4}.get(layout.TEIREIKAI.get(issue.month), 0)).translate(layout.ZEN)}回定例会議案・発議案と賛否"
-    _htext(page, _box(15, 168, 180, 7), title, 11, font=dx.GOTHIC,
+    # 表の見出しは、審議本文の 3 段目の下端より下へ置く（重なると見出しが読めない）。
+    body_bottom = to_box(g, Rect(2, 0, 1, 1))
+    top = (body_bottom.y + body_bottom.h) * 25.4 / 72 + 2.0
+    table_top = top + 13.0
+    table_h = g.page_h_mm - g.margin_bottom_mm - table_top
+    _htext(page, _box(15, top, 180, 7), title, 11, font=dx.GOTHIC,
            align="中央", name="賛否表見出し", warnings=warnings)
-    _htext(page, _box(15, 175, 180, 5), "○：賛成　　●：反対", 8,
+    _htext(page, _box(15, top + 7, 180, 5), "○：賛成　　●：反対", 8,
            align="右", name="賛否凡例", warnings=warnings)
     if not settings.members:
-        _htext(page, _box(15, 181, 180, 45), "設定で議員名簿を入れてください", 12,
+        _htext(page, _box(15, table_top, 180, 45), "設定で議員名簿を入れてください", 12,
                align="中央", border=True, name="賛否表", warnings=warnings)
     else:
         members = list(settings.members)
@@ -296,19 +310,22 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
             marks = item.get("marks", {})
             rows.append([str(item.get("kind", "")), str(item.get("title", ""))]
                         + [str(marks.get(name, "")) for name in members]
-                        + [str(item.get("result", ""))])
+                        + [vote_result(item.get("result", ""))])
         cell_pts = [[8.0] * len(rows[0])]
         cell_pts.extend([[11.0, 11.0] + [8.0] * len(members) + [11.0]
                          for _row in rows[1:]])
-        page.items.append(dx.Table(_box(15, 181, 180, 55), widths, rows, 8.0,
-                                   dx.GOTHIC, True, "賛否表", cell_pts))
-        table_overflow = max(0, len(rows) - 8)
+        # 見出し行の議員名は縦書き。いちばん長い名前が入る高さにする。
+        longest = max(len(name) for name in members)
+        header_pt = longest * 8.0 * 1.15 + 6.0
+        vertical = {(0, 2 + index) for index in range(len(members))}
+        heights = [header_pt] + [VOTE_ROW_PT] * (len(rows) - 1)
+        page.items.append(dx.Table(_box(15, table_top, 180, table_h), widths, rows, 8.0,
+                                   dx.GOTHIC, True, "賛否表", cell_pts, vertical, heights))
+        fit_rows = int((mm2pt(table_h) - header_pt) // VOTE_ROW_PT)
+        table_overflow = max(0, len(rows) - 1 - fit_rows)
         if table_overflow:
             warnings.append(f"賛否表が{table_overflow}行あふれています。件名をまとめるか、行を減らしてください。")
             overflow += table_overflow
-    attachment = form.get("attachment") or ("別添　" + title)
-    _htext(page, _box(15, 239, 180, 12), attachment, 16,
-           align="中央", name="別添案内", warnings=warnings)
     if overflow:
         warnings.append(f"審議本文が{overflow}行あふれています。本文を短くするか、表現をまとめてください。")
     warnings.extend(dx.page_textbox_warnings(page))

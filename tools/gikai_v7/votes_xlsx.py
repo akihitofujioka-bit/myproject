@@ -82,7 +82,7 @@ def make_template(path, members, chair) -> Path:
         _inline_row(2, ("区分", "議案・発議案・同意・報告 など")),
         _inline_row(3, ("議案番号", "議案第1号 など。無い場合は空欄")),
         _inline_row(4, ("件名", "1行に1件。必ず入力")),
-        _inline_row(5, ("議決結果", "原案可決・否決・承認 など")),
+        _inline_row(5, ("議決結果", "可決・否決・同意・認定 など(「原案」は付けない)")),
         _inline_row(6, ("○", "賛成")),
         _inline_row(7, ("●", "反対")),
         _inline_row(8, ("欠席", "採決を欠席")),

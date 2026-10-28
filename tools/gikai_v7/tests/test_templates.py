@@ -16,7 +16,8 @@ import docx_out as dx  # noqa: E402
 import edition  # noqa: E402
 import layout  # noqa: E402
 import samples  # noqa: E402
-import templates  # noqa: E402
+import templates
+from grid import Rect, to_box  # noqa: E402
 from grid import Box, Geometry, mm2pt, text_width  # noqa: E402
 from settings import Settings  # noqa: E402
 
@@ -124,6 +125,29 @@ class TemplateTest(unittest.TestCase):
                                  self.issue, self.plan, self.settings, self.g)
         self.assertTrue(any("傍聴案内見出し" in warning for warning in result.warnings))
         self.assertTrue(any("意見・提言" in warning for warning in result.warnings))
+
+    def test_vote_result_drops_genan(self):
+        self.assertEqual(templates.vote_result("原案可決"), "可決")
+        self.assertEqual(templates.vote_result("否決"), "否決")
+        self.assertEqual(templates.vote_result("原案"), "原案")
+
+    def test_vote_table_has_vertical_member_names_and_no_attachment(self):
+        form = dict(samples.sample_forms().get(layout.SHINGI, {}))
+        form["votes"] = [{"kind": "議案", "title": "架空の条例", "result": "原案可決",
+                          "marks": {name: "○" for name in self.settings.members}}]
+        result = templates.build(layout.SHINGI, form, self.issue, self.plan, self.settings, self.g)
+        table = next(x for x in result.page.items if isinstance(x, dx.Table))
+        members = len(self.settings.members)
+        self.assertEqual(table.vertical_cells, {(0, 2 + i) for i in range(members)})
+        self.assertEqual(table.rows[1][-1], "可決")
+        self.assertFalse(any(getattr(x, "name", "") == "別添案内" for x in result.page.items))
+
+    def test_vote_title_is_below_shingi_body(self):
+        result = templates.build(layout.SHINGI, samples.sample_forms().get(layout.SHINGI, {}),
+                                 self.issue, self.plan, self.settings, self.g)
+        title = next(x for x in result.page.items if getattr(x, "name", "") == "賛否表見出し")
+        body = to_box(self.g, Rect(2, 0, 1, 1))
+        self.assertGreaterEqual(title.box.y, body.y + body.h)
 
     def test_all_template_text_fits_its_frame(self):
         forms = samples.sample_forms()

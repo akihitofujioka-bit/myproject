@@ -20,7 +20,8 @@ CHAIR = "見本 次郎"
 
 # 縦書きで向きが変わる字（伸ばし棒・括弧・英数字）を一通り含む架空の文。
 SENTENCE = ("令和８年度は、見本地区のデジタル化（ＤＸ）を進め、窓口の待ち時間を"
-            "約３０分短くする計画です。センターの開館は午前９時からとなります。")
+            "約３０分短くする計画です。センターの開館は午前９時からとなります。"
+            "２０２６年度の予算は１，５００万円、参加者は１２０人、問い合わせは０８８９－２４－７７７７です。")
 
 
 def _long(times: int) -> str:
@@ -37,15 +38,15 @@ def main() -> int:
     data["cover"]["photo_caption"] = "架空の春まつりの様子"
     data["cover"]["feature_titles"] = "架空の防災特集"
     data["gyosei"] = {"title": "行政報告", "reports": [
-        {"heading": "架空の防災事業について（見本地区）", "body": _long(14)},
-        {"heading": "架空の交流センター", "body": _long(14)},
-        {"heading": "架空の子育て支援", "body": _long(12)}]}
+        {"heading": "架空の防災事業について（見本地区）", "body": _long(8)},
+        {"heading": "架空の交流センター", "body": _long(8)},
+        {"heading": "架空の子育て支援", "body": _long(7)}]}
     data["budget"] = {"title": "令和８年度当初予算", "summary": _long(4),
                       "questions": [{"heading": "防災費", "question": "訓練の予定は。",
                                      "answer": _long(3)}]}
-    bills = [("議案", "議案第１号", "架空の見本条例", "原案可決"),
-             ("予算", "議案第２号", "架空の一般会計予算", "原案可決"),
-             ("発議案", "発議案第１号", "架空の意見書", "原案可決")]
+    bills = [("議案", "議案第１号", "架空の見本条例", "可決"),
+             ("予算", "議案第２号", "架空の一般会計予算", "可決"),
+             ("発議案", "発議案第１号", "架空の意見書", "可決")]
     data["shingi"].update({
         "period": "Ｒ８．３．４～３．１２",
         "counts": [{"kind": "議案", "count": 1}, {"kind": "予算", "count": 1},
@@ -57,14 +58,14 @@ def main() -> int:
         [{"kind": kind, "title": f"{number}　{title}", "result": result}
          for kind, number, title, result in bills], MEMBERS, CHAIR)
     data["committees"] = [
-        {"committee": "架空総務委員会", "heading": "防災の調査", "body": _long(16)},
-        {"committee": "架空産業委員会", "heading": "農業の調査", "body": _long(14)}]
+        {"committee": "架空総務委員会", "heading": "防災の調査", "body": _long(9)},
+        {"committee": "架空産業委員会", "heading": "農業の調査", "body": _long(8)}]
     data["questions"] = [
         {"member": name, "title": f"暮らしを守る架空の施策（{n}）", "questions": [
             {"heading": f"質問の見出し{n}の{k}", "question": _long(1),
-             "answer": _long(3), "answerer": "見本課長"} for k in range(1, 4)]}
+             "answer": _long(2), "answerer": "見本課長"} for k in range(1, 4)]}
         for n, name in enumerate(MEMBERS[:2], 1)]
-    data["feature"] = {"title": "架空の防災特集", "body": _long(34)}
+    data["feature"] = {"title": "架空の防災特集", "body": _long(19)}
     data["last"].update({"editorial": _long(2), "free": _long(6),
                          "next_meeting": "次の定例会は６月４日（木）午前１０時に開会の予定です。"})
     work.save_items(data)

@@ -225,7 +225,7 @@ def build_votes(rows: Iterable[dict], members: Iterable[str], chair: str = "") -
         marks = {name: str(old[name]) if name in old
                  else ("議長" if name == chair else "○") for name in names}
         output.append({"kind": _text(row.get("kind")), "title": _text(row.get("title")),
-                       "result": _text(row.get("result")) or "原案可決", "marks": marks})
+                       "result": _text(row.get("result")) or "可決", "marks": marks})
     return output
 
 

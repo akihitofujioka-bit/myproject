@@ -106,18 +106,24 @@ class SourceData:
 
 _Z2H = str.maketrans("０１２３４５６７８９", "0123456789")
 _H2Z = str.maketrans("0123456789", "０１２３４５６７８９")
-_NUM_GROUP = re.compile(r"[0-9０-９]+(?:[－\-‐][0-9０-９]+)+|[0-9０-９]+")
+_NUM_GROUP = re.compile(r"[0-9０-９]+(?:[－\-‐,，.．][0-9０-９]+)+|[0-9０-９]+")
+_SEP_TO_FULL = str.maketrans({"-": "－", "‐": "－", ",": "，", ".": "．"})
 
 
 def normalize_numbers(text: str) -> str:
-    """1 桁を全角、2 桁以上を半角にする。「－」つなぎは変えない。"""
+    """縦書きで読みやすい数字にそろえる。
+
+    2〜3 桁は半角にして縦中横（横に並べて 1 字ぶん）、1 桁と 4 桁以上は全角にして
+    1 字ずつ立てる。「－」「，」「．」でつないだ番号・金額・小数も全角にして立てる
+    （半角のままだと縦書きで横に寝てしまうため）。
+    """
 
     def repl(m: re.Match) -> str:
         s = m.group(0)
-        if any(ch in s for ch in "－-‐"):
-            return s
         half = s.translate(_Z2H)
-        return half.translate(_H2Z) if len(half) == 1 else half
+        if 2 <= len(half) <= 3 and half.isdigit():
+            return half
+        return half.translate(_H2Z).translate(_SEP_TO_FULL)
 
     out = []
     for line in text.split("\n"):

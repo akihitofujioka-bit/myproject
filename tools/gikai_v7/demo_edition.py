@@ -34,7 +34,7 @@ def main() -> int:
                    "description": "架空制度を整える条例です。",
                    "questions": [{"question": "開始時期は。", "answer": "4月からです。"}]}]})
     data["votes"] = items.build_votes(
-        [{"kind": "議案", "title": "架空の見本条例", "result": "原案可決"}],
+        [{"kind": "議案", "title": "架空の見本条例", "result": "可決"}],
         work.settings.members, work.settings.chair)
     data["committees"] = [
         {"committee": "架空総務委員会", "heading": "防災の調査", "body": "見本施設を調査しました。"},

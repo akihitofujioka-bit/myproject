@@ -88,6 +88,8 @@ class Table:
     border: bool = True
     name: str = "table"
     cell_pts: object = None             # 行×列の字の大きさ。無ければ pt
+    vertical_cells: object = None       # 縦書きにするセル (行, 列) の集まり
+    row_heights: object = None          # 行ごとの最低の高さ(pt)。None の行は Word に任せる
 
 
 @dataclass
@@ -138,7 +140,9 @@ def _line_runs(line: str, font: str, pt: float, ids: list[int], *,
                vertical: bool = True, bold: bool = False) -> list[str]:
     """1 行を run に分ける。2〜3 桁の半角数字は縦中横の run にする。
 
-    縦中横（`w:eastAsianLayout w:combine="1"`）は文書の中で一意の id が要る（gikai_template §11）。
+    縦中横は `w:eastAsianLayout w:vert="1" w:vertCompress="1"`（Word の「拡張書式→縦中横」で
+    「行内に収める」）。`w:combine="1"` は割注（2 行に分けて小さく詰める）なので使わない。
+    文書の中で一意の id が要る（gikai_template §11）。
     """
     rpr = _rpr(font, pt, bold)
     if not vertical:
@@ -148,7 +152,7 @@ def _line_runs(line: str, font: str, pt: float, ids: list[int], *,
         if m.start() > pos:
             out.append(f'<w:r>{rpr}<w:t xml:space="preserve">{escape(line[pos:m.start()])}</w:t></w:r>')
         ids[0] += 1
-        tcy = rpr.replace("</w:rPr>", f'<w:eastAsianLayout w:id="{ids[0]}" w:combine="1"/></w:rPr>')
+        tcy = rpr.replace("</w:rPr>", f'<w:eastAsianLayout w:id="{ids[0]}" w:vert="1" w:vertCompress="1"/></w:rPr>')
         out.append(f"<w:r>{tcy}<w:t>{m.group(0)}</w:t></w:r>")
         pos = m.end()
     if pos < len(line):
@@ -231,9 +235,16 @@ def _table_xml(table: Table) -> str:
                     '<w:snapToGrid w:val="0"/><w:spacing w:before="0" w:after="0"/>'
                     '<w:jc w:val="center"/></w:pPr>'
                     f'<w:r>{rpr}<w:t xml:space="preserve">{escape(value)}</w:t></w:r></w:p>')
+            vertical = bool(table.vertical_cells) and (row_index, index) in table.vertical_cells
+            direction = '<w:textDirection w:val="tbRlV"/>' if vertical else ""
             cells.append(f'<w:tc><w:tcPr><w:tcW w:w="{twip(width)}" w:type="dxa"/>'
-                         f'<w:vAlign w:val="center"/></w:tcPr>{para}</w:tc>')
-        rows.append('<w:tr>' + "".join(cells) + '</w:tr>')
+                         f'{direction}<w:vAlign w:val="center"/></w:tcPr>{para}</w:tc>')
+        height = None
+        if table.row_heights and row_index < len(table.row_heights):
+            height = table.row_heights[row_index]
+        trpr = (f'<w:trPr><w:trHeight w:val="{twip(height)}" w:hRule="atLeast"/></w:trPr>'
+                if height else "")
+        rows.append('<w:tr>' + trpr + "".join(cells) + '</w:tr>')
     return ('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>'
             '<w:tblLayout w:type="fixed"/><w:tblBorders>' + borders + '</w:tblBorders>'
             '</w:tblPr><w:tblGrid>' + grid + '</w:tblGrid>' + "".join(rows) + '</w:tbl>')
