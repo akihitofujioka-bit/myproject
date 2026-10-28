@@ -116,5 +116,37 @@ class PreviewTitleHitTest(unittest.TestCase):
         self.assertIsNone(app_module._bill_index(bills, None, heads))
 
 
+class PreviewQaHitTest(unittest.TestCase):
+    """紙面を見るの審議本文で押した所が、何件目の案件の何番目の問かを求める。"""
+
+    def test_shingi_spot(self):
+        import tempfile
+        app_module = _load_app()
+        import edition, items, layout
+        from grid import to_box
+        from settings import Settings
+        with tempfile.TemporaryDirectory() as folder:
+            work = edition.Edition.create(Path(folder) / "号", layout.Issue(998, 4, "令和8年4月30日"))
+            work.settings = Settings(["見本 太郎", "見本 花子"], "見本 花子", "見本")
+            data = items.default_data(work.issue)
+            data["shingi"]["bills"] = [
+                {"kind": "議案", "title": "議案第１号　架空", "description": "説明。", "questions": [
+                    {"question": "問一。", "answer": "答一。"}, {"question": "問二。", "answer": "答二。"}]},
+                {"kind": "予算", "title": "議案第２号　見本", "questions": [{"question": "問三。", "answer": "答三。"}]}]
+            work.save_items(data)
+            page = next(p["no"] for p in work.pages if p["section"] == layout.SHINGI)
+            result = work.compose(page)
+            spots = {}
+            for placement in result.placements:
+                box = to_box(work.geometry, placement.rect)
+                spots[placement.part.text] = app_module._shingi_spot(
+                    data["shingi"]["bills"], work, result.placements, box.x + 2, box.y + 2)
+            self.assertEqual(spots["説明。"], (0, -1))
+            self.assertEqual(spots["答　答二。"], (0, 1))
+            self.assertEqual(spots["問　問三。"], (1, 0))
+            self.assertIsNone(spots["◎議案第１号　架空"])
+        self.assertEqual(app_module._qa_text(data["shingi"]["bills"][1]), "問　問三。\n答　答三。")
+
+
 if __name__ == "__main__":
     unittest.main()

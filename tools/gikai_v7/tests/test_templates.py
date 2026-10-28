@@ -98,6 +98,19 @@ class TemplateTest(unittest.TestCase):
                  and item.name in ("中見出し", "議案")]
         self.assertEqual([item.border for item in boxes], [True, False, False])
 
+    def test_shingi_long_answer_continues_to_next_dan(self):
+        """長い答は段の終わりで次の段へ続け、段の外（左の余白）へはみ出さない。"""
+        long = "架空の答弁です。" * 60
+        result = templates.build(layout.SHINGI, {"body": "◎議案第１号　架空\n質疑\n問　架空の質問。\n答　" + long},
+                                 self.issue, self.plan, self.settings, self.g)
+        answers = [p for p in result.placements if p.part.kind == "答弁"]
+        self.assertGreater(len(answers), 1)
+        for placement in result.placements:
+            self.assertLessEqual(placement.rect.line + placement.rect.line_span, self.g.lines_per_dan)
+        shown = sum(len(item.lines) for item in result.page.items
+                    if isinstance(item, dx.TextBox) and item.name == "答弁")
+        self.assertEqual(shown, sum(p.rect.line_span for p in answers))
+
     def test_shingi_answer_and_last_page_body_are_gothic(self):
         shingi = templates.build(
             layout.SHINGI, {"body": "問　架空の質問です。\n答　架空の答弁です。"},

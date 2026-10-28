@@ -391,14 +391,28 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
         if used >= capacity or (heading and used + span > capacity):
             used += span
             continue
-        take_span = span if heading else min(span, capacity - used)
-        take = min(len(lines), take_span)
-        dan, line = dans[used // g.lines_per_dan], used % g.lines_per_dan
-        rect = Rect(dan, line, 1, take_span)
-        page.items.append(dx.TextBox(to_box(g, rect), lines[:take], dx.GOTHIC, pt, g.line_pitch_pt,
-                                     boxed, boxed, part.kind, True, "左", heading and not boxed))
-        placements.append(compose.Placement(part, rect, index))
-        used += span
+        if heading:
+            dan, line = dans[used // g.lines_per_dan], used % g.lines_per_dan
+            rect = Rect(dan, line, 1, span)
+            page.items.append(dx.TextBox(to_box(g, rect), lines, dx.GOTHIC, pt, g.line_pitch_pt,
+                                         boxed, boxed, part.kind, True, "左", not boxed))
+            placements.append(compose.Placement(part, rect, index))
+            used += span
+            continue
+        # 本文・問・答は、段の終わりで次の段へ続ける（1 つの段からはみ出さない）。入らない行は数えるだけ。
+        rest = lines
+        while rest:
+            if used >= capacity:
+                used += len(rest)
+                break
+            dan, line = dans[used // g.lines_per_dan], used % g.lines_per_dan
+            take = min(len(rest), g.lines_per_dan - line)
+            rect = Rect(dan, line, 1, take)
+            page.items.append(dx.TextBox(to_box(g, rect), rest[:take], dx.GOTHIC, pt, g.line_pitch_pt,
+                                         False, False, part.kind, True, "左", False))
+            placements.append(compose.Placement(part, rect, index))
+            used += take
+            rest = rest[take:]
     overflow = max(0, used - capacity)
 
     _htext(page, _box(15, top, 180, 7), title, 11, font=dx.GOTHIC,

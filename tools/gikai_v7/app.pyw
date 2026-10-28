@@ -677,6 +677,69 @@ class App:
         ttk.Button(buttons, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
         title.focus_set()
 
+    def _edit_bill_qa(self, index: int, question: int, parent=None, done=None) -> None:
+        """紙面を見るの審議本文から、1 件の案件の説明と質疑（問・答）を直す窓。
+
+        question は何番目の問か（0 から。説明の所なら -1）。その問の行に字の入る位置を合わせる。
+        """
+        bill = self.data["shingi"]["bills"][index]
+        dialog = tk.Toplevel(parent or self.root)
+        dialog.title("説明と質疑を直す")
+        screen_h = self.root.winfo_screenheight()
+        dialog.geometry(f"860x{max(520, min(760, screen_h - 120))}")
+        if parent is not None:
+            dialog.transient(parent)
+        # ボタンは窓の下に固定する（欄が大きくても隠れないように）
+        buttons = ttk.Frame(dialog, padding=(12, 0, 12, 12))
+        buttons.pack(side="bottom", fill="x")
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="件名: " + (bill.get("title", "") or "（件名なし）").replace("\n", " "),
+                  wraplength=820).pack(anchor="w")
+
+        def field(label, text, height):
+            ttk.Label(body, text=label).pack(anchor="w", pady=(8, 2))
+            frame = ttk.Frame(body)
+            frame.pack(fill="both", expand=True)
+            widget = tk.Text(frame, height=height, wrap="word", font=(self.font, INPUT_PT), undo=True,
+                             relief="solid", borderwidth=1, padx=6, pady=4)
+            bar = ttk.Scrollbar(frame, orient="vertical", command=widget.yview)
+            widget.configure(yscrollcommand=bar.set)
+            bar.pack(side="right", fill="y")
+            widget.pack(side="left", fill="both", expand=True)
+            widget.insert("1.0", text)
+            return widget
+        description = field("説明", bill.get("description", ""), 5)
+        qa = field("質疑（問は「問　」、答は「答　」で始めます。Enter で改行）", _qa_text(bill), 12)
+
+        def keep():
+            self.save(silent=True)   # 元の画面で書きかけの内容を先に残す
+            bill["description"] = description.get("1.0", "end-1c").strip()
+            text = qa.get("1.0", "end-1c").strip()
+            bill["qa_bulk"] = text
+            bill["questions"] = items.parse_bulk(text)["questions"] if text else []
+            self._prepare_nested()
+            self.work.save_items(self.data)
+            dialog.destroy()
+            self.show(self.step)
+            if done:
+                done()
+        ttk.Button(buttons, text="直す", command=keep).pack(side="right")
+        ttk.Button(buttons, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
+        if question < 0:
+            description.focus_set()
+            return
+        # 押した問の行へ字の入る位置を移す
+        count = -1
+        for number, line in enumerate(qa.get("1.0", "end-1c").splitlines(), 1):
+            if line.lstrip().startswith("問"):
+                count += 1
+                if count == question:
+                    qa.mark_set("insert", f"{number}.0")
+                    qa.see(f"{number}.0")
+                    break
+        qa.focus_set()
+
     def _step_7(self):
         self._title("審議したこと")
         value = self.data.setdefault("shingi", {"counts": [], "bills": []})
@@ -1308,7 +1371,7 @@ class App:
             if bill.get("qa_bulk"):
                 parsed = items.parse_bulk(bill["qa_bulk"])
                 bill["questions"] = parsed["questions"]
-                if parsed["body"]:
+                if parsed["body"] and parsed["body"] not in bill.get("description", ""):
                     bill["description"] = (bill.get("description", "") + "\n" + parsed["body"]).strip()
         for person in self.data.get("questions", []):
             if person.get("qa_bulk"):
@@ -1626,10 +1689,16 @@ class App:
                     self._edit_vote(row - 1, parent=dialog, done=draw)
                     return
             if page["section"] == layout.SHINGI:
+                bills = self.data.get("shingi", {}).get("bills", []) or []
                 heading = next((item for item in hit if isinstance(item, dx.TextBox) and item.name == "議案"), None)
-                index = _bill_index(self.data.get("shingi", {}).get("bills", []) or [], heading, result.page.items)
+                index = _bill_index(bills, heading, result.page.items)
                 if index is not None:
                     self._edit_bill_title(index, parent=dialog, done=draw)
+                    return
+                # 説明・質疑・問・答の所なら、その案件の説明と質疑を直す窓を開く
+                spot = _shingi_spot(bills, self.work, result.placements, point_x, point_y)
+                if spot is not None:
+                    self._edit_bill_qa(spot[0], spot[1], parent=dialog, done=draw)
                     return
             target = 6 if in_votes else self.SECTION_STEPS.get(page["section"], self.step)
             self.save(silent=True)
@@ -1911,6 +1980,49 @@ def _bill_index(bills, heading, page_items):
     order = [item for item in page_items if isinstance(item, dx.TextBox) and item.name == "議案"]
     position = next((i for i, item in enumerate(order) if item is heading), None)
     return position if position is not None and position < len(bills) else None
+
+
+def _qa_text(bill: dict) -> str:
+    """案件の質疑を、まとめ欄の形（問　…／答　…）で返す。"""
+    if bill.get("qa_bulk"):
+        return str(bill["qa_bulk"])
+    lines = []
+    for value in bill.get("questions", []) or []:
+        if value.get("heading"):
+            lines.append("【" + value["heading"] + "】")
+        if value.get("question"):
+            lines.append("問　" + value["question"])
+        if value.get("answer"):
+            lines.append("答　" + value["answer"])
+    return "\n".join(lines)
+
+
+def _shingi_spot(bills, work, placements, x: float, y: float):
+    """審議本文のダブルクリックした所が、何件目の案件の何番目の問か。(案件, 問) を返す。
+
+    説明の所なら問は -1。見つからなければ None。本文は案件ごとに並ぶので、
+    案件 1 件ずつ部品の数を数えて、押した部品が何件目のものかを求める。
+    """
+    hit = next((p for p in placements
+                if _inside(to_box(work.geometry, p.rect), x, y)), None)
+    if hit is None or hit.part.kind == "議案":
+        return None
+    start = 0
+    for index, bill in enumerate(bills):
+        one = items.shingi_form({"shingi": {"bills": [bill]}}, work.issue)["body"]
+        parts = templates._body_parts(one)
+        if start <= hit.index < start + len(parts):
+            mine = parts[:hit.index - start + 1]
+            if hit.part.kind in ("中見出し",) and hit.part.reason != "質疑の印":
+                return None   # 区分の囲みは入力欄の手順へ
+            asked = sum(1 for part in mine if part.kind == "質問")
+            return index, (asked - 1 if asked else (0 if hit.part.reason == "質疑の印" else -1))
+        start += len(parts)
+    return None
+
+
+def _inside(box, x: float, y: float) -> bool:
+    return box.x <= x <= box.x + box.w and box.y <= y <= box.y + box.h
 
 
 def parse_period(text: str):
