@@ -42,6 +42,21 @@ FIELDS = {
         FormField("body", "審議本文", "印を付けて1つの欄へ書きます。", "【区分】予算\n◎見本条例\n質疑\n問　質問文\n答　答弁文", multiline=True),
         FormField("votes", "議案・発議案と賛否", "行ごとに区分・件名・結果・各議員の印を入れます。", []),
     ],
+    layout.YOSAN: [
+        FormField("title", "題", "1ページ目の囲みの左に入ります。発行年から自動で入ります。", "令和８年度当初予算"),
+        FormField("kinds", "会計の種類", "囲みの右に1行に1つ書きます。",
+                  default="一般会計\n特別会計\n公営企業会計", multiline=True),
+        FormField("chart_title", "円グラフの題", "1ページ目の円グラフの上の題です。", "令和８年度一般会計予算"),
+        FormField("chart_note", "円グラフの指示", "楕円の囲みに入る、印刷所への指示です。",
+                  default="一般会計（歳出）の円グラフは、ひだか広報のものを使用"),
+        FormField("general_total", "一般会計の歳出総額", "円グラフの真ん中に入る総額です。", "54億1,139万円"),
+        FormField("chart_items", "円グラフの横の主な事業", "費目・事業名・説明です。", []),
+        FormField("accounts", "各会計予算", "公営企業会計・特別会計の金額です。", []),
+        FormField("headline", "2ページ目の大見出し", "例: 日高村72億円でスタート", "日高村７２億円でスタート"),
+        FormField("focus", "注目する事業", "事業名・金額・説明です。", []),
+        FormField("previous_title", "前の年度の欄の見出し", "例: 令和７年度補正予算", ""),
+        FormField("previous", "前の年度の事業", "事業名・金額・説明です。", []),
+    ],
     layout.KESSAN: [
         FormField("title", "題", "囲みの左に入る題です。発行年から自動で入ります。", "令和７年度決算認定"),
         FormField("kinds", "会計の種類", "囲みの右に1行に1つ書きます。",
@@ -368,6 +383,133 @@ def kessan_title(issue: layout.Issue) -> str:
     return _full_digits(f"令和{year}年度決算認定")
 
 
+def yosan_title(issue: layout.Issue) -> str:
+    """4・5 月号はその年度の当初予算を載せる（令和８年５月号 → 令和８年度当初予算）。"""
+    match = re.search(r"令和\s*([0-9０-９]+)年", issue.date or "")
+    if not match:
+        return "当初予算"
+    year = int(match.group(1).translate(str.maketrans("０１２３４５６７８９", "0123456789")))
+    return _full_digits(f"令和{year}年度当初予算")
+
+
+def _yosan(form: dict, issue: layout.Issue, g: Geometry) -> compose.PageResult:
+    """当初予算の見開き（第202号の形）。1 ページ目は円グラフと各会計予算、2 ページ目は注目する事業。"""
+    page, warnings = dx.Page(), []
+    title = form.get("title") or yosan_title(issue)
+    if int(form.get("page_index") or 1) == 1:
+        overflow = _yosan_first(page, form, title, warnings)
+    else:
+        overflow = _yosan_second(page, form, title, warnings)
+    warnings.extend(dx.page_textbox_warnings(page))
+    return compose.PageResult(page, overflow, 0, warnings, [])
+
+
+def _block(page, x, y, w, text, pt, bottom, name, warnings, *, bold=False, border=False,
+           align="左") -> tuple:
+    """横書きの文を y から下へ置き、次に置ける y と、入らなかった行数を返す。"""
+    lines = _fit_lines(text, int(mm2pt(w) / pt))
+    pitch_mm = dx.effective_pitch(pt, pt) * 25.4 / 72
+    room = max(0, int((bottom - y) / pitch_mm + 1e-9))
+    take = min(len(lines), room)
+    if take:
+        page.items.append(dx.TextBox(_box(x, y, w, take * pitch_mm + 0.5), lines[:take], dx.GOTHIC,
+                                     pt, pt, border, False, name, False, align, bold))
+    return y + take * pitch_mm, len(lines) - take
+
+
+def _yosan_first(page, form, title, warnings) -> int:
+    page.items.append(dx.TextBox(_box(18, 18, 174, 27), [""], dx.GOTHIC, 11, 15.4,
+                                 border=True, name="当初予算の囲み", vertical=False))
+    _htext(page, _box(28, 21, 90, 10), title, 20, name="当初予算の題", warnings=warnings)
+    _htext(page, _box(118, 19, 64, 25), str(form.get("kinds", "")), 16, align="中央",
+           name="会計の種類", warnings=warnings)
+    chart_title = form.get("chart_title") or title.replace("当初予算", "一般会計予算")
+    _htext(page, _box(15, 49, 180, 12), _full_digits(chart_title), 22, align="中央", bold=True,
+           name="円グラフの題", warnings=warnings)
+    lines = _fit_lines(_full_digits(form.get("chart_note", "")), 30)
+    if form.get("general_total"):
+        lines += ["", "歳出　" + str(form["general_total"])]
+    note = dx.TextBox(_box(40, 63, 130, 52), [""] * max(1, (8 - len(lines)) // 2) + lines,
+                      dx.GOTHIC, 11, 15.4, border=True, name="円グラフの指示", vertical=False,
+                      align="中央", shape="ellipse")
+    page.items.append(note)
+    # 円グラフの横に入れる主な事業（費目ごと）。左右 2 列に並べる。
+    items = [v for v in form.get("chart_items", []) or [] if any(str(v.get(k, "")).strip()
+                                                                for k in ("item", "name", "text"))]
+    overflow = 0
+    if items:
+        _htext(page, _box(18, 119, 174, 6), "円グラフの横に入れる主な事業", 10, bold=True,
+               name="主な事業の見出し", warnings=warnings)
+    columns = [(18.0, 125.0), (107.0, 125.0)]
+    for number, value in enumerate(items):
+        x, y = columns[number % 2]
+        head = (f"【{value.get('item', '').strip()}】" if str(value.get("item", "")).strip() else "") + \
+            "◉" + str(value.get("name", "")).strip()
+        y, lost = _block(page, x, y, 85, head, 11, 215, "主な事業", warnings, bold=True)
+        y, lost2 = _block(page, x + 3, y, 82, str(value.get("text", "")), 10, 215, "主な事業の説明", warnings)
+        columns[number % 2] = (x, y + 2)
+        overflow += lost + lost2
+    if overflow:
+        warnings.append(f"円グラフの横の主な事業が{overflow}行入りません。説明を短くしてください。")
+    _htext(page, _box(18, 221, 174, 9), "　" + _full_digits(title.replace("当初予算", "各会計予算")), 15,
+           bold=True, border=True, name="各会計予算の見出し", warnings=warnings)
+    groups = {}
+    for value in form.get("accounts", []) or []:
+        groups.setdefault(str(value.get("group", "")).strip() or "その他", []).append(value)
+    for column, (group, values) in enumerate(list(groups.items())[:2]):
+        x = 20 if column == 0 else 108
+        y, _lost = _block(page, x, 233, 82, group, 12, 285, "会計のまとめ", warnings, bold=True)
+        for value in values:
+            line = f"◉{str(value.get('name', '')).strip()}　{str(value.get('amount', '')).strip()}"
+            y, lost = _block(page, x, y + 1, 82, line, 11, 285, "会計の金額", warnings)
+            if str(value.get("note", "")).strip():
+                y, lost2 = _block(page, x + 3, y, 79, str(value["note"]), 10, 285, "会計の注", warnings)
+                lost += lost2
+            overflow += lost
+    if len(groups) > 2:
+        warnings.append("各会計予算のまとめは2つまでです（公営企業会計・特別会計）。")
+    return overflow
+
+
+def _yosan_second(page, form, title, warnings) -> int:
+    _htext(page, _box(15, 16, 180, 20), _full_digits(form.get("headline", "")), 30, align="中央",
+           bold=True, name="当初予算の大見出し", warnings=warnings)
+    year = title.replace("当初予算", "")
+    _htext(page, _box(40, 40, 130, 13), f"{year}　注目する事業", 18, align="中央", bold=True,
+           border=True, name="注目する事業の見出し", warnings=warnings)
+    overflow, y = 0, 58.0
+    bottom = 238.0 if form.get("previous") else 285.0
+    for value in form.get("focus", []) or []:
+        head = f"{str(value.get('name', '')).strip()}　{_full_digits(str(value.get('amount', '')).strip())}"
+        y, lost = _block(page, 18, y, 174, head, 13, bottom, "注目する事業", warnings, bold=True)
+        text = str(value.get("text", "")).strip()
+        if text:
+            y, lost2 = _block(page, 22, y + 1, 170, "◉" + text.lstrip("◉"), 11, bottom,
+                              "注目する事業の説明", warnings)
+            lost += lost2
+        if y < bottom:
+            _htext(page, _box(18, y + 1.5, 174, 1), "", 1, border=True, name="区切り線",
+                   warnings=warnings)
+        y += 5
+        overflow += lost
+    if form.get("previous"):
+        heading = _full_digits(form.get("previous_title") or "前の年度の事業")
+        _htext(page, _box(18, 242, 174, 9), "　" + heading, 14, bold=True, border=True,
+               name="前の年度の見出し", warnings=warnings)
+        y = 254.0
+        for value in form.get("previous", []) or []:
+            head = f"{str(value.get('name', '')).strip()}　{_full_digits(str(value.get('amount', '')).strip())}"
+            y, lost = _block(page, 20, y, 172, head, 12, 285, "前の年度の事業", warnings, bold=True)
+            if str(value.get("text", "")).strip():
+                y, lost2 = _block(page, 24, y, 168, str(value["text"]), 10, 285, "前の年度の説明", warnings)
+                lost += lost2
+            y += 2
+            overflow += lost
+    if overflow:
+        warnings.append(f"注目する事業などが{overflow}行入りません。説明を短くするか、件数を減らしてください。")
+    return overflow
+
+
 def _account_table(accounts) -> tuple:
     """会計別決算額の表を作る。まとめ（特別会計など）は縦につなぐ。
 
@@ -536,6 +678,8 @@ def build(section: str, form: dict, issue: layout.Issue, plan: layout.Plan,
         return _last(values, settings, g)
     if section == layout.KESSAN:
         return _kessan(values, issue, g)
+    if section == layout.YOSAN:
+        return _yosan(values, issue, g)
     raise ValueError("書き込み式ではない区分です: " + section)
 
 

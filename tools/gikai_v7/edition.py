@@ -29,7 +29,7 @@ from settings import Settings
 from grid import Geometry, Rect, to_box
 
 
-FLOW_SECTIONS = frozenset((layout.GYOSEI, layout.YOSAN,
+FLOW_SECTIONS = frozenset((layout.GYOSEI,
                            layout.IINKAI, layout.TOKUSHU))
 
 
@@ -156,6 +156,7 @@ class Edition:
             layout.SHINGI: item_templates.shingi_form(data, self.issue),
             layout.LAST: copy.deepcopy(data.get("last", {})),
             layout.KESSAN: item_templates.kessan_form(data, self.issue, self.folder / "写真"),
+            layout.YOSAN: item_templates.yosan_form(data, self.issue),
         }
         for page in self.pages:
             if page["section"] in forms:
@@ -716,7 +717,9 @@ class Edition:
         page = self._page(page_no)
         if "form" in page:
             self._sync_form_from_placed(page)
-            result = templates.build(page["section"], page["form"], self.issue,
+            # 2 ページある型（当初予算）は、何ページ目かを渡す。
+            form = dict(page["form"], page_index=page.get("index", 1))
+            result = templates.build(page["section"], form, self.issue,
                                      self.plan, self.settings, self.geometry)
             # 表紙と編集後記は従来の専用枠に入る。選択・写真一覧のため、
             # 同じ写真を格子上の配置としても返す。

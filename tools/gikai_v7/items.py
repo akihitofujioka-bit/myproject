@@ -41,6 +41,7 @@ def default_data(issue: Optional[layout.Issue] = None) -> dict:
         "budget_kind": budget_name,
         "budget": {"title": budget_name, "summary": "", "questions": []},
         "kessan": default_kessan(),
+        "yosan": default_yosan(),
         "shingi": {"meeting": templates.meeting_name(issue), "period": "",
                    "counts": [], "bills": []},
         "votes": [],
@@ -78,6 +79,26 @@ def default_kessan() -> dict:
             "accounts": [{"group": group, "name": name, "revenue": "", "expense": ""}
                          for group, name in accounts],
             "questions": []}
+
+
+def default_yosan() -> dict:
+    """当初予算の見開き（4・5 月号）の入力欄。会計の並びは第202号に合わせた見本で、金額は空。"""
+    accounts = [("公営企業会計", "簡易水道事業"), ("特別会計", "国民健康保険"),
+                ("特別会計", "介護保険"), ("特別会計", "後期高齢者医療")]
+    return {"title": "", "kinds": "一般会計\n特別会計\n公営企業会計", "chart_title": "",
+            "chart_note": "一般会計（歳出）の円グラフは、ひだか広報のものを使用",
+            "general_total": "", "chart_items": [],
+            "accounts": [{"group": group, "name": name, "amount": "", "note": ""}
+                         for group, name in accounts],
+            "headline": "", "focus": [], "previous_title": "", "previous": []}
+
+
+def yosan_form(data: dict, issue: layout.Issue) -> dict:
+    """当初予算の入力を、templates の当初予算の型へ渡す形にする。"""
+    value = dict(default_yosan())
+    value.update(data.get("yosan", {}) or {})
+    value["title"] = _text(value.get("title")) or templates.yosan_title(issue)
+    return value
 
 
 def kessan_form(data: dict, issue: layout.Issue, photo_folder: Optional[Path] = None) -> dict:
@@ -285,9 +306,7 @@ def marked_pages(data: dict, issue: layout.Issue) -> Dict[str, List[str]]:
         layout.IPPAN: [question_text(value) for value in data.get("questions", [])],
         layout.TOKUSHU: [feature_text(data.get("feature", {}))],
     }
-    # 決算（10 月号）は決まった型のページなので、流し込みの原稿は当初予算だけ作る。
-    if issue.month != 10:
-        pages[layout.YOSAN] = [budget_text(data.get("budget", {}), layout.YOSAN)]
+    # 当初予算・決算は決まった型のページなので、流し込みの原稿は作らない。
     return pages
 
 

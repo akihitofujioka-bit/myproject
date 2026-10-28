@@ -340,8 +340,12 @@ class App:
         self._word_button()
 
     def _step_5(self):
-        if int(self.data.get("issue", {}).get("month", 4)) == 10:
+        month = int(self.data.get("issue", {}).get("month", 4))
+        if month == 10:
             self._kessan_step()
+            return
+        if month in (4, 5):
+            self._yosan_step()
             return
         self._title("当初予算または決算")
         value = self.data.setdefault("budget", {"title": "", "summary": "", "questions": []})
@@ -352,6 +356,36 @@ class App:
                           [("heading", "見出し", False), ("question", "問", True), ("answer", "答", True)],
                           lambda v: v.get("heading") or v.get("question", "")[:30])
         ttk.Button(self.inner, text="まとめて貼る", command=lambda: self.bulk_into(value)).pack(anchor="e")
+
+    def _yosan_step(self):
+        """4・5 月号の当初予算の見開き。第202号と同じ決まった型に入れる。"""
+        self._title("当初予算（見開き2ページ）")
+        value = self.data.setdefault("yosan", items.default_yosan())
+        auto = items.templates.yosan_title(items.issue_from_data(self.data, self.work.issue))
+        ttk.Label(self.inner, text="■ 1ページ目（円グラフと各会計予算）", font=(self.font, 12, "bold")).pack(anchor="w", pady=(6, 2))
+        self._entry("題", value.get("title") or auto, lambda v: value.__setitem__("title", v))
+        self._text("会計の種類（1行に1つ）", value.get("kinds", ""), lambda v: value.__setitem__("kinds", v), 3)
+        self._entry("円グラフの題", value.get("chart_title") or auto.replace("当初予算", "一般会計予算"),
+                    lambda v: value.__setitem__("chart_title", v))
+        self._entry("円グラフの指示", value.get("chart_note", ""), lambda v: value.__setitem__("chart_note", v))
+        self._entry("一般会計の歳出総額", value.get("general_total", ""), lambda v: value.__setitem__("general_total", v))
+        self._list_editor("円グラフの横の主な事業", value.setdefault("chart_items", []),
+                          [("item", "費目（例 総務費）", False), ("name", "事業名", False), ("text", "説明", True)],
+                          lambda v: f"【{v.get('item', '')}】◉{v.get('name', '')}")
+        self._list_editor("各会計予算", value.setdefault("accounts", []),
+                          [("group", "まとめ（公営企業会計・特別会計）", False), ("name", "会計名", False),
+                           ("amount", "金額（例 6億9,783万円）", False), ("note", "注（※の説明など）", True)],
+                          lambda v: f"{v.get('group', '')}　◉{v.get('name', '')}　{v.get('amount', '') or '（空）'}")
+        ttk.Label(self.inner, text="■ 2ページ目（注目する事業）", font=(self.font, 12, "bold")).pack(anchor="w", pady=(10, 2))
+        self._entry("大見出し", value.get("headline", ""), lambda v: value.__setitem__("headline", v))
+        self._list_editor("注目する事業", value.setdefault("focus", []),
+                          [("name", "事業名", False), ("amount", "金額", False), ("text", "説明", True)],
+                          lambda v: f"{v.get('name', '')}　{v.get('amount', '')}")
+        self._entry("前の年度の欄の見出し", value.get("previous_title", ""),
+                    lambda v: value.__setitem__("previous_title", v))
+        self._list_editor("前の年度の事業", value.setdefault("previous", []),
+                          [("name", "事業名", False), ("amount", "金額", False), ("text", "説明", True)],
+                          lambda v: f"{v.get('name', '')}　{v.get('amount', '')}")
 
     def _kessan_step(self):
         """10 月号の決算のページ。第204号と同じ決まった型に入れる。"""

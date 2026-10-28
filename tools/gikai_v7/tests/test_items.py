@@ -32,7 +32,8 @@ class ConversionTest(unittest.TestCase):
         data["feature"] = {"title": "架空の特集", "body": "架空の特集本文。"}
         pages = items.marked_pages(data, issue)
         self.assertIn("【大見出し】架空の行政報告", pages[layout.GYOSEI][0])
-        self.assertIn("問　内容は。", pages[layout.YOSAN][0])
+        # 当初予算は決まった型の見開きなので、流し込みの原稿は作らない
+        self.assertNotIn(layout.YOSAN, pages)
         self.assertIn("【大見出し】見本委員会", pages[layout.IINKAI][0])
         self.assertIn("【大見出し】架空の防災", pages[layout.IPPAN][0])
         self.assertIn("【顔写真枠】", pages[layout.IPPAN][0])

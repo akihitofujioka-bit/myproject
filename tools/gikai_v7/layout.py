@@ -109,7 +109,7 @@ class Issue:
 def _sections(issue: Issue, feature_pages: int) -> list[Section]:
     secs = [Section(COVER, 1), Section(GYOSEI, 2)]
     if issue.month in (4, 5):
-        secs.append(Section(YOSAN, 1, "当初予算の内容と質疑"))
+        secs.append(Section(YOSAN, 2, "当初予算の見開き 2 ページ（第202号の形）"))
     elif issue.month == 10:
         secs.append(Section(KESSAN, 1, "決算の報告と質疑"))
     secs.append(Section(SHINGI, 1, "下部に発議案と賛否の表"))
