@@ -106,7 +106,7 @@ class FlowTest(unittest.TestCase):
 class SpacingTest(unittest.TestCase):
     def test_space_moves_following_part_and_changes_overflow(self):
         geometry = Geometry()
-        parts = [ingest.Part("本文", "架" * (geometry.chars_per_line * 149 - 1)),
+        parts = [ingest.Part("本文", "架" * (geometry.chars_per_line * (geometry.lines_per_dan * 5 - 1) - 1)),
                  ingest.Part("本文", "空")]
         normal = compose.compose_page(layout.GYOSEI, parts, {}, geometry)
         spaced = compose.compose_page(

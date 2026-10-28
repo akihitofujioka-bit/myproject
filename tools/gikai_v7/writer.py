@@ -217,7 +217,7 @@ class WriterEditor:
                 return
             size = simpledialog.askstring("写真の大きさ", "大・中・小・顔のいずれか",
                                           initialvalue="中", parent=self.window) or "中"
-            if size not in ("大", "中", "小", "顔"):
+            if size not in ("特大", "大", "中", "小", "顔"):
                 messagebox.showinfo("写真の大きさ", "大・中・小・顔から選んでください。",
                                     parent=self.window)
                 return

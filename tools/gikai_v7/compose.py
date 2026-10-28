@@ -20,8 +20,10 @@ import ingest as I
 import layout
 from grid import Geometry, Rect, free_runs, mm2pt, split_lines, text_width, to_box, whole_page
 
-PHOTO_WIDTH_MM = {"大": 80.0, "中": 55.0, "小": 38.0, "顔": 26.0}
-PHOTO_SMALLER = {"大": "中", "中": "小", "小": None, "顔": None}
+# 特大は従来の紙面にある幅 105〜110mm の写真に合わせる。
+PHOTO_WIDTH_MM = {"特大": 110.0, "大": 80.0, "中": 55.0, "小": 38.0, "顔": 26.0}
+PITCH = Geometry().line_pitch_pt
+PHOTO_SMALLER = {"特大": "大", "大": "中", "中": "小", "小": None, "顔": None}
 
 
 @dataclass
@@ -58,17 +60,21 @@ def photo_rect(g: Geometry, size: str, dan: int, line: int) -> Rect:
 def _mid_heading(g: Geometry, text: str, base_pt: float = 16.0) -> Tuple[float, List[str], int]:
     """中見出しの (字の大きさ, 行, 格子の行数) を決める。16pt で 1〜3 行に
     収め、収まらない長さなら字を小さくする。文字は削らない。
-    格子の行数は 行数 + 1 にし、行送りが 字×1.4 を下回らないようにする。"""
+    格子の行数は 行数 + 1 以上にし、行送りが 字×1.4 を下回らないようにする。"""
+
+    def span(lines: List[str], pt: float) -> int:
+        need = math.ceil(len(lines) * dx.effective_pitch(pt, PITCH) / g.line_pitch_pt - 1e-6)
+        return max(len(lines) + 1, need)
     sample = Rect(0, 0, 1, 2)
     for pt in (float(value) for value in range(int(base_pt), 11, -1)):
         per_line = _per_line(g, sample, pt)
         for max_lines in (1, 2, 3):
             lines = _heading_lines(text, per_line, max_lines)
             if len(lines) <= max_lines and max(text_width(l) for l in lines) <= per_line:
-                return pt, lines, len(lines) + 1
+                return pt, lines, span(lines, pt)
     per_line = _per_line(g, sample, 12.0)
     lines = split_lines(text, per_line, indent=False) or [""]
-    return 12.0, lines, len(lines) + 1
+    return 12.0, lines, span(lines, 12.0)
 
 
 def _caption(parts: List[I.Part], index: int) -> str:
@@ -154,8 +160,8 @@ def _answer_line_runs(lines: List[str]) -> Optional[List[List[Tuple[str, str]]]]
 def _format(section: str, kind: str) -> Tuple[str, float, float]:
     # 一般質問だけ、答弁の本文を明朝にする。その他の本文はすべてゴシック。
     if section == layout.IPPAN and kind == "答弁":
-        return dx.MINCHO, 11.0, 17.0
-    return dx.GOTHIC, 11.0, 17.0
+        return dx.MINCHO, 11.0, PITCH
+    return dx.GOTHIC, 11.0, PITCH
 
 
 def _heading_pt(section: str, kind: str, text: str = "") -> float:
@@ -190,7 +196,7 @@ def _horizontal_heading_span(g: Geometry, text: str, pt: float) -> int:
 def _heading_rect(g: Geometry, part: I.Part, dan: int, line: int, pt: float) -> Rect:
     if not part.vertical:
         return Rect(dan, line, 1, _horizontal_heading_span(g, part.text, pt))
-    span = max(4, math.ceil(2 * dx.effective_pitch(pt, 17.0) / g.line_pitch_pt))
+    span = max(4, math.ceil(2 * dx.effective_pitch(pt, PITCH) / g.line_pitch_pt))
     return Rect(dan, line, 2, span)
 
 
@@ -321,7 +327,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             _add_text(page, g, rect, _heading_lines_for(g, title, rect, title_pt),
                       font=dx.GOTHIC, pt=title_pt,
                       pitch=max(34.0, title_pt * dx.AT_LEAST_RATIO) if title.vertical
-                      else dx.effective_pitch(title_pt, 17.0),
+                      else dx.effective_pitch(title_pt, PITCH),
                       border=True, center=title.vertical, name="大見出し",
                       vertical=title.vertical, align="中央")
         else:
@@ -364,7 +370,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             continue
         if overrides.get(index, {}).get("removed"):
             continue
-        if flow_stopped:
+        # 人が場所を決めた写真は場所を確保済みなので、本文があふれても次ページへ送らない。
+        if flow_stopped and not (part.kind == "写真" and index in manual):
             overflow_by_index[index] = part
             overflow += max(0, int(overrides.get(index, {}).get("space_before") or 0))
             if part.kind == "空き行":
@@ -427,7 +434,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             _add_text(page, g, rect, _heading_lines_for(g, part, rect, heading_pt),
                       font=dx.GOTHIC, pt=heading_pt,
                       pitch=max(34.0, heading_pt * dx.AT_LEAST_RATIO) if part.vertical
-                      else dx.effective_pitch(heading_pt, 17.0),
+                      else dx.effective_pitch(heading_pt, PITCH),
                       border=True, center=part.vertical, name="大見出し",
                       vertical=part.vertical, align="中央")
             last_rect = rect
@@ -493,7 +500,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             occupied.append(rect)
             placements.append(Placement(part, rect, index))
             pitch = (rect.line_span * g.line_pitch_pt / len(heading_lines)
-                     if part.vertical else dx.effective_pitch(heading_pt, 17.0))
+                     if part.vertical else dx.effective_pitch(heading_pt, PITCH))
             _add_text(page, g, rect, heading_lines, font=dx.GOTHIC,
                       pt=heading_pt, pitch=pitch, center=part.vertical, name="中見出し",
                       vertical=part.vertical, align="中央")

@@ -257,7 +257,7 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
         pt = 14.0 if heading else 11.0
         chars = max(1, int(g.dan_h_pt / pt))
         lines = split_lines(part.text, chars, indent=part.kind in ("本文", "答弁"))
-        span = (max(2, math.ceil(len(lines) * dx.effective_pitch(pt, 17.0)
+        span = (max(2, math.ceil(len(lines) * dx.effective_pitch(pt, g.line_pitch_pt)
                                  / g.line_pitch_pt)) if heading else len(lines))
         if heading:
             remaining = g.lines_per_dan - used % g.lines_per_dan
@@ -271,7 +271,7 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
         dan, line = 1 + used // g.lines_per_dan, used % g.lines_per_dan
         rect = Rect(dan, line, 1, take_span)
         font = dx.GOTHIC
-        page.items.append(dx.TextBox(to_box(g, rect), lines[:take], font, pt, 17.0,
+        page.items.append(dx.TextBox(to_box(g, rect), lines[:take], font, pt, g.line_pitch_pt,
                                      part.kind == "中見出し" and part.reason == "【区分】の印",
                                      heading, part.kind))
         placements.append(compose.Placement(part, rect, index))
@@ -322,7 +322,7 @@ def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
     editorial_lines = split_lines(str(form.get("editorial", "")), g.chars_per_line)
     editorial_capacity = max(0, g.lines_per_dan - 5)
     page.items.append(dx.TextBox(to_box(g, Rect(0, 5, 1, min(editorial_capacity, len(editorial_lines) or 1))),
-                                 editorial_lines[:editorial_capacity], dx.GOTHIC, 11, 17,
+                                 editorial_lines[:editorial_capacity], dx.GOTHIC, 11, g.line_pitch_pt,
                                  False, False, "編集後記本文"))
     photos = list(form.get("editorial_photos", []) or [])[:2]
     for index, photo in enumerate(photos):
@@ -337,7 +337,7 @@ def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
         chunk = free_lines[start:start + g.lines_per_dan]
         if chunk:
             page.items.append(dx.TextBox(to_box(g, Rect(dan, 0, 1, len(chunk))), chunk,
-                                         dx.GOTHIC, 11, 17, False, False, "自由欄"))
+                                         dx.GOTHIC, 11, g.line_pitch_pt, False, False, "自由欄"))
 
     fifth = to_box(g, Rect(4, 0, 1, g.lines_per_dan))
     hearing = Box(mm2pt(83), fifth.y, mm2pt(112), mm2pt(36))

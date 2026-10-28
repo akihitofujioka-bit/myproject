@@ -54,7 +54,7 @@ class PlacementTest(unittest.TestCase):
         self.assertAlmostEqual(picture.box.w, mm2pt(26))
 
     def test_middle_heading_is_atomic(self):
-        parts = [I.Part("本文", "あ" * (self.g.chars_per_line * 29)),
+        parts = [I.Part("本文", "あ" * (self.g.chars_per_line * (self.g.lines_per_dan - 1))),
                  I.Part("中見出し", "次の見出し"), I.Part("本文", "本文")]
         result = C.compose_page(layout.GYOSEI, parts, {}, self.g)
         heading = next(p for p in result.placements if p.part.kind == "中見出し")
@@ -132,16 +132,28 @@ class PlacementTest(unittest.TestCase):
                 box = next(item for item in result.page.items if isinstance(item, dx.TextBox))
                 self.assertEqual((box.font, box.pt), (dx.GOTHIC, 11.0))
 
+    def test_placed_photo_stays_when_text_overflows(self):
+        # 本文があふれても、場所を決めて置いた写真はそのページに残る。
+        parts = [I.Part("本文", "あ" * (self.g.chars_per_line * self.g.lines_per_dan * 6)),
+                 I.Part("写真", image="photo.png"), I.Part("写真説明", "▲見本")]
+        rect = C.photo_rect(self.g, "特大", 1, 6)
+        result = C.compose_page(layout.GYOSEI, parts, {"photo.png": samples._png()}, self.g,
+                                overrides={1: {"rect": rect, "size": "特大"}})
+        self.assertGreater(result.overflow_lines, 0)
+        photo = next(p for p in result.placements if p.part.kind == "写真")
+        self.assertEqual(photo.rect, rect)
+        self.assertFalse(any(p.kind in ("写真", "写真説明") for p in result.overflow_parts))
+
     def test_overflow_matches_grid_capacity(self):
-        text = "あ" * (self.g.chars_per_line * 157)
+        text = "あ" * (self.g.chars_per_line * (self.g.lines_per_dan * 5 + 7))
         result = C.compose_page(layout.GYOSEI, [I.Part("本文", text)], {}, self.g)
-        expected = len(split_lines(text, self.g.chars_per_line)) - 150
+        expected = len(split_lines(text, self.g.chars_per_line)) - self.g.lines_per_dan * 5
         self.assertEqual(result.overflow_lines, expected)
         self.assertEqual(result.free_lines, 0)
 
     def test_photo_suggestion_is_shown(self):
         parts = [I.Part("写真", image="photo.png"), I.Part("写真説明", "▲見本"),
-                 I.Part("本文", "あ" * (self.g.chars_per_line * 146))]
+                 I.Part("本文", "あ" * (self.g.chars_per_line * (self.g.lines_per_dan * 5 - 4)))]
         result = C.compose_page(layout.GYOSEI, parts, {"photo.png": samples._png()}, self.g)
         self.assertGreater(result.overflow_lines, 0)
         self.assertTrue(any("写真1 を" in w and "行入ります" in w for w in result.warnings),

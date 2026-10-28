@@ -395,7 +395,7 @@ class App:
         sizes = ttk.Frame(self.inner)
         sizes.pack(anchor="w", pady=6)
         ttk.Label(sizes, text="大きさ").pack(side="left")
-        for size in ("大", "中", "小", "顔"):
+        for size in ("特大", "大", "中", "小", "顔"):
             ttk.Radiobutton(sizes, text=size, value=size, variable=self.photo_size).pack(side="left", padx=4)
         self.photo_caption = tk.StringVar()
         row = ttk.Frame(self.inner)

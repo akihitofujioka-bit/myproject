@@ -571,7 +571,7 @@ class Edition:
             raise ValueError("写真フォルダに写真が見つかりません: " + name)
         size = size or ("顔" if page["section"] == layout.IPPAN else "中")
         if size not in C.PHOTO_WIDTH_MM:
-            raise ValueError("写真の大きさは 大・中・小・顔 のいずれかです")
+            raise ValueError("写真の大きさは 特大・大・中・小・顔 のいずれかです")
         target = C.photo_rect(self.geometry, size, rect.dan, rect.line)
         if page["section"] == layout.COVER:
             target = Rect(0, 4, 3, 22)
@@ -949,7 +949,7 @@ class Edition:
     def resize_photo(self, page_no: int, part_no: int, size: str) -> bool:
         """写真の大きさを変える。現在位置で重なる場合は変更しない。"""
         if size not in C.PHOTO_WIDTH_MM:
-            raise ValueError("写真の大きさは 大・中・小・顔 のいずれかです")
+            raise ValueError("写真の大きさは 特大・大・中・小・顔 のいずれかです")
         parts = self.parts(page_no)
         if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
             raise ValueError("写真の部品を選んでください")

@@ -27,7 +27,8 @@ class GeometryTest(unittest.TestCase):
         self.g = Geometry()
 
     def test_standard_sizes(self):
-        self.assertEqual(self.g.lines_per_dan, 30)
+        # 行送り 15.4pt（字 11pt × 1.4）で、版面の幅 180mm に 33 行入る。
+        self.assertEqual(self.g.lines_per_dan, 33)
         self.assertEqual(self.g.dan_h_pt, 132)
         self.assertGreater(self.g.gap_pt, 0)
         self.assertEqual(self.g.check(), [])
@@ -101,7 +102,7 @@ class FlowTest(unittest.TestCase):
         photo = Rect(0, 10, 2, 5)
         runs = free_runs(self.g, whole_page(self.g), [photo])
         dan0 = [r for r in runs if r.dan == 0]
-        self.assertEqual([(r.line, r.line_span) for r in dan0], [(0, 10), (15, 15)])
+        self.assertEqual([(r.line, r.line_span) for r in dan0], [(0, 10), (15, self.g.lines_per_dan - 15)])
         self.assertEqual(len([r for r in runs if r.dan == 2]), 1)
 
     def test_overflow_and_free(self):

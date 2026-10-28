@@ -40,7 +40,9 @@ class Geometry:
     dans: int = 5                     # 段数
     body_pt: float = 11.0             # 本文の字の大きさ（＝字送り。全角は 1 字 1 em）
     chars_per_line: int = 12          # 1 段の 1 行に入る字数
-    line_pitch_pt: float = 17.0       # 行送り（縦書きなので左右の間隔）
+    # 行送り（縦書きなので左右の間隔）。第204号の実測は約 5.2mm（約 15pt）。
+    # Windows の Word で字が欠けないよう、字の大きさ × 1.4 の 15.4pt を下限にする（1 段 33 行）。
+    line_pitch_pt: float = 15.4
 
     @property
     def dan_h_pt(self) -> float:
