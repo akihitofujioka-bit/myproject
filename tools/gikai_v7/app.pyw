@@ -330,8 +330,10 @@ class App:
 
     def _step_4(self):
         self._title("行政報告")
-        value = self.data.setdefault("gyosei", {"title": layout.GYOSEI, "reports": []})
-        self._entry("大見出し", value.get("title", layout.GYOSEI), lambda v: value.__setitem__("title", v))
+        value = self.data.setdefault("gyosei", {"title": items.GYOSEI_TITLE, "reports": []})
+        if value.get("title", "") in ("", layout.GYOSEI):   # 前の決まり「行政報告」のままなら直す
+            value["title"] = items.GYOSEI_TITLE
+        self._entry("大見出し", value["title"], lambda v: value.__setitem__("title", v))
         self._list_editor("報告事項", value.setdefault("reports", []),
                           [("heading", "見出し", False), ("body", "本文", True)],
                           lambda v: v.get("heading") or "（見出しなし）")
@@ -800,7 +802,7 @@ class App:
     def _add_articles(self, label: str, result: dict) -> None:
         articles, titles = result["articles"], result["titles"]
         if label == "行政報告":
-            self.data.setdefault("gyosei", {"title": layout.GYOSEI, "reports": []}) \
+            self.data.setdefault("gyosei", {"title": items.GYOSEI_TITLE, "reports": []}) \
                 .setdefault("reports", []).extend(articles)
         elif label == "委員会報告":
             committee = titles[0] if titles else ""

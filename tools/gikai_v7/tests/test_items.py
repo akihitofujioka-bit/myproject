@@ -107,3 +107,10 @@ class VoteAndEditionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GyoseiTitleTest(unittest.TestCase):
+    def test_default_title_is_youshi(self):
+        data = items.default_data(layout.Issue(999, 4))
+        self.assertEqual(data["gyosei"]["title"], "行政報告（要旨）")
+        self.assertIn("【大見出し】行政報告（要旨）", items.gyosei_text({"reports": []}))

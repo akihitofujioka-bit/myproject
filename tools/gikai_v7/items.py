@@ -22,6 +22,9 @@ ITEMS_FILE = "項目.json"
 PREVIOUS_FILE = "項目_前回.json"
 
 
+# 行政報告の大見出しの決まった書き方（従来の紙面どおり）。
+GYOSEI_TITLE = "行政報告（要旨）"
+
 def _text(value) -> str:
     return str(value or "").strip()
 
@@ -34,7 +37,7 @@ def default_data(issue: Optional[layout.Issue] = None) -> dict:
         "version": 1,
         "issue": asdict(issue),
         "cover": templates.default_form(layout.COVER),
-        "gyosei": {"title": layout.GYOSEI, "reports": []},
+        "gyosei": {"title": GYOSEI_TITLE, "reports": []},
         "budget_kind": budget_name,
         "budget": {"title": budget_name, "summary": "", "questions": []},
         "shingi": {"meeting": templates.meeting_name(issue), "period": "",
@@ -145,7 +148,7 @@ def limit_questions(values: Iterable[dict], maximum: int = 4) -> List[dict]:
 
 
 def gyosei_text(value: dict) -> str:
-    lines = ["【大見出し】" + (_text(value.get("title")) or layout.GYOSEI)]
+    lines = ["【大見出し】" + (_text(value.get("title")) or GYOSEI_TITLE)]
     for report in value.get("reports", []) or []:
         if _text(report.get("heading")):
             lines.append("【見出し】" + _text(report.get("heading")))

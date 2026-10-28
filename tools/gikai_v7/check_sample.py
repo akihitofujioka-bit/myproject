@@ -37,7 +37,7 @@ def main() -> int:
     data = items.default_data(issue)
     data["cover"]["photo_caption"] = "架空の春まつりの様子"
     data["cover"]["feature_titles"] = "架空の防災特集"
-    data["gyosei"] = {"title": "行政報告", "reports": [
+    data["gyosei"] = {"title": items.GYOSEI_TITLE, "reports": [
         {"heading": "架空の防災事業について（見本地区）", "body": _long(8)},
         {"heading": "架空の交流センター", "body": _long(8)},
         {"heading": "架空の子育て支援", "body": _long(7)}]}
