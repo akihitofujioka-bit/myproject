@@ -19,6 +19,16 @@ class Settings:
     chair: str = ""
     committee: str = "議会広報発行調査特別委員会"
 
+    @property
+    def vote_members(self) -> List[str]:
+        """賛否表の列に並べる議員。議長が名簿に無いときは最後に加える（議長も賛否表に載るため）。"""
+        def plain(value: str) -> str:
+            return "".join(str(value).split()).replace("\u3000", "")
+        names = [name for name in self.members if str(name).strip()]
+        if self.chair.strip() and plain(self.chair) not in {plain(name) for name in names}:
+            names.append(self.chair.strip())
+        return names
+
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "Settings":
         """設定ファイルが無いときや空のときも、空の設定で動かす。"""

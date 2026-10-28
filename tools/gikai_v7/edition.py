@@ -150,7 +150,7 @@ class Edition:
 
         # 名簿を基準に賛否欄を揃える。項目.json 側も次回表示用に更新する。
         data["votes"] = item_templates.build_votes(
-            data.get("votes", []), self.settings.members, self.settings.chair)
+            data.get("votes", []), self.settings.vote_members, self.settings.chair)
         forms = {
             layout.COVER: copy.deepcopy(data.get("cover", {})),
             layout.SHINGI: item_templates.shingi_form(data, self.issue),
@@ -203,13 +203,13 @@ class Edition:
 
     def make_votes_template(self, path: Path) -> Path:
         """現在の名簿で、賛否 Excel のひな形を新規作成する。"""
-        return votes_xlsx.make_template(path, self.settings.members, self.settings.chair)
+        return votes_xlsx.make_template(path, self.settings.vote_members, self.settings.chair)
 
     def import_votes(self, path: Path, data: Optional[dict] = None) -> tuple:
         """賛否 Excel を読み、元を残して号フォルダへ複製し、項目へ記録する。"""
         source = Path(path)
         votes, counts, warnings = votes_xlsx.read_votes(
-            source, self.settings.members, self.settings.chair)
+            source, self.settings.vote_members, self.settings.chair)
         copied, imported_at = votes_xlsx.archive_import(source, self.folder)
         values = data if data is not None else self.item_data()
         values["votes"] = votes

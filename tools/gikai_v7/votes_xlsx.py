@@ -45,7 +45,17 @@ def _string_item(item) -> str:
     return "".join(parts)
 
 
-def _find_header(rows, names) -> tuple:
+def _member_for(plain: str, wanted: dict, chair: str):
+    """見出しの文字から議員を決める。「議長」だけの見出しは議長、名前の前後に言葉が付いていてもよい。"""
+    if plain in wanted:
+        return wanted[plain]
+    if plain == "議長" and chair:
+        return chair
+    matches = [name for key, name in wanted.items() if key and key in plain]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _find_header(rows, names, chair: str = "") -> tuple:
     """見出しの行を探す。議員名と見出しの言葉がいちばん多く並ぶ行を選ぶ。"""
     wanted = {_plain(name): name for name in names}
     best, best_score = 0, -1
@@ -53,7 +63,8 @@ def _find_header(rows, names) -> tuple:
         score = 0
         for value in row.values():
             plain = _plain(value)
-            if plain in wanted or any(plain in words for words in HEADER_WORDS.values()):
+            if (_member_for(plain, wanted, chair) or plain in ("議長",)
+                    or any(plain in words for words in HEADER_WORDS.values())):
                 score += 1
         if score > best_score:
             best, best_score = index, score
@@ -63,7 +74,7 @@ def _find_header(rows, names) -> tuple:
         if not plain:
             continue
         key = next((key for key, words in HEADER_WORDS.items() if plain in words), None)
-        header[column] = key or wanted.get(plain, str(value).strip())
+        header[column] = key or _member_for(plain, wanted, chair) or str(value).strip()
     return best, header
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -254,7 +265,7 @@ def read_votes(path, members, chair) -> Tuple[List[dict], List[dict], List[str]]
         raise ValueError("Excel ブック(.xlsx)の内容を読み取れません。ファイルが壊れていないか確かめてください。") from error
     if not rows:
         return [], [], ["見出し行がありません。"]
-    header_index, header = _find_header(rows, names)
+    header_index, header = _find_header(rows, names, str(chair or "").strip())
     by_name = {}
     for column, value in header.items():
         by_name.setdefault(value, column)

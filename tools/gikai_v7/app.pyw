@@ -326,6 +326,8 @@ class App:
         self._text("議員（1行に1人）", "\n".join(current.members if current else []),
                    lambda v: setattr(self, "_member_text", v), 9)
         self._entry("議長名", current.chair if current else "", lambda v: setattr(self, "_chair", v))
+        ttk.Label(self.inner, text="議長が上の議員の一覧に無くても、賛否表と賛否のエクセルでは最後の列に議長として入ります。",
+                  wraplength=900, justify="left").pack(anchor="w", pady=4)
 
     def _step_3(self):
         self._title("表紙")

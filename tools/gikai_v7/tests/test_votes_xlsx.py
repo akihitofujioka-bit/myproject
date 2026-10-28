@@ -143,3 +143,28 @@ class OldStyleExcelTest(unittest.TestCase):
         self.assertFalse(any("名簿" in w for w in warnings), warnings)       # 列は全部見つかる
         self.assertFalse(any("ダイサン" in w for w in warnings), warnings)   # ふりがなは読まない
         self.assertTrue(any(w.startswith("6行目") for w in warnings), warnings)  # 行番号はエクセルどおり
+
+
+class ChairColumnTest(unittest.TestCase):
+    def test_chair_not_in_roster_is_added(self):
+        from settings import Settings
+        s = Settings(["見本 太郎", "見本 花子"], "見本　次郎")
+        self.assertEqual(s.vote_members, ["見本 太郎", "見本 花子", "見本　次郎"])
+        self.assertEqual(Settings(["見本 太郎", "見本 次郎"], "見本　次郎").vote_members,
+                         ["見本 太郎", "見本 次郎"])
+
+    def test_header_named_gichou_or_with_words(self):
+        wanted = {votes_xlsx._plain(n): n for n in ["見本 太郎", "見本 次郎"]}
+        self.assertEqual(votes_xlsx._member_for("議長", wanted, "見本 次郎"), "見本 次郎")
+        self.assertEqual(votes_xlsx._member_for("議長見本次郎", wanted, "見本 次郎"), "見本 次郎")
+        self.assertEqual(votes_xlsx._member_for("見本太郎議員", wanted, ""), "見本 太郎")
+        self.assertIsNone(votes_xlsx._member_for("備考", wanted, ""))
+
+    def test_old_sheet_with_chair_outside_roster(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = _old_style_xlsx(Path(folder) / "議案と賛否_架空.xlsx")
+            from settings import Settings
+            s = Settings(["見本 太郎", "見本 花子"], "見本 次郎")
+            votes, _counts, warnings = votes_xlsx.read_votes(path, s.vote_members, s.chair)
+        self.assertEqual(votes[0]["marks"]["見本 次郎"], "議長")
+        self.assertFalse(any("名簿" in w for w in warnings), warnings)

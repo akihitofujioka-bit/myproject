@@ -336,11 +336,11 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
            align="中央", name="賛否表見出し", warnings=warnings)
     _htext(page, _box(15, top + 7, 180, 5), "○：賛成　　●：反対", 8,
            align="右", name="賛否凡例", warnings=warnings)
-    if not settings.members:
+    if not settings.vote_members:
         _htext(page, _box(15, table_top, 180, 45), "設定で議員名簿を入れてください", 12,
                align="中央", border=True, name="賛否表", warnings=warnings)
     else:
-        members = list(settings.members)
+        members = list(settings.vote_members)
         widths = [18.0, 75.0] + [max(10.0, 65.0 / len(members))] * len(members) + [22.0]
         scale = mm2pt(180) / sum(widths)
         widths = [width * scale for width in widths]
