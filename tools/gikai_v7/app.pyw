@@ -10,6 +10,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+import dropfiles
 import edition
 import guide
 import items
@@ -37,6 +38,11 @@ class App:
         self.font = "TkDefaultFont"
         self._style()
         self._build()
+        self.drop_ready = dropfiles.enable(root, self.on_drop)
+        # 複数行の欄でも TAB で次の欄、Shift+TAB で前の欄へ移る（字の間にタブを入れない）。
+        root.bind_class("Text", "<Tab>", _focus_next)
+        root.bind_class("Text", "<Shift-Tab>", _focus_previous)
+        root.bind_class("Text", "<ISO_Left_Tab>", _focus_previous)
         if len(sys.argv) > 1:
             self.open_issue(sys.argv[1])
         else:
@@ -292,6 +298,7 @@ class App:
         self._list_editor("報告事項", value.setdefault("reports", []),
                           [("heading", "見出し", False), ("body", "本文", True)],
                           lambda v: v.get("heading") or "（見出しなし）")
+        self._word_button()
 
     def _step_5(self):
         self._title("当初予算または決算")
@@ -370,6 +377,7 @@ class App:
         self._list_editor("報告", self.data.setdefault("committees", []),
                           [("committee", "委員会名", False), ("heading", "見出し", False), ("body", "本文", True)],
                           lambda v: v.get("committee") or v.get("heading") or "（名称なし）")
+        self._word_button()
 
     def _step_9(self):
         self._title("一般質問")
@@ -407,6 +415,7 @@ class App:
         value = self.data.setdefault("feature", {})
         self._entry("題", value.get("title", ""), lambda v: value.__setitem__("title", v))
         self._text("本文", value.get("body", ""), lambda v: value.__setitem__("body", v), 12)
+        self._word_button()
 
     def _step_11(self):
         self._title("最終ページ")
@@ -509,10 +518,10 @@ class App:
         except Exception as error:
             messagebox.showerror("ひな形を作れません", str(error), parent=self.root)
 
-    def import_votes(self) -> None:
-        path = filedialog.askopenfilename(title="議案と賛否のExcelを選ぶ", parent=self.root,
-                                          filetypes=(("Excel ブック", "*.xlsx"),
-                                                     ("すべて", "*.*")))
+    def import_votes(self, path=None) -> None:
+        path = path or filedialog.askopenfilename(title="議案と賛否のExcelを選ぶ", parent=self.root,
+                                                  filetypes=(("Excel ブック", "*.xlsx"),
+                                                             ("すべて", "*.*")))
         if not path:
             return
         try:
@@ -571,12 +580,12 @@ class App:
         ttk.Button(body, text="これで入れる", command=accept).pack(anchor="e", pady=6)
         dialog.grab_set()
 
-    def import_question_word(self) -> None:
+    def import_question_word(self, path=None) -> None:
         member = self._choose_member()
         if not member:
             return
-        path = filedialog.askopenfilename(title="Word 原稿を選ぶ", parent=self.root,
-                                          filetypes=(("Word", "*.docx *.doc"),))
+        path = path or filedialog.askopenfilename(title="Word 原稿を選ぶ", parent=self.root,
+                                                  filetypes=(("Word", "*.docx *.doc"),))
         if not path:
             return
         try:
@@ -682,6 +691,126 @@ class App:
         except Exception as error:
             messagebox.showerror("確認用Wordを作れません", str(error), parent=self.root)
 
+    # ---- 行政報告・委員会報告・特集の Word ----
+    ARTICLE_STEPS = {4: "行政報告", 8: "委員会報告", 10: "特集"}
+
+    def _word_button(self) -> None:
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=6)
+        ttk.Button(row, text="Word から読み込む", command=self.import_article_word).pack(side="left")
+        hint = ("Word ファイルをこの画面へドロップしても読み込めます。" if self.drop_ready
+                else "Word ファイルを選んで読み込みます。")
+        ttk.Label(row, text=hint + "見出しごとに分けて、今の内容の後ろに足します。").pack(side="left", padx=8)
+
+    def import_article_word(self, path=None) -> None:
+        label = self.ARTICLE_STEPS.get(self.step)
+        if not label or not self.work:
+            return
+        path = path or filedialog.askopenfilename(title=label + "の Word を選ぶ", parent=self.root,
+                                                  filetypes=(("Word", "*.docx *.doc"),))
+        if not path:
+            return
+        try:
+            parsed = sources.read_word_articles(Path(path))
+        except Exception as error:
+            messagebox.showerror("Wordを読み込めません", str(error), parent=self.root)
+            return
+        self._preview_articles(label, Path(path), parsed)
+
+    def _preview_articles(self, label: str, path: Path, parsed: dict) -> None:
+        """読み込んだ中身を見せ、「これで入れる」を押したときだけ入れる。"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(label + "の Word を確かめる")
+        dialog.geometry("760x600")
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        articles = parsed["articles"]
+        notes = [f"{len(articles)} 件に分けました。見出しと本文の分け方が原稿と合っているか見比べてください。"]
+        if parsed["titles"]:
+            notes.append("大見出し『" + "』『".join(parsed["titles"]) + "』は本文に入れません（大見出しは欄で決めます）。")
+        if parsed["photos"]:
+            notes.append(f"Word の中の写真 {len(parsed['photos'])} 枚は号の「写真」フォルダへ写します。"
+                         "紙面には「写真」の手順で置いてください。")
+        notes.extend(parsed["warnings"])
+        ttk.Label(body, text="\n".join(notes), wraplength=720, justify="left").pack(anchor="w")
+        view = tk.Text(body, wrap="word", font=(self.font, 11))
+        for article in articles:
+            view.insert("end", "■ " + (article["heading"] or "（見出しなし）") + "\n")
+            view.insert("end", article["body"] + "\n\n")
+        view.configure(state="disabled")
+        view.pack(fill="both", expand=True, pady=6)
+
+        def accept() -> None:
+            try:
+                result = self.work.import_word_articles(path, label)
+            except Exception as error:
+                messagebox.showerror("Wordを読み込めません", str(error), parent=dialog)
+                return
+            self._add_articles(label, result)
+            self.data.setdefault("photos", []).extend(
+                {"file": photo["file"], "member": label, "article": label}
+                for photo in result["photos"])
+            self.work.save_items(self.data)
+            dialog.destroy()
+            self.show(self.step)
+            self.fit_label.configure(text=f"{label}に {len(result['articles'])} 件を足しました")
+
+        row = ttk.Frame(body)
+        row.pack(fill="x")
+        ttk.Button(row, text="これで入れる", command=accept).pack(side="right")
+        ttk.Button(row, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
+
+    def _add_articles(self, label: str, result: dict) -> None:
+        articles, titles = result["articles"], result["titles"]
+        if label == "行政報告":
+            self.data.setdefault("gyosei", {"title": layout.GYOSEI, "reports": []}) \
+                .setdefault("reports", []).extend(articles)
+        elif label == "委員会報告":
+            committee = titles[0] if titles else ""
+            self.data.setdefault("committees", []).extend(
+                {"committee": committee, "heading": a["heading"], "body": a["body"]} for a in articles)
+        else:
+            feature = self.data.setdefault("feature", {"title": "", "body": ""})
+            if not feature.get("title") and titles:
+                feature["title"] = titles[0]
+            lines = [feature.get("body", "")] if feature.get("body") else []
+            for article in articles:
+                if article["heading"]:
+                    lines.append("【見出し】" + article["heading"])
+                lines.append(article["body"])
+            feature["body"] = "\n".join(line for line in lines if line)
+
+    # ---- ドロップ ----
+    def on_drop(self, paths) -> None:
+        """落とされたファイルを、いまの手順に合う取り込みへ渡す。"""
+        if not paths:
+            return
+        if not self.work:
+            messagebox.showinfo("号を選んでください", "最初に新しい号を作るか、続きを開いてください。", parent=self.root)
+            return
+        if len(paths) > 1:
+            messagebox.showinfo("1つずつ落としてください",
+                                "一度に読み込めるのは1つのファイルです。", parent=self.root)
+            return
+        path = Path(paths[0])
+        suffix = path.suffix.lower()
+        self.save(silent=True)
+        if suffix in (".docx", ".doc") and self.step in self.ARTICLE_STEPS:
+            self.import_article_word(path)
+        elif suffix in (".docx", ".doc") and self.step == 9:
+            self.import_question_word(path)
+        elif suffix in (".xlsx", ".xls") and self.step == 6:
+            self.import_votes(path)
+        elif suffix in (".jpg", ".jpeg", ".png", ".heic") and self.step == 12:
+            self.add_photos(path)
+        else:
+            messagebox.showinfo(
+                "この手順では読み込めません",
+                "落とせるファイルは手順ごとに決まっています。\n"
+                "・Word: 行政報告・委員会報告・一般質問・特集\n"
+                "・エクセル: 議案と賛否\n"
+                "・写真: 写真", parent=self.root)
+
     def bulk_into(self, value: dict) -> None:
         text = simpledialog.askstring("まとめて貼る", "見出し、問、答を含む文章を貼り付けてください。", parent=self.root)
         if text is not None:
@@ -784,10 +913,10 @@ class App:
         except Exception as error:
             messagebox.showerror("開けません", str(error), parent=self.root)
 
-    def add_photos(self) -> None:
-        path = filedialog.askopenfilename(title="JPEGまたはPNGを選ぶ", parent=self.root,
-                                          filetypes=(("写真", "*.jpg *.jpeg *.png"),
-                                                     ("すべて", "*.*")))
+    def add_photos(self, path=None) -> None:
+        path = path or filedialog.askopenfilename(title="JPEGまたはPNGを選ぶ", parent=self.root,
+                                                  filetypes=(("写真", "*.jpg *.jpeg *.png"),
+                                                             ("すべて", "*.*")))
         if not path:
             return
         member = simpledialog.askstring("誰の写真か", "議員名（または担当名）を入力してください。",
@@ -945,6 +1074,16 @@ def main() -> int:
     App(root)
     root.mainloop()
     return 0
+
+
+def _focus_next(event):
+    event.widget.tk_focusNext().focus_set()
+    return "break"
+
+
+def _focus_previous(event):
+    event.widget.tk_focusPrev().focus_set()
+    return "break"
 
 
 def _last_day(reiwa_year: int, month: int) -> str:

@@ -64,6 +64,42 @@ def read_word(path) -> dict:
     return parsed
 
 
+def read_word_articles(path) -> dict:
+    """行政報告・委員会報告・特集の Word を、見出しと本文の組に分ける。
+
+    中見出しごとに 1 件にする。大見出しは欄で決めるので本文には入れず、題の候補として返す。
+    Word に貼られた写真は images に入れて返す（紙面には自動で置かない）。文字は削らない。
+    """
+    source = Path(path)
+    if source.suffix.lower() not in (".docx", ".doc"):
+        raise ValueError("Word ファイル(.docx または .doc)を選んでください。")
+    result = ingest.ingest(source)
+    articles: List[dict] = []
+    titles: List[str] = []
+    photos: List[Tuple[str, bytes, str]] = []
+    for index, part in enumerate(result.parts):
+        if part.kind == "大見出し":
+            titles.append(part.text)
+        elif part.kind == "中見出し":
+            articles.append({"heading": part.text, "body": ""})
+        elif part.kind == "写真":
+            caption = ""
+            if index + 1 < len(result.parts) and result.parts[index + 1].kind == "写真説明":
+                caption = result.parts[index + 1].text
+            data = result.images.get(part.image or "")
+            if data:
+                photos.append((part.image, data, caption))
+        elif part.kind in ("写真説明", "空き行", "次段"):
+            continue
+        elif part.text:
+            if not articles:
+                articles.append({"heading": "", "body": ""})
+            body = articles[-1]["body"]
+            articles[-1]["body"] = (body + "\n" + part.text) if body else part.text
+    return {"articles": articles, "titles": titles, "photos": photos,
+            "warnings": list(result.warnings)}
+
+
 def email_candidates(text: str) -> List[dict]:
     """外す候補を行番号・理由付きで返す。本文は変更しない。"""
     result = []

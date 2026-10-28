@@ -222,6 +222,27 @@ class Edition:
         parsed["copy_path"] = sources.archive_file(source, self.folder, member)
         return parsed
 
+    def import_word_articles(self, path: Path, label: str) -> dict:
+        """記事の Word を見出しと本文に分け、元ファイルと中の写真を号フォルダへ写す。"""
+        source = Path(path)
+        parsed = sources.read_word_articles(source)
+        parsed["copy_path"] = sources.archive_file(source, self.folder, label)
+        folder = self.folder / "写真"
+        folder.mkdir(exist_ok=True)
+        saved = []
+        for number, (name, data, caption) in enumerate(parsed.pop("photos"), 1):
+            suffix = Path(name).suffix.lower() or ".jpg"
+            target = folder / f"{sources._safe_name(label)}_Word_{number}{suffix}"
+            count = 2
+            while target.exists():
+                target = folder / f"{sources._safe_name(label)}_Word_{number}_{count}{suffix}"
+                count += 1
+            with target.open("xb") as output:
+                output.write(data)
+            saved.append({"file": target.name, "caption": caption})
+        parsed["photos"] = saved
+        return parsed
+
     def save_email_source(self, original: str, member: str) -> Path:
         return sources.save_email_original(original, self.folder, member)
 
