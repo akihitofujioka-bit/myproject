@@ -36,7 +36,7 @@ class ConversionTest(unittest.TestCase):
         self.assertIn("【大見出し】見本委員会", pages[layout.IINKAI][0])
         self.assertIn("【大見出し・横】架空の防災", pages[layout.IPPAN][0])
         self.assertIn("【顔写真枠】", pages[layout.IPPAN][0])
-        self.assertIn("見本課長\n答　進めます。", pages[layout.IPPAN][0])
+        self.assertIn("答　見本課長　進めます。", pages[layout.IPPAN][0])
         self.assertIn("【大見出し】架空の特集", pages[layout.TOKUSHU][0])
 
     def test_shingi_form_contains_bills_and_questions(self):

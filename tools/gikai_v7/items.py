@@ -40,6 +40,8 @@ def default_data(issue: Optional[layout.Issue] = None) -> dict:
         "shingi": {"meeting": templates.meeting_name(issue), "period": "",
                    "counts": [], "bills": []},
         "votes": [],
+        "votes_import": {},
+        "votes_warnings": [],
         "committees": [],
         "questions": [],
         "feature": {"title": "", "body": ""},
@@ -117,11 +119,10 @@ def _qa_lines(values: Iterable[dict], answerer: bool = False) -> List[str]:
             lines.append("【見出し】" + heading)
         if question:
             lines.append("問　" + question)
-        if answerer and _text(value.get("answerer")):
-            # 短い役職名を答弁の直前へ置くと、既存 compose が答弁者名として扱う。
-            lines.append(_text(value.get("answerer")))
+        role = _text(value.get("answerer")) if answerer else ""
         if answer:
-            lines.append("答　" + answer)
+            # 「答　役職名　本文」の形にすると、既存 compose が役職名までをゴシックにする。
+            lines.append("答　" + (role + "　" if role else "") + answer)
     return lines
 
 
@@ -220,8 +221,9 @@ def build_votes(rows: Iterable[dict], members: Iterable[str], chair: str = "") -
     output = []
     for row in rows or []:
         old = row.get("marks", {}) or {}
-        marks = {name: str(old.get(name) or ("議長" if name == chair else "○"))
-                 for name in names}
+        # Excel で明示された空欄は「印なし」。値が無い場合だけ既定値を使う。
+        marks = {name: str(old[name]) if name in old
+                 else ("議長" if name == chair else "○") for name in names}
         output.append({"kind": _text(row.get("kind")), "title": _text(row.get("title")),
                        "result": _text(row.get("result")) or "原案可決", "marks": marks})
     return output

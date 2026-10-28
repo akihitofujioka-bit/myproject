@@ -21,7 +21,9 @@ import ingest as I
 import items as item_templates
 import layout
 import photo_list
+import sources
 import templates
+import votes_xlsx
 import writer
 from settings import Settings
 from grid import Geometry, Rect, to_box
@@ -80,7 +82,7 @@ class Edition:
         """空の号フォルダを作り、ページ割りを保存する。"""
         folder = Path(folder).resolve()
         folder.mkdir(parents=True, exist_ok=True)
-        for name in ("原稿", "写真", "事務局原稿", "出力"):
+        for name in ("原稿", "写真", "事務局原稿", "受け取った原稿", "賛否", "出力"):
             (folder / name).mkdir(exist_ok=True)
         plan = layout.make_plan(issue)
         data = {"pages": [cls._new_page(p) for p in plan.pages],
@@ -191,6 +193,52 @@ class Edition:
         self.settings = Settings(list(members), str(chair),
                                  committee or self.settings.committee)
         return self.settings.save()
+
+    def make_votes_template(self, path: Path) -> Path:
+        """現在の名簿で、賛否 Excel のひな形を新規作成する。"""
+        return votes_xlsx.make_template(path, self.settings.members, self.settings.chair)
+
+    def import_votes(self, path: Path, data: Optional[dict] = None) -> tuple:
+        """賛否 Excel を読み、元を残して号フォルダへ複製し、項目へ記録する。"""
+        source = Path(path)
+        votes, counts, warnings = votes_xlsx.read_votes(
+            source, self.settings.members, self.settings.chair)
+        copied, imported_at = votes_xlsx.archive_import(source, self.folder)
+        values = data if data is not None else self.item_data()
+        values["votes"] = votes
+        values.setdefault("shingi", {})["counts"] = counts
+        values["votes_warnings"] = warnings
+        values["votes_import"] = {
+            "source_name": source.name, "copy_name": copied.name,
+            "imported_at": imported_at,
+        }
+        self.save_items(values)
+        return votes, counts, warnings, copied
+
+    def import_word_source(self, path: Path, member: str = "") -> dict:
+        """Word 原稿を分割し、元ファイルを受け取った原稿へ複製する。"""
+        source = Path(path)
+        parsed = sources.read_word(source)
+        parsed["copy_path"] = sources.archive_file(source, self.folder, member)
+        return parsed
+
+    def save_email_source(self, original: str, member: str) -> Path:
+        return sources.save_email_original(original, self.folder, member)
+
+    def write_question_confirmation(self, people, member: str = "全員") -> Path:
+        """一般質問の確認用 Word を、過去分を残して新規作成する。"""
+        import datetime
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe = re.sub(r'[\\/:*?"<>|]', "_", member or "全員")
+        folder = self.folder / "出力" / f"確認用_{stamp}"
+        number = 2
+        candidate = folder
+        while candidate.exists():
+            candidate = folder.with_name(f"{folder.name}_{number}")
+            number += 1
+        folder = candidate
+        folder.mkdir(parents=True, exist_ok=False)
+        return sources.write_confirmation(folder / f"確認用_{safe}.docx", people)
 
     def _state(self) -> dict:
         return {"issue": asdict(self.issue), "pages": copy.deepcopy(self.pages)}
@@ -412,6 +460,34 @@ class Edition:
         """選んだ写真を号の「写真」へ写し、保存名を返す。"""
         return [self.keep_writer_photo(Path(source)) for source in sources]
 
+    def add_received_photo(self, source: Path, member: str, article: str) -> dict:
+        """誰の何の記事か分かる名前で写真を複製し、画素数と注意を返す。"""
+        source = Path(source)
+        suffix = source.suffix.lower()
+        if suffix not in (".jpg", ".jpeg", ".png"):
+            raise ValueError("この画像形式は読めません。写真アプリで JPEG に書き出してから追加してください。")
+        kind = "jpeg" if suffix in (".jpg", ".jpeg") else "png"
+        data = source.read_bytes()
+        try:
+            pixels = dx.image_size(data, kind)
+        except ValueError as error:
+            raise ValueError("画像を読み取れません。写真アプリで JPEG に書き出してください。") from error
+        safe = lambda value: re.sub(r'[\\/:*?"<>|\s]+', "_", str(value or "不明").strip())
+        stem = f"写真_{safe(member)}_{safe(article)}"
+        folder = self.folder / "写真"
+        folder.mkdir(exist_ok=True)
+        number = 1
+        while True:
+            target = folder / f"{stem}_{number}{suffix}"
+            if not target.exists():
+                break
+            number += 1
+        shutil.copy2(str(source), str(target))
+        dpi = int(min(pixels[0] / (60 / 25.4), pixels[1] / (40 / 25.4)) + 0.5)
+        return {"name": target.name, "path": target.resolve(), "pixels": pixels,
+                "dpi": dpi, "warning": photo_list.dpi_warning(dpi),
+                "member": member, "article": article}
+
     def photo_files(self) -> List[dict]:
         """「写真」内のファイルを、一覧表示に必要な情報とともに返す。"""
         folder = self.folder / "写真"
@@ -486,13 +562,16 @@ class Edition:
                 images[name] = path.read_bytes()
         return images
 
-    def place_photo(self, page_no: int, filename: str, rect: Rect) -> bool:
+    def place_photo(self, page_no: int, filename: str, rect: Rect,
+                    size: Optional[str] = None, caption: str = "") -> bool:
         """写真フォルダの写真を格子位置へ置く。重なる場合は何も変えない。"""
         page = self._page(page_no)
         name = Path(filename).name
         if not (self.folder / "写真" / name).is_file():
             raise ValueError("写真フォルダに写真が見つかりません: " + name)
-        size = "顔" if page["section"] == layout.IPPAN else "中"
+        size = size or ("顔" if page["section"] == layout.IPPAN else "中")
+        if size not in C.PHOTO_WIDTH_MM:
+            raise ValueError("写真の大きさは 大・中・小・顔 のいずれかです")
         target = C.photo_rect(self.geometry, size, rect.dan, rect.line)
         if page["section"] == layout.COVER:
             target = Rect(0, 4, 3, 22)
@@ -509,11 +588,55 @@ class Edition:
         if page["section"] == layout.COVER:
             page["placed_photos"] = []
         page["placed_photos"].append({"file": name, "rect": _rect_data(target),
-                                      "size": size, "caption": "", "removed": False})
+                                      "size": size, "caption": str(caption), "removed": False})
         self._sync_form_from_placed(page)
         self._update_page_state(page_no)
         self._record(f"{page_no}ページに{name}を置く", before)
         return True
+
+    def place_photo_near(self, page_no: int, filename: str, rect: Rect,
+                         size: str = "中", caption: str = "") -> tuple:
+        """希望位置から近い順に探して置き、実際の位置と移動有無を返す。"""
+        section = self._page(page_no)["section"]
+        if section in (layout.COVER, layout.LAST):
+            self.place_photo(page_no, filename, rect, size, caption)
+            photo = self._page(page_no)["placed_photos"][-1]
+            actual = _rect(photo["rect"])
+            return actual, actual.dan != rect.dan or actual.line != rect.line
+        desired = C.photo_rect(self.geometry, size, rect.dan, rect.line)
+        candidates = []
+        for dan in range(self.geometry.dans):
+            for line in range(self.geometry.lines_per_dan):
+                candidate = C.photo_rect(self.geometry, size, dan, line)
+                distance = abs(dan - rect.dan) * self.geometry.lines_per_dan + abs(line - rect.line)
+                candidates.append((distance, dan, line, candidate))
+        for _distance, _dan, _line, candidate in sorted(candidates):
+            if self._can_place(page_no, -1, candidate):
+                if self.place_photo(page_no, filename,
+                                    Rect(candidate.dan, candidate.line, 1, 1), size, caption):
+                    return candidate, candidate != desired
+        raise ValueError("写真を置ける場所がありません。写真を小さくするか、次のページへ送ってください。")
+
+    def move_part_near(self, page_no: int, part_no: int, rect: Rect) -> tuple:
+        """希望位置が使えないときは近い置ける位置へ寄せる。"""
+        parts = self.parts(page_no)
+        if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
+            raise ValueError("写真を選んでください")
+        current = next((p.rect for p in self.compose(page_no).placements
+                        if p.index == part_no and p.part.kind == "写真"), None)
+        if current is None:
+            raise ValueError("写真の現在位置を確認できません")
+        desired = Rect(rect.dan, rect.line, current.dan_span, current.line_span)
+        candidates = []
+        for dan in range(self.geometry.dans - current.dan_span + 1):
+            for line in range(self.geometry.lines_per_dan - current.line_span + 1):
+                candidate = Rect(dan, line, current.dan_span, current.line_span)
+                distance = abs(dan - rect.dan) * self.geometry.lines_per_dan + abs(line - rect.line)
+                candidates.append((distance, dan, line, candidate))
+        for _distance, _dan, _line, candidate in sorted(candidates):
+            if self.move_part(page_no, part_no, candidate):
+                return candidate, candidate != desired
+        return current, True
 
     def set_photo_caption(self, page_no: int, part_no: int, caption: str) -> None:
         """置いた写真の説明を保存する。"""
@@ -987,6 +1110,8 @@ class Edition:
                        output_folder: Optional[Path] = None) -> tuple:
         """全ページの配置済み写真を集め、必要なら元画像も出力する。"""
         records = []
+        metadata = {value.get("file", ""): value
+                    for value in self.item_data().get("photos", [])}
         written = []
         photo_output = (output_folder or self.folder / "出力") / "写真"
         if write_files:
@@ -1029,9 +1154,11 @@ class Edition:
                     size = change.get("size") or part.photo_size or (
                         "顔" if page["section"] == layout.IPPAN and photo_no == 1 else "中")
                     box = to_box(self.geometry, placed[index].rect)
+                    object_name = (Path(part.image).stem
+                                   if Path(part.image).stem.startswith("写真_") else f"写真{photo_no}")
                     item = next((value for value in result.page.items
                                  if isinstance(value, (dx.Picture, dx.Placeholder))
-                                 and value.name == f"写真{photo_no}"), None)
+                                 and value.name == object_name), None)
                     source_path = self.folder / "写真" / Path(part.image).name
                     caption = C._caption(parts, index)
                     position = (f"{placed[index].rect.dan + 1}段目・"
@@ -1061,9 +1188,11 @@ class Edition:
                             photo_file.write(data)
                         written.append(target.resolve())
                 width, height = self._photo_dimensions(item, box)
+                meta = metadata.get(original, {})
                 records.append(photo_list.PhotoRecord(
                     page["no"], page["section"], output_name, original, size,
-                    width, height, position, caption, pixels))
+                    width, height, position, caption, pixels,
+                    str(meta.get("member", "")), str(meta.get("article", ""))))
         return records, written
 
     def check(self) -> List[str]:

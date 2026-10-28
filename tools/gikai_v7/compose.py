@@ -257,7 +257,8 @@ def _place_picture(page: dx.Page, g: Geometry, part: I.Part, rect: Rect,
         page.items.append(dx.Placeholder(picture_box, f"写真{number}: 読み取り不可", f"写真{number}"))
         warnings.append(str(e))
         return
-    page.items.append(dx.Picture(picture_box, data, ext, caption, f"写真{number}"))
+    object_name = Path(name).stem if Path(name).stem.startswith("写真_") else f"写真{number}"
+    page.items.append(dx.Picture(picture_box, data, ext, caption, object_name))
 
 
 def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geometry,

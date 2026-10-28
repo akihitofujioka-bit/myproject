@@ -11,6 +11,7 @@ import edition
 import guide
 import items
 import layout
+import sources
 from grid import Rect, to_box
 
 
@@ -168,7 +169,8 @@ class App:
                     widget = tk.Text(body, height=5, wrap="word", font=(self.font, 11))
                     widget.insert("1.0", str(value.get(key, "")))
                 elif choices:
-                    widget = ttk.Combobox(body, values=choices, state="readonly")
+                    widget = ttk.Combobox(body, values=choices,
+                                          state="normal" if len(field) > 4 and field[4] else "readonly")
                     widget.set(str(value.get(key, "")))
                 else:
                     widget = ttk.Entry(body)
@@ -258,37 +260,65 @@ class App:
         ttk.Button(self.inner, text="まとめて貼る", command=lambda: self.bulk_into(value)).pack(anchor="e")
 
     def _step_6(self):
+        self._title("議案と賛否(エクセル)")
+        if not self.work:
+            ttk.Label(self.inner, text="先に号を作るか開いてください。").pack(anchor="w")
+            return
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=5)
+        ttk.Button(row, text="1. ひな形を作る", command=self.make_votes_template).pack(side="left")
+        self.votes_path_label = ttk.Label(row, text="保存先を選ぶと、フルパスを表示します。",
+                                          wraplength=700)
+        self.votes_path_label.pack(side="left", padx=10)
+        ttk.Label(self.inner, text=("2. エクセルで入力する：ひな形を開き、1行に議案1件を入力し、"
+                                    "各議員の列へ ○・●・欠席 を入れて保存します。"),
+                  wraplength=900, justify="left").pack(anchor="w", pady=8)
+        ttk.Button(self.inner, text="3. エクセルを取り込む",
+                   command=self.import_votes).pack(anchor="w", pady=5)
+        info = self.data.get("votes_import", {})
+        if info:
+            ttk.Label(self.inner, text=(f"取込済み: {info.get('source_name', '')}\n"
+                                        f"号フォルダの複製: {info.get('copy_name', '')}\n"
+                                        f"日時: {info.get('imported_at', '')}"),
+                      justify="left").pack(anchor="w", pady=5)
+        votes = self.data.get("votes", [])
+        if votes:
+            table = ttk.Treeview(self.inner, columns=("kind", "title", "result"),
+                                 show="headings", height=min(8, len(votes)))
+            for key, text, width in (("kind", "区分", 100), ("title", "議案番号・件名", 500),
+                                     ("result", "議決結果", 130)):
+                table.heading(key, text=text)
+                table.column(key, width=width)
+            for vote in votes:
+                table.insert("", "end", values=(vote.get("kind", ""), vote.get("title", ""),
+                                                  vote.get("result", "")))
+            table.pack(fill="x", pady=5)
+            ttk.Label(self.inner, text="この表は確認用です。直すときはExcelを直して、もう一度取り込んでください。",
+                      wraplength=900).pack(anchor="w")
+        warnings = self.data.get("votes_warnings", [])
+        if warnings:
+            ttk.Label(self.inner, text="注意\n・" + "\n・".join(warnings),
+                      foreground="#a33", justify="left", wraplength=900).pack(anchor="w", pady=8)
+
+    def _step_7(self):
         self._title("審議したこと")
         value = self.data.setdefault("shingi", {"counts": [], "bills": []})
         self._entry("定例会名", value.get("meeting", ""), lambda v: value.__setitem__("meeting", v))
         self._entry("会期", value.get("period", ""), lambda v: value.__setitem__("period", v))
-        self._list_editor("議案の種類と件数", value.setdefault("counts", []),
-                          [("kind", "種類", False), ("count", "件数", False)],
-                          lambda v: f"{v.get('kind', '')} {v.get('count', '')}件")
+        counts = value.setdefault("counts", [])
+        if counts:
+            ttk.Label(self.inner, text="議案の種類と件数（取り込んだExcelから自動）: " +
+                      "、".join(f"{v.get('kind') or '区分なし'} {v.get('count')}件" for v in counts),
+                      wraplength=900).pack(anchor="w", pady=5)
+        else:
+            ttk.Label(self.inner, text="先に議案と賛否のエクセルを取り込むと自動で入ります。",
+                      foreground="#955").pack(anchor="w", pady=5)
+        vote_titles = [v.get("title", "") for v in self.data.get("votes", []) if v.get("title")]
         self._list_editor("議案", value.setdefault("bills", []),
-                          [("kind", "区分", False), ("title", "議案名", False),
-                           ("description", "説明", True), ("qa_bulk", "質疑（問・答で開始）", True)],
+                          [("kind", "区分", False), ("title", "議案名", False,
+                            vote_titles, True), ("description", "説明", True),
+                           ("qa_bulk", "質疑（問・答で開始）", True)],
                           lambda v: v.get("title") or "（議案名なし）")
-
-    def _step_7(self):
-        self._title("賛否表")
-        votes = self.data.setdefault("votes", [])
-        members = self.work.settings.members if self.work else []
-        chair = self.work.settings.chair if self.work else ""
-        votes[:] = items.build_votes(votes, members, chair)
-        self._list_editor("議案・発議案", votes,
-                          [("kind", "区分", False), ("title", "件名", False), ("result", "議決結果", False)],
-                          lambda v: f"{v.get('kind', '')} {v.get('title', '')}")
-        for number, row in enumerate(votes, 1):
-            box = ttk.LabelFrame(self.inner, text=f"{number}. {row.get('title', '件名なし')} の賛否", padding=7)
-            box.pack(fill="x", pady=4)
-            for name in members:
-                line = ttk.Frame(box)
-                line.pack(side="left", padx=(0, 8))
-                ttk.Label(line, text=name).pack()
-                var = tk.StringVar(value=row.setdefault("marks", {}).get(name, "議長" if name == chair else "○"))
-                ttk.Combobox(line, textvariable=var, values=MARKS, state="readonly", width=7).pack()
-                self.getters.append(lambda v=var, r=row, n=name: r["marks"].__setitem__(n, v.get()))
 
     def _step_8(self):
         self._title("委員会報告")
@@ -298,13 +328,33 @@ class App:
 
     def _step_9(self):
         self._title("一般質問")
+        members = self.work.settings.members if self.work else []
+        statuses = sources.reception_status(members, self.data.setdefault("questions", []))
+        if statuses:
+            ttk.Label(self.inner, text="受付状況: " + "／".join(
+                f"{v['member']} {v['status']}" for v in statuses), wraplength=900,
+                justify="left").pack(anchor="w", pady=5)
         self._list_editor("質問者", self.data.setdefault("questions", []),
                           [("member", "議員名", False,
-                            self.work.settings.members if self.work else []),
+                            members),
                            ("title", "題（横の大見出し）", False),
+                           ("delivery", "届き方", False,
+                            ("Word", "メール", "手書き", "その他")),
+                           ("received_date", "受け取った日", False),
+                           ("confirmed", "議員の確認", False, ("未", "済")),
                            ("qa_bulk", "質問（見出し、問、答、答弁者 で入力）", True)],
                           lambda v: f"{v.get('member', '')}　{v.get('title', '')}", max_items=10)
-        ttk.Label(self.inner, text="文章は保存時に最大4件の質問へ分けます。顔写真枠は自動で入ります。",
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=5)
+        ttk.Button(row, text="まとめて貼る", command=self.bulk_question).pack(side="left")
+        ttk.Button(row, text="Word から読み込む", command=self.import_question_word).pack(side="left")
+        ttk.Button(row, text="メール本文を貼る", command=self.import_question_email).pack(side="left", padx=5)
+        ttk.Button(row, text="確認用に印刷（1人）",
+                   command=lambda: self.print_question_confirmation(True)).pack(side="left")
+        ttk.Button(row, text="確認用に印刷（全員）", command=self.print_question_confirmation).pack(side="left")
+        ttk.Label(self.inner, text=("取り込み後は必ず、問と答の分け方が正しいか原稿と見比べてください。"
+                                    "手書きは見ながら入力し、確認用に印刷して議員に見てもらいます。"
+                                    "顔写真枠は自動で入ります。"),
                   wraplength=900).pack(anchor="w", pady=5)
 
     def _step_10(self):
@@ -329,8 +379,10 @@ class App:
         if not self.work:
             ttk.Label(self.inner, text="先に号を作るか開いてください。").pack(anchor="w")
             return
-        ttk.Button(self.inner, text="写真を追加", command=self.add_photos).pack(anchor="w", pady=5)
-        names = [value["name"] for value in self.work.photo_files()]
+        ttk.Button(self.inner, text="写真を追加（誰の・どの記事かを指定）",
+                   command=self.add_photos).pack(anchor="w", pady=5)
+        photo_values = self.work.photo_files()
+        names = [value["name"] for value in photo_values]
         self.photo_var = tk.StringVar(value=names[0] if names else "")
         self.photo_page = tk.StringVar(value="1")
         ttk.Label(self.inner, text="写真").pack(anchor="w")
@@ -338,11 +390,38 @@ class App:
         ttk.Label(self.inner, text="置くページ番号").pack(anchor="w", pady=(8, 0))
         ttk.Combobox(self.inner, textvariable=self.photo_page,
                      values=[str(p["no"]) for p in self.work.pages], state="readonly").pack(fill="x")
-        ttk.Button(self.inner, text="このページへ自動配置", command=self.place_photo).pack(anchor="e", pady=8)
+        self.photo_size = tk.StringVar(value="中")
+        sizes = ttk.Frame(self.inner)
+        sizes.pack(anchor="w", pady=6)
+        ttk.Label(sizes, text="大きさ").pack(side="left")
+        for size in ("大", "中", "小", "顔"):
+            ttk.Radiobutton(sizes, text=size, value=size, variable=self.photo_size).pack(side="left", padx=4)
+        self.photo_caption = tk.StringVar()
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text="写真の説明", width=20).pack(side="left")
+        ttk.Entry(row, textvariable=self.photo_caption).pack(side="left", fill="x", expand=True)
+        ttk.Button(self.inner, text="このページの空いている所へ置く",
+                   command=self.place_photo).pack(anchor="e", pady=8)
+        ttk.Label(self.inner, text=("『紙面を見る』では、写真を置きたい所をクリックできます。"
+                                    "置いた写真はドラッグで動かせ、本文が自動でよけ直します。"),
+                  wraplength=900).pack(anchor="w")
+        messages = [f"{v['name']}: {v['message']}" for v in photo_values if v.get("message")]
+        if messages:
+            ttk.Label(self.inner, text="\n".join(messages), foreground="#a33").pack(anchor="w", pady=5)
 
     def _step_13(self):
         self._title("全ページの確認")
         messages = self.work.check() if self.work else ["号を作るか開いてください。"]
+        if self.work:
+            if not self.data.get("votes_import"):
+                messages.insert(0, "議案と賛否のExcelが未取り込みです")
+            messages[0:0] = ["議案と賛否: " + warning
+                             for warning in self.data.get("votes_warnings", [])]
+            messages.extend(f"一般質問受付: {value['member']} {value['status']}"
+                            for value in sources.reception_status(
+                                self.work.settings.members, self.data.get("questions", []))
+                            if value["status"] != "確認済み")
         listing = tk.Listbox(self.inner, height=20, font=(self.font, 11), exportselection=False)
         listing.pack(fill="both", expand=True)
         for message in messages or ["問題はありません。"]:
@@ -358,7 +437,7 @@ class App:
                 return
             section = self.work.pages[int(match.group(1)) - 1]["section"]
             target = {layout.COVER: 3, layout.GYOSEI: 4, layout.YOSAN: 5,
-                      layout.KESSAN: 5, layout.SHINGI: 6, layout.IINKAI: 8,
+                      layout.KESSAN: 5, layout.SHINGI: 7, layout.IINKAI: 8,
                       layout.IPPAN: 9, layout.TOKUSHU: 10, layout.LAST: 11}.get(section, 13)
             self.show(target)
         ttk.Button(self.inner, text="選んだページの入力へ戻る", command=jump).pack(anchor="e", pady=5)
@@ -372,6 +451,191 @@ class App:
 
     def _not_ready(self):
         self._title(guide.STEPS[self.step])
+
+    def make_votes_template(self) -> None:
+        path = filedialog.asksaveasfilename(title="ひな形の保存先", parent=self.root,
+                                            defaultextension=".xlsx",
+                                            filetypes=(("Excel ブック", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            made = self.work.make_votes_template(Path(path))
+            self.votes_path_label.configure(text=str(made))
+        except Exception as error:
+            messagebox.showerror("ひな形を作れません", str(error), parent=self.root)
+
+    def import_votes(self) -> None:
+        path = filedialog.askopenfilename(title="議案と賛否のExcelを選ぶ", parent=self.root,
+                                          filetypes=(("Excel ブック", "*.xlsx"),
+                                                     ("すべて", "*.*")))
+        if not path:
+            return
+        try:
+            self.work.import_votes(Path(path), self.data)
+            self.data = self.work.item_data()
+            self.show(6)
+        except Exception as error:
+            messagebox.showerror("取り込めません", str(error), parent=self.root)
+
+    def _person(self, member: str) -> dict:
+        people = self.data.setdefault("questions", [])
+        found = next((value for value in people if value.get("member") == member), None)
+        if found is None:
+            found = {"member": member, "title": "", "questions": [],
+                     "delivery": "その他", "received_date": "", "confirmed": "未"}
+            people.append(found)
+        return found
+
+    def _choose_member(self) -> str:
+        members = self.work.settings.members if self.work else []
+        value = simpledialog.askstring("議員を選ぶ", "議員名を入力してください。\n" +
+                                       "／".join(members), parent=self.root)
+        return str(value or "").strip()
+
+    def _preview_source(self, member: str, parsed: dict, delivery: str,
+                        original: str = "") -> None:
+        dialog = tk.Toplevel(self.root)
+        dialog.title("取り込む前の確認")
+        dialog.geometry("760x620")
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="問と答の分け方が正しいか、原稿と見比べてください。",
+                  foreground="#933").pack(anchor="w")
+        preview = tk.Text(body, wrap="word", font=(self.font, 11))
+        preview.insert("1.0", parsed.get("cleaned") or parsed.get("text") or original)
+        preview.configure(state="disabled")
+        preview.pack(fill="both", expand=True, pady=6)
+        ttk.Label(body, text=("分割結果: " +
+                              "／".join(f"問 {q.get('question', '')[:24]}・答 {q.get('answer', '')[:24]}"
+                                        for q in parsed.get("questions", []))) or "問答を見つけられませんでした。",
+                  wraplength=720, justify="left").pack(anchor="w")
+
+        def accept():
+            person = self._person(member)
+            person["delivery"] = delivery
+            person["confirmed"] = "未"
+            person["questions"] = items.limit_questions(parsed.get("questions", []))
+            person["qa_bulk"] = parsed.get("cleaned") or parsed.get("text") or original
+            if original:
+                saved = self.work.save_email_source(original, member)
+                person["source_copy"] = saved.name
+            elif parsed.get("copy_path"):
+                person["source_copy"] = Path(parsed["copy_path"]).name
+            dialog.destroy()
+            self.show(9)
+        ttk.Button(body, text="これで入れる", command=accept).pack(anchor="e", pady=6)
+        dialog.grab_set()
+
+    def import_question_word(self) -> None:
+        member = self._choose_member()
+        if not member:
+            return
+        path = filedialog.askopenfilename(title="Word 原稿を選ぶ", parent=self.root,
+                                          filetypes=(("Word", "*.docx *.doc"),))
+        if not path:
+            return
+        try:
+            parsed = self.work.import_word_source(Path(path), member)
+            self._preview_source(member, parsed, "Word")
+        except Exception as error:
+            messagebox.showerror("Wordを読み込めません", str(error), parent=self.root)
+
+    def bulk_question(self) -> None:
+        member = self._choose_member()
+        if not member:
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("まとめて貼る")
+        dialog.geometry("760x600")
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="見出し、問、答を含む原稿を貼ってください。").pack(anchor="w")
+        widget = tk.Text(body, wrap="word", font=(self.font, 11), undo=True)
+        widget.pack(fill="both", expand=True, pady=6)
+
+        def preview():
+            text = widget.get("1.0", "end-1c")
+            parsed = items.parse_bulk(text)
+            parsed["text"] = text
+            dialog.destroy()
+            self._preview_source(member, parsed, "その他")
+        ttk.Button(body, text="分け方を確認する", command=preview).pack(anchor="e")
+        dialog.grab_set()
+
+    def import_question_email(self) -> None:
+        member = self._choose_member()
+        if not member:
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("メール本文を貼る")
+        dialog.geometry("760x620")
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="メール本文をそのまま貼ってください。候補は勝手に消しません。").pack(anchor="w")
+        widget = tk.Text(body, wrap="word", font=(self.font, 11), undo=True)
+        widget.pack(fill="both", expand=True, pady=6)
+
+        def next_step():
+            original = widget.get("1.0", "end-1c")
+            candidates = sources.email_candidates(original)
+            dialog.destroy()
+            choice = tk.Toplevel(self.root)
+            choice.title("外す候補と整えた結果")
+            choice.geometry("820x660")
+            frame = ttk.Frame(choice, padding=10)
+            frame.pack(fill="both", expand=True)
+            ttk.Label(frame, text="外す行だけにチェックしてください。チェックしない行は残ります。").pack(anchor="w")
+            flags = []
+            for candidate in candidates:
+                var = tk.BooleanVar(value=False)
+                flags.append((var, candidate["line"]))
+                ttk.Checkbutton(frame, variable=var,
+                                text=f"{candidate['line']}行目 {candidate['reason']}: {candidate['text'][:70]}").pack(anchor="w")
+            preview = tk.Text(frame, height=18, wrap="word", font=(self.font, 11))
+            preview.pack(fill="both", expand=True, pady=6)
+
+            def refresh():
+                parsed = sources.prepare_email(original, [line for var, line in flags if var.get()])
+                preview.configure(state="normal")
+                preview.delete("1.0", "end")
+                preview.insert("1.0", parsed["cleaned"])
+                preview.configure(state="disabled")
+                choice._parsed = parsed
+            for var, _line in flags:
+                var.trace_add("write", lambda *_args: refresh())
+            refresh()
+            ttk.Label(frame, text="問と答の分け方が正しいか、原稿と見比べてください。",
+                      foreground="#933").pack(anchor="w")
+
+            def accept():
+                parsed = choice._parsed
+                person = self._person(member)
+                person.update({"delivery": "メール", "confirmed": "未",
+                               "questions": items.limit_questions(parsed["questions"]),
+                               "qa_bulk": parsed["cleaned"]})
+                person["source_copy"] = self.work.save_email_source(original, member).name
+                choice.destroy()
+                self.show(9)
+            ttk.Button(frame, text="これで入れる", command=accept).pack(anchor="e")
+            choice.grab_set()
+        ttk.Button(body, text="外す候補と整えた結果を見る", command=next_step).pack(anchor="e")
+        dialog.grab_set()
+
+    def print_question_confirmation(self, one: bool = False) -> None:
+        try:
+            people = self.data.get("questions", [])
+            member = "全員"
+            if one:
+                member = self._choose_member()
+                if not member:
+                    return
+                people = [value for value in people if value.get("member") == member]
+                if not people:
+                    raise ValueError("その議員の入力内容がありません。")
+            path = self.work.write_question_confirmation(people, member)
+            messagebox.showinfo("確認用Wordを作りました", str(path), parent=self.root)
+        except Exception as error:
+            messagebox.showerror("確認用Wordを作れません", str(error), parent=self.root)
 
     def bulk_into(self, value: dict) -> None:
         text = simpledialog.askstring("まとめて貼る", "見出し、問、答を含む文章を貼り付けてください。", parent=self.root)
@@ -467,28 +731,41 @@ class App:
             messagebox.showerror("開けません", str(error), parent=self.root)
 
     def add_photos(self) -> None:
-        paths = filedialog.askopenfilenames(title="JPEGまたはPNGを選ぶ", parent=self.root,
-                                            filetypes=(("写真", "*.jpg *.jpeg *.png"),))
-        if paths:
-            try:
-                self.work.add_photos(paths)
-                self.show(12)
-            except Exception as error:
-                messagebox.showerror("写真を追加できません", str(error), parent=self.root)
+        path = filedialog.askopenfilename(title="JPEGまたはPNGを選ぶ", parent=self.root,
+                                          filetypes=(("写真", "*.jpg *.jpeg *.png"),
+                                                     ("すべて", "*.*")))
+        if not path:
+            return
+        member = simpledialog.askstring("誰の写真か", "議員名（または担当名）を入力してください。",
+                                        parent=self.root)
+        if member is None:
+            return
+        articles = [v.get("title", "") for v in self.data.get("questions", [])]
+        articles += [v.get("title", "") for v in self.data.get("shingi", {}).get("bills", [])]
+        article = simpledialog.askstring("どの記事か", "記事名を入力してください。\n" +
+                                         "／".join(v for v in articles if v), parent=self.root)
+        if article is None:
+            return
+        try:
+            result = self.work.add_received_photo(Path(path), member, article)
+            self.data.setdefault("photos", []).append({
+                "file": result["name"], "member": member, "article": article})
+            self.work.save_items(self.data)
+            notice = result["warning"] or f"解像度の目安は {result['dpi']}dpi です。"
+            messagebox.showinfo("写真を追加しました", f"{result['path']}\n{notice}", parent=self.root)
+            self.show(12)
+        except Exception as error:
+            messagebox.showerror("写真を追加できません", str(error), parent=self.root)
 
     def place_photo(self) -> None:
         try:
             page = int(self.photo_page.get())
-            placed = False
-            for dan in range(self.work.geometry.dans):
-                for line in range(0, self.work.geometry.lines_per_dan, 3):
-                    if self.work.place_photo(page, self.photo_var.get(), Rect(dan, line, 1, 1)):
-                        placed = True
-                        break
-                if placed:
-                    break
-            if not placed:
-                raise ValueError("写真を置ける空きがありません。別のページを選んでください。")
+            actual, shifted = self.work.place_photo_near(
+                page, self.photo_var.get(), Rect(0, 0, 1, 1),
+                self.photo_size.get(), self.photo_caption.get())
+            if shifted:
+                self.fit_label.configure(text=(f"置ける所へ寄せました: {actual.dan + 1}段目・"
+                                               f"右から{actual.line + 1}行目"))
             self._fit_summary()
         except Exception as error:
             messagebox.showerror("配置できません", str(error), parent=self.root)
@@ -518,6 +795,7 @@ class App:
         page_var = tk.IntVar(value=1)
         status = ttk.Label(top)
         status.pack(side="right")
+        drag = {"part": None}
         paper = tk.Canvas(dialog, bg="#d9dde3", highlightthickness=0)
         paper.pack(fill="both", expand=True)
 
@@ -541,6 +819,61 @@ class App:
         ttk.Combobox(top, textvariable=page_var, values=[p["no"] for p in self.work.pages],
                      state="readonly", width=8).pack(side="left")
         ttk.Button(top, text="表示", command=draw).pack(side="left", padx=5)
+        ttk.Button(top, text="元に戻す", command=lambda: (self.work.undo(), draw())).pack(side="left")
+        ttk.Button(top, text="やり直す", command=lambda: (self.work.redo(), draw())).pack(side="left", padx=4)
+
+        def grid_at(event):
+            point_x, point_y = (event.x - 150) / 0.72, (event.y - 12) / 0.72
+            g = self.work.geometry
+            dan = round((point_y - g.margin_top_mm * 72 / 25.4) / (g.dan_h_pt + g.gap_pt))
+            right = (g.page_w_mm - g.margin_right_mm) * 72 / 25.4
+            line = int((right - point_x) / g.line_pitch_pt)
+            return Rect(max(0, min(g.dans - 1, dan)),
+                        max(0, min(g.lines_per_dan - 1, line)), 1, 1)
+
+        def press(event):
+            if self.step != 12:
+                return
+            point_x, point_y = (event.x - 150) / 0.72, (event.y - 12) / 0.72
+            result = self.work.compose(page_var.get())
+            drag["part"] = None
+            for placement in reversed(result.placements):
+                if placement.part.kind != "写真":
+                    continue
+                box = to_box(self.work.geometry, placement.rect)
+                if box.x <= point_x <= box.x + box.w and box.y <= point_y <= box.y + box.h:
+                    drag["part"] = placement.index
+                    return
+
+        def release(event):
+            if self.step != 12:
+                return
+            try:
+                target = grid_at(event)
+                if drag["part"] is None:
+                    if not getattr(self, "photo_var", None) or not self.photo_var.get():
+                        raise ValueError("写真の手順で、置く写真を選んでください。")
+                    actual, shifted = self.work.place_photo_near(
+                        page_var.get(), self.photo_var.get(), target,
+                        self.photo_size.get(), self.photo_caption.get())
+                else:
+                    actual, shifted = self.work.move_part_near(page_var.get(), drag["part"], target)
+                if shifted:
+                    status.configure(text=(f"置ける所へ寄せました: {actual.dan + 1}段目・"
+                                           f"右から{actual.line + 1}行目"))
+                draw()
+                result = self.work.compose(page_var.get())
+                if result.overflow_lines:
+                    messagebox.showwarning("本文があふれました",
+                                           f"{result.overflow_lines}行あふれています。\n"
+                                           "写真を小さくする／次のページへ送る／本文を削る、のいずれかで直してください。",
+                                           parent=dialog)
+            except Exception as error:
+                messagebox.showerror("写真を置けません", str(error), parent=dialog)
+            finally:
+                drag["part"] = None
+        paper.bind("<ButtonPress-1>", press)
+        paper.bind("<ButtonRelease-1>", release)
         draw()
 
     def export(self) -> None:

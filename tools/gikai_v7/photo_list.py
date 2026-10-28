@@ -24,6 +24,8 @@ class PhotoRecord:
     position: str
     caption: str
     pixels: Optional[Tuple[int, int]] = None
+    member: str = ""
+    article: str = ""
 
     @property
     def dpi(self) -> Optional[int]:
@@ -53,9 +55,9 @@ def write_photo_list(path: Path, records: List[PhotoRecord],
                      geometry: Optional[Geometry] = None) -> Path:
     """写真配置一覧を横書きの表にして Word へ書き出す。"""
     g = geometry or Geometry()
-    headers = ["頁", "区分", "写真の名前", "元のファイル名", "大きさ",
+    headers = ["頁", "区分", "議員・担当", "記事", "写真の名前", "元のファイル名", "大きさ",
                "幅mm", "高さmm", "紙面の位置", "写真の説明", "解像度"]
-    widths_mm = [7, 18, 24, 24, 10, 10, 10, 20, 28, 29]
+    widths_mm = [7, 14, 16, 20, 20, 20, 8, 9, 9, 16, 20, 21]
     widths = [mm2pt(value) for value in widths_mm]
     pages = []
     chunks = [records[n:n + 12] for n in range(0, len(records), 12)] or [[]]
@@ -63,7 +65,8 @@ def write_photo_list(path: Path, records: List[PhotoRecord],
         rows = [headers]
         for item in chunk:
             rows.append([
-                str(item.page_no), item.section, item.output_name, item.original_name,
+                str(item.page_no), item.section, item.member, item.article,
+                item.output_name, item.original_name,
                 item.size, f"{item.width_mm:.1f}", f"{item.height_mm:.1f}",
                 item.position, item.caption, item.warning or f"{item.dpi}dpi",
             ])
