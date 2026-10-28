@@ -81,8 +81,8 @@ class DocxReadTest(unittest.TestCase):
 
 class TextReadTest(unittest.TestCase):
     def test_normalize_number_rules(self):
-        self.assertEqual(I.normalize_numbers("1人・１２人・781－2194・0889-24-7777"),
-                         "１人・12人・７８１－２１９４・０８８９－２４－７７７７")
+        self.assertEqual(I.normalize_numbers("1人・１２人・781－2194・000-00-0000"),
+                         "１人・12人・７８１－２１９４・０００－００－００００")
         self.assertEqual(I.normalize_numbers("2026年・100人・1,500円・3.5％"),
                          "２０２６年・100人・１，５００円・３．５％")
 
