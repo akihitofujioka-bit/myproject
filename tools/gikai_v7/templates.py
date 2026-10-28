@@ -283,6 +283,45 @@ def vote_result(value) -> str:
     return text[2:] if text.startswith("原案") and len(text) > 2 else text
 
 
+def _vote_table(form: dict, settings: Settings) -> tuple:
+    """賛否表（Word の表）と、行ごとの高さ、見出し行の高さを返す。置く位置はあとで決める。"""
+    members = list(settings.vote_members)
+    # 区分は「条例など」「補正予算」の 4 字が 1 行に入る幅にする
+    widths = [24.0, 72.0] + [max(10.0, 62.0 / len(members))] * len(members) + [22.0]
+    scale = mm2pt(180) / sum(widths)
+    widths = [width * scale for width in widths]
+    # 左上は元の賛否のエクセルと同じく、区分と件名の列をつないだ 1 つのセルに斜めの線を引き、
+    # 右上に「議員名」、左下に「議案・発議案」を入れる。
+    rows = [["", ""] + members + ["議決結果"]]
+    for item in form.get("votes", []) or []:
+        marks = item.get("marks", {})
+        rows.append([str(item.get("kind", "")), str(item.get("title", ""))]
+                    + [str(marks.get(name, "")) for name in members]
+                    + [vote_result(item.get("result", ""))])
+    cell_pts = [[8.0] * len(rows[0])]
+    # 件名は 9pt、区分と議決結果は 10pt にして、件数が多くても 1 ページに収まりやすくする。
+    cell_pts.extend([[10.0, 9.0] + [8.0] * len(members) + [10.0] for _row in rows[1:]])
+    # 見出し行の議員名は縦書き。いちばん長い名前が入る高さにする。
+    longest = max(len(name) for name in members)
+    header_pt = longest * 8.0 * 1.15 + 6.0
+    vertical = {(0, 2 + index) for index in range(len(members))}
+    # 長い件名は列の幅で改行を入れ、その行数に合わせて行を高くする（Word と紙面の見本で同じ高さ）。
+    heights = [header_pt]
+    for row in rows[1:]:
+        line_counts = []
+        for column, pt in ((0, 10.0), (1, 9.0), (len(row) - 1, 10.0)):
+            units = max(1, int((widths[column] - 4) / pt))
+            # 入っている改行（エクセルのセル内の改行や、画面で入れた改行）はそのまま生かす
+            lines = _fit_lines(str(row[column]), units)
+            row[column] = "\n".join(lines)
+            line_counts.append(len(lines))
+        heights.append(max(15.0, max(line_counts) * 9.0 * 1.4 + 4))
+    table = dx.Table(_box(15, 200, 180, 80), widths, rows, 8.0, dx.GOTHIC, True, "賛否表",
+                     cell_pts, vertical, heights, {(0, 0): 2}, None,
+                     {(0, 0): ("議員名", "議　案・発議案")})
+    return table, heights, header_pt
+
+
 def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) -> compose.PageResult:
     page, warnings, placements = dx.Page(), [], []
     meeting = form.get("meeting") or meeting_name(issue)
@@ -303,15 +342,48 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
     _htext(page, _box(15, 54, 180, 14), "　" + summary if summary else "", 12, border=True,
            name="まとめ文", warnings=warnings)
 
+    # 賛否表を先に組み、ページのいちばん下に寄せる。その上に残った段をすべて審議の本文（議案と質疑）に使う。
+    title = f"第{str({3: 1, 6: 2, 9: 3, 12: 4}.get(layout.TEIREIKAI.get(issue.month), 0)).translate(layout.ZEN)}回定例会議案・発議案と賛否"
+    page_bottom = g.page_h_mm - g.margin_bottom_mm
+    summary_bottom = 70.0
+    table_overflow = 0
+    table = None
+    if settings.vote_members:
+        table, heights, header_pt = _vote_table(form, settings)
+        table_h = (sum(heights) + 2) * 25.4 / 72
+    else:
+        table_h = 45.0
+    # 表の見出し（13mm）を含めて、本文の 1 段ぶんは必ず残す
+    lowest_top = to_box(g, Rect(1, 0, 1, 1))
+    lowest_top = (lowest_top.y + lowest_top.h) * 25.4 / 72 + 2 + 13
+    table_top = max(lowest_top, page_bottom - table_h)
+    top = table_top - 13.0
+    if table is not None:
+        table.box = _box(15, table_top, 180, page_bottom - table_top)
+        room = mm2pt(page_bottom - table_top) - header_pt
+        fit_rows = 0
+        for height in heights[1:]:
+            if room < height:
+                break
+            room -= height
+            fit_rows += 1
+        table_overflow = max(0, len(heights) - 1 - fit_rows)
+        if table_overflow:
+            warnings.append(f"賛否表が{table_overflow}行（{table_overflow}件ぶん）ページに入りません。件名を短くするか、行を減らしてください。")
+
+    dans = [d for d in range(1, g.dans)
+            if (to_box(g, Rect(d, 0, 1, 1)).y + to_box(g, Rect(d, 0, 1, 1)).h) * 25.4 / 72 <= top - 2]
     used = 0
-    capacity = g.lines_per_dan * 2
+    capacity = g.lines_per_dan * len(dans)
     for index, part in enumerate(_body_parts(form.get("body", ""))):
+        # 見出しは場所を取りすぎないよう本文に近い大きさにする。区分の囲みだけ 12pt で 2 行分、
+        # 「◎件名」と「質疑」は本文と同じ 11pt の太字で、必要な行数だけ使う。
+        boxed = part.kind == "中見出し" and part.reason == "【区分】の印"
         heading = part.kind in ("中見出し", "議案")
-        pt = 14.0 if heading else 11.0
+        pt = 12.0 if boxed else 11.0
         chars = max(1, int(g.dan_h_pt / pt))
         lines = split_lines(part.text, chars, indent=part.kind in ("本文", "答弁"))
-        span = (max(2, math.ceil(len(lines) * dx.effective_pitch(pt, g.line_pitch_pt)
-                                 / g.line_pitch_pt)) if heading else len(lines))
+        span = max(2, len(lines) + 1) if boxed else len(lines)
         if heading:
             remaining = g.lines_per_dan - used % g.lines_per_dan
             if span > remaining:
@@ -321,78 +393,26 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
             continue
         take_span = span if heading else min(span, capacity - used)
         take = min(len(lines), take_span)
-        dan, line = 1 + used // g.lines_per_dan, used % g.lines_per_dan
+        dan, line = dans[used // g.lines_per_dan], used % g.lines_per_dan
         rect = Rect(dan, line, 1, take_span)
-        font = dx.GOTHIC
-        page.items.append(dx.TextBox(to_box(g, rect), lines[:take], font, pt, g.line_pitch_pt,
-                                     part.kind == "中見出し" and part.reason == "【区分】の印",
-                                     heading, part.kind))
+        page.items.append(dx.TextBox(to_box(g, rect), lines[:take], dx.GOTHIC, pt, g.line_pitch_pt,
+                                     boxed, boxed, part.kind, True, "左", heading and not boxed))
         placements.append(compose.Placement(part, rect, index))
         used += span
     overflow = max(0, used - capacity)
 
-    title = f"第{str({3: 1, 6: 2, 9: 3, 12: 4}.get(layout.TEIREIKAI.get(issue.month), 0)).translate(layout.ZEN)}回定例会議案・発議案と賛否"
-    # 表の見出しは、審議本文の 3 段目の下端より下へ置く（重なると見出しが読めない）。
-    body_bottom = to_box(g, Rect(2, 0, 1, 1))
-    top = (body_bottom.y + body_bottom.h) * 25.4 / 72 + 2.0
-    table_top = top + 13.0
-    table_h = g.page_h_mm - g.margin_bottom_mm - table_top
     _htext(page, _box(15, top, 180, 7), title, 11, font=dx.GOTHIC,
            align="中央", name="賛否表見出し", warnings=warnings)
     _htext(page, _box(15, top + 7, 180, 5), "○：賛成　　●：反対", 8,
            align="右", name="賛否凡例", warnings=warnings)
-    table_overflow = 0
-    if not settings.vote_members:
+    if table is None:
         _htext(page, _box(15, table_top, 180, 45), "設定で議員名簿を入れてください", 12,
                align="中央", border=True, name="賛否表", warnings=warnings)
     else:
-        members = list(settings.vote_members)
-        # 区分は「条例など」「補正予算」の 4 字が 1 行に入る幅にする
-        widths = [24.0, 72.0] + [max(10.0, 62.0 / len(members))] * len(members) + [22.0]
-        scale = mm2pt(180) / sum(widths)
-        widths = [width * scale for width in widths]
-        # 左上は元の賛否のエクセルと同じく、区分と件名の列をつないだ 1 つのセルに斜めの線を引き、
-        # 右上に「議員名」、左下に「議案・発議案」を入れる。
-        rows = [["", ""] + members + ["議決結果"]]
-        for item in form.get("votes", []) or []:
-            marks = item.get("marks", {})
-            rows.append([str(item.get("kind", "")), str(item.get("title", ""))]
-                        + [str(marks.get(name, "")) for name in members]
-                        + [vote_result(item.get("result", ""))])
-        cell_pts = [[8.0] * len(rows[0])]
-        # 件名は 9pt、区分と議決結果は 10pt にして、議案が多くても 1 ページに収まりやすくする。
-        cell_pts.extend([[10.0, 9.0] + [8.0] * len(members) + [10.0]
-                         for _row in rows[1:]])
-        # 見出し行の議員名は縦書き。いちばん長い名前が入る高さにする。
-        longest = max(len(name) for name in members)
-        header_pt = longest * 8.0 * 1.15 + 6.0
-        vertical = {(0, 2 + index) for index in range(len(members))}
-        # 長い件名は列の幅で改行を入れ、その行数に合わせて行を高くする（Word と紙面の見本で同じ高さ）。
-        heights = [header_pt]
-        for row in rows[1:]:
-            line_counts = []
-            for column, pt in ((0, 10.0), (1, 9.0), (len(row) - 1, 10.0)):
-                units = max(1, int((widths[column] - 4) / pt))
-                # 入っている改行（エクセルのセル内の改行や、画面で入れた改行）はそのまま生かす
-                lines = _fit_lines(str(row[column]), units)
-                row[column] = "\n".join(lines)
-                line_counts.append(len(lines))
-            heights.append(max(15.0, max(line_counts) * 9.0 * 1.4 + 4))
-        page.items.append(dx.Table(_box(15, table_top, 180, table_h), widths, rows, 8.0,
-                                   dx.GOTHIC, True, "賛否表", cell_pts, vertical, heights,
-                                   {(0, 0): 2}, None, {(0, 0): ("議員名", "議　案・発議案")}))
-        room = mm2pt(table_h) - header_pt
-        fit_rows = 0
-        for height in heights[1:]:
-            if room < height:
-                break
-            room -= height
-            fit_rows += 1
-        table_overflow = max(0, len(rows) - 1 - fit_rows)
-        if table_overflow:
-            warnings.append(f"賛否表が{table_overflow}行（議案{table_overflow}件ぶん）ページに入りません。件名を短くするか、行を減らしてください。")
+        page.items.append(table)
     if overflow:
-        warnings.append(f"審議本文が{overflow}行あふれています。本文を短くするか、表現をまとめてください。")
+        warnings.append(f"審議の本文（案件の説明・質疑）が{overflow}行（約{overflow * g.chars_per_line}字）入りません。"
+                        "説明や質疑を短くしてください。")
     overflow += table_overflow
     warnings.extend(dx.page_textbox_warnings(page))
     return compose.PageResult(page, overflow, max(0, capacity - used), warnings, placements)

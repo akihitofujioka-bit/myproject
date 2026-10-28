@@ -39,8 +39,11 @@ class AppStartTest(unittest.TestCase):
         app_module = _load_app()
         saved_argv = sys.argv
         sys.argv = ["app.pyw"]
-        resume = app_module.RESUME_PATH
-        before = resume.read_bytes() if resume.exists() else None
+        # 手元に残った「前回の続き」に左右されないよう、テストの間は空の一時ファイルを使う
+        import tempfile
+        temp = tempfile.TemporaryDirectory()
+        resume = app_module.RESUME_PATH = Path(temp.name) / "前回の続き.json"
+        before = None
         try:
             app = app_module.App(self.root)
             for number in range(len(app_module.guide.STEPS)):
@@ -48,11 +51,7 @@ class AppStartTest(unittest.TestCase):
                 self.root.update_idletasks()
         finally:
             sys.argv = saved_argv
-            if before is None:
-                if resume.exists():
-                    resume.unlink()
-            else:
-                resume.write_bytes(before)
+            temp.cleanup()
 
 
 if __name__ == "__main__":

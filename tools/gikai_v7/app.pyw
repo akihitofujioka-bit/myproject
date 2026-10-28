@@ -60,7 +60,11 @@ class App:
         """前に閉じたときの号と手順を開く。号フォルダが無くなっていれば最初の画面にする。"""
         last = _read_resume()
         folder = Path(last.get("folder", "")) if last.get("folder") else None
-        if not folder or not (folder / "号情報.json").is_file():
+        try:
+            found = bool(folder) and (folder / "号情報.json").is_file()
+        except OSError:   # 前の号のフォルダが読めない（消えた・権限が無い・ネットワークが切れた）
+            found = False
+        if not found:
             self.show(0)
             if folder:
                 self.fit_label.configure(text="前回の号のフォルダが見つかりません: " + str(folder))
@@ -600,18 +604,28 @@ class App:
         self._entry("会期", value.get("period", ""), lambda v: value.__setitem__("period", v))
         counts = value.setdefault("counts", [])
         if counts:
-            ttk.Label(self.inner, text="議案の種類と件数（取り込んだExcelから自動）: " +
+            ttk.Label(self.inner, text="案件の種類と件数（取り込んだExcelから自動）: " +
                       "、".join(f"{v.get('kind') or '区分なし'} {v.get('count')}件" for v in counts),
                       wraplength=900).pack(anchor="w", pady=5)
         else:
             ttk.Label(self.inner, text="先に議案と賛否のエクセルを取り込むと自動で入ります。",
                       foreground="#955").pack(anchor="w", pady=5)
+        # 審議ページに入りきらない行数を、その場で知らせる（1 ページに収める決まり）
+        page = next((p for p in self.work.pages if p["section"] == layout.SHINGI), None)
+        if page is not None:
+            result = self.work.compose(page["no"])
+            lost = [w for w in result.warnings if "入りません" in w]
+            ttk.Label(self.inner, text=("・" + "\n・".join(lost)) if lost else
+                      "審議の本文と賛否表は、審議ページ（1ページ）に入っています。",
+                      foreground="#a33" if lost else "#363", wraplength=900,
+                      justify="left").pack(anchor="w", pady=4)
         vote_titles = [v.get("title", "") for v in self.data.get("votes", []) if v.get("title")]
-        self._list_editor("議案", value.setdefault("bills", []),
-                          [("kind", "区分", False), ("title", "議案名", False,
+        # 審議するのは議案だけではない（発議案・請願・陳情・報告・認定・同意なども入る）
+        self._list_editor("審議した案件（議案・発議案・請願・陳情・報告など）", value.setdefault("bills", []),
+                          [("kind", "区分（例 条例・補正予算・請願）", False), ("title", "件名", False,
                             vote_titles, True), ("description", "説明", True),
                            ("qa_bulk", "質疑（問・答で開始）", True)],
-                          lambda v: v.get("title") or "（議案名なし）")
+                          lambda v: v.get("title") or "（件名なし）")
 
     def _step_8(self):
         self._title("委員会報告")

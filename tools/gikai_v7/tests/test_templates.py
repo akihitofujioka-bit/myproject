@@ -90,7 +90,10 @@ class TemplateTest(unittest.TestCase):
         headings = [placement for placement in result.placements
                     if placement.part.kind in ("中見出し", "議案")]
         self.assertTrue(headings)
-        self.assertTrue(all(placement.rect.line_span >= 2 for placement in headings))
+        # 区分の囲みは 2 行分、「◎件名」「質疑」は場所を取りすぎないよう必要な行数だけ
+        boxed = [p for p in headings if p.part.reason == "【区分】の印"]
+        self.assertTrue(boxed and all(p.rect.line_span >= 2 for p in boxed))
+        self.assertTrue(all(p.rect.line_span >= 1 for p in headings))
         boxes = [item for item in result.page.items if isinstance(item, dx.TextBox)
                  and item.name in ("中見出し", "議案")]
         self.assertEqual([item.border for item in boxes], [True, False, False])
