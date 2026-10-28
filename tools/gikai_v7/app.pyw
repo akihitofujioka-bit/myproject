@@ -21,6 +21,8 @@ import docx_out as dx
 from grid import TATECHUYOKO, Rect, to_box, unit_width, units
 
 
+INPUT_PT = 12      # 記入欄の字の大きさ
+
 COLORS = {"大見出し": "#ffd783", "中見出し": "#ffe9af", "質問": "#bfdefd",
           "答弁": "#c9e8c9", "本文": "#eeeeee", "議案": "#dccbf3",
           "写真": "#9bd8ea", "写真説明": "#d4edf2"}
@@ -203,7 +205,7 @@ class App:
         row.pack(fill="x", pady=3)
         ttk.Label(row, text=label, width=20).pack(side="left")
         var = tk.StringVar(value=str(value or ""))
-        ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True)
+        ttk.Entry(row, textvariable=var, font=(self.font, INPUT_PT)).pack(side="left", fill="x", expand=True, ipady=2)
         self.getters.append(lambda v=var, s=setter: s(v.get().strip()))
 
     def _month_choice(self, value: dict) -> None:
@@ -238,16 +240,22 @@ class App:
         row = ttk.Frame(self.inner)
         row.pack(fill="both", expand=True, pady=3)
         ttk.Label(row, text=label, width=20).pack(side="left", anchor="n")
-        widget = tk.Text(row, height=height, wrap="word", font=(self.font, 11), undo=True)
+        # 書きやすいよう、指定の約 1.6 倍（最低 6 行）の高さにし、スクロールバーを付ける
+        widget = tk.Text(row, height=max(6, int(height * 1.6)), wrap="word",
+                         font=(self.font, INPUT_PT), undo=True, padx=6, pady=4,
+                         relief="solid", borderwidth=1, highlightthickness=1)
         widget.insert("1.0", str(value or ""))
+        bar = ttk.Scrollbar(row, orient="vertical", command=widget.yview)
+        widget.configure(yscrollcommand=bar.set)
+        bar.pack(side="right", fill="y")
         widget.pack(side="left", fill="both", expand=True)
         self.getters.append(lambda w=widget, s=setter: s(w.get("1.0", "end-1c").strip()))
 
     def _list_editor(self, label, values, fields, summary, max_items=None) -> None:
         box = ttk.LabelFrame(self.inner, text=label, padding=7)
         box.pack(fill="both", expand=True, pady=5)
-        listing = tk.Listbox(box, height=min(8, max(3, len(values) + 1)),
-                             font=(self.font, 11), exportselection=False)
+        listing = tk.Listbox(box, height=min(12, max(4, len(values) + 1)),
+                             font=(self.font, INPUT_PT), exportselection=False)
         listing.pack(side="left", fill="both", expand=True)
         controls = ttk.Frame(box)
         controls.pack(side="left", fill="y", padx=(7, 0))
@@ -269,26 +277,41 @@ class App:
             value = {field[0]: "" for field in fields} if new else values[selected[0]]
             dialog = tk.Toplevel(self.root)
             dialog.title("項目を入力")
-            dialog.geometry("720x560")
+            # 画面の高さいっぱいに広げ、複数行の欄が残りの高さを分け合う（本文・問・答が書きやすいように）
+            width = min(self.root.winfo_screenwidth() - 60, 1000)
+            height = max(560, self.root.winfo_screenheight() - 100)
+            dialog.geometry(f"{width}x{height}+20+10")
             dialog.transient(self.root)
-            body = ttk.Frame(dialog, padding=12)
+            # 「この内容にする」ボタンは窓の下に固定して、欄が多くても隠れないようにする
+            footer = ttk.Frame(dialog, padding=(12, 6))
+            footer.pack(side="bottom", fill="x")
+            body = ttk.Frame(dialog, padding=(12, 12, 12, 0))
             body.pack(fill="both", expand=True)
             widgets = {}
             for field in fields:
                 key, title, multiline = field[:3]
                 choices = field[3] if len(field) > 3 else None
-                ttk.Label(body, text=title).pack(anchor="w", pady=(4, 1))
+                ttk.Label(body, text=title, font=(self.font, INPUT_PT)).pack(anchor="w", pady=(6, 2))
                 if multiline:
-                    widget = tk.Text(body, height=5, wrap="word", font=(self.font, 11))
+                    frame = ttk.Frame(body)
+                    frame.pack(fill="both", expand=True)
+                    widget = tk.Text(frame, height=4, wrap="word", font=(self.font, INPUT_PT),
+                                     undo=True, padx=6, pady=4,
+                         relief="solid", borderwidth=1, highlightthickness=1)
                     widget.insert("1.0", str(value.get(key, "")))
+                    bar = ttk.Scrollbar(frame, orient="vertical", command=widget.yview)
+                    widget.configure(yscrollcommand=bar.set)
+                    bar.pack(side="right", fill="y")
+                    widget.pack(side="left", fill="both", expand=True)
                 elif choices:
-                    widget = ttk.Combobox(body, values=choices,
+                    widget = ttk.Combobox(body, values=choices, font=(self.font, INPUT_PT),
                                           state="normal" if len(field) > 4 and field[4] else "readonly")
                     widget.set(str(value.get(key, "")))
+                    widget.pack(fill="x")
                 else:
-                    widget = ttk.Entry(body)
+                    widget = ttk.Entry(body, font=(self.font, INPUT_PT))
                     widget.insert(0, str(value.get(key, "")))
-                widget.pack(fill="x")
+                    widget.pack(fill="x", ipady=2)
                 widgets[key] = (widget, multiline)
 
             def accept():
@@ -298,7 +321,11 @@ class App:
                     values.append(value)
                 refresh(len(values) - 1 if new else selected[0])
                 dialog.destroy()
-            ttk.Button(body, text="この内容にする", command=accept).pack(anchor="e", pady=8)
+            ttk.Button(footer, text="この内容にする", command=accept).pack(side="right")
+            ttk.Button(footer, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
+            first = next(iter(widgets.values()), None)
+            if first:
+                first[0].focus_set()
             dialog.grab_set()
 
         def remove():
@@ -315,6 +342,7 @@ class App:
             if 0 <= new < len(values):
                 values[old], values[new] = values[new], values[old]
                 refresh(new)
+        listing.bind("<Double-Button-1>", lambda _e: edit())   # 行をダブルクリックしても編集
         for text, command in (("＋追加", lambda: edit(True)), ("編集", edit), ("削除", remove),
                               ("上へ", lambda: move(-1)), ("下へ", lambda: move(1))):
             ttk.Button(controls, text=text, command=command).pack(fill="x", pady=2)
@@ -810,7 +838,7 @@ class App:
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="問と答の分け方が正しいか、原稿と見比べてください。",
                   foreground="#933").pack(anchor="w")
-        preview = tk.Text(body, wrap="word", font=(self.font, 11))
+        preview = tk.Text(body, wrap="word", font=(self.font, INPUT_PT))
         preview.insert("1.0", parsed.get("cleaned") or parsed.get("text") or original)
         preview.configure(state="disabled")
         preview.pack(fill="both", expand=True, pady=6)
@@ -859,7 +887,7 @@ class App:
         body = ttk.Frame(dialog, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="見出し、問、答を含む原稿を貼ってください。").pack(anchor="w")
-        widget = tk.Text(body, wrap="word", font=(self.font, 11), undo=True)
+        widget = tk.Text(body, wrap="word", font=(self.font, INPUT_PT), undo=True)
         widget.pack(fill="both", expand=True, pady=6)
 
         def preview():
@@ -881,7 +909,7 @@ class App:
         body = ttk.Frame(dialog, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="メール本文をそのまま貼ってください。候補は勝手に消しません。").pack(anchor="w")
-        widget = tk.Text(body, wrap="word", font=(self.font, 11), undo=True)
+        widget = tk.Text(body, wrap="word", font=(self.font, INPUT_PT), undo=True)
         widget.pack(fill="both", expand=True, pady=6)
 
         def next_step():
@@ -900,7 +928,7 @@ class App:
                 flags.append((var, candidate["line"]))
                 ttk.Checkbutton(frame, variable=var,
                                 text=f"{candidate['line']}行目 {candidate['reason']}: {candidate['text'][:70]}").pack(anchor="w")
-            preview = tk.Text(frame, height=18, wrap="word", font=(self.font, 11))
+            preview = tk.Text(frame, height=18, wrap="word", font=(self.font, INPUT_PT))
             preview.pack(fill="both", expand=True, pady=6)
 
             def refresh():
@@ -988,7 +1016,7 @@ class App:
                          "紙面には「写真」の手順で置いてください。")
         notes.extend(parsed["warnings"])
         ttk.Label(body, text="\n".join(notes), wraplength=720, justify="left").pack(anchor="w")
-        view = tk.Text(body, wrap="word", font=(self.font, 11))
+        view = tk.Text(body, wrap="word", font=(self.font, INPUT_PT))
         for article in articles:
             view.insert("end", "■ " + (article["heading"] or "（見出しなし）") + "\n")
             view.insert("end", article["body"] + "\n\n")
