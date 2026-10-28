@@ -1,0 +1,9 @@
+設定.json
+試し出力/
+__pycache__/
+*.pyc
+結果.md
+依頼文.md
+codex*.log
+追加依頼*.md
+結果*.md
