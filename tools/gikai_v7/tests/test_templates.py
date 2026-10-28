@@ -165,6 +165,21 @@ class TemplateTest(unittest.TestCase):
         body = to_box(self.g, Rect(2, 0, 1, 1))
         self.assertGreaterEqual(title.box.y, body.y + body.h)
 
+    def test_vote_table_has_diagonal_header_and_borders(self):
+        import zipfile
+        form = dict(samples.sample_forms().get(layout.SHINGI, {}))
+        form["votes"] = [{"kind": "認定", "title": "架空の決算", "result": "可決",
+                          "marks": {name: "○" for name in self.settings.members}}]
+        result = templates.build(layout.SHINGI, form, self.issue, self.plan, self.settings, self.g)
+        table = next(x for x in result.page.items if isinstance(x, dx.Table))
+        self.assertEqual(table.diagonal_cells, {(0, 0): ("議員名", "議　案・発議案")})
+        self.assertEqual(table.col_spans, {(0, 0): 2})
+        with tempfile.TemporaryDirectory() as folder:
+            path = dx.write_docx(Path(folder) / "賛否.docx", self.g, [result.page])
+            xml = zipfile.ZipFile(path).read("word/document.xml").decode("utf-8")
+        self.assertIn("<w:tl2br", xml)
+        self.assertNotIn("<w:tblBorders></w:tblBorders>", xml)   # 表の罫線が消えていない
+
     def test_all_template_text_fits_its_frame(self):
         forms = samples.sample_forms()
         for section in templates.FORM_SECTIONS:

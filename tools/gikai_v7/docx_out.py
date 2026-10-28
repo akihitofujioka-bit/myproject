@@ -93,6 +93,7 @@ class Table:
     row_heights: object = None          # 行ごとの最低の高さ(pt)。None の行は Word に任せる
     col_spans: object = None            # {(行, 列): 列数} 右の列とつなぐセル
     v_merge: object = None              # {(行, 列): "restart" か "continue"} 下の行とつなぐセル
+    diagonal_cells: object = None       # {(行, 列): (右上の字, 左下の字)} 左上から右下へ斜めの線を引くセル
 
 
 @dataclass
@@ -240,6 +241,7 @@ def _table_xml(table: Table) -> str:
             width = sum(widths[index:index + span])
             merge = merges.get((row_index, index))
             value = "" if merge == "continue" else (values[index] if index < len(values) else "")
+            diagonal = (table.diagonal_cells or {}).get((row_index, index))
             pt = table.pt
             if table.cell_pts and row_index < len(table.cell_pts) and index < len(table.cell_pts[row_index]):
                 pt = table.cell_pts[row_index][index]
@@ -252,11 +254,24 @@ def _table_xml(table: Table) -> str:
                         for part in str(value).split("\n")) + '</w:p>')
             vertical = bool(table.vertical_cells) and (row_index, index) in table.vertical_cells
             direction = '<w:textDirection w:val="tbRlV"/>' if vertical else ""
+            if diagonal:
+                # 右上に 1 つ目、左下に 2 つ目の字。あいだは空の段落で下へ送る（行の高さに合わせる）。
+                height_pt = (table.row_heights or [None] * (row_index + 1))[row_index] or pt * 3
+                gap = max(0, int(height_pt / (pt * 1.4)) - 2)
+                def side(text, jc):
+                    return ('<w:p><w:pPr><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/>'
+                            '<w:snapToGrid w:val="0"/><w:spacing w:before="0" w:after="0"/>'
+                            f'<w:jc w:val="{jc}"/></w:pPr><w:r>{rpr}<w:t xml:space="preserve">{escape(text)}</w:t></w:r></w:p>')
+                para = side(diagonal[0], "right") + side("", "left") * gap + side(diagonal[1], "left")
             grid_span = f'<w:gridSpan w:val="{span}"/>' if span > 1 else ""
             v_merge = ('<w:vMerge w:val="restart"/>' if merge == "restart"
                        else '<w:vMerge/>' if merge == "continue" else "")
+            # 表全体の罫線（borders）とは別の名前にする（同じ名前で上書きすると表の罫線が消える）
+            cell_borders = ('<w:tcBorders><w:tl2br w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tcBorders>'
+                            if diagonal else "")
+            align = "top" if diagonal else "center"
             cells.append(f'<w:tc><w:tcPr><w:tcW w:w="{twip(width)}" w:type="dxa"/>'
-                         f'{grid_span}{v_merge}{direction}<w:vAlign w:val="center"/></w:tcPr>{para}</w:tc>')
+                         f'{grid_span}{v_merge}{cell_borders}{direction}<w:vAlign w:val="{align}"/></w:tcPr>{para}</w:tc>')
         height = None
         if table.row_heights and row_index < len(table.row_heights):
             height = table.row_heights[row_index]

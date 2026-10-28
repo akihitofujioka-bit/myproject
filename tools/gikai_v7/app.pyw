@@ -1382,6 +1382,14 @@ def _draw_table(canvas, table, x, y, scale, family) -> None:
                     height += heights[below]
                     below += 1
             canvas.create_rectangle(left, top, left + width, top + height, outline="#444")
+            diagonal = (table.diagonal_cells or {}).get((row_index, column))
+            if diagonal:
+                canvas.create_line(left, top, left + width, top + height, fill="#444")
+                small = (family, -max(4, round(table.pt * scale)))
+                canvas.create_text(left + width - 3, top + 2, text=diagonal[0], font=small, anchor="ne")
+                canvas.create_text(left + 3, top + height - 2, text=diagonal[1], font=small, anchor="sw")
+                left += width
+                continue
             value = row[column] if column < len(row) else ""
             pt = table.pt
             if table.cell_pts and row_index < len(table.cell_pts) and column < len(table.cell_pts[row_index]):

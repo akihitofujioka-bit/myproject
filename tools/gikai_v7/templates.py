@@ -347,10 +347,13 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
                align="中央", border=True, name="賛否表", warnings=warnings)
     else:
         members = list(settings.vote_members)
-        widths = [18.0, 75.0] + [max(10.0, 65.0 / len(members))] * len(members) + [22.0]
+        # 区分は「条例など」「補正予算」の 4 字が 1 行に入る幅にする
+        widths = [24.0, 72.0] + [max(10.0, 62.0 / len(members))] * len(members) + [22.0]
         scale = mm2pt(180) / sum(widths)
         widths = [width * scale for width in widths]
-        rows = [["区分", "議案・発議案"] + members + ["議決結果"]]
+        # 左上は元の賛否のエクセルと同じく、区分と件名の列をつないだ 1 つのセルに斜めの線を引き、
+        # 右上に「議員名」、左下に「議案・発議案」を入れる。
+        rows = [["", ""] + members + ["議決結果"]]
         for item in form.get("votes", []) or []:
             marks = item.get("marks", {})
             rows.append([str(item.get("kind", "")), str(item.get("title", ""))]
@@ -375,7 +378,8 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
                 line_counts.append(len(lines))
             heights.append(max(15.0, max(line_counts) * 9.0 * 1.4 + 4))
         page.items.append(dx.Table(_box(15, table_top, 180, table_h), widths, rows, 8.0,
-                                   dx.GOTHIC, True, "賛否表", cell_pts, vertical, heights))
+                                   dx.GOTHIC, True, "賛否表", cell_pts, vertical, heights,
+                                   {(0, 0): 2}, None, {(0, 0): ("議員名", "議　案・発議案")}))
         room = mm2pt(table_h) - header_pt
         fit_rows = 0
         for height in heights[1:]:
