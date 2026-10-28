@@ -1226,9 +1226,22 @@ class App:
             _draw_items(paper, result.page.items, scale, ox, oy, self.font)
             status.configure(text=(f"{number}ページ　あふれ {result.overflow_lines}行"
                                    f"（約{result.overflow_lines * 12}字）／余り {result.free_lines}行"))
-        ttk.Combobox(top, textvariable=page_var, values=[p["no"] for p in self.work.pages],
-                     state="readonly", width=8).pack(side="left")
-        ttk.Button(top, text="表示", command=draw).pack(side="left", padx=5)
+        last_page = len(self.work.pages)
+
+        def turn(delta: int) -> None:
+            """前のページ・次のページへ。最初と最後では止まる。"""
+            page_var.set(max(1, min(last_page, page_var.get() + delta)))
+            draw()
+            paper.yview_moveto(0)
+        ttk.Button(top, text="◀ 前のページ", command=lambda: turn(-1)).pack(side="left", padx=(0, 4))
+        chooser = ttk.Combobox(top, textvariable=page_var, values=[p["no"] for p in self.work.pages],
+                               state="readonly", width=5)
+        chooser.pack(side="left")
+        chooser.bind("<<ComboboxSelected>>", lambda _e: (draw(), paper.yview_moveto(0)))
+        ttk.Button(top, text="次のページ ▶", command=lambda: turn(1)).pack(side="left", padx=4)
+        # キーボードの ← → と PageUp・PageDown でもページを送る
+        for key, delta in (("<Left>", -1), ("<Right>", 1), ("<Prior>", -1), ("<Next>", 1)):
+            dialog.bind(key, lambda _e, d=delta: turn(d))
         ttk.Button(top, text="元に戻す", command=lambda: (self.work.undo(), draw())).pack(side="left")
         ttk.Button(top, text="やり直す", command=lambda: (self.work.redo(), draw())).pack(side="left", padx=4)
 
