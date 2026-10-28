@@ -152,6 +152,11 @@ class App:
             mark = "✓ " if guide.STEPS[index] in completed else ""
             button.configure(text=f"{mark}{index + 1}. {guide.STEPS[index]}",
                              style="Now.TButton" if index == self.step else "TButton")
+        if self.step > 0 and not self.work:
+            # 号を開く前は入力欄を出さない（号の情報が無いと作れない欄がある）。
+            ttk.Label(self.inner, text="最初の「1. はじめに」で、新しい号を作るか、続きを開いてください。",
+                      font=(self.font, 12)).pack(anchor="w", pady=20)
+            return
         getattr(self, "_step_" + str(self.step), self._not_ready)()
         self._remember()
         self.canvas.yview_moveto(0)
