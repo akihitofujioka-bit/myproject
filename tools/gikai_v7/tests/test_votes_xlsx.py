@@ -213,3 +213,36 @@ class TwoRowHeaderTest(unittest.TestCase):
             path = _two_row_header_xlsx(Path(folder) / "賛否_架空.xlsx")
             votes, _counts, warnings = votes_xlsx.read_votes(path, ["別人 一郎"], "")
         self.assertTrue(warnings and warnings[0].startswith("議案を1件も読めませんでした") or votes)
+
+
+def _tall_header_xlsx(path):
+    """第204号と同じ形の架空のエクセル: 見出しが 3〜7 行目、件名の見出しは B 列で文字は D 列、区分は見出しなしの A 列。"""
+    import zipfile as z
+    ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    def c(ref, text):
+        return f'<c r="{ref}" t="inlineStr"><is><t xml:space="preserve">{text}</t></is></c>'
+    rows = (f'<row r="1">{c("A1", "第３回定例会議案・発議案と賛否")}</row>'
+            f'<row r="3">{c("O3", "見本太郎")}{c("P3", "見本花子")}{c("Q3", "見本次郎")}{c("R3", "議決結果")}</row>'
+            f'<row r="4">{c("J4", "議員名")}</row>'
+            f'<row r="6">{c("B6", "議案・発議案")}</row>'
+            f'<row r="8">{c("A8", "議案")}{c("D8", "議案第１号&#10;架空の条例")}{c("O8", "〇")}{c("P8", "●")}{c("Q8", "議長")}{c("R8", "可決")}</row>'
+            f'<row r="9">{c("A9", "発議案")}{c("D9", "発議第１号　架空の意見書")}{c("O9", "〇")}{c("P9", "〇")}{c("Q9", "議長")}{c("R9", "可決")}</row>')
+    with z.ZipFile(path, "w") as package:
+        package.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+        package.writestr("xl/workbook.xml", f'<workbook {ns} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        package.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+        package.writestr("xl/worksheets/sheet1.xml", f'<worksheet {ns}><sheetData>{rows}</sheetData></worksheet>')
+    return path
+
+
+class TallHeaderTest(unittest.TestCase):
+    def test_reference_shape_is_read_without_warnings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = _tall_header_xlsx(Path(folder) / "賛否_架空.xlsx")
+            votes, counts, warnings = votes_xlsx.read_votes(
+                path, ["見本 太郎", "見本 花子", "見本 次郎"], "見本 次郎")
+        self.assertEqual(warnings, [])
+        self.assertEqual([v["kind"] for v in votes], ["議案", "発議案"])
+        self.assertEqual(votes[0]["title"], "議案第１号\n架空の条例")
+        self.assertEqual(votes[0]["marks"], {"見本 太郎": "○", "見本 花子": "●", "見本 次郎": "議長"})
+        self.assertEqual(counts, [{"kind": "議案", "count": 1}, {"kind": "発議案", "count": 1}])

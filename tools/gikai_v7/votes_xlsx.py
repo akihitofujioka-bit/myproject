@@ -94,24 +94,17 @@ def _find_header(rows, names, chair: str = "") -> tuple:
     for column, value in rows[best].items():
         if _plain(value):
             header[column] = meaning(value) or str(value).strip()
-    last = best
-    # 上の段（2 段まで）と下の段（1 段）から、まだ意味の分からない列の見出しを拾う
-    for index in (best - 1, best - 2, best + 1):
-        if not 0 <= index < len(rows):
-            continue
-        found = {column: meaning(value) for column, value in rows[index].items() if meaning(value)}
-        marks = {"○", "●"} | set(MARK_WORDS)   # 「議長」「欠席」は見出しにもなるので含めない
-        # ○・● などの印が入っている行はデータの行なので、見出しにしない
-        is_header_row = (found and all(len(_plain(v)) <= 15 for v in rows[index].values())
-                         and not any(_plain(v) in marks for v in rows[index].values()))
-        if not is_header_row:
-            continue
-        for column, key in found.items():
-            if header.get(column) not in (HEADERS + tuple(names)):
+    # 議案の行は、○・● などの印が最初に出てくる行から。それより上（見出しの行から下）は
+    # 見出しの続き（セルを縦につないだ見出しなど）として読む。
+    marks = {"○", "●"} | set(MARK_WORDS)   # 「議長」「欠席」は見出しにもなるので含めない
+    start = next((index for index in range(best + 1, len(rows))
+                  if any(_plain(v) in marks for v in rows[index].values())), best + 1)
+    for index in list(range(max(0, best - 2), best)) + list(range(best + 1, start)):
+        for column, value in rows[index].items():
+            key = meaning(value)
+            if key and header.get(column) not in (HEADERS + tuple(names)):
                 header[column] = key
-        if index > last:
-            last = index
-    return last, header
+    return start - 1, header
 
 
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -307,18 +300,29 @@ def read_votes(path, members, chair) -> Tuple[List[dict], List[dict], List[str]]
     by_name = {}
     for column, value in header.items():
         by_name.setdefault(value, column)
-    if "件名" not in by_name:
-        # 件名の見出しが見つからないときは、議員・区分などの列以外で、いちばん長い文が入る列を件名とみなす
-        known = {column for column, value in header.items() if value in HEADERS or value in names}
+    data_rows = rows[header_index + 1:]
+    member_columns = {column for column, value in header.items() if value in names}
+    subject_column = by_name.get("件名")
+    if subject_column is None or not any(str(row.get(subject_column, "")).strip() for row in data_rows):
+        # 件名の見出しが無い、または見出しの列に文字が無い（見出しと議案の行でセルのつなぎ方が違う）ときは、
+        # 議員の列以外で、いちばん長い文が入る列を件名とみなす
         lengths: Dict[int, int] = {}
-        for row in rows[header_index + 1:]:
+        for row in data_rows:
             for column, value in row.items():
-                if column not in known:
+                if column not in member_columns and column != by_name.get("議決結果"):
                     lengths[column] = lengths.get(column, 0) + len(str(value))
         if lengths:
             guess = max(lengths, key=lengths.get)
+            if subject_column is None:
+                warnings.append(f"件名の見出しが見つからないため、{_column(guess + 1)}列を件名として読みました。違うときはエクセルの見出しを「件名」にしてください。")
             by_name["件名"] = guess
-            warnings.append(f"件名の見出しが見つからないため、{_column(guess + 1)}列を件名として読みました。違うときはエクセルの見出しを「件名」にしてください。")
+    if "区分" not in by_name and by_name.get("件名") is not None:
+        # 区分の見出しが無いときは、件名より左で、短い文字（6 字まで）が入っている列を区分とみなす
+        for column in range(by_name["件名"] - 1, -1, -1):
+            values = [_plain(row.get(column, "")) for row in data_rows if _plain(row.get(column, ""))]
+            if values and all(len(v) <= 6 for v in values) and column not in member_columns:
+                by_name["区分"] = column
+                break
     for name in sorted(set(by_name) - set(HEADERS) - set(names)):
         warnings.append(f"名簿に無い議員の列があります: {name}")
     for name in names:
