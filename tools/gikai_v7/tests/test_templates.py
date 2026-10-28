@@ -41,7 +41,23 @@ class TemplateTest(unittest.TestCase):
     def test_summary_normalizes_counts_and_total(self):
         counts = [{"kind": "報告", "count": 3}, {"kind": "条例関係", "count": 12}]
         self.assertEqual(templates.summary_text(counts, 9),
-                         "９月議会では、報告３件、条例関係12件の計15件の議案等が決まった。")
+                         "９月議会では、報告３件、条例関係１２件の計１５件の議案等が決まった。")
+
+    def test_shingi_title_is_boxed_and_stepped(self):
+        # 従来の紙面: 枠の中で「審議したこと」が左、「決まったこと」が右下。まとめ文は別の枠。
+        result = templates.build(layout.SHINGI, {"period": "Ｒ８．９．４～９．２４",
+                                                 "counts": [{"kind": "報告", "count": 3}]},
+                                 self.issue, self.plan, self.settings, self.g)
+        items = {getattr(x, "name", ""): x for x in result.page.items}
+        frame, first, second = items["審議の囲み"], items["審議の題字1"], items["審議の題字2"]
+        self.assertTrue(frame.border and not frame.vertical)
+        self.assertLess(first.box.x, second.box.x)
+        self.assertLess(first.box.y, second.box.y)
+        for part in (first, second, items["定例会名"], items["会期"]):
+            self.assertGreaterEqual(part.box.x, frame.box.x)
+            self.assertLessEqual(part.box.y + part.box.h, frame.box.y + frame.box.h + 0.01)
+        self.assertTrue(items["まとめ文"].border)
+        self.assertTrue(items["まとめ文"].lines[0].startswith("　"))
 
     def test_cover_toc_uses_feature_page_labels(self):
         result = templates.build(layout.COVER,

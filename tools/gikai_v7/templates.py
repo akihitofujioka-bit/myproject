@@ -172,7 +172,12 @@ def summary_text(counts, month: Optional[int] = None) -> str:
     total = sum(count for _, count in pairs)
     detail = "、".join(f"{kind}{count}件" for kind, count in pairs)
     head = f"{month}月議会" if month else "議会"
-    return ingest.normalize_numbers(f"{head}では、{detail}の計{total}件の議案等が決まった。") if pairs else ""
+    # 横書きの文なので、数字はすべて全角にする（縦中横の決まりは縦書きだけ）。
+    return _full_digits(f"{head}では、{detail}の計{total}件の議案等が決まった。") if pairs else ""
+
+
+def _full_digits(text: str) -> str:
+    return str(text).translate(layout.ZEN)
 
 
 def _cover(form: dict, issue: layout.Issue, plan: layout.Plan, g: Geometry) -> compose.PageResult:
@@ -252,12 +257,21 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
     page, warnings, placements = dx.Page(), [], []
     meeting = form.get("meeting") or meeting_name(issue)
     period = form.get("period", "")
-    _htext(page, _box(15, 15, 180, 38), "審議したこと\n決まったこと",
-           36, font=dx.MINCHO, align="中央", name="審議の題字", warnings=warnings)
-    _htext(page, _box(15, 54, 180, 6), f"{meeting}　{period}",
-           10, align="中央", name="定例会と会期", warnings=warnings)
+    # 従来の紙面の形: 枠の中に「審議したこと」（左）と「決まったこと」（右）を階段状に置き、
+    # 1 行目の右に定例会名、2 行目の左下に会期を小さく入れる。まとめ文は下の別の枠に入れる。
+    page.items.append(dx.TextBox(_box(15, 15, 180, 36), [""], dx.GOTHIC, 11, 15.4,
+                                 border=True, name="審議の囲み", vertical=False))
+    _htext(page, _box(30, 16, 80, 18), "審議したこと", 36, font=dx.MINCHO,
+           name="審議の題字1", warnings=warnings)
+    _htext(page, _box(95, 32, 80, 18), "決まったこと", 36, font=dx.MINCHO,
+           name="審議の題字2", warnings=warnings)
+    _htext(page, _box(130, 23, 62, 7), _full_digits(meeting), 12, bold=True,
+           name="定例会名", warnings=warnings)
+    _htext(page, _box(19, 41, 70, 7), _full_digits(period), 12, bold=True,
+           name="会期", warnings=warnings)
     summary = summary_text(form.get("counts", []), layout.TEIREIKAI.get(issue.month))
-    _htext(page, _box(15, 61, 180, 9), summary, 12, name="まとめ文", warnings=warnings)
+    _htext(page, _box(15, 54, 180, 14), "　" + summary if summary else "", 12, border=True,
+           name="まとめ文", warnings=warnings)
 
     used = 0
     capacity = g.lines_per_dan * 2
