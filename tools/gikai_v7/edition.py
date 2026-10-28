@@ -60,6 +60,14 @@ def next_hint(current: Optional["Edition"]) -> str:
     return "必要な写真は右の「写真」タブから置き、「確かめる」のあと「Word に書き出す」を押してください。"
 
 
+def _vote_counts(votes) -> list:
+    """議案の区分ごとの件数を、出てきた順に数える。"""
+    counts: Dict[str, int] = {}
+    for vote in votes:
+        counts[vote.get("kind", "")] = counts.get(vote.get("kind", ""), 0) + 1
+    return [{"kind": kind, "count": count} for kind, count in counts.items()]
+
+
 class Edition:
     """号フォルダと、そこに保存する紙面の状態。"""
 
@@ -212,6 +220,13 @@ class Edition:
             source, self.settings.vote_members, self.settings.chair)
         copied, imported_at = votes_xlsx.archive_import(source, self.folder)
         values = data if data is not None else self.item_data()
+        # 画面で手直しした区分・件名・議決結果は、エクセルの元の件名ごとに覚えておき、取り込み直しても当て直す
+        edits = values.get("vote_edits", {}) or {}
+        for vote in votes:
+            vote["source_title"] = vote["title"]
+            vote.update(edits.get(vote["title"], {}))
+        if edits:
+            counts = _vote_counts(votes)
         values["votes"] = votes
         values.setdefault("shingi", {})["counts"] = counts
         values["votes_warnings"] = warnings
@@ -221,6 +236,17 @@ class Edition:
         }
         self.save_items(values)
         return votes, counts, warnings, copied
+
+    def edit_vote(self, data: dict, index: int, kind: str, title: str, result: str) -> None:
+        """確認の表で、1 件の区分・件名・議決結果を手直しする（○・● はエクセルのまま）。"""
+        vote = data["votes"][index]
+        key = vote.get("source_title") or vote["title"]   # 書き換える前の、エクセルの元の件名
+        vote["source_title"] = key
+        change = {"kind": kind.strip(), "title": title.strip("\n"), "result": result.strip()}
+        vote.update(change)
+        data.setdefault("vote_edits", {})[key] = change
+        data.setdefault("shingi", {})["counts"] = _vote_counts(data["votes"])
+        self.save_items(data)
 
     def import_word_source(self, path: Path, member: str = "") -> dict:
         """Word 原稿を分割し、元ファイルを受け取った原稿へ複製する。"""

@@ -479,7 +479,7 @@ class App:
             box.pack(fill="x", pady=(8, 0))
             # 議案を全件見せる（画面ごと下へスクロールして見る）
             self._votes_table(box, votes)
-            ttk.Label(self.inner, text="この表は確認用です。直すときはExcelを直して、もう一度取り込んでください。",
+            ttk.Label(self.inner, text="行をダブルクリックすると、区分・件名（改行も）・議決結果を直せます。○・● はエクセルを直して取り込み直してください。",
                       wraplength=900).pack(anchor="w")
         warnings = self.data.get("votes_warnings", [])
         if warnings:
@@ -536,7 +536,9 @@ class App:
         cell(xs[-2], 0, width, header_h, "#eef2f6")
         canvas.create_text(xs[-2] + result_w / 2, 7, text="\n".join("議決結果"), font=small, anchor="n")
         y = header_h
+        spans = []
         for kind, title, marks, result, row_h in rows:
+            spans.append((y, y + row_h))
             cell(0, y, kind_w, y + row_h)
             canvas.create_text(kind_w / 2, y + row_h / 2, text=kind, font=font, width=kind_w - 6)
             cell(kind_w, y, kind_w + title_w, y + row_h)
@@ -548,6 +550,48 @@ class App:
             cell(xs[-2], y, width, y + row_h)
             canvas.create_text(xs[-2] + result_w / 2, y + row_h / 2, text=result, font=font)
             y += row_h
+
+        def open_row(event):
+            y = canvas.canvasy(event.y)
+            index = next((i for i, (top, bottom) in enumerate(spans) if top <= y < bottom), None)
+            if index is not None:
+                self._edit_vote(index)
+        canvas.bind("<Double-Button-1>", open_row)
+
+    def _edit_vote(self, index: int) -> None:
+        """確認の表で 1 件を手直しする窓。改行も入れられる。○・● はエクセルで直す。"""
+        vote = self.data["votes"][index]
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"{index + 1}件目を直す")
+        dialog.geometry("720x380")
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        kind_var = tk.StringVar(value=vote.get("kind", ""))
+        result_var = tk.StringVar(value=items.templates.vote_result(vote.get("result", "")))
+        row = ttk.Frame(body)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text="区分", width=12).pack(side="left")
+        ttk.Entry(row, textvariable=kind_var, width=20).pack(side="left")
+        ttk.Label(body, text="件名（Enter で改行。紙面でもその位置で改行します）").pack(anchor="w", pady=(8, 2))
+        title = tk.Text(body, height=5, wrap="word", font=(self.font, 12), undo=True)
+        title.insert("1.0", vote.get("title", ""))
+        title.pack(fill="both", expand=True)
+        row = ttk.Frame(body)
+        row.pack(fill="x", pady=6)
+        ttk.Label(row, text="議決結果", width=12).pack(side="left")
+        ttk.Entry(row, textvariable=result_var, width=20).pack(side="left")
+        ttk.Label(body, text="○・● はエクセルを直して取り込み直してください。ここで直した区分・件名・議決結果は、"
+                             "取り込み直しても同じ件名の行に当て直します。", wraplength=680, foreground="#555").pack(anchor="w")
+
+        def keep():
+            self.work.edit_vote(self.data, index, kind_var.get(), title.get("1.0", "end-1c"), result_var.get())
+            dialog.destroy()
+            self.show(self.step)
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="直す", command=keep).pack(side="right")
+        ttk.Button(buttons, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
+        title.focus_set()
 
     def _step_7(self):
         self._title("審議したこと")
@@ -689,9 +733,7 @@ class App:
             if not match:
                 return
             section = self.work.pages[int(match.group(1)) - 1]["section"]
-            target = {layout.COVER: 3, layout.GYOSEI: 4, layout.YOSAN: 5,
-                      layout.KESSAN: 5, layout.SHINGI: 7, layout.IINKAI: 8,
-                      layout.IPPAN: 9, layout.TOKUSHU: 10, layout.LAST: 11}.get(section, 13)
+            target = self.SECTION_STEPS.get(section, 13)
             self.show(target)
         ttk.Button(self.inner, text="選んだページの入力へ戻る", command=jump).pack(anchor="e", pady=5)
 
@@ -1322,9 +1364,29 @@ class App:
                 messagebox.showerror("写真を置けません", str(error), parent=dialog)
             finally:
                 drag["part"] = None
+        def jump_to_input(event):
+            """ダブルクリックした所の入力欄の手順へ移る（賛否表なら議案と賛否の手順）。"""
+            point_x, point_y = page_point(event)
+            page = self.work.pages[page_var.get() - 1]
+            result = self.work.compose(page_var.get())
+            in_votes = any(isinstance(item, dx.Table) and item.name == "賛否表"
+                           and item.box.x <= point_x <= item.box.x + item.box.w
+                           and item.box.y <= point_y <= item.box.y + item.box.h
+                           for item in result.page.items)
+            target = 6 if in_votes else self.SECTION_STEPS.get(page["section"], self.step)
+            self.save(silent=True)
+            self.show(target)
+            self.root.lift()
+            self.fit_label.configure(text=f"{page_var.get()}ページの入力欄です。直したら『紙面を見る』で確かめてください。")
+        paper.bind("<Double-Button-1>", jump_to_input)
         paper.bind("<ButtonPress-1>", press)
         paper.bind("<ButtonRelease-1>", release)
         draw()
+
+    # 区分ごとの入力欄の手順（紙面を見るのダブルクリック・全ページの確認から戻るときに使う）
+    SECTION_STEPS = {layout.COVER: 3, layout.GYOSEI: 4, layout.YOSAN: 5, layout.KESSAN: 5,
+                     layout.SHINGI: 7, layout.IINKAI: 8, layout.IPPAN: 9, layout.TOKUSHU: 10,
+                     layout.LAST: 11}
 
     # 手順ごとに、紙面を見るで最初に出す区分
     PREVIEW_SECTIONS = {3: (layout.COVER,), 4: (layout.GYOSEI,), 5: (layout.YOSAN, layout.KESSAN),

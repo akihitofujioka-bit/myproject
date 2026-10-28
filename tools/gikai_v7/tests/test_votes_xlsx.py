@@ -246,3 +246,21 @@ class TallHeaderTest(unittest.TestCase):
         self.assertEqual(votes[0]["title"], "議案第１号\n架空の条例")
         self.assertEqual(votes[0]["marks"], {"見本 太郎": "○", "見本 花子": "●", "見本 次郎": "議長"})
         self.assertEqual(counts, [{"kind": "議案", "count": 1}, {"kind": "発議案", "count": 1}])
+
+
+class VoteEditTest(unittest.TestCase):
+    def test_edit_survives_reimport_and_marks_stay(self):
+        with tempfile.TemporaryDirectory() as folder:
+            work = edition.Edition.create(Path(folder) / "第999号", layout.Issue(999, 10, "令和8年10月31日"))
+            work.save_settings(["見本 太郎", "見本 花子"], "見本 次郎")
+            path = _tall_header_xlsx(Path(folder) / "賛否_架空.xlsx")
+            data = work.item_data()
+            work.import_votes(path, data)
+            work.edit_vote(data, 1, "意見書", "発議第１号\n架空の意見書", "可決")
+            self.assertEqual(data["votes"][1]["title"], "発議第１号\n架空の意見書")
+            self.assertEqual(data["shingi"]["counts"], [{"kind": "議案", "count": 1}, {"kind": "意見書", "count": 1}])
+            again = work.item_data()
+            work.import_votes(path, again)          # 同じエクセルを取り込み直す
+            self.assertEqual(again["votes"][1]["kind"], "意見書")
+            self.assertEqual(again["votes"][1]["title"], "発議第１号\n架空の意見書")
+            self.assertEqual(again["votes"][1]["marks"]["見本 太郎"], "○")   # ○・● はエクセルのまま

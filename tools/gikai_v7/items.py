@@ -294,8 +294,11 @@ def build_votes(rows: Iterable[dict], members: Iterable[str], chair: str = "") -
         # Excel で明示された空欄は「印なし」。値が無い場合だけ既定値を使う。
         marks = {name: str(old[name]) if name in old
                  else ("議長" if name == chair else "○") for name in names}
-        output.append({"kind": _text(row.get("kind")), "title": _text(row.get("title")),
-                       "result": _text(row.get("result")) or "可決", "marks": marks})
+        vote = {"kind": _text(row.get("kind")), "title": _text(row.get("title")),
+                "result": _text(row.get("result")) or "可決", "marks": marks}
+        if row.get("source_title"):   # エクセルにあった元の件名（手直しを当て直すときの目印）
+            vote["source_title"] = row["source_title"]
+        output.append(vote)
     return output
 
 

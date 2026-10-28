@@ -373,7 +373,8 @@ def _shingi(form: dict, issue: layout.Issue, settings: Settings, g: Geometry) ->
             line_counts = []
             for column, pt in ((0, 10.0), (1, 9.0), (len(row) - 1, 10.0)):
                 units = max(1, int((widths[column] - 4) / pt))
-                lines = _fit_lines(" ".join(str(row[column]).split("\n")), units)
+                # 入っている改行（エクセルのセル内の改行や、画面で入れた改行）はそのまま生かす
+                lines = _fit_lines(str(row[column]), units)
                 row[column] = "\n".join(lines)
                 line_counts.append(len(lines))
             heights.append(max(15.0, max(line_counts) * 9.0 * 1.4 + 4))
