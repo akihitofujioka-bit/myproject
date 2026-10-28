@@ -86,8 +86,9 @@ class App:
         ttk.Button(bottom, text="紙面を見る", command=self.preview).pack(side="left")
         self.fit_label = ttk.Label(bottom)
         self.fit_label.pack(side="left", padx=10)
-        ttk.Button(bottom, text="戻る", command=self.back).pack(side="right")
-        ttk.Button(bottom, text="次へ", command=self.next).pack(side="right", padx=6)
+        # 右から詰めて置くので、先に「次へ」を置くと左から「戻る」「次へ」の順になる。
+        ttk.Button(bottom, text="次へ", command=self.next).pack(side="right")
+        ttk.Button(bottom, text="戻る", command=self.back).pack(side="right", padx=6)
 
     def _go(self, number: int) -> None:
         if self.work and self.step != number:
