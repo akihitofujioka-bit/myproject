@@ -54,5 +54,33 @@ class AppStartTest(unittest.TestCase):
             temp.cleanup()
 
 
+class PreviewStartPageTest(unittest.TestCase):
+    """紙面を見るは、今編集している手順の項目のページから出す。"""
+
+    def test_starts_from_section_of_current_step(self):
+        app_module = _load_app()
+        layout = app_module.layout
+        sections = [layout.COVER, layout.GYOSEI, layout.SHINGI, layout.IPPAN, layout.IPPAN, layout.LAST]
+
+        class Work:
+            pages = [{"no": n, "section": s} for n, s in enumerate(sections, 1)]
+
+        app = app_module.App.__new__(app_module.App)
+        app.work = Work()
+        app.preview_pages = {}
+        for step, page in ((3, 1), (4, 2), (6, 3), (7, 3), (9, 4), (11, 6), (13, 1)):
+            app.step = step
+            self.assertEqual(app._preview_page(), page, step)
+        # 一般質問の2ページ目を見ていたら、次もそこから。ほかの項目のページなら項目の先頭から
+        app.step = 9
+        app.preview_pages[9] = 5
+        self.assertEqual(app._preview_page(), 5)
+        app.preview_pages[9] = 2
+        self.assertEqual(app._preview_page(), 4)
+        app.step = 13
+        app.preview_pages[13] = 6
+        self.assertEqual(app._preview_page(), 6)
+
+
 if __name__ == "__main__":
     unittest.main()

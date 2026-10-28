@@ -39,6 +39,8 @@ class App:
         self.data = items.default_data()
         self.step = 0
         self.getters = []
+        # 手順ごとに、紙面を見るで最後に見ていたページ（次に開くときはそこから出す）
+        self.preview_pages = {}
         self.font = "TkDefaultFont"
         self._style()
         self._build()
@@ -1283,6 +1285,7 @@ class App:
 
         def draw():
             number = page_var.get()
+            self.preview_pages[self.step] = number
             result = self.work.compose(number)
             paper.delete("all")
             dialog.update_idletasks()
@@ -1430,15 +1433,36 @@ class App:
                      layout.SHINGI: 7, layout.IINKAI: 8, layout.IPPAN: 9, layout.TOKUSHU: 10,
                      layout.LAST: 11}
 
-    # 手順ごとに、紙面を見るで最初に出す区分
-    PREVIEW_SECTIONS = {3: (layout.COVER,), 4: (layout.GYOSEI,), 5: (layout.YOSAN, layout.KESSAN),
-                        7: (layout.SHINGI,), 8: (layout.IINKAI,), 9: (layout.IPPAN,),
-                        10: (layout.TOKUSHU,), 11: (layout.LAST,)}
+    # 手順ごとに、紙面を見るで最初に出す区分（名簿・議案と賛否は賛否表のある審議のページ）
+    PREVIEW_SECTIONS = {1: (layout.COVER,), 2: (layout.SHINGI,), 3: (layout.COVER,),
+                        4: (layout.GYOSEI,), 5: (layout.YOSAN, layout.KESSAN),
+                        6: (layout.SHINGI,), 7: (layout.SHINGI,), 8: (layout.IINKAI,),
+                        9: (layout.IPPAN,), 10: (layout.TOKUSHU,), 11: (layout.LAST,)}
 
     def _preview_page(self) -> int:
-        sections = self.PREVIEW_SECTIONS.get(self.step, ())
-        page = next((p["no"] for p in self.work.pages if p["section"] in sections), None)
-        return page or 1
+        """紙面を見るで最初に出すページ。今編集している手順の項目のページから出す。
+
+        同じ手順で前に見ていたページがその項目のページなら、そこから出す（一般質問が
+        何ページもあるとき、毎回先頭に戻らないように）。写真の手順は選んでいるページ。
+        """
+        pages = self.work.pages
+        numbers = [p["no"] for p in pages]
+        if self.step == 12:
+            try:
+                page = int(self.photo_page.get())
+            except (AttributeError, ValueError, tk.TclError):
+                page = None
+            if page in numbers:
+                return page
+        last = self.preview_pages.get(self.step)
+        sections = self.PREVIEW_SECTIONS.get(self.step)
+        if sections is None:
+            # 写真・全ページの確認など、決まった項目のない手順は前に見ていたページから
+            return last if last in numbers else 1
+        mine = [p["no"] for p in pages if p["section"] in sections]
+        if last in mine:
+            return last
+        return mine[0] if mine else 1
 
     def export(self) -> None:
         if not self.work or not self.save():
