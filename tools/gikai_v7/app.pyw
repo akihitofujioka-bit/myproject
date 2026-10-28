@@ -446,11 +446,10 @@ class App:
         votes = self.data.get("votes", [])
         if votes:
             # 議員ごとの ○・● も並べて、エクセルと見比べられるようにする
-            ttk.Button(self.inner, text="表を大きく見る（別の窓）",
-                       command=lambda: self._votes_window(votes)).pack(anchor="w", pady=(8, 2))
             box = ttk.Frame(self.inner)
-            box.pack(fill="x", pady=(2, 0))
-            self._votes_table(box, votes, min(12, len(votes)))
+            box.pack(fill="x", pady=(8, 0))
+            # 議案を全件見せる（30 件まで。多いときは表の中でスクロール）
+            self._votes_table(box, votes, min(30, len(votes)))
             ttk.Label(self.inner, text="この表は確認用です。直すときはExcelを直して、もう一度取り込んでください。",
                       wraplength=900).pack(anchor="w")
         warnings = self.data.get("votes_warnings", [])
@@ -467,8 +466,10 @@ class App:
         table.column("kind", width=70, minwidth=50, stretch=False)
         table.heading("title", text="議案番号・件名")
         # 件名は狭めずに出す。入りきらないときは横のスクロールバーで見る。
-        longest = max([len(str(v.get("title", ""))) for v in votes] + [8])
-        table.column("title", width=min(560, 15 * longest), minwidth=160, stretch=False)
+        def one_line(value) -> str:   # セルの中の改行は、表では全角空白にして 1 行で見せる
+            return "　".join(part.strip() for part in str(value or "").splitlines() if part.strip())
+        longest = max([len(one_line(v.get("title", ""))) for v in votes] + [8])
+        table.column("title", width=min(900, 15 * longest + 20), minwidth=160, stretch=False)
         for index, name in enumerate(members):
             table.heading(f"m{index}", text=name)
             table.column(f"m{index}", width=max(56, 14 * len(name)), minwidth=40, anchor="center", stretch=False)
@@ -476,9 +477,9 @@ class App:
         table.column("result", width=80, minwidth=60, anchor="center", stretch=False)
         for vote in votes:
             marks = vote.get("marks", {})
-            table.insert("", "end", values=[vote.get("kind", ""), vote.get("title", "")]
-                         + [marks.get(name, "") for name in members]
-                         + [items.templates.vote_result(vote.get("result", ""))])
+            table.insert("", "end", values=[one_line(vote.get("kind", "")), one_line(vote.get("title", ""))]
+                         + [one_line(marks.get(name, "")) for name in members]
+                         + [one_line(items.templates.vote_result(vote.get("result", "")))])
         down = ttk.Scrollbar(parent, orient="vertical", command=table.yview)
         across = ttk.Scrollbar(parent, orient="horizontal", command=table.xview)
         table.configure(yscrollcommand=down.set, xscrollcommand=across.set)
@@ -487,18 +488,6 @@ class App:
         across.grid(row=1, column=0, sticky="ew")
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
-
-    def _votes_window(self, votes) -> None:
-        """表全体を別の大きな窓で見る。窓を広げると表も広がる。"""
-        window = tk.Toplevel(self.root)
-        window.title("議案と賛否（取り込んだ内容）")
-        width = min(self.root.winfo_screenwidth() - 40, 1600)
-        height = min(self.root.winfo_screenheight() - 80, 900)
-        window.geometry(f"{width}x{height}+20+20")
-        frame = ttk.Frame(window, padding=8)
-        frame.pack(fill="both", expand=True)
-        self._votes_table(frame, votes, 30)
-        ttk.Button(window, text="閉じる", command=window.destroy).pack(anchor="e", padx=8, pady=6)
 
     def _step_7(self):
         self._title("審議したこと")
