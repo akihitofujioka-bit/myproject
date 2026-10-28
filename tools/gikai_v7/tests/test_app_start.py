@@ -97,5 +97,24 @@ class PeriodTest(unittest.TestCase):
         self.assertIsNone(app_module.parse_period("９月４日から"))
 
 
+class PreviewTitleHitTest(unittest.TestCase):
+    """紙面を見るでダブルクリックした所が、賛否表の何行目・何件目の案件かを求める。"""
+
+    def test_table_row_and_bill(self):
+        app_module = _load_app()
+        dx = app_module.dx
+        from grid import Box
+        table = dx.Table(Box(10, 100, 300, 60), [100, 200], [["", ""], ["議案", "甲"], ["予算", "乙"]],
+                         8.0, dx.GOTHIC, True, "賛否表", None, None, [30, 15, 15])
+        self.assertEqual([app_module._table_row(table, y) for y in (101, 131, 146, 161)], [0, 1, 2, None])
+        heads = [dx.TextBox(Box(0, 0, 10, 10), [line], dx.GOTHIC, 11, 15.4, False, False, "議案")
+                 for line in ("◎議案第１号　架空", "◎議案第２号　見本")]
+        bills = [{"title": "議案第１号 架空"}, {"title": "議案第２号\n見本"}]
+        self.assertEqual([app_module._bill_index(bills, h, heads) for h in heads], [0, 1])
+        # 件名が合わなくても、並び順で見つける
+        self.assertEqual(app_module._bill_index([{"title": "別"}, {"title": "別2"}], heads[1], heads), 1)
+        self.assertIsNone(app_module._bill_index(bills, None, heads))
+
+
 if __name__ == "__main__":
     unittest.main()

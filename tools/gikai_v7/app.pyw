@@ -594,12 +594,14 @@ class App:
                 self._edit_vote(index)
         canvas.bind("<Double-Button-1>", open_row)
 
-    def _edit_vote(self, index: int) -> None:
-        """確認の表で 1 件を手直しする窓。改行も入れられる。○・● はエクセルで直す。"""
+    def _edit_vote(self, index: int, parent=None, done=None) -> None:
+        """確認の表（または紙面を見るの賛否表）で 1 件を手直しする窓。改行も入れられる。○・● はエクセルで直す。"""
         vote = self.data["votes"][index]
-        dialog = tk.Toplevel(self.root)
+        dialog = tk.Toplevel(parent or self.root)
         dialog.title(f"{index + 1}件目を直す")
         dialog.geometry("720x380")
+        if parent is not None:
+            dialog.transient(parent)
         body = ttk.Frame(dialog, padding=12)
         body.pack(fill="both", expand=True)
         kind_var = tk.StringVar(value=vote.get("kind", ""))
@@ -620,9 +622,55 @@ class App:
                              "取り込み直しても同じ件名の行に当て直します。", wraplength=680, foreground="#555").pack(anchor="w")
 
         def keep():
+            self.save(silent=True)   # 元の画面で書きかけの内容を先に残す
             self.work.edit_vote(self.data, index, kind_var.get(), title.get("1.0", "end-1c"), result_var.get())
             dialog.destroy()
             self.show(self.step)
+            if done:
+                done()
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="直す", command=keep).pack(side="right")
+        ttk.Button(buttons, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
+        title.focus_set()
+
+    def _edit_bill_title(self, index: int, parent=None, done=None) -> None:
+        """紙面を見るの審議本文（◎件名）から、審議した案件の件名を直す窓。"""
+        bill = self.data["shingi"]["bills"][index]
+        old = bill.get("title", "")
+        dialog = tk.Toplevel(parent or self.root)
+        dialog.title("審議した案件の件名を直す")
+        dialog.geometry("720x330")
+        if parent is not None:
+            dialog.transient(parent)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="件名（審議のページの「◎」の行になります）").pack(anchor="w", pady=(0, 2))
+        title = tk.Text(body, height=4, wrap="word", font=(self.font, INPUT_PT), undo=True,
+                        relief="solid", borderwidth=1)
+        title.insert("1.0", old)
+        title.pack(fill="both", expand=True)
+        # 賛否表に同じ件名の行があれば、そちらもいっしょに直せるようにする
+        votes = self.data.get("votes", []) or []
+        same = next((i for i, vote in enumerate(votes)
+                     if _plain_title(vote.get("title", "")) == _plain_title(old) and old.strip()), None)
+        both = tk.BooleanVar(value=same is not None)
+        if same is not None:
+            ttk.Checkbutton(body, text="賛否表の同じ件名もいっしょに直す", variable=both).pack(anchor="w", pady=6)
+
+        def keep():
+            self.save(silent=True)
+            new = title.get("1.0", "end-1c").strip("\n")
+            bill["title"] = new
+            if same is not None and both.get():
+                vote = votes[same]
+                self.work.edit_vote(self.data, same, vote.get("kind", ""), new,
+                                    items.templates.vote_result(vote.get("result", "")))
+            self.work.save_items(self.data)
+            dialog.destroy()
+            self.show(self.step)
+            if done:
+                done()
         buttons = ttk.Frame(body)
         buttons.pack(fill="x", pady=(8, 0))
         ttk.Button(buttons, text="直す", command=keep).pack(side="right")
@@ -1561,14 +1609,28 @@ class App:
             finally:
                 drag["part"] = None
         def jump_to_input(event):
-            """ダブルクリックした所の入力欄の手順へ移る（賛否表なら議案と賛否の手順）。"""
+            """ダブルクリックした所を直す。賛否表の行・審議の「◎件名」ならその件名を直す窓を開き、
+            ほかはその入力欄の手順へ移る（賛否表の見出しなら議案と賛否の手順）。"""
             point_x, point_y = page_point(event)
             page = self.work.pages[page_var.get() - 1]
             result = self.work.compose(page_var.get())
-            in_votes = any(isinstance(item, dx.Table) and item.name == "賛否表"
-                           and item.box.x <= point_x <= item.box.x + item.box.w
-                           and item.box.y <= point_y <= item.box.y + item.box.h
-                           for item in result.page.items)
+            hit = [item for item in result.page.items
+                   if getattr(item, "box", None) is not None
+                   and item.box.x <= point_x <= item.box.x + item.box.w
+                   and item.box.y <= point_y <= item.box.y + item.box.h]
+            table = next((item for item in hit if isinstance(item, dx.Table) and item.name == "賛否表"), None)
+            in_votes = table is not None
+            if table is not None:
+                row = _table_row(table, point_y)
+                if row is not None and 1 <= row <= len(self.data.get("votes", []) or []):
+                    self._edit_vote(row - 1, parent=dialog, done=draw)
+                    return
+            if page["section"] == layout.SHINGI:
+                heading = next((item for item in hit if isinstance(item, dx.TextBox) and item.name == "議案"), None)
+                index = _bill_index(self.data.get("shingi", {}).get("bills", []) or [], heading, result.page.items)
+                if index is not None:
+                    self._edit_bill_title(index, parent=dialog, done=draw)
+                    return
             target = 6 if in_votes else self.SECTION_STEPS.get(page["section"], self.step)
             self.save(silent=True)
             self.show(target)
@@ -1819,6 +1881,36 @@ def _last_day(reiwa_year: int, month: int) -> str:
         return ""
     last = calendar.monthrange(2018 + reiwa_year, month)[1]
     return f"令和{reiwa_year}年{month}月{last}日"
+
+
+def _plain_title(text: str) -> str:
+    """件名を比べるとき、改行と空白の違いは見ない。"""
+    return re.sub(r"\s", "", str(text or "")).lstrip("◎")
+
+
+def _table_row(table, y: float):
+    """表の中の高さ y（pt）が何行目か（0 が見出し行）。表の外なら None。"""
+    top = table.box.y
+    heights = table.row_heights or []
+    for row in range(len(table.rows)):
+        height = heights[row] if row < len(heights) and heights[row] else 15.0
+        if top <= y < top + height:
+            return row
+        top += height
+    return None
+
+
+def _bill_index(bills, heading, page_items):
+    """審議本文の「◎件名」の枠から、何件目の案件かを求める。件名で探し、同じ件名がなければ並び順で。"""
+    if heading is None:
+        return None
+    text = _plain_title("".join(heading.lines))
+    for index, bill in enumerate(bills):
+        if _plain_title(bill.get("title", "")) == text:
+            return index
+    order = [item for item in page_items if isinstance(item, dx.TextBox) and item.name == "議案"]
+    position = next((i for i, item in enumerate(order) if item is heading), None)
+    return position if position is not None and position < len(bills) else None
 
 
 def parse_period(text: str):
