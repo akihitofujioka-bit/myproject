@@ -17,7 +17,8 @@ import guide
 import items
 import layout
 import sources
-from grid import Rect, to_box
+import docx_out as dx
+from grid import TATECHUYOKO, Rect, to_box, unit_width, units
 
 
 COLORS = {"大見出し": "#ffd783", "中見出し": "#ffe9af", "質問": "#bfdefd",
@@ -1011,7 +1012,7 @@ class App:
         dialog.geometry("760x690")
         top = ttk.Frame(dialog, padding=6)
         top.pack(fill="x")
-        page_var = tk.IntVar(value=1)
+        page_var = tk.IntVar(value=self._preview_page())
         status = ttk.Label(top)
         status.pack(side="right")
         drag = {"part": None}
@@ -1024,15 +1025,16 @@ class App:
             paper.delete("all")
             scale, ox, oy = 0.72, 150, 12
             paper.create_rectangle(ox, oy, ox + 595 * scale, oy + 842 * scale, fill="white", outline="#777")
-            for placement in result.placements:
+            # 部品の種類ごとの色を薄く敷き、その上に Word へ出すのと同じ枠・文字・表・写真を描く。
+            # 決まった型のページ（表紙・審議・最終）は格子と枠の位置が違うので、色は敷かない。
+            flow_page = "form" not in self.work.pages[number - 1]
+            for placement in (result.placements if flow_page else []):
                 actual = to_box(self.work.geometry, placement.rect)
                 x1, y1 = ox + actual.x * scale, oy + actual.y * scale
                 x2, y2 = x1 + actual.w * scale, y1 + actual.h * scale
-                paper.create_rectangle(x1, y1, x2, y2,
-                                       fill=COLORS.get(placement.part.kind, "#eeeeee"), outline="#888")
-                paper.create_text((x1 + x2) / 2, (y1 + y2) / 2,
-                                  text=placement.part.text[:18] or placement.part.kind,
-                                  width=max(20, x2 - x1 - 4), font=(self.font, 8))
+                paper.create_rectangle(x1, y1, x2, y2, outline="",
+                                       fill=COLORS.get(placement.part.kind, "#eeeeee"))
+            _draw_items(paper, result.page.items, scale, ox, oy, self.font)
             status.configure(text=(f"{number}ページ　あふれ {result.overflow_lines}行"
                                    f"（約{result.overflow_lines * 12}字）／余り {result.free_lines}行"))
         ttk.Combobox(top, textvariable=page_var, values=[p["no"] for p in self.work.pages],
@@ -1095,6 +1097,16 @@ class App:
         paper.bind("<ButtonRelease-1>", release)
         draw()
 
+    # 手順ごとに、紙面を見るで最初に出す区分
+    PREVIEW_SECTIONS = {3: (layout.COVER,), 4: (layout.GYOSEI,), 5: (layout.YOSAN, layout.KESSAN),
+                        7: (layout.SHINGI,), 8: (layout.IINKAI,), 9: (layout.IPPAN,),
+                        10: (layout.TOKUSHU,), 11: (layout.LAST,)}
+
+    def _preview_page(self) -> int:
+        sections = self.PREVIEW_SECTIONS.get(self.step, ())
+        page = next((p["no"] for p in self.work.pages if p["section"] in sections), None)
+        return page or 1
+
     def export(self) -> None:
         if not self.work or not self.save():
             return
@@ -1146,6 +1158,89 @@ def _read_resume() -> dict:
         return value if isinstance(value, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+# 縦書きで向きを変えて描く字（Word は縦書きの枠で自動で回す）。
+TURN_IN_VERTICAL = set("ー―‐－-～〜…‥（）()「」『』【】〔〕［］[]｛｝{}＜＞<>《》〈〉＝=")
+
+
+def _draw_items(canvas, items, scale: float, ox: float, oy: float, family: str) -> None:
+    """紙面の枠・文字・表・写真を、確認用に大まかに描く。最終の見た目は Word で確かめる。"""
+    for item in items:
+        box = getattr(item, "box", None)
+        if box is None or isinstance(item, dx.Guide):
+            continue
+        x1, y1 = ox + box.x * scale, oy + box.y * scale
+        x2, y2 = x1 + box.w * scale, y1 + box.h * scale
+        if isinstance(item, dx.TextBox):
+            if item.border:
+                canvas.create_rectangle(x1, y1, x2, y2, outline="#222")
+            _draw_text(canvas, item, x1, y1, x2, y2, scale, family)
+        elif isinstance(item, dx.Table):
+            _draw_table(canvas, item, x1, y1, scale, family)
+        elif isinstance(item, dx.Picture):
+            canvas.create_rectangle(x1, y1, x2, y2, fill="#9bd8ea", outline="#5a9fb5")
+            canvas.create_text((x1 + x2) / 2, (y1 + y2) / 2, text="写真\n" + (item.caption or "")[:20],
+                               width=max(20, x2 - x1 - 4), font=(family, -9))
+        elif isinstance(item, dx.Placeholder):
+            canvas.create_rectangle(x1, y1, x2, y2, outline="#5a9fb5", dash=(3, 2), fill="#eef8fb")
+            canvas.create_text((x1 + x2) / 2, (y1 + y2) / 2, text=item.label[:12],
+                               width=max(20, x2 - x1 - 4), font=(family, -8))
+
+
+def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
+    size = max(4, round(item.pt * scale))
+    font = (family, -size, "bold" if item.bold else "normal")
+    pitch = dx.effective_pitch(item.pt, item.pitch_pt) * scale
+    if item.vertical:
+        total = len(item.lines) * pitch
+        first = ((x1 + x2) / 2 + total / 2 - pitch / 2) if item.center else (x2 - pitch / 2)
+        for index, line in enumerate(item.lines):
+            x, y = first - index * pitch, y1 + 2
+            for unit in units(line):
+                height = unit_width(unit) * size
+                if TATECHUYOKO.fullmatch(unit):
+                    canvas.create_text(x, y + height / 2, text=unit, font=(family, -max(4, int(size * 0.6))))
+                elif unit in TURN_IN_VERTICAL or (len(unit) > 1 or ord(unit[0]) < 0x80):
+                    _turned(canvas, x, y + height / 2, unit, font)
+                else:
+                    canvas.create_text(x, y + height / 2, text=unit, font=font)
+                y += height
+        return
+    anchor, x = {"中央": ("center", (x1 + x2) / 2), "右": ("e", x2 - 2)}.get(item.align, ("w", x1 + 2))
+    for index, line in enumerate(item.lines):
+        canvas.create_text(x, y1 + pitch / 2 + index * pitch, text=line, font=font, anchor=anchor)
+
+
+def _turned(canvas, x, y, text, font) -> None:
+    try:
+        canvas.create_text(x, y, text=text, font=font, angle=-90)
+    except tk.TclError:   # 字を回せない古い Tk では、そのまま描く
+        canvas.create_text(x, y, text=text, font=font)
+
+
+def _draw_table(canvas, table, x, y, scale, family) -> None:
+    widths = [width * scale for width in (table.column_widths or [table.box.w])]
+    heights = []
+    for index, _row in enumerate(table.rows):
+        given = table.row_heights[index] if table.row_heights and index < len(table.row_heights) else None
+        heights.append((given or 15.0) * scale)
+    top = y
+    for row_index, row in enumerate(table.rows):
+        left = x
+        for column, width in enumerate(widths):
+            canvas.create_rectangle(left, top, left + width, top + heights[row_index], outline="#444")
+            value = row[column] if column < len(row) else ""
+            pt = table.pt
+            if table.cell_pts and row_index < len(table.cell_pts) and column < len(table.cell_pts[row_index]):
+                pt = table.cell_pts[row_index][column]
+            size = max(4, round(pt * scale))
+            vertical = bool(table.vertical_cells) and (row_index, column) in table.vertical_cells
+            text = "\n".join(value) if vertical else value
+            canvas.create_text(left + width / 2, top + heights[row_index] / 2, text=text,
+                               font=(family, -size), width=max(10, width - 2))
+            left += width
+        top += heights[row_index]
 
 
 def _focus_next(event):

@@ -161,6 +161,11 @@ class Edition:
                 values = templates.default_form(page["section"])
                 values.update(forms[page["section"]])
                 page["form"] = values
+                if page["section"] == layout.COVER and values.get("photo_caption"):
+                    # 表紙の手順で入れた写真の説明を正とし、置いた写真の説明もそろえる。
+                    for photo in page.get("placed_photos", []):
+                        if not photo.get("removed"):
+                            photo["caption"] = str(values["photo_caption"])
                 self._sync_placed_from_form(page)
 
         marked = item_templates.marked_pages(data, self.issue)
@@ -680,7 +685,9 @@ class Edition:
             photo = active[-1] if active else None
             page["form"]["photo"] = (str(self.folder / "写真" / photo["file"])
                                       if photo else "")
-            page["form"]["photo_caption"] = photo.get("caption", "") if photo else ""
+            # 置いた写真に説明が無いときは、表紙の手順で入れた説明を消さずに残す。
+            if photo and photo.get("caption"):
+                page["form"]["photo_caption"] = photo["caption"]
         elif page["section"] == layout.LAST:
             page["form"]["editorial_photos"] = [
                 {"path": str(self.folder / "写真" / p["file"]),

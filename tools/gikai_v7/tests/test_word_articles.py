@@ -58,3 +58,22 @@ class DropFilesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoverCaptionTest(unittest.TestCase):
+    def test_cover_caption_survives_placing_photo(self):
+        # 表紙の手順で入れた写真の説明が、写真を置いても消えない。
+        import items
+        import samples as s
+        from grid import Rect
+        with tempfile.TemporaryDirectory() as folder:
+            work = edition.Edition.create(Path(folder) / "第999号", layout.Issue(999, 4, "令和8年4月30日"))
+            data = items.default_data(work.issue)
+            data["cover"]["photo_caption"] = "架空の春まつり"
+            work.save_items(data)
+            (work.folder / "写真" / "表紙.png").write_bytes(s._png(1200, 800))
+            work.place_photo(1, "表紙.png", Rect(0, 0, 1, 1))
+            work.save_items(work.item_data())
+            texts = [line for item in work.compose(1).page.items
+                     for line in getattr(item, "lines", []) or []]
+            self.assertIn("架空の春まつり", texts)
