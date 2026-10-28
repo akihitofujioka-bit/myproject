@@ -19,6 +19,52 @@ MAIN_SHEET = "議案と賛否"
 HELP_SHEET = "書き方"
 HEADERS = ("区分", "議案番号", "件名", "議決結果")
 VALID_MARKS = ("○", "●", "欠席", "議長")
+# 前から使っているエクセルの見出しの言い方も受け付ける（空白は除いて比べる）。
+HEADER_WORDS = {
+    "区分": ("区分", "種類", "種別"),
+    "議案番号": ("議案番号", "番号", "議案No", "議案No.", "No", "No."),
+    "件名": ("件名", "議案・発議案", "議案発議案", "議案名", "案件名", "案件", "名称", "議案"),
+    "議決結果": ("議決結果", "結果", "議決"),
+}
+# 印の字の違いをそろえる（〇は漢数字のゼロ、◯は大きい丸）。
+MARK_WORDS = {"〇": "○", "◯": "○", "賛成": "○", "賛": "○", "反対": "●", "反": "●"}
+HEADER_SEARCH_ROWS = 15
+
+
+def _plain(value: str) -> str:
+    """見出しや名前を比べるため、空白・改行を除く。"""
+    return re.sub(r"\s", "", str(value or "")).replace("\u3000", "")
+
+
+def _string_item(item) -> str:
+    """共有文字列・セル内文字列から、本文だけを取り出す（ふりがな rPh は読まない）。"""
+    direct = item.find(f"{{{NS}}}t")
+    parts = [direct.text or ""] if direct is not None else []
+    for run in item.findall(f"{{{NS}}}r"):
+        parts.extend(node.text or "" for node in run.findall(f"{{{NS}}}t"))
+    return "".join(parts)
+
+
+def _find_header(rows, names) -> tuple:
+    """見出しの行を探す。議員名と見出しの言葉がいちばん多く並ぶ行を選ぶ。"""
+    wanted = {_plain(name): name for name in names}
+    best, best_score = 0, -1
+    for index, row in enumerate(rows[:HEADER_SEARCH_ROWS]):
+        score = 0
+        for value in row.values():
+            plain = _plain(value)
+            if plain in wanted or any(plain in words for words in HEADER_WORDS.values()):
+                score += 1
+        if score > best_score:
+            best, best_score = index, score
+    header = {}
+    for column, value in rows[best].items():
+        plain = _plain(value)
+        if not plain:
+            continue
+        key = next((key for key, words in HEADER_WORDS.items() if plain in words), None)
+        header[column] = key or wanted.get(plain, str(value).strip())
+    return best, header
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -143,7 +189,8 @@ def _unsupported(path: Path) -> None:
 def _cell_value(cell, shared: List[str]) -> str:
     kind = cell.get("t", "")
     if kind == "inlineStr":
-        return "".join(node.text or "" for node in cell.iter(f"{{{NS}}}t"))
+        inline = cell.find(f"{{{NS}}}is")
+        return _string_item(inline) if inline is not None else ""
     node = cell.find(f"{{{NS}}}v")
     value = node.text if node is not None and node.text is not None else ""
     if kind == "s" and value:
@@ -186,11 +233,12 @@ def read_votes(path, members, chair) -> Tuple[List[dict], List[dict], List[str]]
             shared = []
             if "xl/sharedStrings.xml" in package.namelist():
                 root = ET.fromstring(package.read("xl/sharedStrings.xml"))
-                shared = ["".join(t.text or "" for t in item.iter(f"{{{NS}}}t"))
-                          for item in root.findall(f"{{{NS}}}si")]
+                shared = [_string_item(item) for item in root.findall(f"{{{NS}}}si")]
             root = ET.fromstring(package.read(_sheet_path(package)))
             rows: List[Dict[int, str]] = []
+            numbers: List[int] = []
             for row in root.iter(f"{{{NS}}}row"):
+                numbers.append(int(row.get("r") or (numbers[-1] + 1 if numbers else 1)))
                 values = {}
                 for cell in row.findall(f"{{{NS}}}c"):
                     ref = cell.get("r", "")
@@ -206,8 +254,10 @@ def read_votes(path, members, chair) -> Tuple[List[dict], List[dict], List[str]]
         raise ValueError("Excel ブック(.xlsx)の内容を読み取れません。ファイルが壊れていないか確かめてください。") from error
     if not rows:
         return [], [], ["見出し行がありません。"]
-    header = rows[0]
-    by_name = {value: column for column, value in header.items() if value}
+    header_index, header = _find_header(rows, names)
+    by_name = {}
+    for column, value in header.items():
+        by_name.setdefault(value, column)
     for name in sorted(set(by_name) - set(HEADERS) - set(names)):
         warnings.append(f"名簿に無い議員の列があります: {name}")
     for name in names:
@@ -215,9 +265,13 @@ def read_votes(path, members, chair) -> Tuple[List[dict], List[dict], List[str]]
             warnings.append(f"名簿にある議員の列がありません: {name}")
     votes = []
     counts: Dict[str, int] = {}
-    for row_number, row in enumerate(rows[1:], 2):
+    previous_kind = ""
+    for row_number, row in zip(numbers[header_index + 1:], rows[header_index + 1:]):
         get = lambda key: row.get(by_name.get(key, -1), "").strip()
         kind, bill_no, subject, result = (get(key) for key in HEADERS)
+        if subject and not kind:
+            kind = previous_kind   # 区分のセルが縦につながっている（結合）ときは上の行の区分
+        previous_kind = kind or previous_kind
         if not subject:
             if any(row.values()):
                 warnings.append(f"{row_number}行目は件名が空のため読み飛ばしました。")
@@ -226,6 +280,7 @@ def read_votes(path, members, chair) -> Tuple[List[dict], List[dict], List[str]]
         all_empty = True
         for name in names:
             mark = get(name)
+            mark = MARK_WORDS.get(_plain(mark), mark)
             if mark:
                 all_empty = False
             if not mark and name == chair:
