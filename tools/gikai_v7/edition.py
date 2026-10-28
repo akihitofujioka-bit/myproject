@@ -60,7 +60,7 @@ def next_hint(current: Optional["Edition"]) -> str:
     return "必要な写真は右の「写真」タブから置き、「確かめる」のあと「Word に書き出す」を押してください。"
 
 
-def _vote_counts(votes) -> list:
+def vote_counts(votes) -> list:
     """議案の区分ごとの件数を、出てきた順に数える。"""
     counts: Dict[str, int] = {}
     for vote in votes:
@@ -226,9 +226,11 @@ class Edition:
             vote["source_title"] = vote["title"]
             vote.update(edits.get(vote["title"], {}))
         if edits:
-            counts = _vote_counts(votes)
+            counts = vote_counts(votes)
         values["votes"] = votes
-        values.setdefault("shingi", {})["counts"] = counts
+        shingi = values.setdefault("shingi", {})
+        if not shingi.get("counts_manual"):   # 画面で手直しした件数は取り込み直しても残す
+            shingi["counts"] = counts
         values["votes_warnings"] = warnings
         values["votes_import"] = {
             "source_name": source.name, "copy_name": copied.name,
@@ -245,7 +247,9 @@ class Edition:
         change = {"kind": kind.strip(), "title": title.strip("\n"), "result": result.strip()}
         vote.update(change)
         data.setdefault("vote_edits", {})[key] = change
-        data.setdefault("shingi", {})["counts"] = _vote_counts(data["votes"])
+        shingi = data.setdefault("shingi", {})
+        if not shingi.get("counts_manual"):
+            shingi["counts"] = vote_counts(data["votes"])
         self.save_items(data)
 
     def import_word_source(self, path: Path, member: str = "") -> dict:

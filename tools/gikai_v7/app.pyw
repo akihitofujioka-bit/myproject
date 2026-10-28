@@ -17,6 +17,7 @@ import guide
 import items
 import layout
 import sources
+import templates
 import docx_out as dx
 from grid import TATECHUYOKO, Rect, to_box, unit_width, units
 
@@ -632,14 +633,7 @@ class App:
         value = self.data.setdefault("shingi", {"counts": [], "bills": []})
         self._entry("定例会名", value.get("meeting", ""), lambda v: value.__setitem__("meeting", v))
         self._entry("会期", value.get("period", ""), lambda v: value.__setitem__("period", v))
-        counts = value.setdefault("counts", [])
-        if counts:
-            ttk.Label(self.inner, text="案件の種類と件数（取り込んだExcelから自動）: " +
-                      "、".join(f"{v.get('kind') or '区分なし'} {v.get('count')}件" for v in counts),
-                      wraplength=900).pack(anchor="w", pady=5)
-        else:
-            ttk.Label(self.inner, text="先に議案と賛否のエクセルを取り込むと自動で入ります。",
-                      foreground="#955").pack(anchor="w", pady=5)
+        self._counts_editor(value)
         # 審議ページに入りきらない行数を、その場で知らせる（1 ページに収める決まり）
         page = next((p for p in self.work.pages if p["section"] == layout.SHINGI), None)
         if page is not None:
@@ -656,6 +650,89 @@ class App:
                             vote_titles, True), ("description", "説明", True),
                            ("qa_bulk", "質疑（問・答で開始）", True)],
                           lambda v: v.get("title") or "（件名なし）")
+
+    def _counts_editor(self, value: dict) -> None:
+        """審議ページの「○月議会では、条例３件…の計○件」の種類と件数を、表で直せるようにする。
+
+        ふだんはエクセルから数えた件数が入る。ここで直すと「手で直した件数」になり、
+        議案と賛否を直したり取り込み直したりしても変わらない（「エクセルから数え直す」で戻す）。
+        """
+        box = ttk.LabelFrame(self.inner, text="案件の種類と件数（紙面の一番上のまとめ文になります）", padding=6)
+        box.pack(fill="x", pady=5)
+        manual = bool(value.get("counts_manual"))
+        ttk.Label(box, text=("手で直した件数です。エクセルを取り込み直しても変わりません。" if manual else
+                             "エクセルから自動で数えた件数です。違うときは、ここで直せます。"),
+                  foreground="#955" if manual else "#555").pack(anchor="w")
+        table = ttk.Frame(box)
+        table.pack(fill="x", pady=4)
+        ttk.Label(table, text="種類（例 条例・補正予算・請願）").grid(row=0, column=0, sticky="w")
+        ttk.Label(table, text="件数").grid(row=0, column=1, sticky="w", padx=6)
+        rows = []
+        sentence = ttk.Label(box, wraplength=900, justify="left")
+
+        def current():
+            result = []
+            for kind_var, count_var, _parts in rows:
+                kind = kind_var.get().strip()
+                count = _number(count_var.get())
+                if kind or count:
+                    result.append({"kind": kind, "count": count})
+            return result
+
+        def show_sentence(*_args):
+            text = templates.summary_text(current(), self.work.issue.month if self.work else None)
+            sentence.configure(text="紙面のまとめ文: " + (text or "（件数が0なので出ません）"))
+
+        def add_row(kind="", count=1):
+            index = len(rows) + 1
+            kind_var, count_var = tk.StringVar(value=kind), tk.StringVar(value=str(count))
+            entry = ttk.Entry(table, textvariable=kind_var, font=(self.font, INPUT_PT), width=30)
+            spin = tk.Spinbox(table, from_=0, to=999, textvariable=count_var, width=5,
+                              font=(self.font, INPUT_PT), command=show_sentence)
+            parts = []
+            remove = ttk.Button(table, text="この行を消す", command=lambda: delete(record))
+            record = (kind_var, count_var, parts)
+            parts.extend([entry, spin, remove])
+            entry.grid(row=index, column=0, sticky="we", pady=2, ipady=2)
+            spin.grid(row=index, column=1, sticky="w", padx=6)
+            remove.grid(row=index, column=2, sticky="w")
+            for var in (kind_var, count_var):
+                var.trace_add("write", show_sentence)
+            rows.append(record)
+            return entry
+
+        def delete(record):
+            for widget in record[2]:
+                widget.destroy()
+            rows.remove(record)
+            show_sentence()
+
+        for item in value.get("counts", []) or []:
+            add_row(str(item.get("kind", "")), int(item.get("count") or 0))
+        table.columnconfigure(0, weight=1)
+        buttons = ttk.Frame(box)
+        buttons.pack(fill="x")
+        ttk.Button(buttons, text="種類を足す", command=lambda: (add_row("", 1).focus_set(), show_sentence())
+                   ).pack(side="left")
+
+        def recount():
+            value["counts"] = edition.vote_counts(self.data.get("votes", []))
+            value.pop("counts_manual", None)
+            self.work.save_items(self.data)
+            self.show(self.step)
+        ttk.Button(buttons, text="エクセルから数え直す", command=recount).pack(side="left", padx=6)
+        sentence.pack(anchor="w", pady=(6, 0))
+        if not rows and not self.data.get("votes"):
+            ttk.Label(box, text="議案と賛否のエクセルを取り込むと自動で入ります。手で足すこともできます。",
+                      foreground="#955").pack(anchor="w")
+        show_sentence()
+
+        def keep():
+            counts = current()
+            if counts != (value.get("counts") or []):
+                value["counts"] = counts
+                value["counts_manual"] = True
+        self.getters.append(keep)
 
     def _step_8(self):
         self._title("委員会報告")

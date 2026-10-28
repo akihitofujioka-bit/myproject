@@ -264,3 +264,9 @@ class VoteEditTest(unittest.TestCase):
             self.assertEqual(again["votes"][1]["kind"], "意見書")
             self.assertEqual(again["votes"][1]["title"], "発議第１号\n架空の意見書")
             self.assertEqual(again["votes"][1]["marks"]["見本 太郎"], "○")   # ○・● はエクセルのまま
+            # 種類と件数を手で直したら、議案の手直しや取り込み直しでも変わらない
+            again["shingi"]["counts"] = [{"kind": "条例", "count": 3}]
+            again["shingi"]["counts_manual"] = True
+            work.edit_vote(again, 0, "議案", "議案第１号　架空", "可決")
+            work.import_votes(path, again)
+            self.assertEqual(again["shingi"]["counts"], [{"kind": "条例", "count": 3}])
