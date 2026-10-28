@@ -41,6 +41,11 @@ class App:
         self._style()
         self._build()
         self.drop_ready = dropfiles.enable(root, self.on_drop)
+        # マウスのホイール（トラックパッド）を、画面のどこで回してもその場所をスクロールする。
+        root.bind_all("<MouseWheel>", self._on_wheel)
+        root.bind_all("<Shift-MouseWheel>", lambda e: self._on_wheel(e, across=True))
+        root.bind_all("<Button-4>", lambda e: self._on_wheel(e, step=-1))
+        root.bind_all("<Button-5>", lambda e: self._on_wheel(e, step=1))
         # 複数行の欄でも TAB で次の欄、Shift+TAB で前の欄へ移る（字の間にタブを入れない）。
         root.bind_class("Text", "<Tab>", _focus_next)
         root.bind_class("Text", "<Shift-Tab>", _focus_previous)
@@ -134,6 +139,30 @@ class App:
         # 右から詰めて置くので、先に「次へ」を置くと左から「戻る」「次へ」の順になる。
         ttk.Button(bottom, text="次へ", command=self.next).pack(side="right")
         ttk.Button(bottom, text="戻る", command=self.back).pack(side="right", padx=6)
+
+    def _on_wheel(self, event, across: bool = False, step: int = 0):
+        """ホイールの位置にある、スクロールできる部品を動かす。中身が入りきっている部品は飛ばして外側を動かす。"""
+        if not step:
+            delta = getattr(event, "delta", 0)
+            if not delta:
+                return None
+            step = -int(delta / 120) if abs(delta) >= 120 else (-1 if delta > 0 else 1)
+        widget = self.root.winfo_containing(event.x_root, event.y_root)
+        while widget is not None:
+            view = None
+            try:
+                if across and hasattr(widget, "xview"):
+                    view = widget.xview()
+                elif not across and hasattr(widget, "yview") and widget.winfo_class() in (
+                        "Text", "Listbox", "Treeview", "Canvas"):
+                    view = widget.yview()
+            except tk.TclError:
+                view = None
+            if view and (view[0] > 0.0 or view[1] < 1.0):
+                (widget.xview_scroll if across else widget.yview_scroll)(step, "units")
+                return "break"
+            widget = widget.master
+        return None
 
     def _go(self, number: int) -> None:
         if self.work and self.step != number:
@@ -1142,22 +1171,49 @@ class App:
         self.save(silent=True)
         dialog = tk.Toplevel(self.root)
         dialog.title("紙面を見る")
-        dialog.geometry("760x690")
-        top = ttk.Frame(dialog, padding=6)
+        # 画面の高さいっぱいの窓にする（紙面の字が読める大きさで描くため）
+        screen_h = self.root.winfo_screenheight()
+        height = max(600, screen_h - 90)
+        width = min(self.root.winfo_screenwidth() - 40, 1100)
+        dialog.geometry(f"{width}x{height}+20+10")
+        top = ttk.Frame(dialog, padding=(6, 6, 6, 0))
         top.pack(fill="x")
         page_var = tk.IntVar(value=self._preview_page())
-        status = ttk.Label(top)
-        status.pack(side="right")
+        # ページの状況（あふれ・余り）は、ボタンの下の段に出す（窓が狭くてもボタンが隠れないように）
+        status = ttk.Label(dialog, padding=(8, 2, 8, 4))
+        status.pack(fill="x")
         drag = {"part": None}
-        paper = tk.Canvas(dialog, bg="#d9dde3", highlightthickness=0)
-        paper.pack(fill="both", expand=True)
+        # 最初は窓の幅いっぱいに描く（字が読める大きさ。上下はホイールでスクロール）。
+        view = {"zoom": 1.0, "mode": "width", "scale": 1.0, "ox": 12.0, "oy": 12.0}
+        area = ttk.Frame(dialog)
+        area.pack(fill="both", expand=True)
+        paper = tk.Canvas(area, bg="#d9dde3", highlightthickness=0)
+        down = ttk.Scrollbar(area, orient="vertical", command=paper.yview)
+        across = ttk.Scrollbar(area, orient="horizontal", command=paper.xview)
+        paper.configure(yscrollcommand=down.set, xscrollcommand=across.set)
+        paper.grid(row=0, column=0, sticky="nsew")
+        down.grid(row=0, column=1, sticky="ns")
+        across.grid(row=1, column=0, sticky="ew")
+        area.rowconfigure(0, weight=1)
+        area.columnconfigure(0, weight=1)
 
         def draw():
             number = page_var.get()
             result = self.work.compose(number)
             paper.delete("all")
-            scale, ox, oy = 0.72, 150, 12
-            paper.create_rectangle(ox, oy, ox + 595 * scale, oy + 842 * scale, fill="white", outline="#777")
+            dialog.update_idletasks()
+            # 「幅」は紙面の幅が窓の幅に、「全体」は紙面の高さが窓の高さに入る倍率。拡大・縮小はそれに掛ける。
+            if view["mode"] == "width":
+                fit = max(0.4, (paper.winfo_width() - 24) / 595)
+            else:
+                fit = max(0.4, (paper.winfo_height() - 24) / 842)
+            scale = fit * view["zoom"]
+            page_w, page_h = 595 * scale, 842 * scale
+            ox = max(12, (paper.winfo_width() - page_w) / 2)
+            oy = 12
+            view.update(scale=scale, ox=ox, oy=oy)
+            paper.create_rectangle(ox, oy, ox + page_w, oy + page_h, fill="white", outline="#777")
+            paper.configure(scrollregion=(0, 0, ox + page_w + 12, oy + page_h + 12))
             # 部品の種類ごとの色を薄く敷き、その上に Word へ出すのと同じ枠・文字・表・写真を描く。
             # 決まった型のページ（表紙・審議・最終）は格子と枠の位置が違うので、色は敷かない。
             flow_page = "form" not in self.work.pages[number - 1]
@@ -1176,8 +1232,35 @@ class App:
         ttk.Button(top, text="元に戻す", command=lambda: (self.work.undo(), draw())).pack(side="left")
         ttk.Button(top, text="やり直す", command=lambda: (self.work.redo(), draw())).pack(side="left", padx=4)
 
+        def zoom(factor=None, mode=None):
+            if mode:
+                view.update(mode=mode, zoom=1.0)
+            else:
+                view["zoom"] = max(0.3, min(4.0, view["zoom"] * factor))
+            draw()
+            if mode:
+                paper.yview_moveto(0)
+        ttk.Button(top, text="拡大", command=lambda: zoom(1.25)).pack(side="left", padx=(12, 2))
+        ttk.Button(top, text="縮小", command=lambda: zoom(0.8)).pack(side="left", padx=2)
+        ttk.Button(top, text="幅に合わせる", command=lambda: zoom(mode="width")).pack(side="left", padx=2)
+        ttk.Button(top, text="全体", command=lambda: zoom(mode="page")).pack(side="left", padx=2)
+        paper.bind("<Control-MouseWheel>", lambda e: (zoom(1.1 if e.delta > 0 else 0.9), "break")[1])
+        resize = {"size": None}
+
+        def on_resize(event):
+            # 窓の大きさを変えたら描き直す（全体表示のときだけ。拡大中は位置を保つ）
+            if event.widget is dialog and view["zoom"] == 1.0 and resize["size"] != (event.width, event.height):
+                resize["size"] = (event.width, event.height)
+                draw()
+        dialog.bind("<Configure>", on_resize)
+
+        def page_point(event):
+            """画面の点を、紙面の位置（pt）に直す。スクロールと拡大を考える。"""
+            x, y = paper.canvasx(event.x), paper.canvasy(event.y)
+            return (x - view["ox"]) / view["scale"], (y - view["oy"]) / view["scale"]
+
         def grid_at(event):
-            point_x, point_y = (event.x - 150) / 0.72, (event.y - 12) / 0.72
+            point_x, point_y = page_point(event)
             g = self.work.geometry
             dan = round((point_y - g.margin_top_mm * 72 / 25.4) / (g.dan_h_pt + g.gap_pt))
             right = (g.page_w_mm - g.margin_right_mm) * 72 / 25.4
@@ -1188,7 +1271,7 @@ class App:
         def press(event):
             if self.step != 12:
                 return
-            point_x, point_y = (event.x - 150) / 0.72, (event.y - 12) / 0.72
+            point_x, point_y = page_point(event)
             result = self.work.compose(page_var.get())
             drag["part"] = None
             for placement in reversed(result.placements):
