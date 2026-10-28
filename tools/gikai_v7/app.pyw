@@ -10,6 +10,7 @@ import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import font as tkfont
 
 import dropfiles
 import edition
@@ -632,7 +633,7 @@ class App:
         self._title("審議したこと")
         value = self.data.setdefault("shingi", {"counts": [], "bills": []})
         self._entry("定例会名", value.get("meeting", ""), lambda v: value.__setitem__("meeting", v))
-        self._entry("会期", value.get("period", ""), lambda v: value.__setitem__("period", v))
+        self._period_choice(value)
         self._counts_editor(value)
         # 審議ページに入りきらない行数を、その場で知らせる（1 ページに収める決まり）
         page = next((p for p in self.work.pages if p["section"] == layout.SHINGI), None)
@@ -650,6 +651,79 @@ class App:
                             vote_titles, True), ("description", "説明", True),
                            ("qa_bulk", "質疑（問・答で開始）", True)],
                           lambda v: v.get("title") or "（件名なし）")
+
+    def _period_choice(self, value: dict) -> None:
+        """会期（例 Ｒ８．９．４～９．１１）を、始まりと終わりの年月日のプルダウンで選ぶ。"""
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text="会期", width=20).pack(side="left")
+        old = str(value.get("period", "") or "")
+        parsed = parse_period(old)
+        if parsed is None:
+            # まだ入っていなければ、定例会の月を最初に出す（日は選んでもらう）
+            issue = self.work.issue
+            match = re.search(r"令和\s*([0-9０-９]+)年", issue.date)
+            year = _number(match.group(1)) if match else datetime.date.today().year - 2018
+            month = layout.TEIREIKAI.get(issue.month, issue.month)
+            if issue.month == 1:
+                year -= 1
+            parsed = (year, month, 0, year, month, 0)
+        start_year, start_month, start_day, end_year, end_month, end_day = parsed
+        this_year = datetime.date.today().year - 2018
+        years = sorted({this_year - 1, this_year, this_year + 1, start_year, end_year})
+        boxes = {}
+
+        def choice(name, current, labels, width):
+            var = tk.StringVar(value=current)
+            ttk.Combobox(row, textvariable=var, values=labels, state="readonly", width=width,
+                         font=(self.font, INPUT_PT)).pack(side="left", padx=(0, 2))
+            boxes[name] = var
+
+        year_labels = [f"令和{y}年" for y in years]
+        month_labels = [f"{m}月" for m in range(1, 13)]
+        day_labels = [f"{d}日" for d in range(1, 32)]
+        choice("start_year", f"令和{start_year}年", year_labels, 9)
+        choice("start_month", f"{start_month}月", month_labels, 5)
+        choice("start_day", f"{start_day}日" if start_day else "", day_labels, 5)
+        ttk.Label(row, text="から").pack(side="left", padx=4)
+        choice("end_year", f"令和{end_year}年", year_labels, 9)
+        choice("end_month", f"{end_month}月", month_labels, 5)
+        choice("end_day", f"{end_day}日" if end_day else "", day_labels, 5)
+        ttk.Label(row, text="まで").pack(side="left", padx=4)
+        shown = ttk.Label(self.inner, foreground="#555")
+        shown.pack(anchor="w", padx=(150, 0))
+
+        def build():
+            numbers = [_number(boxes[name].get()) for name in
+                       ("start_year", "start_month", "start_day", "end_year", "end_month", "end_day")]
+            return format_period(*numbers)
+
+        def refresh(*_args):
+            text = build()
+            if text:
+                shown.configure(text="紙面の会期: " + text, foreground="#555")
+            elif _number(boxes["start_day"].get()) and _number(boxes["end_day"].get()):
+                shown.configure(text="その日付はありません。終わりの日が始まりより前でないか、"
+                                     "月の日数（2月30日など）を確かめてください。", foreground="#a33")
+            elif old and parse_period(old) is None:
+                shown.configure(text="前に書いた会期: " + old + "（日まで選ぶと置き換わります）", foreground="#955")
+            else:
+                shown.configure(text="始まりと終わりの日を選んでください。", foreground="#955")
+        def follow(start, end):
+            # 終わりの日をまだ選んでいなければ、終わりの年・月も始まりにそろえる
+            if not _number(boxes["end_day"].get()):
+                boxes[end].set(boxes[start].get())
+        boxes["start_year"].trace_add("write", lambda *_a: follow("start_year", "end_year"))
+        boxes["start_month"].trace_add("write", lambda *_a: follow("start_month", "end_month"))
+        for var in boxes.values():
+            var.trace_add("write", refresh)
+        refresh()
+
+        def keep():
+            text = build()
+            if text or parse_period(old) is not None:
+                value["period"] = text
+        self.getters.append(keep)
 
     def _counts_editor(self, value: dict) -> None:
         """審議ページの「○月議会では、条例３件…の計○件」の種類と件数を、表で直せるようにする。
@@ -1635,7 +1709,8 @@ def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
             for unit in units(line):
                 height = unit_width(unit) * size
                 if TATECHUYOKO.fullmatch(unit):
-                    canvas.create_text(x, y + height / 2, text=unit, font=(family, -max(4, int(size * 0.6))))
+                    canvas.create_text(x, y + height / 2, text=unit,
+                                       font=_tcy_font(family, size, item.bold, unit))
                 elif unit in TURN_IN_VERTICAL or (len(unit) > 1 or ord(unit[0]) < 0x80):
                     _turned(canvas, x, y + height / 2, unit, font)
                 else:
@@ -1645,6 +1720,30 @@ def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
     anchor, x = {"中央": ("center", (x1 + x2) / 2), "右": ("e", x2 - 2)}.get(item.align, ("w", x1 + 2))
     for index, line in enumerate(item.lines):
         canvas.create_text(x, y1 + pitch / 2 + index * pitch, text=line, font=font, anchor=anchor)
+
+
+_TCY_FONTS = {}
+
+
+def _tcy_font(family, size: int, bold: bool, digits: str):
+    """縦中横の数字の字の大きさ。Word と同じく、本文と同じ高さのまま1字分の幅に収める。
+
+    半角の数字2桁はふつう本文と同じ大きさで1字分に入る。3桁は入るところまで小さくする
+    （Word は字の高さを変えずに幅だけ縮めるが、画面では幅だけ縮められないため）。
+    行と行の間が空いているので、1字分より少しだけ広くてもよいことにする。
+    """
+    weight = "bold" if bold else "normal"
+    key = (family, size, weight, len(digits))
+    if key not in _TCY_FONTS:
+        measure = "0" * len(digits)
+        chosen = max(4, size)
+        try:
+            while chosen > 4 and tkfont.Font(family=family, size=-chosen, weight=weight).measure(measure) > size * 1.15:
+                chosen -= 1
+        except tk.TclError:
+            chosen = max(4, int(size * 0.8))
+        _TCY_FONTS[key] = (family, -chosen, weight)
+    return _TCY_FONTS[key]
 
 
 def _turned(canvas, x, y, text, font) -> None:
@@ -1720,6 +1819,32 @@ def _last_day(reiwa_year: int, month: int) -> str:
         return ""
     last = calendar.monthrange(2018 + reiwa_year, month)[1]
     return f"令和{reiwa_year}年{month}月{last}日"
+
+
+def parse_period(text: str):
+    """「Ｒ８．９．４～９．１１」を (開始の年, 月, 日, 終わりの年, 月, 日) にする。読めなければ None。"""
+    plain = str(text or "").translate(_ZEN_TO_HAN).translate(str.maketrans("Ｒ．～〜", "R.~~"))
+    match = re.fullmatch(r"\s*R(\d+)\.(\d+)\.(\d+)\s*[~\-－]\s*(?:R(\d+)\.)?(\d+)\.(\d+)\s*", plain)
+    if not match:
+        return None
+    year, month, day, end_year, end_month, end_day = match.groups()
+    year = int(year)
+    end_year = int(end_year) if end_year else (year + 1 if int(end_month) < int(month) else year)
+    return year, int(month), int(day), end_year, int(end_month), int(end_day)
+
+
+def format_period(year, month, day, end_year, end_month, end_day) -> str:
+    """年月日から会期の文を作る（全角）。日がそろっていない・ありえない日付なら空。"""
+    try:
+        start = datetime.date(2018 + year, month, day)
+        end = datetime.date(2018 + end_year, end_month, end_day)
+    except ValueError:
+        return ""
+    if end < start:
+        return ""
+    tail = f"{end_month}.{end_day}" if end_year == year else f"R{end_year}.{end_month}.{end_day}"
+    text = f"R{year}.{month}.{day}~{tail}"
+    return text.translate(str.maketrans("0123456789R.~", "０１２３４５６７８９Ｒ．～"))
 
 
 def _month_label(month: int) -> str:

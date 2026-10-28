@@ -82,5 +82,20 @@ class PreviewStartPageTest(unittest.TestCase):
         self.assertEqual(app._preview_page(), 6)
 
 
+class PeriodTest(unittest.TestCase):
+    """会期のプルダウンで選んだ年月日を、紙面の書き方（全角）にする。"""
+
+    def test_format_and_parse(self):
+        app_module = _load_app()
+        self.assertEqual(app_module.format_period(8, 9, 4, 8, 9, 11), "Ｒ８．９．４～９．１１")
+        self.assertEqual(app_module.parse_period("Ｒ８．９．４～９．１１"), (8, 9, 4, 8, 9, 11))
+        self.assertEqual(app_module.format_period(8, 12, 25, 9, 1, 5), "Ｒ８．１２．２５～Ｒ９．１．５")
+        self.assertEqual(app_module.parse_period("Ｒ８．１２．２５～１．５"), (8, 12, 25, 9, 1, 5))
+        self.assertEqual(app_module.format_period(8, 2, 30, 8, 3, 1), "")   # 無い日
+        self.assertEqual(app_module.format_period(8, 9, 11, 8, 9, 4), "")   # 終わりが前
+        self.assertEqual(app_module.format_period(8, 9, 0, 8, 9, 11), "")   # 日を選んでいない
+        self.assertIsNone(app_module.parse_period("９月４日から"))
+
+
 if __name__ == "__main__":
     unittest.main()
