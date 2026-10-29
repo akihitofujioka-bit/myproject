@@ -75,6 +75,14 @@ class ConversionTest(unittest.TestCase):
         self.assertEqual(found[1]["answer"], "下げる方向で検討する。")
         self.assertEqual(items.parse_bulk("問題は山積だ")["questions"], [])   # 「問題」は問の印にしない
 
+    def test_bulk_reads_paren_heading_marks(self):
+        """議員の原稿に書き足す（見出し）（見出しの答）の印を読む。印だけの行なら次の行が中身。"""
+        text = ("（見出し）防災対策の強化を\n（見出しの答）計画的に進める\n質問　備えは。\n答弁　村長\n　増やす。\n"
+                "(見出し)\n子育て支援の拡充は\n（見出しの答え）\n保育料を下げる\n質問　保育料は。\n答弁　教育長\n　下げる。")
+        found = items.parse_bulk(text)["questions"]
+        self.assertEqual([(q["heading"], q.get("heading_answer"), q["answerer"]) for q in found],
+                         [("防災対策の強化を", "計画的に進める", "村長"), ("子育て支援の拡充は", "保育料を下げる", "教育長")])
+
     def test_bulk_reads_summary_answer(self):
         parsed = items.parse_bulk("【見出し】防災対策の強化を\n【見出しの答】計画的に進める\n"
                                   "問　備えは。\n答　増やす。\n答弁者　見本課長\n"

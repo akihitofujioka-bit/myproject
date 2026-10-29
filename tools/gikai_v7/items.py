@@ -178,6 +178,7 @@ def parse_bulk(text: str) -> dict:
     body: List[str] = []
     pairs: List[dict] = []
     current = None
+    pending = ""   # 「（見出し）」だけの行のあと、次の行をどちらに入れるか（"見出し" か "見出しの答"）
     lines = [raw.rstrip() for raw in str(text or "").splitlines()]
 
     def next_label(index):
@@ -188,18 +189,31 @@ def parse_bulk(text: str) -> dict:
 
     for index, line in enumerate(lines):
         stripped = line.strip()
-        # 【見出しの答】は、直前の見出し（大まかな質問）に対する答。次の問の見出しに添える
-        answer_mark = re.match(r"^\s*[【［\[]見出しの答[】］\]]\s*(.*)$", line)
-        if answer_mark:
-            heading_answer = answer_mark.group(1).strip()
+        if pending and stripped:
+            # 「（見出し）」「（見出しの答）」だけの行の、次の行がその中身
+            if pending == "見出し":
+                if heading:
+                    body.append(heading)
+                heading = stripped
+            else:
+                heading_answer = stripped
+            pending = ""
             current = None
             continue
-        # 【見出し】大まかな質問 の形でも見出しにする
-        heading_mark = re.match(r"^\s*[【［\[]見出し[】］\]]\s*(.+)$", line)
-        if heading_mark:
-            if heading:
-                body.append(heading)
-            heading = heading_mark.group(1).strip()
+        # 【見出し】【見出しの答】（見出し）（見出しの答）の印。議員の原稿に書き足してもらう印も読む。
+        # 見出しの答は、その見出し（大まかな質問）への答。次の問の見出しに添える
+        mark = re.match(r"^\s*[【［\[（(〈]\s*(?P<kind>見出しの答え?|見出し)\s*[】］\]）)〉][\s　：:]*(?P<rest>.*)$", line)
+        if mark:
+            rest = mark.group("rest").strip()
+            kind = "見出し" if mark.group("kind") == "見出し" else "見出しの答"
+            if not rest:
+                pending = kind
+            elif kind == "見出し":
+                if heading:
+                    body.append(heading)
+                heading = rest
+            else:
+                heading_answer = rest
             current = None
             continue
         label = _label(stripped) if stripped else None
