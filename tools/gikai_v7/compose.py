@@ -385,7 +385,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                       font=dx.GOTHIC, pt=title_pt,
                       pitch=max(34.0, title_pt * dx.AT_LEAST_RATIO) if title.vertical
                       else dx.effective_pitch(title_pt, PITCH),
-                      border=True, center=title.vertical, name="大見出し",
+                      border=True, center=True, name="大見出し",
                       vertical=title.vertical, align="中央")
         else:
             warnings.append("大見出しの決まった位置が、区分の固定枠と重なります")
@@ -408,7 +408,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                       font=dx.GOTHIC, pt=second_pt,
                       pitch=max(34.0, second_pt * dx.AT_LEAST_RATIO) if second.vertical
                       else dx.effective_pitch(second_pt, PITCH),
-                      border=True, center=second.vertical, name="大見出し",
+                      border=True, center=True, name="大見出し",
                       vertical=second.vertical, align="中央")
             skip.add(1)
             title_rect = rect
@@ -515,7 +515,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                       font=dx.GOTHIC, pt=heading_pt,
                       pitch=max(34.0, heading_pt * dx.AT_LEAST_RATIO) if part.vertical
                       else dx.effective_pitch(heading_pt, PITCH),
-                      border=True, center=part.vertical, name="大見出し",
+                      border=True, center=True, name="大見出し",
                       vertical=part.vertical, align="中央")
             last_rect = rect
             continue
@@ -582,7 +582,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             pitch = (rect.line_span * g.line_pitch_pt / len(heading_lines)
                      if part.vertical else dx.effective_pitch(heading_pt, PITCH))
             _add_text(page, g, rect, heading_lines, font=dx.GOTHIC,
-                      pt=heading_pt, pitch=pitch, center=part.vertical, name="中見出し",
+                      pt=heading_pt, pitch=pitch, center=True, name="中見出し",
                       line_colors=_heading_colors(part.text, heading_lines),
                       vertical=part.vertical, align="中央")
             last_rect = rect

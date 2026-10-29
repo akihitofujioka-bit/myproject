@@ -44,6 +44,8 @@ class App:
         self.getters = []
         # 手順ごとに、紙面を見るで最後に見ていたページ（次に開くときはそこから出す）
         self.preview_pages = {}
+        # 手順ごとに、一覧で選んでいる件の番号（一般質問なら何人目か）
+        self.list_selection = {}
         self.font = "TkDefaultFont"
         self._style()
         self._build()
@@ -267,12 +269,18 @@ class App:
         controls = ttk.Frame(box)
         controls.pack(side="left", fill="y", padx=(7, 0))
 
+        step = self.step
+
         def refresh(select=0):
             listing.delete(0, "end")
             for index, value in enumerate(values):
                 listing.insert("end", f"{index + 1}. {summary(value)}")
             if values:
                 listing.selection_set(min(select, len(values) - 1))
+                # 紙面を見るで、選んでいる（足したばかりの）件のページから開くために覚えておく
+                self.list_selection[step] = min(select, len(values) - 1)
+        listing.bind("<<ListboxSelect>>", lambda _e: listing.curselection() and
+                     self.list_selection.__setitem__(step, listing.curselection()[0]))
 
         def edit(new=False):
             if new and max_items and len(values) >= max_items:
@@ -1542,7 +1550,8 @@ class App:
         if not self.work:
             messagebox.showinfo("紙面", "先に号を作るか開いてください。")
             return
-        self.save(silent=True)
+        if not self.save():   # 保存できない（ページ割りの決まりに合わない等）ときは、理由を出して止める
+            return
         dialog = tk.Toplevel(self.root)
         dialog.title("紙面を見る")
         # 画面の高さいっぱいの窓にする（紙面の字が読める大きさで描くため）
@@ -1601,11 +1610,9 @@ class App:
             _draw_items(paper, result.page.items, scale, ox, oy, self.font)
             status.configure(text=(f"{number}ページ　あふれ {result.overflow_lines}行"
                                    f"（約{result.overflow_lines * 12}字）／余り {result.free_lines}行"))
-        last_page = len(self.work.pages)
-
         def turn(delta: int) -> None:
             """前のページ・次のページへ。最初と最後では止まる。"""
-            page_var.set(max(1, min(last_page, page_var.get() + delta)))
+            page_var.set(max(1, min(len(self.work.pages), page_var.get() + delta)))
             draw()
             paper.yview_moveto(0)
         ttk.Button(top, text="◀ 前のページ", command=lambda: turn(-1)).pack(side="left", padx=(0, 4))
@@ -1613,6 +1620,17 @@ class App:
                                state="readonly", width=5)
         chooser.pack(side="left")
         chooser.bind("<<ComboboxSelected>>", lambda _e: (draw(), paper.yview_moveto(0)))
+
+        def catch_up(event):
+            """紙面を見るの窓へ戻ってきたら、元の画面で足した・直した内容で描き直す
+            （一般質問に議員を足すとページが増えるので、ページの一覧も作り直す）。"""
+            if event.widget is not dialog or not self.save(silent=True):
+                return
+            chooser.configure(values=[p["no"] for p in self.work.pages])
+            if page_var.get() > len(self.work.pages):
+                page_var.set(len(self.work.pages))
+            draw()
+        dialog.bind("<FocusIn>", catch_up)
         ttk.Button(top, text="次のページ ▶", command=lambda: turn(1)).pack(side="left", padx=4)
         # キーボードの ← → と PageUp・PageDown でもページを送る
         for key, delta in (("<Left>", -1), ("<Right>", 1), ("<Prior>", -1), ("<Next>", 1)):
@@ -1768,6 +1786,10 @@ class App:
             # 写真・全ページの確認など、決まった項目のない手順は前に見ていたページから
             return last if last in numbers else 1
         mine = [p["no"] for p in pages if p["section"] in sections]
+        # 一般質問は 1 人 1 ページなので、一覧で選んでいる（足したばかりの）人のページから出す
+        chosen = self.list_selection.get(self.step)
+        if self.step == 9 and chosen is not None and chosen < len(mine):
+            return mine[chosen]
         if last in mine:
             return last
         return mine[0] if mine else 1
@@ -1855,21 +1877,33 @@ def _draw_items(canvas, items, scale: float, ox: float, oy: float, family: str) 
 
 
 def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
+    """文字の枠を描く。画面の字の形は Word と少し違うので、字が枠からはみ出さないよう
+    1 行が枠に入りきらないときは字を詰めて小さくする（Word の紙面は変えない）。"""
     size = max(4, round(item.pt * scale))
-    font = (family, -size, "bold" if item.bold else "normal")
+    weight = "bold" if item.bold else "normal"
     pitch = dx.effective_pitch(item.pt, item.pitch_pt) * scale
     colors = getattr(item, "line_colors", None) or []
+
+    def color(index):
+        return "#" + colors[index] if index < len(colors) and colors[index] else "black"
     if item.vertical:
         total = len(item.lines) * pitch
         first = ((x1 + x2) / 2 + total / 2 - pitch / 2) if item.center else (x2 - pitch / 2)
+        room = max(1.0, (y2 - y1) - 2)
         for index, line in enumerate(item.lines):
-            x, y = first - index * pitch, y1 + 2
-            fill = "#" + colors[index] if index < len(colors) and colors[index] else "black"
-            for unit in units(line):
-                height = unit_width(unit) * size
+            pieces = units(line)
+            need = sum(unit_width(unit) for unit in pieces) * size
+            step = min(1.0, room / need) if need else 1.0
+            # 字の大きさは送りより少し小さくし、隣の字や枠の下端に重ならないようにする
+            glyph = max(4, int(size * step * 0.92))
+            font = (family, -glyph, weight)
+            x, y = first - index * pitch, y1 + 1
+            fill = color(index)
+            for unit in pieces:
+                height = unit_width(unit) * size * step
                 if TATECHUYOKO.fullmatch(unit):
                     canvas.create_text(x, y + height / 2, text=unit, fill=fill,
-                                       font=_tcy_font(family, size, item.bold, unit))
+                                       font=_tcy_font(family, glyph, item.bold, unit))
                 elif unit in TURN_IN_VERTICAL or (len(unit) > 1 or ord(unit[0]) < 0x80):
                     _turned(canvas, x, y + height / 2, unit, font, fill)
                 else:
@@ -1877,8 +1911,31 @@ def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
                 y += height
         return
     anchor, x = {"中央": ("center", (x1 + x2) / 2), "右": ("e", x2 - 2)}.get(item.align, ("w", x1 + 2))
+    total = len(item.lines) * pitch
+    # 見出しの囲み（center）は、行のかたまりを枠の上下の真ん中に置く（Word と同じ）
+    top = y1 + max(0.0, (y2 - y1 - total) / 2) if item.center else y1
+    room = max(1.0, (x2 - x1) - 4)
     for index, line in enumerate(item.lines):
-        canvas.create_text(x, y1 + pitch / 2 + index * pitch, text=line, font=font, anchor=anchor)
+        glyph = size
+        try:
+            width = _measure(family, glyph, weight, line)
+            if width > room:
+                glyph = max(4, int(glyph * room / width))
+        except tk.TclError:
+            pass
+        canvas.create_text(x, top + pitch / 2 + index * pitch, text=line, anchor=anchor,
+                           font=(family, -glyph, weight), fill=color(index))
+
+
+_MEASURE_FONTS = {}
+
+
+def _measure(family, size: int, weight: str, text: str) -> int:
+    """画面の字で text を描いたときの幅（画素）。"""
+    key = (family, size, weight)
+    if key not in _MEASURE_FONTS:
+        _MEASURE_FONTS[key] = tkfont.Font(family=family, size=-size, weight=weight)
+    return _MEASURE_FONTS[key].measure(text)
 
 
 _TCY_FONTS = {}

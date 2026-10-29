@@ -68,6 +68,7 @@ class PreviewStartPageTest(unittest.TestCase):
         app = app_module.App.__new__(app_module.App)
         app.work = Work()
         app.preview_pages = {}
+        app.list_selection = {}
         for step, page in ((3, 1), (4, 2), (6, 3), (7, 3), (9, 4), (11, 6), (13, 1)):
             app.step = step
             self.assertEqual(app._preview_page(), page, step)
@@ -80,6 +81,12 @@ class PreviewStartPageTest(unittest.TestCase):
         app.step = 13
         app.preview_pages[13] = 6
         self.assertEqual(app._preview_page(), 6)
+        # 一般質問は、一覧で選んでいる（足したばかりの）人のページから
+        app.step = 9
+        app.list_selection[9] = 1
+        self.assertEqual(app._preview_page(), 5)
+        app.list_selection[9] = 0
+        self.assertEqual(app._preview_page(), 4)
 
 
 class PeriodTest(unittest.TestCase):
