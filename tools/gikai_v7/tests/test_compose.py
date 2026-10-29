@@ -90,6 +90,21 @@ class PlacementTest(unittest.TestCase):
         self.assertEqual(len(boxes), 1)
         self.assertEqual(len(boxes[0].lines), 2)
 
+    def test_committee_reporter_line_and_long_committee_name(self):
+        """委員会報告: 課長名は見出しにせず 1 行（次の行から説明）。長い委員会名は 1 行目上づめ・2 行目下づめ。"""
+        parts = [I.Part("中見出し", "架空産業厚生常任委員会"), I.Part("中見出し", "総務課長"),
+                 I.Part("本文", "架空の説明です。"), I.Part("中見出し", "所感"), I.Part("本文", "架空の所感です。")]
+        result = C.compose_page(layout.IINKAI, parts, {}, self.g)
+        boxes = [item for item in result.page.items if isinstance(item, dx.TextBox)]
+        name = next(item for item in boxes if "委員会" in "".join(item.lines))
+        self.assertEqual(len(name.lines), 2)
+        self.assertEqual(name.align, "左")
+        self.assertTrue(name.lines[1].startswith("　") and name.lines[1].endswith("委員会"))
+        reporter = next(item for item in boxes if item.name == "報告者")
+        self.assertEqual(reporter.lines[:2], ["総務課長", "　架空の説明です。"])
+        self.assertEqual(reporter.font, dx.GOTHIC)
+        self.assertIn("所感", [item.lines[0] for item in boxes if item.name == "中見出し"])
+
     def test_general_question_fonts_and_answer_runs(self):
         """一般質問は「質問　本文」、「答弁　答弁者」のあと行を変えて答弁の本文（明朝）。"""
         parts = [

@@ -704,7 +704,10 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             pending_role = part.text.strip()
             continue
 
-        if part.kind == "中見出し" and not standalone_role:
+        # 委員会報告で報告する課長などの名前は、見出しにせず 1 行に置き、次の行から説明を始める
+        reporter = (section == layout.IINKAI and part.kind == "中見出し" and _is_role(part.text))
+
+        if part.kind == "中見出し" and not standalone_role and not reporter:
             base_pt = _heading_pt(section, part.kind, part.text)
             if part.vertical:
                 heading_pt, heading_lines, span = _mid_heading(g, part.text, base_pt)
@@ -725,18 +728,26 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             placements.append(Placement(part, rect, index))
             pitch = (rect.line_span * g.line_pitch_pt / len(heading_lines)
                      if part.vertical else dx.effective_pitch(heading_pt, PITCH))
+            align = "中央"
+            if (section == layout.IINKAI and part.vertical and len(heading_lines) == 2
+                    and part.text.strip().endswith("委員会")):
+                # 委員会名が 1 行に入らないときは、1 行目を上づめ、2 行目を下づめにする
+                per_line = _per_line(g, Rect(0, 0, 1, 2), heading_pt)
+                gap = max(0, int(per_line - text_width(heading_lines[1])))
+                heading_lines = [heading_lines[0], "　" * gap + heading_lines[1]]
+                align = "左"
             _add_text(page, g, rect, heading_lines, font=dx.GOTHIC,
                       pt=heading_pt, pitch=pitch, center=True, name="中見出し",
                       line_colors=_heading_colors(part.text, heading_lines),
-                      vertical=part.vertical, align="中央")
+                      vertical=part.vertical, align=align)
             last_rect = rect
             continue
 
         lines = split_lines(part.text, g.chars_per_line,
-                            indent=part.reason != "前ページからの続き")
+                            indent=part.reason != "前ページからの続き" and not reporter)
         pos = 0
         font, pt, pitch = _format(section, part.kind)
-        if standalone_role:
+        if standalone_role or reporter:
             font = dx.GOTHIC
         styled_lines = (_answer_line_runs(lines)
                         if section == layout.IPPAN and part.kind == "答弁" else None)
@@ -754,7 +765,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             occupied.append(rect)
             placements.append(Placement(part, rect, index))
             _add_text(page, g, rect, chunk, font=font, pt=pt, pitch=pitch,
-                      name="答弁者名" if standalone_role else part.kind,
+                      name="答弁者名" if standalone_role else ("報告者" if reporter else part.kind),
                       line_runs=chunk_runs)
             last_rect = rect
             pos += take
