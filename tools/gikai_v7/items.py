@@ -214,6 +214,31 @@ def _qa_lines(values: Iterable[dict], answerer: bool = False) -> List[str]:
     return lines
 
 
+def split_sections(body: str) -> List[Tuple[str, str]]:
+    """委員会報告の本文を、(小見出し, 本文) のまとまりに分ける。【見出し】の行で区切る。"""
+    sections: List[Tuple[str, List[str]]] = []
+    for raw in str(body or "").splitlines():
+        line = raw.strip()
+        if line.startswith("【見出し】"):
+            sections.append((line[len("【見出し】"):].strip(), []))
+            continue
+        if not sections:
+            sections.append(("", []))
+        sections[-1][1].append(raw.rstrip())
+    return [(title, "\n".join(lines).strip()) for title, lines in sections if title or "".join(lines).strip()]
+
+
+def join_sections(sections: Iterable[Tuple[str, str]]) -> str:
+    """(小見出し, 本文) のまとまりを、本文（小見出しの行の頭に【見出し】）の形にする。"""
+    lines: List[str] = []
+    for title, body in sections:
+        if title:
+            lines.append("【見出し】" + title)
+        if body:
+            lines.append(body)
+    return "\n".join(lines)
+
+
 def bulk_text(questions: Iterable[dict]) -> str:
     """質問ごとの欄の内容を、まとめ欄の形（【見出し】【見出しの答】問 答 答弁者）にする。parse_bulk で元に戻る。"""
     lines: List[str] = []

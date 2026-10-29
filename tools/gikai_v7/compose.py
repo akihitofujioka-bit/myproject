@@ -354,7 +354,15 @@ def _place_picture(page: dx.Page, g: Geometry, part: I.Part, rect: Rect,
                          grid_box.y, width, grid_box.h)
     if data is None:
         if part.reason == "印刷所が入れる顔写真の空欄":
-            page.items.append(dx.Placeholder(picture_box, "", f"写真{number}"))
+            # 顔写真の空欄の下に、議員名（▲見本 太郎議員 の行）を横書きで入れる
+            name_h = 16.0 if caption else 0.0
+            frame = dx.Box(picture_box.x, picture_box.y, picture_box.w, picture_box.h - name_h)
+            page.items.append(dx.Placeholder(frame, "", f"写真{number}"))
+            if caption:
+                pt = min(9.0, max(6.0, (picture_box.w - dx.SLACK_PT) / max(1.0, text_width(caption))))
+                page.items.append(dx.TextBox(dx.Box(picture_box.x, frame.y + frame.h, picture_box.w, name_h),
+                                             [caption], dx.GOTHIC, pt, dx.effective_pitch(pt, PITCH),
+                                             False, True, "顔写真の議員名", vertical=False, align="中央"))
             return
         page.items.append(dx.Placeholder(picture_box, f"写真{number}: {name}", f"写真{number}"))
         warnings.append(f"写真{number}（{name}）の画像データがありません")

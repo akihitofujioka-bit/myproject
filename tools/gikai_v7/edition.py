@@ -146,6 +146,7 @@ class Edition:
 
         before = self._state()
         old = {(page["section"], page["index"]): page for page in self.pages}
+        kept_moves = {}   # 紙面を見るで動かした写真（顔写真枠）・大見出しの位置。原稿を入れ直したあとで当て直す
         pages = []
         for slot in new_plan.pages:
             page = self._new_page(slot)
@@ -153,6 +154,7 @@ class Edition:
             if previous:
                 # 写真はページ位置が同じなら残す。V7 の原稿・フォームは後で入れ直す。
                 page["placed_photos"] = copy.deepcopy(previous.get("placed_photos", []))
+                kept_moves[slot.no] = copy.deepcopy(previous.get("overrides", {}))
             pages.append(page)
         self.issue, self.plan, self.pages = new_issue, new_plan, pages
         self._ingest_cache.clear()
@@ -198,6 +200,21 @@ class Edition:
                     page["writer_text"] = text
                 page["flow_to_next"] = (section in FLOW_SECTIONS
                                           and index < len(section_pages) - 1)
+
+        # 動かした位置は、入れ直した原稿の同じ番号の部品が同じ種類（写真・大見出し）のときだけ当て直す
+        for page in self.pages:
+            moves = kept_moves.get(page["no"]) or {}
+            if not moves or "form" in page:
+                continue
+            try:
+                parts = self.parts(page["no"])
+            except Exception:
+                continue
+            for key, change in moves.items():
+                index = int(key)
+                if (0 <= index < len(parts) and parts[index].kind in ("写真", "大見出し")
+                        and isinstance(change, dict) and change.get("rect")):
+                    page["overrides"][str(index)] = {k: change[k] for k in ("rect", "size", "removed") if k in change}
 
         for page in self.pages:
             self._update_page_state(page["no"])

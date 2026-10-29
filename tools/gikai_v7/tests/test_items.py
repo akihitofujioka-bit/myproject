@@ -41,6 +41,12 @@ class ConversionTest(unittest.TestCase):
                 self.assertEqual(after.get(key, ""), before[key])
             self.assertEqual(after.get("heading_answer", ""), before["heading_answer"])
 
+    def test_committee_sections_round_trip(self):
+        body = "前置きの文。\n【見出し】調査日\n令和８年１月\n【見出し】所感\n架空の所感。\n二行目。"
+        sections = items.split_sections(body)
+        self.assertEqual(sections, [("", "前置きの文。"), ("調査日", "令和８年１月"), ("所感", "架空の所感。\n二行目。")])
+        self.assertEqual(items.join_sections(sections + [("", "")]), body)
+
     def test_bulk_reads_summary_answer(self):
         parsed = items.parse_bulk("【見出し】防災対策の強化を\n【見出しの答】計画的に進める\n"
                                   "問　備えは。\n答　増やす。\n答弁者　見本課長\n"

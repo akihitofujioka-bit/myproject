@@ -126,5 +126,28 @@ class FreeImageTest(unittest.TestCase):
             self.assertFalse(any(getattr(item, "name", "") == "自由欄" for item in result.page.items))
             self.assertTrue(any("字と画像の両方" in warning for warning in result.warnings))
 
+
+class FacePhotoTest(unittest.TestCase):
+    def test_face_frame_has_name_and_keeps_moved_place_after_save(self):
+        import edition
+        from grid import Rect
+        with tempfile.TemporaryDirectory() as folder:
+            work = edition.Edition.create(Path(folder) / "号", layout.Issue(998, 4, "令和8年4月30日"))
+            work.save_settings(["見本 太郎", "見本 花子"], "見本 花子")
+            data = work.item_data()
+            qa = "【見出し】架空の質問\n問　" + "架空の質問です。" * 10 + "\n答　" + "架空の答弁です。" * 20
+            data["questions"] = [{"member": n, "qa_bulk": qa, "questions": items.parse_bulk(qa)["questions"]}
+                                 for n in ("見本 太郎", "見本 花子")]
+            work.save_items(data)
+            page = [p["no"] for p in work.pages if p["section"] == layout.IPPAN][1]
+            result = work.compose(page)
+            names = ["".join(i.lines) for i in result.page.items if getattr(i, "name", "") == "顔写真の議員名"]
+            self.assertEqual(names, ["見本 花子議員"])
+            face = next(p for p in result.placements if p.part.kind == "写真")
+            moved, _shifted = work.move_part_near(page, face.index, Rect(2, 10, 1, 1))
+            work.save_items(work.item_data())   # 入力を保存し直しても、動かした位置は残る
+            again = next(p for p in work.compose(page).placements if p.part.kind == "写真")
+            self.assertEqual(again.rect, moved)
+
 if __name__ == "__main__":
     unittest.main()

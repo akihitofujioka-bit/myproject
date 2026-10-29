@@ -958,7 +958,8 @@ class App:
                           [("committee", "委員会名（見出しになる。例 総務常任委員会）", False),
                            ("heading", "記事の見出し（任意。委員会名の次に入る。例 国・省等にも要望）", False),
                            ("body", "本文（途中の小見出しは、行の頭に【見出し】を付ける）", True)],
-                          lambda v: f"{v.get('committee', '')}　{v.get('heading', '')}".strip() or "（名称なし）")
+                          lambda v: f"{v.get('committee', '')}　{v.get('heading', '')}".strip() or "（名称なし）",
+                          editor=self._committee_editor)
         self._word_button()
 
     def _step_9(self):
@@ -1221,6 +1222,71 @@ class App:
         ttk.Label(footer, text="質問は4つまで。使わない質問の欄は空のままにします。上のつまみで質問を切り替えます。",
                   foreground="#555").pack(side="left")
         fields[0][0].focus_set()
+        dialog.grab_set()
+
+    SECTION_LIMIT = 6
+
+    def _committee_editor(self, value: dict, done) -> None:
+        """委員会報告 1 件を、委員会名・記事の見出し・小見出しごとの本文の欄で入れる窓。
+
+        本文の途中の小見出し（「調査日」「所感」など）は、まとまりごとの欄に分ける。
+        入れた内容は、これまでと同じ本文（小見出しの行の頭に【見出し】）の形にして残す。
+        """
+        dialog = tk.Toplevel(self.root)
+        dialog.title("委員会報告を入力")
+        self._big_window(dialog)
+        dialog.transient(self.root)
+        footer = ttk.Frame(dialog, padding=(12, 6))
+        footer.pack(side="bottom", fill="x")
+        top = ttk.Frame(dialog, padding=(12, 10, 12, 4))
+        top.pack(fill="x")
+
+        def line(parent, label, text, note=""):
+            row = ttk.Frame(parent)
+            row.pack(fill="x", pady=3)
+            ttk.Label(row, text=label, width=16, font=(self.font, INPUT_PT)).pack(side="left")
+            entry = ttk.Entry(row, font=(self.font, INPUT_PT))
+            entry.insert(0, text)
+            entry.pack(side="left", fill="x", expand=True, ipady=2)
+            if note:
+                ttk.Label(parent, text=note, foreground="#555").pack(anchor="w", padx=(150, 0))
+            return entry
+        committee = line(top, "委員会名", str(value.get("committee", "")), "見出しになります。例 総務常任委員会")
+        heading = line(top, "記事の見出し", str(value.get("heading", "")),
+                       "任意。委員会名の次に入ります。例 国・県にも要望")
+        sections = items.split_sections(str(value.get("body", "")))
+        tabs = ttk.Notebook(dialog)
+        tabs.pack(fill="both", expand=True, padx=12)
+        fields = []
+        for number in range(max(self.SECTION_LIMIT, len(sections))):
+            title, body = sections[number] if number < len(sections) else ("", "")
+            page = ttk.Frame(tabs, padding=8)
+            tabs.add(page, text=f" まとまり{number + 1} ")
+            small = line(page, "小見出し", title, "任意。例 調査日・調査先・所感。空なら小見出しなしで本文だけ入ります。")
+            ttk.Label(page, text="本文", font=(self.font, INPUT_PT)).pack(anchor="w", pady=(6, 2))
+            frame = ttk.Frame(page)
+            frame.pack(fill="both", expand=True)
+            text = tk.Text(frame, height=6, wrap="word", font=(self.font, INPUT_PT), undo=True,
+                           padx=6, pady=4, relief="solid", borderwidth=1, highlightthickness=1)
+            text.insert("1.0", body)
+            bar = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+            text.configure(yscrollcommand=bar.set)
+            bar.pack(side="right", fill="y")
+            text.pack(side="left", fill="both", expand=True)
+            fields.append((small, text))
+
+        def accept():
+            value["committee"] = committee.get().strip()
+            value["heading"] = heading.get().strip()
+            value["body"] = items.join_sections(
+                [(small.get().strip(), text.get("1.0", "end-1c").strip()) for small, text in fields])
+            dialog.destroy()
+            done()
+        ttk.Button(footer, text="この内容にする", command=accept).pack(side="right")
+        ttk.Button(footer, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
+        ttk.Label(footer, text="小見出しごとに、上のつまみ（まとまり1〜）を切り替えて入れます。使わないまとまりは空のままにします。",
+                  foreground="#555").pack(side="left")
+        committee.focus_set()
         dialog.grab_set()
 
     def _free_images(self, value: dict) -> None:
@@ -1869,7 +1935,7 @@ class App:
         ttk.Label(photo_row, text="大きさ").pack(side="left", padx=(8, 0))
         ttk.Combobox(photo_row, textvariable=place_size, values=["特大", "大", "中", "小", "顔"],
                      state="readonly", width=5).pack(side="left", padx=4)
-        ttk.Label(dialog, text="写真を選んでから、紙面の置きたい所をクリックします。置いた写真はドラッグで動かせます。"
+        ttk.Label(dialog, text="写真を選んでから、紙面の置きたい所をクリックします。置いた写真や、一般質問の顔写真の枠（下の議員名ごと）はドラッグで動かせます。"
                                "（写真は『写真』の手順の『写真を追加』で号に入れておきます）",
                   foreground="#555", padding=(8, 2, 8, 0)).pack(fill="x")
         if self.step == 12 and chosen is not None and chosen.get() in photo_names:
