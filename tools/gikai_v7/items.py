@@ -125,19 +125,69 @@ def kessan_form(data: dict, issue: layout.Issue, photo_folder: Optional[Path] = 
             "accounts": list(value.get("accounts", []) or []), "body": "\n".join(lines)}
 
 
+# 問・答の印。「問　」「答　」のほか、紙面と同じ「質問　」「答弁　村長」、「【質問】」「Ｑ．」「Ａ：」
+# 「○質問」のような書き方も読む。印のすぐあとは空き・記号・行の終わりのどれか（「問題」などを問にしない）。
+_LABEL = re.compile(
+    r"^[\s　]*[〇○◎●■◆◇□・▼▽]?[\s　]*[【［\[（(〈]?"
+    r"(?P<kind>質問|再質問|答弁|再答弁|回答|問|答|Ｑ|Q|Ａ|A)[０-９0-9]*"
+    r"(?:[】］\]）)〉][\s　：:．.、]*|[\s　：:．.、]+|(?=[（(〈])|$)(?P<rest>.*)$")
+_QUESTION_KINDS = ("質問", "再質問", "問", "Ｑ", "Q")
+_ROLE_ENDINGS = ("長", "参事", "主幹", "室長", "所長", "局長", "理事", "監")
+
+
+def _label(line: str):
+    """行が問・答の印で始まれば ("問" か "答", 残りの文)。そうでなければ None。"""
+    match = _LABEL.match(line)
+    if not match:
+        return None
+    kind = "問" if match.group("kind") in _QUESTION_KINDS else "答"
+    return kind, match.group("rest").strip()
+
+
+def _is_role(text: str) -> bool:
+    value = str(text or "").strip()
+    return bool(value) and len(value) <= 12 and value.endswith(_ROLE_ENDINGS)
+
+
+def _split_answerer(rest: str):
+    """「答弁　村長」「答弁（村長）」「答　村長　本文」から (答弁者, 本文) を分ける。"""
+    paren = re.match(r"^[（(〈]\s*(?P<role>[^）)〉]{1,12})[）)〉][\s　：:]*(?P<body>.*)$", rest)
+    if paren and _is_role(paren.group("role")):
+        return paren.group("role").strip(), paren.group("body").strip()
+    pieces = re.split(r"[\s　：:]+", rest, maxsplit=1)
+    if pieces and _is_role(pieces[0]):
+        return pieces[0].strip(), (pieces[1] if len(pieces) > 1 else "").strip()
+    return "", rest
+
+
+def _looks_like_heading(line: str) -> bool:
+    """見出しらしい短い行（句点で終わらない 30 字まで）。"""
+    value = line.strip()
+    return bool(value) and len(value) <= 30 and not value.endswith(("。", "、", "．"))
+
+
 def parse_bulk(text: str) -> dict:
-    """まとめて貼った文章を見出し・概要・問答へ分ける。
+    """まとめて貼った文章（Word・メール本文も）を見出し・概要・問答へ分ける。
 
     問答と判断できない行は ``body`` に順番どおり残す。問答の継続行も直前の
     問または答へ連結するため、入力文字を捨てない。
+    答のあとに来る短い行で、すぐ次が問の印の行なら、次の質問の見出しとする。
     """
     heading = ""
     heading_answer = ""
     body: List[str] = []
     pairs: List[dict] = []
     current = None
-    for raw in str(text or "").splitlines():
-        line = raw.rstrip()
+    lines = [raw.rstrip() for raw in str(text or "").splitlines()]
+
+    def next_label(index):
+        for later in lines[index + 1:]:
+            if later.strip():
+                return _label(later)
+        return None
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
         # 【見出しの答】は、直前の見出し（大まかな質問）に対する答。次の問の見出しに添える
         answer_mark = re.match(r"^\s*[【［\[]見出しの答[】］\]]\s*(.*)$", line)
         if answer_mark:
@@ -152,10 +202,9 @@ def parse_bulk(text: str) -> dict:
             heading = heading_mark.group(1).strip()
             current = None
             continue
-        match = ingest.QA_LINE.match(line.strip())
-        if match:
-            kind = match.group("kind")
-            value = line.strip()[match.end():].strip()
+        label = _label(stripped) if stripped else None
+        if label:
+            kind, value = label
             if kind == "問":
                 current = {"heading": heading, "question": value, "answer": "",
                            "answerer": ""}
@@ -165,11 +214,14 @@ def parse_bulk(text: str) -> dict:
                 heading = ""
                 heading_answer = ""
             elif current is not None:
-                current["answer"] = value
+                role, value = _split_answerer(value)
+                if role and not current.get("answerer"):
+                    current["answerer"] = role
+                current["answer"] = (current.get("answer", "") + "\n" + value).strip() if current.get("answer") else value
+                current["_answering"] = True
             else:
                 body.append(line)
             continue
-        stripped = line.strip()
         if (stripped.startswith(("【", "［", "[")) and stripped.endswith(("】", "］", "]"))
                 and len(stripped) <= 30):
             # 【一般会計】のような見出しは、答の続きにせず次の問の見出しにする。
@@ -178,15 +230,26 @@ def parse_bulk(text: str) -> dict:
             heading = stripped.strip("【】［］[]")
             current = None
             continue
-        if current is not None and line.strip().startswith("答弁者"):
-            current["answerer"] = line.strip().replace("答弁者", "", 1).lstrip(" ：:　")
+        if current is not None and stripped.startswith("答弁者"):
+            current["answerer"] = stripped.replace("答弁者", "", 1).lstrip(" ：:　")
             continue
-        if current is not None and line.strip():
-            key = "answer" if current.get("answer") else "question"
+        # 答のあとの短い行で、次の行が問なら、次の質問の見出し（答の続きにしない）
+        if (current is not None and current.get("_answering") and _looks_like_heading(stripped)
+                and (next_label(index) or ("", ""))[0] == "問"):
+            heading = stripped
+            current = None
+            continue
+        # 「答弁」の行のすぐ次の、役職だけの行は答弁者
+        if current is not None and current.get("_answering") and not current.get("answer") \
+                and not current.get("answerer") and _is_role(stripped):
+            current["answerer"] = stripped
+            continue
+        if current is not None and stripped:
+            key = "answer" if current.get("_answering") else "question"
             current[key] = (current[key] + "\n" + line).strip()
-        elif line.strip():
-            if not heading and len(line.strip()) <= 30:
-                heading = line.strip()
+        elif stripped:
+            if not heading and _looks_like_heading(stripped):
+                heading = stripped
             else:
                 if heading:
                     body.append(heading)
@@ -194,6 +257,8 @@ def parse_bulk(text: str) -> dict:
                 body.append(line)
     if heading:
         body.append(heading)
+    for pair in pairs:
+        pair.pop("_answering", None)
     return {"body": "\n".join(body), "questions": pairs}
 
 

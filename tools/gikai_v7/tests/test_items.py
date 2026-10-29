@@ -59,6 +59,22 @@ class ConversionTest(unittest.TestCase):
         back = items.parse_bulk(items.bulk_text(pairs))["questions"]
         self.assertEqual([len(g) for g in items.group_questions(back)], [2, 1])
 
+    def test_bulk_reads_newsletter_style_labels(self):
+        """紙面と同じ「質問　」「答弁　村長」や「【質問】」「Ｑ．」「答弁（教育長）」も読み、答のあとの見出しも分ける。"""
+        text = ("防災対策の強化を\n質問　避難所の備えは十分か。\n答弁　村長\n　今年度中に備蓄を増やす。\n"
+                "子育て支援について\n質問　保育料はどうか。\n答弁（教育長）下げる方向で検討する。\n"
+                "再質問　時期は。\n再答弁　教育長\n　来年度からです。\n"
+                "道路の整備\nＱ．舗装は。\nＡ．建設課長　計画的に進める。")
+        found = items.parse_bulk(text)["questions"]
+        self.assertEqual([(q["heading"], q["question"], q["answerer"]) for q in found], [
+            ("防災対策の強化を", "避難所の備えは十分か。", "村長"),
+            ("子育て支援について", "保育料はどうか。", "教育長"),
+            ("", "時期は。", "教育長"),
+            ("道路の整備", "舗装は。", "建設課長")])
+        self.assertEqual(found[0]["answer"], "今年度中に備蓄を増やす。")
+        self.assertEqual(found[1]["answer"], "下げる方向で検討する。")
+        self.assertEqual(items.parse_bulk("問題は山積だ")["questions"], [])   # 「問題」は問の印にしない
+
     def test_bulk_reads_summary_answer(self):
         parsed = items.parse_bulk("【見出し】防災対策の強化を\n【見出しの答】計画的に進める\n"
                                   "問　備えは。\n答　増やす。\n答弁者　見本課長\n"

@@ -1557,10 +1557,22 @@ class App:
         preview.insert("1.0", parsed.get("cleaned") or parsed.get("text") or original)
         preview.configure(state="disabled")
         preview.pack(fill="both", expand=True, pady=6)
-        ttk.Label(body, text=("分割結果: " +
-                              "／".join(f"問 {q.get('question', '')[:24]}・答 {q.get('answer', '')[:24]}"
-                                        for q in parsed.get("questions", []))) or "問答を見つけられませんでした。",
-                  wraplength=720, justify="left").pack(anchor="w")
+        found = parsed.get("questions", [])
+
+        def short(text, size=24):
+            text = str(text or "").replace("\n", " ")
+            return text[:size] + ("…" if len(text) > size else "")
+        rows = []
+        for number, group in enumerate(items.group_questions(found), 1):
+            head = group[0]
+            rows.append(f"{number}番目の質問　見出し: {short(head.get('heading')) or '（なし）'}"
+                        + (f"／見出しの答: {short(head.get('heading_answer'))}" if head.get("heading_answer") else ""))
+            for exchange in group:
+                rows.append(f"　　質問: {short(exchange.get('question'))}　答弁者: {exchange.get('answerer') or '（なし）'}"
+                            f"　答弁: {short(exchange.get('answer'))}")
+        ttk.Label(body, text=("分け方: \n" + "\n".join(rows)) if rows else
+                  "質問と答弁を見つけられませんでした。「質問」「答弁」（または「問」「答」）で始まる行があるか確かめてください。",
+                  wraplength=900, justify="left", foreground="#333" if rows else "#a33").pack(anchor="w")
 
         def accept():
             person = self._person(member)
