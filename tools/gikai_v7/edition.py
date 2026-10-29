@@ -213,7 +213,7 @@ class Edition:
             for key, change in moves.items():
                 index = int(key)
                 if (0 <= index < len(parts) and parts[index].kind in ("写真", "大見出し")
-                        and isinstance(change, dict) and change.get("rect")):
+                        and isinstance(change, dict) and (change.get("rect") or change.get("size"))):
                     page["overrides"][str(index)] = {k: change[k] for k in ("rect", "size", "removed") if k in change}
 
         for page in self.pages:

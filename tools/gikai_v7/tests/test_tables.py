@@ -151,6 +151,25 @@ class FacePhotoTest(unittest.TestCase):
                 self.assertLess(titles[0].line, face.line)
                 self.assertLessEqual(face.line + face.line_span, titles[1].line)
 
+    def test_face_size_can_change_and_stays_portrait(self):
+        """顔写真の枠は縦長のまま大きさを変えられ、保存し直しても残る。"""
+        import edition
+        with tempfile.TemporaryDirectory() as folder:
+            work = edition.Edition.create(Path(folder) / "号", layout.Issue(998, 4, "令和8年4月30日"))
+            work.save_settings(["見本 太郎", "見本 花子"], "見本 太郎")
+            data = work.item_data()
+            qs = [{"heading": "架空", "question": "架空の質問。", "answer": "架空の答弁。"}]
+            data["questions"] = [{"member": n, "questions": qs, "qa_bulk": items.bulk_text(qs)}
+                                 for n in ("見本 太郎", "見本 花子")]
+            work.save_items(data)
+            page = [p["no"] for p in work.pages if p["section"] == layout.IPPAN][1]
+            face = next(p for p in work.compose(page).placements if p.part.kind == "写真")
+            self.assertTrue(work.resize_photo(page, face.index, "顔大"))
+            work.save_items(work.item_data())
+            frame = next(i for i in work.compose(page).page.items if isinstance(i, dx.Placeholder))
+            self.assertAlmostEqual(frame.box.w * 25.4 / 72, 30.0, places=1)
+            self.assertAlmostEqual(frame.box.h / frame.box.w, 4 / 3, places=2)
+
     def test_face_frame_has_name_and_keeps_moved_place_after_save(self):
         import edition
         from grid import Rect

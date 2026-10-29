@@ -2008,16 +2008,45 @@ class App:
         if self.step == 12 and chosen is not None and chosen.get() in photo_names:
             place_var.set(chosen.get())
         # 大見出しの枠の大きさ: 紙面の大見出しをクリックして選び、ボタンで広げる・狭める
-        chosen_part = {"page": None, "part": None}
+        chosen_part = {"page": None, "part": None, "kind": ""}
+
+        def resize_photo(step: int) -> None:
+            """選んだ写真（顔写真の枠も）を 1 つ大きく・小さくする。顔写真は縦長のまま。"""
+            from compose import PHOTO_STEPS
+            result = self.work.compose(page_var.get())
+            placement = next(p for p in result.placements if p.index == chosen_part["part"])
+            current = (self.work._overrides(self.work._page(page_var.get())).get(chosen_part["part"], {}).get("size")
+                       or placement.part.photo_size or ("顔" if placement.part.reason == "印刷所が入れる顔写真の空欄" else "中"))
+            order = next((steps for steps in PHOTO_STEPS if current in steps), PHOTO_STEPS[0])
+            index = order.index(current) if current in order else 1
+            wanted = order[max(0, min(len(order) - 1, index + step))]
+            if wanted == current:
+                status.configure(text="これより" + ("大きく" if step > 0 else "小さく") + "はできません。")
+                return
+            if not self.work.resize_photo(page_var.get(), chosen_part["part"], wanted):
+                status.configure(text="その大きさにはできません（ほかの部品や紙面の端に重なります）。")
+                return
+            status.configure(text=f"写真の大きさ: {wanted}")
+            self.save(silent=True)
+            draw()
 
         def resize_heading(lines: int = 0, dans: int = 0, reset: bool = False) -> None:
             if chosen_part["part"] is None or chosen_part["page"] != page_var.get():
-                status.configure(text="先に、紙面の大見出しをクリックして選んでください。")
+                status.configure(text="先に、紙面の大見出しか写真をクリックして選んでください。")
+                return
+            if chosen_part["kind"] == "写真" and not reset:
+                if dans:
+                    status.configure(text="写真は「枠を広く」「枠を狭く」で大きさを変えます（縦横の割合は変わりません）。")
+                    return
+                try:
+                    resize_photo(1 if lines > 0 else -1)
+                except Exception as error:
+                    messagebox.showerror("写真の大きさを変えられません", str(error), parent=dialog)
                 return
             try:
                 if reset:
                     self.work.reset_part(page_var.get(), chosen_part["part"])
-                    status.configure(text="大見出しの枠を、元の大きさと位置に戻しました。")
+                    status.configure(text="枠を、元の大きさと位置に戻しました。")
                 else:
                     current = next(p.rect for p in self.work.compose(page_var.get()).placements
                                    if p.index == chosen_part["part"])
@@ -2033,7 +2062,7 @@ class App:
                 messagebox.showerror("枠の大きさを変えられません", str(error), parent=dialog)
         size_row = ttk.Frame(dialog, padding=(6, 2, 6, 0))
         size_row.pack(fill="x")
-        ttk.Label(size_row, text="大見出しの枠").pack(side="left")
+        ttk.Label(size_row, text="選んだ大見出し・写真の枠").pack(side="left")
         for text, change in (("枠を広く", {"lines": 1}), ("枠を狭く", {"lines": -1}),
                              ("枠を高く", {"dans": 1}), ("枠を低く", {"dans": -1}),
                              ("元の大きさに戻す", {"reset": True})):
@@ -2178,10 +2207,13 @@ class App:
                 box = to_box(self.work.geometry, placement.rect)
                 if box.x <= point_x <= box.x + box.w and box.y <= point_y <= box.y + box.h:
                     drag["part"] = placement.index
+                    chosen_part.update(page=page_var.get(), part=placement.index, kind=placement.part.kind)
                     if placement.part.kind == "大見出し":
-                        chosen_part.update(page=page_var.get(), part=placement.index)
                         status.configure(text="大見出しを選びました。上の「枠を広く」「枠を狭く」「枠を高く」「枠を低く」"
                                               "で枠の大きさを変えられます。ドラッグで動かせます。")
+                    else:
+                        status.configure(text="写真を選びました。上の「枠を広く」で大きく、「枠を狭く」で小さくできます。"
+                                              "ドラッグで動かせます。")
                     return
 
         def release(event):

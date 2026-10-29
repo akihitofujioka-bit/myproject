@@ -21,9 +21,13 @@ import layout
 from grid import Geometry, Rect, free_runs, mm2pt, split_lines, text_width, to_box, whole_page
 
 # 特大は従来の紙面にある幅 105〜110mm の写真に合わせる。
-PHOTO_WIDTH_MM = {"特大": 110.0, "大": 80.0, "中": 55.0, "小": 38.0, "顔": 26.0}
+PHOTO_WIDTH_MM = {"特大": 110.0, "大": 80.0, "中": 55.0, "小": 38.0, "顔": 26.0,
+                  "顔小": 22.0, "顔大": 30.0, "顔特大": 38.0}   # 顔写真は縦長（幅:高さ = 3:4）。顔特大は 2 段
+# 紙面を見るで「大きく」「小さく」するときの順（顔写真は縦長のまま大きさだけ変える）
+PHOTO_STEPS = (("小", "中", "大", "特大"), ("顔小", "顔", "顔大", "顔特大"))
 PITCH = Geometry().line_pitch_pt
-PHOTO_SMALLER = {"特大": "大", "大": "中", "中": "小", "小": None, "顔": None}
+PHOTO_SMALLER = {"特大": "大", "大": "中", "中": "小", "小": None, "顔": None,
+                 "顔小": None, "顔大": None, "顔特大": None}
 
 
 @dataclass
@@ -48,9 +52,9 @@ class PageResult:
 def photo_rect(g: Geometry, size: str, dan: int, line: int) -> Rect:
     """写真の mm 寸法を格子へ切り上げる。段の間も写真の高さに使う。"""
     width = PHOTO_WIDTH_MM[size]
-    height = width * (4 / 3 if size == "顔" else 3 / 4)
+    height = width * (4 / 3 if size.startswith("顔") else 3 / 4)
     line_span = math.ceil(mm2pt(width) / g.line_pitch_pt)
-    needed_h = mm2pt(height)
+    needed_h = mm2pt(height) + (16.0 if size.startswith("顔") and size != "顔" else 0.0)   # 顔写真の下の議員名の分
     dan_span = 1
     while dan_span * g.dan_h_pt + (dan_span - 1) * g.gap_pt < needed_h:
         dan_span += 1
@@ -422,7 +426,9 @@ def _place_picture(page: dx.Page, g: Geometry, part: I.Part, rect: Rect,
         if part.reason == "印刷所が入れる顔写真の空欄":
             # 顔写真の空欄の下に、議員名（▲見本 太郎議員 の行）を横書きで入れる
             name_h = 16.0 if caption else 0.0
-            frame = dx.Box(picture_box.x, picture_box.y, picture_box.w, picture_box.h - name_h)
+            # 顔写真の枠は縦長（幅:高さ = 3:4）。議員名はそのすぐ下
+            frame_h = min(picture_box.w * 4 / 3, picture_box.h - name_h)
+            frame = dx.Box(picture_box.x, picture_box.y, picture_box.w, frame_h)
             page.items.append(dx.Placeholder(frame, "", f"写真{number}"))
             if caption:
                 pt = min(9.0, max(6.0, (picture_box.w - dx.SLACK_PT) / max(1.0, text_width(caption))))
@@ -523,7 +529,10 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
         second = parts[1]
         second_pt = _heading_pt(section, "大見出し", second.text)
         section_end = title_rect.line + title_rect.line_span
-        face_span = photo_rect(g, "顔", 0, 0).line_span
+        # 1 人目の顔写真の大きさ（紙面を見るで変えていればその大きさ）の幅を空ける
+        face_index = next((n for n, p in enumerate(parts) if p.kind == "写真"), None)
+        face_size = (overrides.get(face_index, {}).get("size") if face_index is not None else None) or "顔"
+        face_span = photo_rect(g, face_size if face_size in PHOTO_WIDTH_MM else "顔", 0, 0).line_span
         rect = _heading_rect(g, second, 0, section_end + face_span, second_pt)
         if not second.vertical:
             # 横書きの題が長いときは、ページの左の端までの幅に収めて、枠の中で折り返す
