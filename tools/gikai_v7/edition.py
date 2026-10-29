@@ -705,12 +705,12 @@ class Edition:
     def move_part_near(self, page_no: int, part_no: int, rect: Rect) -> tuple:
         """希望位置が使えないときは近い置ける位置へ寄せる。"""
         parts = self.parts(page_no)
-        if not 0 <= part_no < len(parts) or parts[part_no].kind != "写真":
-            raise ValueError("写真を選んでください")
+        if not 0 <= part_no < len(parts) or parts[part_no].kind not in ("写真", "大見出し"):
+            raise ValueError("動かせるのは写真と大見出しだけです")
         current = next((p.rect for p in self.compose(page_no).placements
-                        if p.index == part_no and p.part.kind == "写真"), None)
+                        if p.index == part_no and p.part.kind in ("写真", "大見出し")), None)
         if current is None:
-            raise ValueError("写真の現在位置を確認できません")
+            raise ValueError("写真・大見出しの今の位置を確かめられません")
         desired = Rect(rect.dan, rect.line, current.dan_span, current.line_span)
         candidates = []
         for dan in range(self.geometry.dans - current.dan_span + 1):

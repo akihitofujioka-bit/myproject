@@ -2466,7 +2466,8 @@ def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
     if item.vertical:
         total = len(item.lines) * pitch
         first = ((x1 + x2) / 2 + total / 2 - pitch / 2) if item.center else (x2 - pitch / 2)
-        room = max(1.0, (y2 - y1) - 2)
+        inset = dx.HEADING_INSET_PT * scale if item.border and item.name == "大見出し" else 0.0
+        room = max(1.0, (y2 - y1) - 2 - 2 * inset)
         for index, line in enumerate(item.lines):
             pieces = units(line)
             need = sum(unit_width(unit) for unit in pieces) * size
@@ -2474,7 +2475,7 @@ def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
             # 字の大きさは送りより少し小さくし、隣の字や枠の下端に重ならないようにする
             glyph = max(4, int(size * step * 0.92))
             font = (family, -glyph, weight)
-            x, y = first - index * pitch, y1 + 1
+            x, y = first - index * pitch, y1 + 1 + inset
             fill = color(index)
             for unit in pieces:
                 height = unit_width(unit) * size * step
@@ -2487,7 +2488,8 @@ def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
                     canvas.create_text(x, y + height / 2, text=unit, font=font, fill=fill)
                 y += height
         return
-    anchor, x = {"中央": ("center", (x1 + x2) / 2), "右": ("e", x2 - 2)}.get(item.align, ("w", x1 + 2))
+    inset = dx.HEADING_INSET_PT * scale if item.border and item.name == "大見出し" else 0.0
+    anchor, x = {"中央": ("center", (x1 + x2) / 2), "右": ("e", x2 - 2 - inset)}.get(item.align, ("w", x1 + 2 + inset))
     total = len(item.lines) * pitch
     # 見出しの囲み（center）は、行のかたまりを枠の上下の真ん中に置く（Word と同じ）
     top = y1 + max(0.0, (y2 - y1 - total) / 2) if item.center else y1

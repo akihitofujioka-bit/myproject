@@ -171,6 +171,7 @@ def _line_runs(line: str, font: str, pt: float, ids: list[int], *,
 # Windows の Word は「最小値」だと、おおむね字の大きさの 1.4 倍まで行を広げる。
 # 文字枠はこの実効行送りで収まるように作る。
 AT_LEAST_RATIO = 1.4
+HEADING_INSET_PT = 6.0   # 大見出しの囲みの内側の余白
 
 
 def effective_pitch(pt: float, pitch: float) -> float:
@@ -406,7 +407,9 @@ def _item_xml(item, idx: int, ids: list[int], rel_id: str = "") -> tuple[str, in
                if item.vertical else old_box)
         no_line = "<a:ln><a:noFill/></a:ln>"
         vert = ' vert="eaVert"' if item.vertical else ""
-        body = (f'<wps:bodyPr rot="0"{vert} wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" '
+        # 大見出しの囲みは、字が枠の線に付かないよう内側に少し余白を取る（左づめ・上づめにしたため）
+        inset = emu(HEADING_INSET_PT) if item.border and item.name == "大見出し" else 0
+        body = (f'<wps:bodyPr rot="0"{vert} wrap="square" lIns="{inset}" tIns="{inset}" rIns="{inset}" bIns="{inset}" '
                 f'anchor="{"ctr" if item.center else "t"}" anchorCtr="0"><a:noAutofit/></wps:bodyPr>')
         text = _anchor(idx, box, _shape(box, line=no_line, inner=_text_para(item, ids), body=body),
                        name=item.name)

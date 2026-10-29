@@ -170,6 +170,25 @@ class FacePhotoTest(unittest.TestCase):
             self.assertAlmostEqual(frame.box.w * 25.4 / 72, 30.0, places=1)
             self.assertAlmostEqual(frame.box.h / frame.box.w, 4 / 3, places=2)
 
+    def test_big_heading_can_be_dragged_and_is_left_aligned(self):
+        """大見出しも紙面を見るのドラッグ（近くへ寄せて動かす）で動き、字は左づめ（縦書きは上づめ）。"""
+        import edition
+        from grid import Rect
+        with tempfile.TemporaryDirectory() as folder:
+            work = edition.Edition.create(Path(folder) / "号", layout.Issue(998, 4, "令和8年4月30日"))
+            work.save_settings(["見本 太郎"], "見本 太郎")
+            data = work.item_data()
+            data["gyosei"]["reports"] = [{"heading": "架空の事業", "body": "架空の本文です。" * 40}]
+            work.save_items(data)
+            head = next(p for p in work.compose(2).placements if p.part.kind == "大見出し")
+            moved, _shifted = work.move_part_near(2, head.index, Rect(2, 10, 1, 1))
+            self.assertNotEqual(moved, head.rect)
+            work.save_items(work.item_data())
+            result = work.compose(2)
+            self.assertEqual(next(p.rect for p in result.placements if p.index == head.index), moved)
+            box = next(i for i in result.page.items if getattr(i, "name", "") == "大見出し")
+            self.assertEqual(box.align, "左")
+
     def test_face_frame_has_name_and_keeps_moved_place_after_save(self):
         import edition
         from grid import Rect

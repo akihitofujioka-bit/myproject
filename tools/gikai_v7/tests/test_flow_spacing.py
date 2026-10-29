@@ -172,6 +172,6 @@ class MidHeadingTest(unittest.TestCase):
             text = "架" * count
             pt, lines, span = compose._mid_heading(g, text)
             self.assertEqual("".join(lines), text)
-            per_line = compose._per_line(g, compose.Rect(0, 0, 1, 2), pt)
+            per_line = compose._per_line(g, compose.Rect(0, 0, 1, 2), pt, inset=False)   # 中見出しは囲まない
             self.assertTrue(all(len(line) <= per_line for line in lines), count)
             self.assertGreaterEqual(span * g.line_pitch_pt / len(lines), pt * 1.4 - 0.01)

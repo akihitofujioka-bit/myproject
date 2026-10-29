@@ -75,18 +75,18 @@ def _mid_heading(g: Geometry, text: str, base_pt: float = 16.0) -> Tuple[float, 
         # まず字を小さくしてでも、それぞれ 1 行に収める。無理なら 2 行ずつにする
         for max_lines in (1, 2):
             for pt in (float(value) for value in range(int(base_pt), 11, -1)):
-                per_line = _per_line(g, sample, pt)
+                per_line = _per_line(g, sample, pt, inset=False)
                 pieces = [piece.strip() for piece in text.split(HEADING_BREAK) if piece.strip()]
                 lines = _heading_lines(text, per_line, 2)
                 if len(lines) <= max_lines * len(pieces) and max(text_width(l) for l in lines) <= per_line:
                     return pt, lines, span(lines, pt)
     for pt in (float(value) for value in range(int(base_pt), 11, -1)):
-        per_line = _per_line(g, sample, pt)
+        per_line = _per_line(g, sample, pt, inset=False)
         for max_lines in (1, 2, 3):
             lines = _heading_lines(text, per_line, max_lines)
             if len(lines) <= max_lines and max(text_width(l) for l in lines) <= per_line:
                 return pt, lines, span(lines, pt)
-    per_line = _per_line(g, sample, 12.0)
+    per_line = _per_line(g, sample, 12.0, inset=False)
     lines = split_lines(text, per_line, indent=False) or [""]
     return 12.0, lines, span(lines, 12.0)
 
@@ -193,14 +193,17 @@ def _place_table(page, g: Geometry, part: I.Part, occupied: List[Rect], warnings
     return None
 
 
-def _per_line(g: Geometry, rect: Rect, pt: float) -> int:
-    """見出しの枠の高さ（段をまたぐなら段の間も含む）に、pt の字が何字入るか。"""
-    return max(1, int(to_box(g, rect).h // pt))
+def _per_line(g: Geometry, rect: Rect, pt: float, inset: bool = True) -> int:
+    """見出しの枠の高さ（段をまたぐなら段の間も含む）に、pt の字が何字入るか。
+    inset が真なら、大見出しの囲みの内側の余白を除く（中見出しは囲まないので除かない）。"""
+    return max(1, int((to_box(g, rect).h - (2 * dx.HEADING_INSET_PT if inset else 0)) // pt))
 
 
 # 見出しの中の「｜」は、そこで行を変える印（一般質問の「大まかな質問｜それへの答」）。
 # 「｜」より前の行は青い字にする。
 HEADING_BREAK = "｜"
+# 大見出しの字は、横書きなら左づめ、縦書きなら上づめ（枠の中で行のかたまりは真ん中に置く）
+BIG_HEADING_ALIGN = "左"
 QUESTION_COLOR = "0070C0"
 
 
@@ -367,7 +370,7 @@ def _heading_rect(g: Geometry, part: I.Part, dan: int, line: int, pt: float) -> 
 def _heading_lines_for(g: Geometry, part: I.Part, rect: Rect, pt: float) -> List[str]:
     if part.vertical:
         return _heading_lines(part.text, _per_line(g, rect, pt))
-    per_line = max(1, int((to_box(g, rect).w - dx.SLACK_PT) / pt))
+    per_line = max(1, int((to_box(g, rect).w - dx.SLACK_PT - 2 * dx.HEADING_INSET_PT) / pt))
     if HEADING_BREAK in part.text:
         lines = []
         for piece in part.text.split(HEADING_BREAK):
@@ -514,7 +517,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                       pitch=max(34.0, title_pt * dx.AT_LEAST_RATIO) if title.vertical
                       else dx.effective_pitch(title_pt, PITCH),
                       border=True, center=True, name="大見出し",
-                      vertical=title.vertical, align="中央")
+                      vertical=title.vertical, align=BIG_HEADING_ALIGN)
         else:
             warnings.append("大見出しの決まった位置が、区分の固定枠と重なります")
             overflow_by_index[title_index] = title
@@ -549,7 +552,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                       pitch=max(34.0, second_pt * dx.AT_LEAST_RATIO) if second.vertical
                       else dx.effective_pitch(second_pt, PITCH),
                       border=True, center=True, name="大見出し",
-                      vertical=second.vertical, align="中央")
+                      vertical=second.vertical, align=BIG_HEADING_ALIGN)
             skip.add(1)
             title_rect = rect
 
@@ -680,7 +683,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                       pitch=max(34.0, heading_pt * dx.AT_LEAST_RATIO) if part.vertical
                       else dx.effective_pitch(heading_pt, PITCH),
                       border=True, center=True, name="大見出し",
-                      vertical=part.vertical, align="中央")
+                      vertical=part.vertical, align=BIG_HEADING_ALIGN)
             last_rect = rect
             continue
         if part.kind == "写真":
@@ -756,7 +759,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             if (section == layout.IINKAI and part.vertical and len(heading_lines) == 2
                     and part.text.strip().endswith("委員会")):
                 # 委員会名が 1 行に入らないときは、1 行目を上づめ、2 行目を下づめにする
-                per_line = _per_line(g, Rect(0, 0, 1, 2), heading_pt)
+                per_line = _per_line(g, Rect(0, 0, 1, 2), heading_pt, inset=False)
                 gap = max(0, int(per_line - text_width(heading_lines[1])))
                 heading_lines = [heading_lines[0], "　" * gap + heading_lines[1]]
                 align = "左"
