@@ -206,10 +206,13 @@ def write_confirmation(path, people: Iterable[dict]) -> Path:
             body.append(_paragraph(f"{number}. {qa.get('heading', '')}", True, 24))
             if qa.get("heading_answer"):
                 body.append(_paragraph("（見出しの答）" + str(qa.get("heading_answer")), True, 22))
-            body.append(_paragraph("問　" + str(qa.get("question", ""))))
-            body.append(_paragraph("答　" + str(qa.get("answer", ""))))
+            # 紙面と同じく「質問」の次の行から質問、「答弁」の次の行に答弁者、その次から答弁
+            body.append(_paragraph("質問", True))
+            body.append(_paragraph(str(qa.get("question", ""))))
+            body.append(_paragraph("答弁", True))
             if qa.get("answerer"):
-                body.append(_paragraph("答弁者　" + str(qa.get("answerer"))))
+                body.append(_paragraph(str(qa.get("answerer")), True))
+            body.append(_paragraph(str(qa.get("answer", ""))))
     document = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
                 + "".join(body) + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'

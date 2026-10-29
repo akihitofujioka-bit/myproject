@@ -91,6 +91,7 @@ class PlacementTest(unittest.TestCase):
         self.assertEqual(len(boxes[0].lines), 2)
 
     def test_general_question_fonts_and_answer_runs(self):
+        """一般質問は「質問」の行の次から質問、「答弁」の行の次に答弁者、その次から答弁（明朝）。"""
         parts = [
             I.Part("質問", "問　架空の計画を伺います。"),
             I.Part("答弁", "答　総務課長　架空の計画を12月に進めます。"),
@@ -101,17 +102,17 @@ class PlacementTest(unittest.TestCase):
         boxes = [item for item in result.page.items if isinstance(item, dx.TextBox)]
         question = next(item for item in boxes if item.name == "質問")
         answers = [item for item in boxes if item.name == "答弁"]
-        answer = answers[0]
         self.assertEqual((question.font, question.pt), (dx.GOTHIC, 11.0))
-        self.assertEqual(answer.line_runs[0][0], ("　答　総務課長", dx.GOTHIC))
-        self.assertEqual(answer.line_runs[0][1][1], dx.MINCHO)
-        self.assertEqual(answers[1].line_runs[0][0], ("　答", dx.GOTHIC))
-        self.assertEqual(answers[1].line_runs[0][1][1], dx.MINCHO)
-        role_placement = next(p for p in result.placements if p.part.text == "教育長")
-        self.assertEqual(role_placement.rect.line_span, 1)
-        role_box = next(item for item in boxes
-                        if any(line.strip() == "教育長" for line in item.lines))
-        self.assertEqual((role_box.font, role_box.pt), (dx.GOTHIC, 11.0))
+        self.assertEqual(question.lines[:2], ["質問", "　架空の計画を伺います。"])
+        self.assertEqual(answers[0].lines[:2], ["答弁", "総務課長"])
+        self.assertTrue(answers[0].lines[2].startswith("　架空の計画を"))
+        self.assertEqual([runs[0][1] for runs in answers[0].line_runs[:3]], [dx.GOTHIC, dx.GOTHIC, dx.MINCHO])
+        # 答の前の行に書いた答弁者も、「答弁」の次の行に入る（同じ書体の枠は 1 つにまとまるので、行を通して見る）
+        lines = [line for item in answers for line in item.lines]
+        second = len(lines) - 1 - lines[::-1].index("答弁")
+        self.assertEqual(lines[second:second + 2], ["答弁", "教育長"])
+        self.assertTrue(lines[second + 2].startswith("　架空の学校計画"))
+        self.assertFalse(any(item.lines == ["教育長"] for item in boxes))
 
         doc = ET.fromstring(dx.document_xml(self.g, [result.page]).encode("utf-8"))
         text_fonts = []
@@ -120,7 +121,8 @@ class PlacementTest(unittest.TestCase):
             fonts = run.find("{%s}rPr/{%s}rFonts" % (dx.W, dx.W))
             if text is not None and fonts is not None:
                 text_fonts.append((text.text or "", fonts.get("{%s}eastAsia" % dx.W)))
-        self.assertIn(("　答　総務課長", dx.GOTHIC), text_fonts)
+        self.assertIn(("総務課長", dx.GOTHIC), text_fonts)
+        self.assertIn(("答弁", dx.GOTHIC), text_fonts)
         self.assertTrue(any("架空の計" in text and font == dx.MINCHO
                             for text, font in text_fonts), text_fonts)
         number_run = next(run for run in doc.iter("{%s}r" % dx.W)

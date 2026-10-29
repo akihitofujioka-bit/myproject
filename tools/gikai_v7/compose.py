@@ -243,6 +243,42 @@ def _answer_line_runs(lines: List[str]) -> Optional[List[List[Tuple[str, str]]]]
     return styled
 
 
+QUESTION_START = re.compile(r"^[ \u3000]*問[ \u3000]*(?P<rest>.*)$", re.S)
+
+
+def _ippan_lines(part: I.Part, g: Geometry, role_before: str = ""):
+    """一般質問の問・答を、「質問」「答弁」の行のあとで行を変える形にする。
+
+    質問 → 次の行から質問の本文。答弁 → 次の行に答弁者 → その次の行から答弁の本文。
+    行と、行ごとの書体（答弁の本文だけ明朝）を返す。問・答の形でなければ None。
+    """
+    if part.reason == "前ページからの続き":
+        return None
+    if part.kind == "質問":
+        match = QUESTION_START.match(part.text)
+        if not match:
+            return None
+        return ["質問"] + split_lines(match.group("rest").strip(), g.chars_per_line, indent=True), None
+    if part.kind == "答弁":
+        match = ANSWER_START.match(part.text)
+        if not match:
+            return None
+        rest = match.group("rest").strip()
+        role, separator, body = rest.partition("　")
+        head = ["答弁"]
+        if _is_role(role) and (separator or not body):
+            head.append(role)
+        else:
+            body = rest
+            if role_before:   # 答の前の行に書いてあった答弁者
+                head.append(role_before)
+        lines = head + split_lines(body.strip(), g.chars_per_line, indent=True)
+        runs = [[(line, dx.GOTHIC)] if index < len(head) else [(line, dx.MINCHO)]
+                for index, line in enumerate(lines)]
+        return lines, runs
+    return None
+
+
 def _format(section: str, kind: str) -> Tuple[str, float, float]:
     # 一般質問だけ、答弁の本文を明朝にする。その他の本文はすべてゴシック。
     if section == layout.IPPAN and kind == "答弁":
@@ -498,6 +534,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
 
     last_rect: Optional[Rect] = None
     photo_number = 0
+    pending_role = ""
     for index, part in enumerate(parts):
         if part.kind == "写真":
             photo_number += 1
@@ -525,8 +562,9 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             elif part.kind == "表":
                 overflow += _table_dans(g, part) * g.lines_per_dan
             else:
-                overflow += len(split_lines(part.text, g.chars_per_line,
-                                            indent=part.reason != "前ページからの続き"))
+                shaped = _ippan_lines(part, g) if section == layout.IPPAN else None
+                overflow += len(shaped[0]) if shaped else len(split_lines(
+                    part.text, g.chars_per_line, indent=part.reason != "前ページからの続き"))
             continue
         reserve_space(index)
         if part.kind == "表":
@@ -631,6 +669,10 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
         # 一般質問の答弁者名としてゴシック 11pt で置く。
         standalone_role = (section == layout.IPPAN and _is_role(part.text)
                            and index + 1 < len(parts) and parts[index + 1].kind == "答弁")
+        # 一般質問は「答弁」の行の次に答弁者を入れるので、別の行の答弁者は次の答弁へ渡す
+        if standalone_role and _ippan_lines(parts[index + 1], g) is not None:
+            pending_role = part.text.strip()
+            continue
 
         if part.kind == "中見出し" and not standalone_role:
             base_pt = _heading_pt(section, part.kind, part.text)
@@ -668,6 +710,10 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             font = dx.GOTHIC
         styled_lines = (_answer_line_runs(lines)
                         if section == layout.IPPAN and part.kind == "答弁" else None)
+        shaped = _ippan_lines(part, g, pending_role) if section == layout.IPPAN else None
+        pending_role = ""
+        if shaped:   # 一般質問は「質問」「答弁（の次に答弁者）」の行のあとで行を変える
+            lines, styled_lines = shaped
         for run in free_runs(g, whole_page(g), occupied):
             if pos >= len(lines):
                 break
