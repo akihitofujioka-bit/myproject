@@ -1086,9 +1086,11 @@ class App:
     def _step_11(self):
         self._title("最終ページ")
         value = self.data.setdefault("last", {})
-        for key, label, height in (("editorial", "編集後記", 5), ("free", "自由欄", 7),
-                                   ("next_meeting", "次回定例会", 2)):
+        for key, label, height in (("editorial", "編集後記", 5), ("free", "自由欄", 7)):
             self._text(label, value.get(key, ""), lambda v, k=key: value.__setitem__(k, v), height)
+        self._free_images(value)
+        self._text("次回定例会", value.get("next_meeting", ""),
+                   lambda v: value.__setitem__("next_meeting", v), 2)
         # 意見・提言は決まった文を使う。変える時だけ書く（空のままなら決まった文が入る）
         standard = templates.default_opinion(self.work.settings) if self.work else ""
         ttk.Label(self.inner, text="意見・提言は、ふだんは決まった文が入ります（下の欄は空のままで構いません）。"
@@ -1100,6 +1102,59 @@ class App:
                     lambda v: value.__setitem__("hearing_title", v))
         self._entry("傍聴の呼びかけ", value.get("invitation", "お気軽に傍聴に、お越し下さい。"),
                     lambda v: value.__setitem__("invitation", v))
+
+    def _free_images(self, value: dict) -> None:
+        """自由欄に、写真や Word の図形を画像にしたものを、そのまま置く。"""
+        images = value.setdefault("free_images", [])
+        box = ttk.LabelFrame(self.inner, text="自由欄の画像（写真や、Word の四角い図形を画像にしたものを、そのまま置きます）",
+                             padding=7)
+        box.pack(fill="x", pady=5)
+        listing = tk.Listbox(box, height=max(2, min(5, len(images))), font=(self.font, INPUT_PT),
+                             exportselection=False)
+        listing.pack(side="left", fill="x", expand=True)
+        for name in images:
+            listing.insert("end", name)
+        buttons = ttk.Frame(box)
+        buttons.pack(side="left", padx=(7, 0))
+
+        def add(path=None):
+            paths = [path] if path else filedialog.askopenfilenames(
+                title="自由欄に置く画像を選ぶ", parent=self.root,
+                filetypes=[("画像", "*.png *.jpg *.jpeg"), ("すべて", "*.*")])
+            if not paths:
+                return
+            try:
+                images.extend(self.work.add_photos([Path(p) for p in paths]))
+            except Exception as error:
+                messagebox.showerror("画像を入れられません", str(error), parent=self.root)
+                return
+            self.save(silent=True)
+            self.show(self.step)
+
+        def remove():
+            selected = listing.curselection()
+            if selected:
+                images.pop(selected[0])
+                self.save(silent=True)
+                self.show(self.step)
+
+        def move(delta):
+            selected = listing.curselection()
+            if selected and 0 <= selected[0] + delta < len(images):
+                index = selected[0]
+                images[index], images[index + delta] = images[index + delta], images[index]
+                self.save(silent=True)
+                self.show(self.step)
+        self._free_image_add = add
+        ttk.Button(buttons, text="画像を足す", command=add).pack(fill="x", pady=2)
+        ttk.Button(buttons, text="外す", command=remove).pack(fill="x", pady=2)
+        ttk.Button(buttons, text="上へ", command=lambda: move(-1)).pack(fill="x", pady=2)
+        ttk.Button(buttons, text="下へ", command=lambda: move(1)).pack(fill="x", pady=2)
+        ttk.Label(self.inner, text=("画像を入れると、自由欄（2〜4段目）に、縦横の割合を保って入るだけ大きく置きます。"
+                                    "何枚かあるときは上から順に並べます。画像を入れたときは、上の自由欄の字は紙面に出ません。\n"
+                                    "Word の四角い図形は、図形を右クリック →『図として保存』で PNG にしてから足します。"
+                                    "画像のファイルは、この画面へドロップしても足せます。"),
+                  foreground="#555", wraplength=900, justify="left").pack(anchor="w")
 
     def _step_12(self):
         self._title("写真")
@@ -1486,13 +1541,15 @@ class App:
             self.import_table_excel(path)
         elif suffix in (".jpg", ".jpeg", ".png", ".heic") and self.step in (5, 12):
             self.add_photos(path)
+        elif suffix in (".jpg", ".jpeg", ".png") and self.step == 11:
+            self._free_image_add(path)
         else:
             messagebox.showinfo(
                 "この手順では読み込めません",
                 "落とせるファイルは手順ごとに決まっています。\n"
                 "・Word: 行政報告・委員会報告・一般質問・特集\n"
                 "・エクセル: 議案と賛否・特集（表）\n"
-                "・写真: 写真（10月号は 予算・決算 でも）", parent=self.root)
+                "・写真: 写真（10月号は 予算・決算 でも）・最終ページ（自由欄の画像）", parent=self.root)
 
     def bulk_into(self, value: dict) -> None:
         text = simpledialog.askstring("まとめて貼る", "見出し、問、答を含む文章を貼り付けてください。", parent=self.root)
@@ -1988,6 +2045,12 @@ def _draw_items(canvas, items, scale: float, ox: float, oy: float, family: str) 
         elif isinstance(item, dx.Table):
             _draw_table(canvas, item, x1, y1, scale, family)
         elif isinstance(item, dx.Picture):
+            try:   # 縦横の割合を保って枠に収めた、実際に入る大きさで描く
+                width, height = dx.picture_size(item)
+                x1 = x1 + (box.w - width) / 2 * scale
+                x2, y2 = x1 + width * scale, y1 + height * scale
+            except (ValueError, ZeroDivisionError):
+                pass
             canvas.create_rectangle(x1, y1, x2, y2, fill="#9bd8ea", outline="#5a9fb5")
             canvas.create_text((x1 + x2) / 2, (y1 + y2) / 2, text="写真\n" + (item.caption or "")[:20],
                                width=max(20, x2 - x1 - 4), font=(family, -9))

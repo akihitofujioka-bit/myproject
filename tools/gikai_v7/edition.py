@@ -163,7 +163,7 @@ class Edition:
         forms = {
             layout.COVER: copy.deepcopy(data.get("cover", {})),
             layout.SHINGI: item_templates.shingi_form(data, self.issue),
-            layout.LAST: copy.deepcopy(data.get("last", {})),
+            layout.LAST: self._last_form(data),
             layout.KESSAN: item_templates.kessan_form(data, self.issue, self.folder / "写真"),
             layout.YOSAN: item_templates.yosan_form(data, self.issue),
         }
@@ -202,6 +202,13 @@ class Edition:
         for page in self.pages:
             self._update_page_state(page["no"])
         self._record("項目テンプレートを紙面へ反映する", before)
+
+    def _last_form(self, data: dict) -> dict:
+        """最終ページの入力。自由欄の画像は、号の「写真」フォルダの中の場所にする。"""
+        form = copy.deepcopy(data.get("last", {}))
+        form["free_images"] = [str(self.folder / "写真" / Path(name).name)
+                               for name in form.get("free_images", []) or [] if name]
+        return form
 
     def save_settings(self, members: List[str], chair: str,
                       committee: Optional[str] = None) -> Path:

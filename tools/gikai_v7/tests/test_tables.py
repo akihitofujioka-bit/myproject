@@ -104,5 +104,27 @@ class FeaturesTest(unittest.TestCase):
         self.assertIn("【大見出し】前の特集", items.features_text(data))
 
 
+
+class FreeImageTest(unittest.TestCase):
+    def test_free_images_fill_free_area_in_order(self):
+        import samples
+        import templates
+        from settings import Settings
+        with tempfile.TemporaryDirectory() as folder:
+            wide, tall = Path(folder) / "図形.png", Path(folder) / "写真.png"
+            wide.write_bytes(samples._png(1600, 500))
+            tall.write_bytes(samples._png(1200, 900))
+            g = Geometry()
+            result = templates.build(layout.LAST, {"free_images": [str(wide), str(tall)], "free": "出ない字"},
+                                     layout.Issue(1, 4), layout.make_plan(layout.Issue(1, 4)),
+                                     Settings(["見本 太郎"], "見本 太郎", "見本委員会"), g)
+            pictures = [item for item in result.page.items if isinstance(item, dx.Picture)]
+            self.assertEqual([p.name for p in pictures], ["自由欄の画像1", "自由欄の画像2"])
+            area = compose.to_box(g, compose.Rect(1, 0, 3, g.lines_per_dan))
+            self.assertGreaterEqual(pictures[0].box.y, area.y - 0.01)
+            self.assertLessEqual(pictures[1].box.y + pictures[1].box.h, area.y + area.h + 0.01)
+            self.assertFalse(any(getattr(item, "name", "") == "自由欄" for item in result.page.items))
+            self.assertTrue(any("字と画像の両方" in warning for warning in result.warnings))
+
 if __name__ == "__main__":
     unittest.main()

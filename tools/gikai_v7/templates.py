@@ -688,8 +688,19 @@ def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
     for index, photo in enumerate(photos):
         _image(page, photo, _box(20 + index * 42, 67, 38, 28), f"編集後記写真{index + 1}", warnings)
 
+    # 自由欄に画像（写真や、Word の図形を画像にしたもの）があれば、2〜4 段目にそのまま置く。
+    # 何枚かあるときは上から順に同じ高さで並べ、それぞれ縦横の割合を保って入るだけ大きくする。
+    images = [value for value in (form.get("free_images") or []) if value]
+    if images:
+        area = to_box(g, Rect(1, 0, 3, g.lines_per_dan))
+        band = area.h / len(images)
+        for index, image in enumerate(images):
+            _image(page, image, Box(area.x, area.y + index * band, area.w, band - (4 if len(images) > 1 else 0)),
+                   f"自由欄の画像{index + 1}", warnings)
+        if str(form.get("free", "")).strip():
+            warnings.append("自由欄に字と画像の両方があります。画像を入れたときは、字は紙面に出ません")
     free_lines = []
-    for paragraph in str(form.get("free", "")).splitlines():
+    for paragraph in ("" if images else str(form.get("free", ""))).splitlines():
         free_lines.extend(split_lines(paragraph, g.chars_per_line))
     free_capacity = g.lines_per_dan * 3
     for dan in range(1, 4):
