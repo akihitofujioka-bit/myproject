@@ -514,21 +514,24 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             overflow_by_index[title_index] = title
 
     skip = {title_index} if title_index is not None else set()
-    # 一般質問の最初のページは「一般質問に◯氏が立つ」の次に質問の題が続く。
-    # 題もその左の定位置へ並べ、顔写真はさらにその左へ置く。
+    # 一般質問の最初のページは「一般質問に◯氏が立つ」→ 1 人目の顔写真（と議員名）→ 1 人目の題、の順。
+    # 顔写真の入る幅を空けて、その左へ題を並べる。
+    face_at = None
     if (section == layout.IPPAN and title_rect is not None and parts[title_index].vertical
             and len(parts) > 1 and parts[1].kind == "大見出し"
             and 1 not in manual and not overrides.get(1, {}).get("removed")):
         second = parts[1]
         second_pt = _heading_pt(section, "大見出し", second.text)
-        rect = _heading_rect(g, second, 0, title_rect.line + title_rect.line_span, second_pt)
+        section_end = title_rect.line + title_rect.line_span
+        face_span = photo_rect(g, "顔", 0, 0).line_span
+        rect = _heading_rect(g, second, 0, section_end + face_span, second_pt)
         if not second.vertical:
-            # 横書きの題が長いときは、顔写真の枠が左に入る幅を残して、枠の中で折り返す
-            face_span = photo_rect(g, "顔", 0, 0).line_span
-            room = g.lines_per_dan - rect.line - face_span
+            # 横書きの題が長いときは、ページの左の端までの幅に収めて、枠の中で折り返す
+            room = g.lines_per_dan - rect.line
             if room >= 8 and rect.line_span > room:
                 rect = Rect(rect.dan, rect.line, rect.dan_span, room)
         if _fits(g, rect, occupied):
+            face_at = section_end
             occupied.append(rect)
             placements.append(Placement(second, rect, 1))
             second_lines = _heading_lines_for(g, second, rect, second_pt)
@@ -554,9 +557,9 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
         if first_face + 1 < len(parts) and parts[first_face + 1].kind == "写真説明":
             skip.add(first_face + 1)
         if size is not None:
-            face_line = (title_rect.line + title_rect.line_span
-                         if title_rect is not None and (1 in skip or not parts[title_index].vertical)
-                         else 4)
+            face_line = (face_at if face_at is not None else
+                         title_rect.line + title_rect.line_span
+                         if title_rect is not None and not parts[title_index].vertical else 4)
             rect = manual.get(first_face, photo_rect(g, size, 0, face_line))
             if first_face not in manual and not _fits(g, rect, occupied):
                 # 大見出しが長くて決まった所に入らないときは、いちばん近い空いた所へ置く（顔写真と議員名をなくさない）

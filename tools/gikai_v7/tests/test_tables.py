@@ -130,6 +130,27 @@ class FreeImageTest(unittest.TestCase):
 
 
 class FacePhotoTest(unittest.TestCase):
+    def test_first_page_face_is_between_two_headings(self):
+        """一般質問の最初のページは「一般質問に◯氏が立つ」→ 1 人目の顔写真 → 1 人目の題 の順（右から）。"""
+        import edition
+        with tempfile.TemporaryDirectory() as folder:
+            work = edition.Edition.create(Path(folder) / "号", layout.Issue(998, 4, "令和8年4月30日"))
+            work.save_settings(["見本 太郎", "見本 花子"], "見本 太郎")
+            data = work.item_data()
+            for heading in ("防災対策の強化を", "防災対策と避難所の備えを今後どう進めるのかを問う"):
+                qs = [{"heading": heading, "heading_answer": "進める", "question": "架空の質問。", "answer": "架空の答弁。"}]
+                data["questions"] = [{"member": n, "questions": qs, "qa_bulk": items.bulk_text(qs)}
+                                     for n in ("見本 太郎", "見本 花子")]
+                work.save_items(data)
+                page = [p["no"] for p in work.pages if p["section"] == layout.IPPAN][0]
+                placed = {p.part.kind + str(i): p.rect for i, p in enumerate(work.compose(page).placements)
+                          if p.part.kind in ("大見出し", "写真")}
+                titles = sorted((r for k, r in placed.items() if k.startswith("大見出し")), key=lambda r: r.line)
+                face = next(r for k, r in placed.items() if k.startswith("写真"))
+                self.assertEqual(face.dan, 0)
+                self.assertLess(titles[0].line, face.line)
+                self.assertLessEqual(face.line + face.line_span, titles[1].line)
+
     def test_face_frame_has_name_and_keeps_moved_place_after_save(self):
         import edition
         from grid import Rect
