@@ -2007,6 +2007,37 @@ class App:
                   foreground="#555", padding=(8, 2, 8, 0)).pack(fill="x")
         if self.step == 12 and chosen is not None and chosen.get() in photo_names:
             place_var.set(chosen.get())
+        # 大見出しの枠の大きさ: 紙面の大見出しをクリックして選び、ボタンで広げる・狭める
+        chosen_part = {"page": None, "part": None}
+
+        def resize_heading(lines: int = 0, dans: int = 0, reset: bool = False) -> None:
+            if chosen_part["part"] is None or chosen_part["page"] != page_var.get():
+                status.configure(text="先に、紙面の大見出しをクリックして選んでください。")
+                return
+            try:
+                if reset:
+                    self.work.reset_part(page_var.get(), chosen_part["part"])
+                    status.configure(text="大見出しの枠を、元の大きさと位置に戻しました。")
+                else:
+                    current = next(p.rect for p in self.work.compose(page_var.get()).placements
+                                   if p.index == chosen_part["part"])
+                    wanted = Rect(current.dan, current.line, max(1, current.dan_span + dans),
+                                  max(2, current.line_span + lines))
+                    if not self.work.move_part(page_var.get(), chosen_part["part"], wanted):
+                        status.configure(text="その大きさにはできません（ほかの部品や紙面の端に重なります）。")
+                        return
+                    status.configure(text=f"大見出しの枠: {wanted.dan_span}段・{wanted.line_span}行ぶん")
+                self.save(silent=True)
+                draw()
+            except Exception as error:
+                messagebox.showerror("枠の大きさを変えられません", str(error), parent=dialog)
+        size_row = ttk.Frame(dialog, padding=(6, 2, 6, 0))
+        size_row.pack(fill="x")
+        ttk.Label(size_row, text="大見出しの枠").pack(side="left")
+        for text, change in (("枠を広く", {"lines": 1}), ("枠を狭く", {"lines": -1}),
+                             ("枠を高く", {"dans": 1}), ("枠を低く", {"dans": -1}),
+                             ("元の大きさに戻す", {"reset": True})):
+            ttk.Button(size_row, text=text, command=lambda c=change: resize_heading(**c)).pack(side="left", padx=2)
         status = ttk.Label(dialog, padding=(8, 2, 8, 4))
         status.pack(fill="x")
         drag = {"part": None}
@@ -2140,12 +2171,17 @@ class App:
             point_x, point_y = page_point(event)
             result = self.work.compose(page_var.get())
             drag["part"] = None
+            drag["at"] = (event.x, event.y)
             for placement in reversed(result.placements):
-                if placement.part.kind != "写真":
+                if placement.part.kind not in ("写真", "大見出し"):
                     continue
                 box = to_box(self.work.geometry, placement.rect)
                 if box.x <= point_x <= box.x + box.w and box.y <= point_y <= box.y + box.h:
                     drag["part"] = placement.index
+                    if placement.part.kind == "大見出し":
+                        chosen_part.update(page=page_var.get(), part=placement.index)
+                        status.configure(text="大見出しを選びました。上の「枠を広く」「枠を狭く」「枠を高く」「枠を低く」"
+                                              "で枠の大きさを変えられます。ドラッグで動かせます。")
                     return
 
         def release(event):
@@ -2160,6 +2196,9 @@ class App:
                     place_var.set(NONE)   # 続けてクリックしても同じ写真が増えないように
                     self.save(silent=True)
                 else:
+                    start_x, start_y = drag.get("at", (event.x, event.y))
+                    if abs(event.x - start_x) + abs(event.y - start_y) < 6:
+                        return   # 押しただけ（選んだだけ）なら動かさない
                     actual, shifted = self.work.move_part_near(page_var.get(), drag["part"], target)
                 if shifted:
                     status.configure(text=(f"置ける所へ寄せました: {actual.dan + 1}段目・"

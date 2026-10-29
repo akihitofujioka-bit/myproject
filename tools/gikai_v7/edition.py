@@ -1031,6 +1031,19 @@ class Edition:
         self._record(f"{page_no}ページの部品{part_no + 1}を動かす", before)
         return True
 
+    def reset_part(self, page_no: int, part_no: int) -> None:
+        """紙面を見るで動かした・大きさを変えた大見出しや写真を、元の位置と大きさに戻す。"""
+        page = self._page(page_no)
+        if str(part_no) in page.get("overrides", {}):
+            before = self._state()
+            change = page["overrides"][str(part_no)]
+            for key in ("rect", "size"):
+                change.pop(key, None)
+            if not change or change == {"removed": False}:
+                page["overrides"].pop(str(part_no))
+            self._update_page_state(page_no)
+            self._record(f"{page_no}ページの部品{part_no + 1}を元に戻す", before)
+
     def can_move_part(self, page_no: int, part_no: int, rect: Rect) -> bool:
         """画面で、離す前の場所へ部品を置けるか確かめる。"""
         return self._can_place(page_no, part_no, rect)

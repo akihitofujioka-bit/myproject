@@ -522,6 +522,12 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
         second = parts[1]
         second_pt = _heading_pt(section, "大見出し", second.text)
         rect = _heading_rect(g, second, 0, title_rect.line + title_rect.line_span, second_pt)
+        if not second.vertical:
+            # 横書きの題が長いときは、顔写真の枠が左に入る幅を残して、枠の中で折り返す
+            face_span = photo_rect(g, "顔", 0, 0).line_span
+            room = g.lines_per_dan - rect.line - face_span
+            if room >= 8 and rect.line_span > room:
+                rect = Rect(rect.dan, rect.line, rect.dan_span, room)
         if _fits(g, rect, occupied):
             occupied.append(rect)
             placements.append(Placement(second, rect, 1))
@@ -552,6 +558,12 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                          if title_rect is not None and (1 in skip or not parts[title_index].vertical)
                          else 4)
             rect = manual.get(first_face, photo_rect(g, size, 0, face_line))
+            if first_face not in manual and not _fits(g, rect, occupied):
+                # 大見出しが長くて決まった所に入らないときは、いちばん近い空いた所へ置く（顔写真と議員名をなくさない）
+                candidates = sorted(((abs(dan) * g.lines_per_dan + abs(line - face_line), dan, line)
+                                     for dan in range(g.dans) for line in range(g.lines_per_dan)))
+                rect = next((photo_rect(g, size, dan, line) for _d, dan, line in candidates
+                             if _fits(g, photo_rect(g, size, dan, line), occupied)), rect)
             if first_face in manual or _fits(g, rect, occupied):
                 if first_face not in manual:
                     occupied.append(rect)
