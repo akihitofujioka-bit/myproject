@@ -2088,6 +2088,7 @@ class App:
             number = page_var.get()
             self.preview_pages[self.step] = number
             result = self.work.compose(number)
+            view["placements"] = result.placements   # マウスを合わせた所に動かせる部品があるかを見るため
             paper.delete("all")
             dialog.update_idletasks()
             # 「幅」は紙面の幅が窓の幅に、「全体」は紙面の高さが窓の高さに入る倍率。拡大・縮小はそれに掛ける。
@@ -2207,6 +2208,10 @@ class App:
                 box = to_box(self.work.geometry, placement.rect)
                 if box.x <= point_x <= box.x + box.w and box.y <= point_y <= box.y + box.h:
                     drag["part"] = placement.index
+                    # つかんだ所と部品の右上の差を覚え、動かしても同じ所をつかんだままにする
+                    grabbed = grid_at(event)
+                    drag["rect"] = placement.rect
+                    drag["offset"] = (grabbed.dan - placement.rect.dan, grabbed.line - placement.rect.line)
                     chosen_part.update(page=page_var.get(), part=placement.index, kind=placement.part.kind)
                     if placement.part.kind == "大見出し":
                         status.configure(text="大見出しを選びました。上の「枠を広く」「枠を狭く」「枠を高く」「枠を低く」"
@@ -2228,9 +2233,11 @@ class App:
                     place_var.set(NONE)   # 続けてクリックしても同じ写真が増えないように
                     self.save(silent=True)
                 else:
+                    paper.delete("drag")
                     start_x, start_y = drag.get("at", (event.x, event.y))
                     if abs(event.x - start_x) + abs(event.y - start_y) < 6:
                         return   # 押しただけ（選んだだけ）なら動かさない
+                    target = dragged_to(event)
                     actual, shifted = self.work.move_part_near(page_var.get(), drag["part"], target)
                 if shifted:
                     status.configure(text=(f"置ける所へ寄せました: {actual.dan + 1}段目・"
@@ -2280,8 +2287,41 @@ class App:
             self.show(target)
             self.root.lift()
             self.fit_label.configure(text=f"{page_var.get()}ページの入力欄です。直したら『紙面を見る』で確かめてください。")
+        def dragged_to(event):
+            """ドラッグ中の部品の右上が来る格子の位置（つかんだ所の差を引く）。"""
+            g = self.work.geometry
+            here = grid_at(event)
+            dan_off, line_off = drag.get("offset", (0, 0))
+            rect = drag.get("rect") or Rect(0, 0, 1, 1)
+            return Rect(max(0, min(g.dans - rect.dan_span, here.dan - dan_off)),
+                        max(0, min(g.lines_per_dan - rect.line_span, here.line - line_off)),
+                        rect.dan_span, rect.line_span)
+
+        def dragging(event):
+            """ドラッグ中は、離すと入る場所を赤い点線の枠で見せる。"""
+            if drag.get("part") is None:
+                return
+            start_x, start_y = drag.get("at", (event.x, event.y))
+            if abs(event.x - start_x) + abs(event.y - start_y) < 6:
+                return
+            box = to_box(self.work.geometry, dragged_to(event))
+            scale, ox, oy = view["scale"], view["ox"], view["oy"]
+            paper.delete("drag")
+            paper.create_rectangle(ox + box.x * scale, oy + box.y * scale,
+                                   ox + (box.x + box.w) * scale, oy + (box.y + box.h) * scale,
+                                   outline="#d33", width=2, dash=(6, 3), tags="drag")
+            status.configure(text="離すと、赤い点線の所へ動きます（ほかの部品に重なるときは近くの空いた所へ寄せます）。")
+
+        def hover(event):
+            """動かせる部品（写真・顔写真の枠・大見出し）の上では、指の形のマウスにする。"""
+            point_x, point_y = page_point(event)
+            over = any(p.part.kind in ("写真", "大見出し") and _inside(to_box(self.work.geometry, p.rect), point_x, point_y)
+                       for p in view.get("placements", []))
+            paper.configure(cursor="fleur" if over else "")
         paper.bind("<Double-Button-1>", jump_to_input)
         paper.bind("<ButtonPress-1>", press)
+        paper.bind("<B1-Motion>", dragging)
+        paper.bind("<Motion>", hover)
         paper.bind("<ButtonRelease-1>", release)
         draw()
 
