@@ -138,7 +138,8 @@ class Edition:
     def apply_items(self, data: dict) -> None:
         """項目入力からページ割り・印付き原稿・既存フォームをまとめて作る。"""
         new_issue = item_templates.issue_from_data(data, self.issue)
-        new_issue.feature_title = str(data.get("feature", {}).get("title", ""))
+        new_issue.feature_title = "\n".join(   # 表紙の特集の題名（1行に1件）
+            str(value.get("title", "")) for value in item_templates.features(data) if value.get("title"))
         new_plan = layout.make_plan(new_issue)
         if new_plan.errors:
             raise ValueError("\n".join(new_plan.errors))

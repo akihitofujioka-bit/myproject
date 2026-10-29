@@ -18,6 +18,7 @@ import guide
 import items
 import layout
 import sources
+import tables
 import tooltip
 import templates
 import docx_out as dx
@@ -28,7 +29,7 @@ INPUT_PT = 12      # 記入欄の字の大きさ
 
 COLORS = {"大見出し": "#ffd783", "中見出し": "#ffe9af", "質問": "#bfdefd",
           "答弁": "#c9e8c9", "本文": "#eeeeee", "議案": "#dccbf3",
-          "写真": "#9bd8ea", "写真説明": "#d4edf2"}
+          "写真": "#9bd8ea", "写真説明": "#d4edf2", "表": "#f3e6f7"}
 MARKS = ("○", "●", "欠席", "議長")
 
 
@@ -983,12 +984,104 @@ class App:
                                     "顔写真枠は自動で入ります。"),
                   wraplength=900).pack(anchor="w", pady=5)
 
+    def _features(self) -> list:
+        """特集の一覧（前の版の 1 つだけの特集は、一覧の 1 件目に移す）。"""
+        values = self.data.get("features")
+        if not isinstance(values, list):
+            values = []
+        if not values:
+            old = self.data.get("feature") or {}
+            if old.get("title") or old.get("body"):
+                values.append(dict(old))
+        self.data["features"] = values
+        self.data.pop("feature", None)
+        return values
+
     def _step_10(self):
         self._title("特集")
-        value = self.data.setdefault("feature", {})
-        self._entry("題", value.get("title", ""), lambda v: value.__setitem__("title", v))
-        self._text("本文", value.get("body", ""), lambda v: value.__setitem__("body", v), 12)
+        features = self._features()
+        self._list_editor("特集（いくつでも入れられます。上から順に、特集のページへ続けて入ります）", features,
+                          [("title", "題（大見出し）", False),
+                           ("body", "本文（表を入れたい所に、行の頭から【表】表の名前 と書きます）", True)],
+                          lambda v: v.get("title") or "（題なし）")
         self._word_button()
+        table_list = self.data.setdefault("tables", [])
+        self._list_editor("表（Word・エクセルで作った表。本文の【表】表の名前 の所に、ページの幅いっぱいで入ります）",
+                          table_list,
+                          [("name", "表の名前（本文の【表】の後ろに書く名前）", False),
+                           ("data", "表の中身（1行が表の1行。列はタブか｜で区切ります。エクセルや Word の表をコピーして貼れます）", True)],
+                          _table_summary)
+        row = ttk.Frame(self.inner)
+        row.pack(fill="x", pady=4)
+        ttk.Button(row, text="Word の表を読み込む", command=self.import_table_word).pack(side="left")
+        ttk.Button(row, text="エクセルの表を読み込む", command=self.import_table_excel).pack(side="left", padx=5)
+        ttk.Label(row, text="エクセルのファイルはこの画面へドロップしても読み込めます。").pack(side="left", padx=8)
+        # 本文の【表】名前 と、表の一覧の名前が合っているかを知らせる
+        names = {str(t.get("name", "")).strip() for t in table_list}
+        problems = []
+        used = set()
+        for value in features:
+            _body, missing = tables.fill_marks(value.get("body", ""), table_list)
+            problems.extend(f"「{value.get('title') or '題なし'}」の本文の【表】{name} に合う表がありません" for name in missing)
+            used.update(line.strip()[len(tables.MARK):].strip() for line in str(value.get("body", "")).splitlines()
+                        if line.strip().startswith(tables.MARK))
+        problems.extend(f"表「{name}」は、どの本文にも【表】{name} がないので紙面に出ません" for name in sorted(names - used) if name)
+        if problems:
+            ttk.Label(self.inner, text="・" + "\n・".join(problems), foreground="#a33",
+                      wraplength=900, justify="left").pack(anchor="w", pady=4)
+
+    def _add_tables(self, found, stem: str) -> None:
+        """読み込んだ表を一覧に足し、最後の特集の本文の終わりに【表】名前 を書き足す。"""
+        table_list = self.data.setdefault("tables", [])
+        features = self._features()
+        if not features:
+            features.append({"title": "", "body": ""})
+        names = {str(t.get("name", "")) for t in table_list}
+        added = []
+        for number, rows in enumerate(found, 1):
+            name = stem if len(found) == 1 else f"{stem}の表{number}"
+            base, extra = name, 2
+            while name in names:
+                name, extra = f"{base}_{extra}", extra + 1
+            names.add(name)
+            table_list.append({"name": name, "data": tables.rows_text(rows)})
+            features[-1]["body"] = (str(features[-1].get("body", "")).rstrip() + "\n" + tables.MARK + name).strip()
+            added.append(f"{name}（{len(rows)}行×{len(rows[0]) if rows else 0}列）")
+        self.save(silent=True)
+        self.show(self.step)
+        messagebox.showinfo("表を読み込みました",
+                            "\n".join(added) + "\n\n最後の特集の本文の終わりに【表】の行を書き足しました。"
+                            "表を入れたい所へ、その行を動かしてください。", parent=self.root)
+
+    def import_table_word(self, path=None) -> None:
+        path = path or filedialog.askopenfilename(title="表のある Word を選ぶ", parent=self.root,
+                                                  filetypes=[("Word", "*.docx")])
+        if not path:
+            return
+        try:
+            found = tables.read_word_tables(path)
+        except Exception as error:
+            messagebox.showerror("表を読めません", str(error), parent=self.root)
+            return
+        if not found:
+            messagebox.showinfo("表がありません", "この Word には表が見つかりませんでした。", parent=self.root)
+            return
+        self._add_tables(found, Path(path).stem)
+
+    def import_table_excel(self, path=None) -> None:
+        path = path or filedialog.askopenfilename(title="表のエクセルを選ぶ", parent=self.root,
+                                                  filetypes=[("Excel", "*.xlsx")])
+        if not path:
+            return
+        try:
+            rows = tables.read_excel_table(path)
+        except Exception as error:
+            messagebox.showerror("表を読めません", str(error), parent=self.root)
+            return
+        if not rows:
+            messagebox.showinfo("表がありません", "このエクセルの最初のシートに字が見つかりませんでした。", parent=self.root)
+            return
+        self._add_tables([rows], Path(path).stem)
 
     def _step_11(self):
         self._title("最終ページ")
@@ -1351,9 +1444,9 @@ class App:
             self.data.setdefault("committees", []).extend(
                 {"committee": committee, "heading": a["heading"], "body": a["body"]} for a in articles)
         else:
-            feature = self.data.setdefault("feature", {"title": "", "body": ""})
-            if not feature.get("title") and titles:
-                feature["title"] = titles[0]
+            # Word の特集は、新しい特集として一覧の終わりに足す
+            feature = {"title": titles[0] if titles else "", "body": ""}
+            self._features().append(feature)
             lines = [feature.get("body", "")] if feature.get("body") else []
             for article in articles:
                 if article["heading"]:
@@ -1382,6 +1475,8 @@ class App:
             self.import_question_word(path)
         elif suffix in (".xlsx", ".xls") and self.step == 6:
             self.import_votes(path)
+        elif suffix in (".xlsx", ".xls") and self.step == 10:
+            self.import_table_excel(path)
         elif suffix in (".jpg", ".jpeg", ".png", ".heic") and self.step in (5, 12):
             self.add_photos(path)
         else:
@@ -1389,7 +1484,7 @@ class App:
                 "この手順では読み込めません",
                 "落とせるファイルは手順ごとに決まっています。\n"
                 "・Word: 行政報告・委員会報告・一般質問・特集\n"
-                "・エクセル: 議案と賛否\n"
+                "・エクセル: 議案と賛否・特集（表）\n"
                 "・写真: 写真（10月号は 予算・決算 でも）", parent=self.root)
 
     def bulk_into(self, value: dict) -> None:
@@ -2035,6 +2130,12 @@ def _last_day(reiwa_year: int, month: int) -> str:
         return ""
     last = calendar.monthrange(2018 + reiwa_year, month)[1]
     return f"令和{reiwa_year}年{month}月{last}日"
+
+
+def _table_summary(value: dict) -> str:
+    rows = tables.parse_rows(value.get("data", ""))
+    columns = len(rows[0]) if rows else 0
+    return f"{value.get('name') or '（名前なし）'}　{len(rows)}行×{columns}列"
 
 
 def _question_summary(value: dict) -> str:

@@ -27,7 +27,7 @@ A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 V = "{urn:schemas-microsoft-com:vml}"
 PR = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 
-KINDS = ("大見出し", "中見出し", "質問", "答弁", "本文", "写真", "写真説明", "議案", "空き行", "次段")
+KINDS = ("大見出し", "中見出し", "質問", "答弁", "本文", "写真", "写真説明", "議案", "空き行", "次段", "表")
 
 # gikai_simple/core.py と同じ書き方。大きさは取り込み時の手掛かりとしてだけ読む。
 PHOTO_LINE = re.compile(
@@ -357,7 +357,9 @@ def _prepare(paragraphs: List[Paragraph]) -> List[Paragraph]:
         text = p.text.strip()
         if not text:
             continue
-        out.append(Paragraph(normalize_numbers(text), p.size, p.bold, p.image,
+        # 表（【表】の行）は、Word・エクセルで作ったままの数字の書き方で出す
+        out.append(Paragraph(text if text.startswith("【表】") else normalize_numbers(text),
+                             p.size, p.bold, p.image,
                              p.explicit_kind, p.explicit_reason))
     return out
 
@@ -383,6 +385,8 @@ def _explicit(p: Paragraph) -> Optional[Part]:
         return Part("空き行", space.group("count"), True, "指定した行数を空ける")
     if p.text == "【次段】":
         return Part("次段", "", True, "次の段へ送る")
+    if p.text.startswith("【表】"):
+        return Part("表", p.text, True, "【表】の印")
     if p.text.startswith("【本文】"):
         return Part("本文", p.text[len("【本文】"):].strip(), True, "【本文】の印")
     photo = PHOTO_LINE.match(p.text)

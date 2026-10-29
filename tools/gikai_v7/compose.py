@@ -113,6 +113,54 @@ def _fits(g: Geometry, rect: Rect, occupied: List[Rect]) -> bool:
             and not any(rect.overlaps(other) for other in occupied))
 
 
+def _table_size(g: Geometry, part: I.Part):
+    """表の (行, 列の幅, 行の高さ, 要る段の数)。中身が読めなければ None。"""
+    import tables
+    decoded = tables.decode(part.text)
+    if decoded is None or not decoded[1]:
+        return None
+    rows = decoded[1]
+    width = to_box(g, Rect(0, 0, 1, g.lines_per_dan)).w
+    widths, heights = tables.layout(rows, width)
+    needed = sum(heights)
+    dans = 1
+    while dans < g.dans and dans * g.dan_h_pt + (dans - 1) * g.gap_pt < needed:
+        dans += 1
+    return rows, widths, heights, dans
+
+
+def _table_dans(g: Geometry, part: I.Part) -> int:
+    size = _table_size(g, part)
+    return size[3] if size else 1
+
+
+def _place_table(page, g: Geometry, part: I.Part, occupied: List[Rect], warnings: List[str]) -> Optional[Rect]:
+    """表を、本文の続きの次の空いた段から、ページの幅いっぱいに置く（横書きの表）。
+
+    本文が途中まで入った段の残りは空けておく（表のあとの本文が表より前に読まれないように）。
+    """
+    import tables
+    rows, widths, heights, dans = _table_size(g, part)
+    runs = free_runs(g, whole_page(g), occupied)
+    start = runs[0].dan if runs else g.dans
+    if runs and runs[0].line != 0:
+        start += 1          # 本文が途中まで入った段には置かず、次の段から
+    for dan in range(start, g.dans - dans + 1):
+        rect = Rect(dan, 0, dans, g.lines_per_dan)
+        if _fits(g, rect, occupied):
+            box = to_box(g, rect)
+            box = type(box)(box.x, box.y, box.w, min(box.h, sum(heights) + 2))
+            page.items.append(dx.Table(box, widths, rows, tables.CELL_PT, dx.GOTHIC, True, "表",
+                                       None, None, heights))
+            if sum(heights) > to_box(g, rect).h:
+                warnings.append("表が長く、ページの下に入りきりません。行を減らすか、2つの表に分けてください")
+            for run in runs:
+                if run.dan < dan:
+                    occupied.append(run)   # 表より上の段の残りは空ける
+            return rect
+    return None
+
+
 def _per_line(g: Geometry, rect: Rect, pt: float) -> int:
     """見出しの枠の高さ（段をまたぐなら段の間も含む）に、pt の字が何字入るか。"""
     return max(1, int(to_box(g, rect).h // pt))
@@ -466,11 +514,27 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             elif part.kind == "写真":
                 size = overrides.get(index, {}).get("size") or part.photo_size or "中"
                 overflow += photo_rect(g, size, 0, 0).line_span
+            elif part.kind == "表":
+                overflow += _table_dans(g, part) * g.lines_per_dan
             else:
                 overflow += len(split_lines(part.text, g.chars_per_line,
                                             indent=part.reason != "前ページからの続き"))
             continue
         reserve_space(index)
+        if part.kind == "表":
+            if _table_size(g, part) is None:
+                warnings.append("表の中身が見つかりません。特集の手順の『表』に、本文の【表】と同じ名前の表があるか確かめてください")
+                continue
+            rect = _place_table(page, g, part, occupied, warnings)
+            if rect is None:
+                overflow += _table_dans(g, part) * g.lines_per_dan
+                overflow_by_index[index] = part
+                flow_stopped = True
+                continue
+            occupied.append(rect)
+            placements.append(Placement(part, rect, index))
+            last_rect = rect
+            continue
         if part.kind in ("空き行", "次段"):
             runs = free_runs(g, whole_page(g), occupied)
             if part.kind == "次段" and runs:

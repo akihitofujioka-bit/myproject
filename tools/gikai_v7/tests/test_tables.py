@@ -1,0 +1,108 @@
+"""特集の表（Word・エクセルから読む、本文の【表】に入れる、紙面に置く）と、複数の特集のテスト。"""
+
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+
+import compose  # noqa: E402
+import docx_out as dx  # noqa: E402
+import ingest  # noqa: E402
+import items  # noqa: E402
+import layout  # noqa: E402
+import tables  # noqa: E402
+from grid import Geometry  # noqa: E402
+
+W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+X = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+
+
+def _cell(text, props=""):
+    return f"<w:tc>{props}<w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>"
+
+
+def _docx(path: Path) -> Path:
+    span = '<w:tcPr><w:gridSpan w:val="2"/></w:tcPr>'
+    body = ("<w:tbl>"
+            f"<w:tr>{_cell('地区')}{_cell('避難所')}{_cell('定員')}</w:tr>"
+            f"<w:tr>{_cell('見本地区')}{_cell('見本小学校　ほか', span)}</w:tr>"
+            "</w:tbl>")
+    with zipfile.ZipFile(path, "w") as package:
+        package.writestr("word/document.xml", f"<w:document {W}><w:body>{body}</w:body></w:document>")
+    return path
+
+
+def _xlsx(path: Path) -> Path:
+    rows = ('<row r="2"><c r="B2" t="inlineStr"><is><t>地区</t></is></c><c r="C2" t="inlineStr"><is><t>定員</t></is></c></row>'
+            '<row r="3"><c r="B3" t="inlineStr"><is><t>架空地区</t></is></c><c r="C3"><v>120</v></c></row>'
+            '<row r="4"><c r="B4" t="inlineStr"><is><t>見本地区</t></is></c><c r="C4"><v>1500.0</v></c></row>')
+    with zipfile.ZipFile(path, "w") as package:
+        package.writestr("xl/workbook.xml", f'<workbook {X} {R}><sheets><sheet name="表" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        package.writestr("xl/_rels/workbook.xml.rels",
+                         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                         '<Relationship Id="rId1" Target="worksheets/sheet1.xml" Type="x"/></Relationships>')
+        package.writestr("xl/worksheets/sheet1.xml", f"<worksheet {X}><sheetData>{rows}</sheetData></worksheet>")
+    return path
+
+
+class TableTest(unittest.TestCase):
+    def test_parse_rows_tab_or_bar(self):
+        self.assertEqual(tables.parse_rows("地区\t定員\n見本\t300"), [["地区", "定員"], ["見本", "300"]])
+        self.assertEqual(tables.parse_rows("｜地区｜定員｜\n見本|300|備考"), [["地区", "定員", ""], ["見本", "300", "備考"]])
+
+    def test_fill_marks_and_missing(self):
+        body, missing = tables.fill_marks("前の文。\n【表】一覧\n【表】無い表", [{"name": "一覧", "data": "甲\t乙"}])
+        lines = body.splitlines()
+        self.assertEqual(lines[0], "前の文。")
+        self.assertEqual(tables.decode(lines[1]), ("一覧", [["甲", "乙"]]))
+        self.assertEqual(missing, ["無い表"])
+
+    def test_read_word_and_excel(self):
+        with tempfile.TemporaryDirectory() as folder:
+            found = tables.read_word_tables(_docx(Path(folder) / "架空.docx"))
+            self.assertEqual(found, [[["地区", "避難所", "定員"], ["見本地区", "見本小学校　ほか", ""]]])
+            rows = tables.read_excel_table(_xlsx(Path(folder) / "架空.xlsx"))
+            self.assertEqual(rows, [["地区", "定員"], ["架空地区", "120"], ["見本地区", "1500"]])
+
+    def test_table_is_placed_full_width_below_text(self):
+        g = Geometry()
+        text = ("【大見出し】架空の特集\n" + "架空の本文です。" * 30 + "\n"
+                + tables.encode("一覧", [["地区", "定員（人）"], ["見本地区", "300"]]) + "\n" + "表のあとの文。" * 5)
+        parts = ingest.ingest_text(text).parts
+        self.assertIn("表", [part.kind for part in parts])
+        result = compose.compose_page(layout.TOKUSHU, parts, {}, g)
+        table = next(item for item in result.page.items if isinstance(item, dx.Table))
+        self.assertEqual(table.rows[1], ["見本地区", "300"])   # 数字は表に書いたまま
+        width = compose.to_box(g, compose.Rect(0, 0, 1, g.lines_per_dan)).w
+        self.assertAlmostEqual(sum(table.column_widths), width, places=3)
+        # 表のあとの本文は、表より下の段に入る
+        after = [p for p in result.placements if p.part.text.startswith("表のあと")]
+        placed = next(p for p in result.placements if p.part.kind == "表")
+        self.assertTrue(after and all(p.rect.dan > placed.rect.dan for p in after))
+        self.assertEqual(result.overflow_lines, 0)
+
+
+class FeaturesTest(unittest.TestCase):
+    def test_several_features_follow_each_other(self):
+        data = {"features": [{"title": "甲の特集", "body": "甲の本文。\n【表】一覧"},
+                             {"title": "乙の特集", "body": "乙の本文。"}],
+                "tables": [{"name": "一覧", "data": "地区\t定員"}]}
+        text = items.marked_pages(data, layout.Issue(1, 4))[layout.TOKUSHU][0]
+        self.assertTrue(text.startswith("【大見出し】甲の特集\n甲の本文。\n【表】{"))
+        self.assertIn("\n【大見出し】乙の特集\n乙の本文。", text)
+
+    def test_old_single_feature_still_works(self):
+        data = {"feature": {"title": "前の特集", "body": "前の本文。"}}
+        self.assertEqual([f["title"] for f in items.features(data)], ["前の特集"])
+        self.assertIn("【大見出し】前の特集", items.features_text(data))
+
+
+if __name__ == "__main__":
+    unittest.main()

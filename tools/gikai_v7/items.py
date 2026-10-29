@@ -51,7 +51,7 @@ def default_data(issue: Optional[layout.Issue] = None) -> dict:
         "votes_warnings": [],
         "committees": [],
         "questions": [],
-        "feature": {"title": "", "body": ""},
+        "features": [], "tables": [],
         "last": templates.default_form(layout.LAST),
         "photos": [],
         "completed": [],
@@ -318,11 +318,31 @@ def question_text(value: dict, horizontal: bool = False) -> str:
     return "\n".join(line for line in lines if line)
 
 
-def feature_text(value: dict) -> str:
+def feature_text(value: dict, tables: Optional[List[dict]] = None) -> str:
+    """特集 1 つ分。本文の【表】名前 の行には、その表の中身を入れる。"""
+    import tables as table_marks
     lines = ["【大見出し】" + _text(value.get("title"))]
     if _text(value.get("body")):
-        lines.append(_text(value.get("body")))
+        body, _missing = table_marks.fill_marks(_text(value.get("body")), tables or [])
+        lines.append(body)
     return "\n".join(line for line in lines if line)
+
+
+def features(data: dict) -> List[dict]:
+    """特集の一覧。前の版の 1 つだけの特集（data["feature"]）も一覧として返す。"""
+    values = data.get("features")
+    if isinstance(values, list) and values:
+        return values
+    old = data.get("feature") or {}
+    if _text(old.get("title")) or _text(old.get("body")):
+        return [old]
+    return values if isinstance(values, list) else []
+
+
+def features_text(data: dict) -> str:
+    """特集のページの原稿。複数の特集を、それぞれの大見出しから順に続けて入れる。"""
+    tables = data.get("tables", []) or []
+    return "\n".join(text for text in (feature_text(value, tables) for value in features(data)) if text)
 
 
 def shingi_form(data: dict, issue: layout.Issue) -> dict:
@@ -370,7 +390,7 @@ def marked_pages(data: dict, issue: layout.Issue) -> Dict[str, List[str]]:
         layout.GYOSEI: [gyosei_text(data.get("gyosei", {}))],
         layout.IINKAI: [committee_text(data.get("committees", []))],
         layout.IPPAN: ippan_texts(data.get("questions", [])),
-        layout.TOKUSHU: [feature_text(data.get("feature", {}))],
+        layout.TOKUSHU: [features_text(data)],
     }
     # 当初予算・決算は決まった型のページなので、流し込みの原稿は作らない。
     return pages
