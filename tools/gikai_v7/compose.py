@@ -113,15 +113,21 @@ def _fits(g: Geometry, rect: Rect, occupied: List[Rect]) -> bool:
             and not any(rect.overlaps(other) for other in occupied))
 
 
-def _table_size(g: Geometry, part: I.Part):
-    """表の (行, 列の幅, 行の高さ, 要る段の数)。中身が読めなければ None。"""
+def _table_size(g: Geometry, part: I.Part, width: Optional[float] = None):
+    """表の (行, 列の幅, 行の高さ, 要る段の数)。width を省くとページの幅いっぱい。中身が読めなければ None。"""
     import tables
     decoded = tables.decode(part.text)
     if decoded is None or not decoded[1]:
         return None
     rows = decoded[1]
-    width = to_box(g, Rect(0, 0, 1, g.lines_per_dan)).w
-    widths, heights = tables.layout(rows, width)
+    width = width or to_box(g, Rect(0, 0, 1, g.lines_per_dan)).w
+    word = tables.decode_word(part.text)
+    if word:
+        # Word の表は元の列の幅と字の大きさで並ぶので、高さはそれで見積もる
+        fitted, _word_pt = tables.fit_word_xml(word, width)
+        widths, heights = tables.word_heights(fitted)
+    else:
+        widths, heights = tables.layout(rows, width)
     needed = sum(heights)
     dans = 1
     while dans < g.dans and dans * g.dan_h_pt + (dans - 1) * g.gap_pt < needed:
@@ -134,30 +140,52 @@ def _table_dans(g: Geometry, part: I.Part) -> int:
     return size[3] if size else 1
 
 
-def _place_table(page, g: Geometry, part: I.Part, occupied: List[Rect], warnings: List[str]) -> Optional[Rect]:
-    """表を、本文の続きの次の空いた段から、ページの幅いっぱいに置く（横書きの表）。
+TABLE_MIN_RATIO = 0.6   # 段の一部が大見出しなどでふさがっていても、この割合の幅があれば表を置く
 
+
+def _place_table(page, g: Geometry, part: I.Part, occupied: List[Rect], warnings: List[str]) -> Optional[Rect]:
+    """表を、本文の続きの次の段から、空いている幅いっぱいに置く（横書きの表）。
+
+    大見出しなどで段の一部がふさがっていても、ページの幅の 6 割以上空いていれば、その幅に縮めて置く。
     本文が途中まで入った段の残りは空けておく（表のあとの本文が表より前に読まれないように）。
     """
     import tables
-    rows, widths, heights, dans = _table_size(g, part)
     runs = free_runs(g, whole_page(g), occupied)
     start = runs[0].dan if runs else g.dans
     if runs and runs[0].line != 0:
         start += 1          # 本文が途中まで入った段には置かず、次の段から
-    for dan in range(start, g.dans - dans + 1):
-        rect = Rect(dan, 0, dans, g.lines_per_dan)
-        if _fits(g, rect, occupied):
+    for dan in range(start, g.dans):
+        for dans in range(1, g.dans - dan + 1):
+            # この段から dans 段ぶん、どの段でも空いている行のうち、いちばん長く続く所
+            free = [line for line in range(g.lines_per_dan)
+                    if not any(Rect(d, line, 1, 1).overlaps(o) for d in range(dan, dan + dans) for o in occupied)]
+            best, run_start, previous = (0, 0), None, None
+            for line in free + [None]:
+                if line is not None and previous is not None and line == previous + 1:
+                    previous = line
+                    continue
+                if run_start is not None and previous - run_start + 1 > best[1]:
+                    best = (run_start, previous - run_start + 1)
+                run_start = previous = line
+            if best[1] < g.lines_per_dan * TABLE_MIN_RATIO:
+                break
+            rect = Rect(dan, best[0], dans, best[1])
+            size = _table_size(g, part, to_box(g, rect).w)
+            if size is None or size[3] > dans:
+                continue          # この幅だと段が足りない。段を増やして試す
+            rows, widths, heights, _dans = size
             box = to_box(g, rect)
             box = type(box)(box.x, box.y, box.w, min(box.h, sum(heights) + 2))
+            word = tables.decode_word(part.text)
             page.items.append(dx.Table(box, widths, rows, tables.CELL_PT, dx.GOTHIC, True, "表",
-                                       None, None, heights))
-            if sum(heights) > to_box(g, rect).h:
-                warnings.append("表が長く、ページの下に入りきりません。行を減らすか、2つの表に分けてください")
+                                       None, None, heights,
+                                       word_xml=tables.fit_word_xml(word, box.w)[0] if word else ""))
             for run in runs:
                 if run.dan < dan:
                     occupied.append(run)   # 表より上の段の残りは空ける
             return rect
+    if _table_size(g, part) and _table_size(g, part)[3] >= g.dans:
+        warnings.append("表が長く、ページに入りきりません。行を減らすか、2つの表に分けてください")
     return None
 
 
@@ -247,10 +275,11 @@ QUESTION_START = re.compile(r"^[ \u3000]*問[ \u3000]*(?P<rest>.*)$", re.S)
 
 
 def _ippan_lines(part: I.Part, g: Geometry, role_before: str = ""):
-    """一般質問の問・答を、「質問」「答弁」の行のあとで行を変える形にする。
+    """一般質問の問・答を「質問　本文」「答弁　答弁者」の形にする。
 
-    質問 → 次の行から質問の本文。答弁 → 次の行に答弁者 → その次の行から答弁の本文。
-    行と、行ごとの書体（答弁の本文だけ明朝）を返す。問・答の形でなければ None。
+    質問は「質問」の後に全角の空きを入れて、そのまま質問の本文を続ける（行は変えない）。
+    答弁は「答弁」の後に全角の空きと答弁者を入れ、行を変えて答弁の本文を入れる（本文は明朝）。
+    行と、行ごとの書体を返す。問・答の形でなければ None。
     """
     if part.reason == "前ページからの続き":
         return None
@@ -258,22 +287,23 @@ def _ippan_lines(part: I.Part, g: Geometry, role_before: str = ""):
         match = QUESTION_START.match(part.text)
         if not match:
             return None
-        return ["質問"] + split_lines(match.group("rest").strip(), g.chars_per_line, indent=True), None
+        return split_lines("質問　" + match.group("rest").strip(), g.chars_per_line, indent=False), None
     if part.kind == "答弁":
         match = ANSWER_START.match(part.text)
         if not match:
             return None
         rest = match.group("rest").strip()
         role, separator, body = rest.partition("　")
-        head = ["答弁"]
-        if _is_role(role) and (separator or not body):
-            head.append(role)
-        else:
-            body = rest
-            if role_before:   # 答の前の行に書いてあった答弁者
-                head.append(role_before)
-        lines = head + split_lines(body.strip(), g.chars_per_line, indent=True)
-        runs = [[(line, dx.GOTHIC)] if index < len(head) else [(line, dx.MINCHO)]
+        if not (_is_role(role) and (separator or not body)):
+            role, body = role_before, rest
+        if role:
+            head = split_lines("答弁　" + role, g.chars_per_line, indent=False)
+            lines = head + split_lines(body.strip(), g.chars_per_line, indent=True)
+            runs = [[(line, dx.GOTHIC if index < len(head) else dx.MINCHO)] for index, line in enumerate(lines)]
+            return lines, runs
+        # 答弁者が分からないときは「答弁　」のあとにそのまま本文を続ける
+        lines = split_lines("答弁　" + body.strip(), g.chars_per_line, indent=False)
+        runs = [[(line[:3], dx.GOTHIC), (line[3:], dx.MINCHO)] if index == 0 else [(line, dx.MINCHO)]
                 for index, line in enumerate(lines)]
         return lines, runs
     return None

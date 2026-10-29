@@ -96,6 +96,7 @@ class Table:
     col_spans: object = None            # {(行, 列): 列数} 右の列とつなぐセル
     v_merge: object = None              # {(行, 列): "restart" か "continue"} 下の行とつなぐセル
     diagonal_cells: object = None       # {(行, 列): (右上の字, 左下の字)} 左上から右下へ斜めの線を引くセル
+    word_xml: str = ""                  # Word から読んだ表の XML（そのまま入れる。空ならこちらで表を作る）
 
 
 @dataclass
@@ -419,8 +420,9 @@ def _item_xml(item, idx: int, ids: list[int], rel_id: str = "") -> tuple[str, in
     if isinstance(item, Table):
         line = '<a:ln><a:noFill/></a:ln>'
         body = '<wps:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"><a:noAutofit/></wps:bodyPr>'
+        inner = item.word_xml or _table_xml(item)   # Word の表は、色・つないだセル・罫線をそのまま
         return (_anchor(idx, item.box,
-                        _shape(item.box, line=line, inner=_table_xml(item), body=body),
+                        _shape(item.box, line=line, inner=inner, body=body),
                         name=item.name), 1)
     if isinstance(item, Placeholder):
         line = ('<a:ln w="9525"><a:solidFill><a:srgbClr val="1E88E5"/></a:solidFill>'

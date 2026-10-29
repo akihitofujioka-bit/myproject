@@ -1051,7 +1051,7 @@ class App:
             ttk.Label(self.inner, text="・" + "\n・".join(problems), foreground="#a33",
                       wraplength=900, justify="left").pack(anchor="w", pady=4)
 
-    def _add_tables(self, found, stem: str) -> None:
+    def _add_tables(self, found, stem: str, word_xml=None) -> None:
         """読み込んだ表を一覧に足し、最後の特集の本文の終わりに【表】名前 を書き足す。"""
         table_list = self.data.setdefault("tables", [])
         features = self._features()
@@ -1065,7 +1065,10 @@ class App:
             while name in names:
                 name, extra = f"{base}_{extra}", extra + 1
             names.add(name)
-            table_list.append({"name": name, "data": tables.rows_text(rows)})
+            entry = {"name": name, "data": tables.rows_text(rows)}
+            if word_xml:
+                entry.update(word_xml=word_xml[number - 1], word_text=entry["data"])
+            table_list.append(entry)
             features[-1]["body"] = (str(features[-1].get("body", "")).rstrip() + "\n" + tables.MARK + name).strip()
             added.append(f"{name}（{len(rows)}行×{len(rows[0]) if rows else 0}列）")
         self.save(silent=True)
@@ -1080,14 +1083,15 @@ class App:
         if not path:
             return
         try:
-            found = tables.read_word_tables(path)
+            found = tables.read_word_tables(path, with_xml=True)
         except Exception as error:
             messagebox.showerror("表を読めません", str(error), parent=self.root)
             return
         if not found:
             messagebox.showinfo("表がありません", "この Word には表が見つかりませんでした。", parent=self.root)
             return
-        self._add_tables(found, Path(path).stem)
+        # Word の表は、色・つないだセル・罫線をそのまま紙面に入れる（中身を直すと、こちらの形の表になる）
+        self._add_tables([rows for rows, _xml in found], Path(path).stem, [xml for _rows, xml in found])
 
     def import_table_excel(self, path=None) -> None:
         path = path or filedialog.askopenfilename(title="表のエクセルを選ぶ", parent=self.root,
@@ -1453,10 +1457,36 @@ class App:
         return found
 
     def _choose_member(self) -> str:
+        """どの議員の原稿かを、議員名簿のプルダウンから選ぶ。"""
         members = self.work.settings.members if self.work else []
-        value = simpledialog.askstring("議員を選ぶ", "議員名を入力してください。\n" +
-                                       "／".join(members), parent=self.root)
-        return str(value or "").strip()
+        return self._choose("議員を選ぶ", "どの議員の原稿ですか。", members)
+
+    def _choose(self, title: str, prompt: str, values, editable: bool = False) -> str:
+        """プルダウンから 1 つ選ぶ小さな窓。editable なら一覧にないものも書き込める。やめたら空。"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        body = ttk.Frame(dialog, padding=14)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=prompt, font=(self.font, INPUT_PT)).pack(anchor="w")
+        var = tk.StringVar(value=values[0] if values and not editable else "")
+        box = ttk.Combobox(body, textvariable=var, values=list(values), font=(self.font, INPUT_PT),
+                           state="normal" if editable else "readonly", width=30)
+        box.pack(fill="x", pady=8)
+        result = {"value": ""}
+
+        def accept(_event=None):
+            result["value"] = var.get().strip()
+            dialog.destroy()
+        row = ttk.Frame(body)
+        row.pack(fill="x")
+        ttk.Button(row, text="これにする", command=accept).pack(side="right")
+        ttk.Button(row, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
+        dialog.bind("<Return>", accept)
+        box.focus_set()
+        dialog.grab_set()
+        self.root.wait_window(dialog)
+        return result["value"]
 
     def _preview_source(self, member: str, parsed: dict, delivery: str,
                         original: str = "") -> None:
@@ -1856,15 +1886,17 @@ class App:
                                                              ("すべて", "*.*")))
         if not path:
             return
-        member = simpledialog.askstring("誰の写真か", "議員名（または担当名）を入力してください。",
-                                        parent=self.root)
-        if member is None:
+        members = self.work.settings.members if self.work else []
+        member = self._choose("誰の写真か", "議員名を選びます（議員でないときは、担当名を書き込みます）。",
+                              members, editable=True)
+        if not member:
             return
-        articles = [v.get("title", "") for v in self.data.get("questions", [])]
+        articles = [_question_summary(v).split("　", 1)[-1] for v in self.data.get("questions", [])]
         articles += [v.get("title", "") for v in self.data.get("shingi", {}).get("bills", [])]
-        article = simpledialog.askstring("どの記事か", "記事名を入力してください。\n" +
-                                         "／".join(v for v in articles if v), parent=self.root)
-        if article is None:
+        articles += [v.get("title", "") for v in self.data.get("features", []) or []]
+        article = self._choose("どの記事か", "どの記事の写真かを選びます（一覧にないときは書き込みます）。",
+                               list(dict.fromkeys(v for v in articles if v)), editable=True)
+        if not article:
             return
         try:
             result = self.work.add_received_photo(Path(path), member, article)

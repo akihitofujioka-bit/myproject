@@ -48,8 +48,21 @@ def rows_text(rows: List[List[str]]) -> str:
     return "\n".join("｜".join(str(cell).replace("\n", " ") for cell in row) for row in rows)
 
 
-def encode(name: str, rows: List[List[str]]) -> str:
-    return MARK + json.dumps({"name": name, "rows": rows}, ensure_ascii=False)
+def encode(name: str, rows: List[List[str]], word_xml: str = "") -> str:
+    value = {"name": name, "rows": rows}
+    if word_xml:
+        value["word"] = word_xml
+    return MARK + json.dumps(value, ensure_ascii=False)
+
+
+def decode_word(text: str) -> str:
+    """原稿の 1 行に入っている、Word の表そのもの（XML）。無ければ空。"""
+    body = str(text or "")
+    body = body[len(MARK):] if body.startswith(MARK) else body
+    try:
+        return str(json.loads(body.strip()).get("word", ""))
+    except (ValueError, AttributeError):
+        return ""
 
 
 def decode(text: str) -> Optional[Tuple[str, List[List[str]]]]:
@@ -80,7 +93,10 @@ def fill_marks(body: str, tables: List[dict]) -> Tuple[str, List[str]]:
             if table is None:
                 missing.append(name)
                 continue
-            lines.append(encode(name, parse_rows(table.get("data", ""))))
+            # Word から読んだ表で、中身を直していなければ、Word の表をそのまま使う
+            same = table.get("word_xml") and table.get("word_text") == table.get("data")
+            lines.append(encode(name, parse_rows(table.get("data", "")),
+                                str(table.get("word_xml", "")) if same else ""))
         else:
             lines.append(line)
     return "\n".join(lines), missing
@@ -115,8 +131,11 @@ def layout(rows: List[List[str]], width_pt: float, pt: float = CELL_PT) -> Tuple
 
 # ---------------------------------------------------------------- Word・エクセルから読む
 
-def read_word_tables(path) -> List[List[List[str]]]:
-    """Word(.docx) の中の表を、表ごとに行と列で返す。つないだセルは左・上のセルだけに字を入れる。"""
+def read_word_tables(path, with_xml: bool = False):
+    """Word(.docx) の中の表を、表ごとに行と列で返す。つないだセルは左・上のセルだけに字を入れる。
+
+    with_xml が真なら、(行と列, 表そのものの XML) の組で返す（紙面にそのまま入れるため）。
+    """
     source = Path(path)
     if source.suffix.lower() != ".docx":
         raise ValueError("Word の表は .docx から読みます。.doc なら Word で .docx に保存し直してください。")
@@ -150,8 +169,61 @@ def read_word_tables(path) -> List[List[List[str]]]:
         width = max((len(row) for row in rows), default=0)
         rows = [row + [""] * (width - len(row)) for row in rows if any(cell for cell in row)]
         if rows:
-            found.append(rows)
+            found.append((rows, clean_word_xml(table)) if with_xml else rows)
     return found
+
+
+def clean_word_xml(table) -> str:
+    """Word の表から、紙面にそのまま入れられる XML を作る。
+
+    w: 以外の名前空間の部品（画像・Word の新しい版だけの印など）と、表を紙面の別の場所へ
+    浮かせる指定（tblpPr）、左の字下げ（tblInd）、文書のスタイルへの参照（tblStyle）は外す。
+    """
+    import copy
+    ET.register_namespace("w", W[1:-1])
+    copied = copy.deepcopy(table)
+
+    def clean(node):
+        for child in list(node):
+            if not child.tag.startswith(W) or child.tag in (W + "tblpPr", W + "tblInd", W + "tblStyle",
+                                                            W + "drawing", W + "pict", W + "object"):
+                node.remove(child)
+                continue
+            clean(child)
+        for key in list(node.attrib):
+            if not key.startswith(W):
+                del node.attrib[key]
+    clean(copied)
+    return ET.tostring(copied, encoding="unicode")
+
+
+def fit_word_xml(xml: str, width_pt: float) -> Tuple[str, float]:
+    """Word の表の幅を、紙面の幅に収まるよう縮める（広げはしない）。(XML, 字の大きさの最大pt) を返す。"""
+    ET.register_namespace("w", W[1:-1])
+    root = ET.fromstring(xml)
+    target = int(width_pt * 20)
+    grid = root.find(W + "tblGrid")
+    columns = [int(col.get(W + "w") or 0) for col in (grid.findall(W + "gridCol") if grid is not None else [])]
+    total = sum(columns)
+    scale = min(1.0, target / total) if total else 1.0
+    if grid is not None:
+        for col, value in zip(grid.findall(W + "gridCol"), columns):
+            col.set(W + "w", str(int(value * scale)))
+    for node in root.iter(W + "tcW"):
+        if node.get(W + "type") in (None, "dxa") and (node.get(W + "w") or "").isdigit():
+            node.set(W + "w", str(int(int(node.get(W + "w")) * scale)))
+    props = root.find(W + "tblPr")
+    if props is None:
+        props = ET.SubElement(root, W + "tblPr")
+        root.remove(props)
+        root.insert(0, props)
+    width = props.find(W + "tblW")
+    if width is None:
+        width = ET.SubElement(props, W + "tblW")
+    width.set(W + "w", str(int(min(total, target) if total else target)))
+    width.set(W + "type", "dxa")
+    sizes = [int(node.get(W + "val")) / 2 for node in root.iter(W + "sz") if (node.get(W + "val") or "").isdigit()]
+    return ET.tostring(root, encoding="unicode"), (max(sizes) if sizes else 10.5)
 
 
 def read_excel_table(path) -> List[List[str]]:
@@ -202,3 +274,34 @@ def _number_text(value: str, kind: str) -> str:
     if number.is_integer():
         return str(int(number))
     return ("%.4f" % number).rstrip("0").rstrip(".")
+
+
+def word_heights(xml: str) -> Tuple[List[float], List[float]]:
+    """Word の表（幅を合わせた後の XML）の、列の幅と行の高さの見積もり（pt）。
+
+    セルの幅（つないだ列の分も足す）と、セルの中のいちばん大きい字で、何行になるかを数える。
+    行の高さの指定（trHeight）があれば、それより低くはしない。
+    """
+    root = ET.fromstring(xml)
+    grid = root.find(W + "tblGrid")
+    columns = [int(col.get(W + "w") or 0) / 20 for col in (grid.findall(W + "gridCol") if grid is not None else [])]
+    heights = []
+    for row in root.findall(W + "tr"):
+        column, tallest = 0, 0.0
+        for cell in row.findall(W + "tc"):
+            span_node = cell.find(W + "tcPr/" + W + "gridSpan")
+            span = int(span_node.get(W + "val") or 1) if span_node is not None else 1
+            width = sum(columns[column:column + span]) or 60.0
+            column += span
+            sizes = [int(n.get(W + "val")) / 2 for n in cell.iter(W + "sz") if (n.get(W + "val") or "").isdigit()]
+            pt = max(sizes) if sizes else 10.5
+            lines = 0
+            for paragraph in cell.findall(W + "p"):
+                text = "".join(node.text or "" for node in paragraph.iter(W + "t"))
+                lines += max(1, math.ceil(text_width(text) * pt / max(1.0, width - PAD_PT - 6)))
+            tallest = max(tallest, max(1, lines) * pt * LINE_RATIO + 4.0)
+        given = row.find(W + "trPr/" + W + "trHeight")
+        if given is not None and (given.get(W + "val") or "").isdigit():
+            tallest = max(tallest, int(given.get(W + "val")) / 20)
+        heights.append(tallest)
+    return columns, heights

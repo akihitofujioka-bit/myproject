@@ -71,7 +71,7 @@ class TableTest(unittest.TestCase):
             rows = tables.read_excel_table(_xlsx(Path(folder) / "架空.xlsx"))
             self.assertEqual(rows, [["地区", "定員"], ["架空地区", "120"], ["見本地区", "1500"]])
 
-    def test_table_is_placed_full_width_below_text(self):
+    def test_table_is_placed_in_free_width_below_text(self):
         g = Geometry()
         text = ("【大見出し】架空の特集\n" + "架空の本文です。" * 30 + "\n"
                 + tables.encode("一覧", [["地区", "定員（人）"], ["見本地区", "300"]]) + "\n" + "表のあとの文。" * 5)
@@ -81,7 +81,9 @@ class TableTest(unittest.TestCase):
         table = next(item for item in result.page.items if isinstance(item, dx.Table))
         self.assertEqual(table.rows[1], ["見本地区", "300"])   # 数字は表に書いたまま
         width = compose.to_box(g, compose.Rect(0, 0, 1, g.lines_per_dan)).w
-        self.assertAlmostEqual(sum(table.column_widths), width, places=3)
+        # 大見出しの横の段でも、空いている幅（ページの幅の 6 割以上）に合わせて置く
+        self.assertAlmostEqual(sum(table.column_widths), table.box.w, places=3)
+        self.assertGreaterEqual(table.box.w, width * compose.TABLE_MIN_RATIO)
         # 表のあとの本文は、表より下の段に入る
         after = [p for p in result.placements if p.part.text.startswith("表のあと")]
         placed = next(p for p in result.placements if p.part.kind == "表")
