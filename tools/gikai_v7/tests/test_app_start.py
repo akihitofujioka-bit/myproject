@@ -167,5 +167,26 @@ class ButtonTipTest(unittest.TestCase):
         self.assertEqual(guide.button_tip("知らないボタン"), "")
 
 
+class OpenFileTest(unittest.TestCase):
+    """確認用の Word を作ったら、Windows では os.startfile で Word に開かせる。"""
+
+    def test_open_file_uses_startfile_on_windows(self):
+        import os
+        app_module = _load_app()
+        opened = []
+        saved_platform, saved = app_module.sys.platform, getattr(os, "startfile", None)
+        try:
+            app_module.sys.platform = "win32"
+            os.startfile = lambda path: opened.append(path)
+            self.assertTrue(app_module._open_file(Path("確認用.docx")))
+        finally:
+            app_module.sys.platform = saved_platform
+            if saved is None:
+                del os.startfile
+            else:
+                os.startfile = saved
+        self.assertEqual(opened, ["確認用.docx"])
+
+
 if __name__ == "__main__":
     unittest.main()

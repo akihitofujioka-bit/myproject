@@ -1423,7 +1423,12 @@ class App:
                 if not people:
                     raise ValueError("その議員の入力内容がありません。")
             path = self.work.write_question_confirmation(people, member)
-            messagebox.showinfo("確認用Wordを作りました", str(path), parent=self.root)
+            if _open_file(path):   # できたら Word で開く（そのまま印刷できるように）
+                self.fit_label.configure(text="確認用Wordを開きました: " + str(path))
+            else:
+                messagebox.showinfo("確認用Wordを作りました",
+                                    str(path) + "\n\n自動で開けなかったので、このファイルを開いて印刷してください。",
+                                    parent=self.root)
         except Exception as error:
             messagebox.showerror("確認用Wordを作れません", str(error), parent=self.root)
 
@@ -2253,6 +2258,22 @@ def _last_day(reiwa_year: int, month: int) -> str:
         return ""
     last = calendar.monthrange(2018 + reiwa_year, month)[1]
     return f"令和{reiwa_year}年{month}月{last}日"
+
+
+def _open_file(path) -> bool:
+    """ファイルを、パソコンでふだん使うアプリ（.docx なら Word）で開く。開けたら True。"""
+    import os
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            os.startfile(str(path))   # 役場の Windows
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+        return True
+    except (OSError, AttributeError):
+        return False
 
 
 def _table_summary(value: dict) -> str:
