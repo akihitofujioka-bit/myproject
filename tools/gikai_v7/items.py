@@ -160,6 +160,15 @@ def _split_answerer(rest: str):
     return "", rest
 
 
+_DIVIDER = re.compile(r"^[―ー－—━─=＝＊*・\-\s]*(?:[０-９0-9]+番目の質問)?[―ー－—━─=＝＊*・\-\s]*$")
+
+
+def _is_divider(line: str) -> bool:
+    """区切りの行（線だけ、または「―― 2番目の質問 ――」）。"""
+    value = line.strip()
+    return bool(value) and bool(_DIVIDER.match(value)) and any(ch in value for ch in "―－—━─=＝＊*-")
+
+
 def _looks_like_heading(line: str) -> bool:
     """見出しらしい短い行（句点で終わらない 30 字まで）。"""
     value = line.strip()
@@ -217,6 +226,8 @@ def parse_bulk(text: str) -> dict:
         if index < skip_to:
             continue
         stripped = line.strip()
+        if _is_divider(stripped):
+            continue   # 原稿のひな形の「―― 2番目の質問 ――」のような区切りの行は読まない
         if pending and stripped:
             # 「（見出し）」「（見出しの答）」だけの行の、次の行がその中身
             if pending == "見出し":

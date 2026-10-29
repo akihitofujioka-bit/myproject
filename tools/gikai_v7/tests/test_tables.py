@@ -222,6 +222,7 @@ class ManuscriptAndChairTest(unittest.TestCase):
             found = sources.read_word(made)["questions"]
             self.assertEqual(len(items.group_questions(found)), 4)
             self.assertTrue(all(q["heading"] and q.get("heading_answer") and q["answerer"] for q in found))
+            self.assertFalse(any("番目の質問" in q["answer"] for q in found))   # 区切りの行は答に入れない
 
     def test_committee_chair_face_and_name(self):
         text = items.committee_text([{"committee": "架空総務常任委員会", "chair": "見本 太郎", "body": "架空の本文です。"}])
