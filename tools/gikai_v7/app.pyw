@@ -1002,7 +1002,10 @@ class App:
         ttk.Button(row, text="確認用に印刷（1人）",
                    command=lambda: self.print_question_confirmation(True)).pack(side="left")
         ttk.Button(row, text="確認用に印刷（全員）", command=self.print_question_confirmation).pack(side="left")
-        ttk.Label(self.inner, text=("取り込み後は必ず、問と答の分け方が正しいか原稿と見比べてください。"
+        ttk.Label(self.inner, text=(("議員から届いた Word ファイルは、上の質問者の一覧の白い所（この画面のどこでも）へ"
+                                     "ドロップしても読み込めます。一覧で議員を選んでから落とすと、その議員の原稿として読みます。"
+                                     if self.drop_ready else "")
+                                    + "取り込み後は必ず、問と答の分け方が正しいか原稿と見比べてください。"
                                     "手書きは見ながら入力し、確認用に印刷して議員に見てもらいます。"
                                     "顔写真枠は自動で入ります。"),
                   wraplength=900).pack(anchor="w", pady=5)
@@ -1503,12 +1506,18 @@ class App:
             people.append(found)
         return found
 
-    def _choose_member(self) -> str:
-        """どの議員の原稿かを、議員名簿のプルダウンから選ぶ。"""
+    def _choose_member(self, default: str = "") -> str:
+        """どの議員の原稿かを、議員名簿のプルダウンから選ぶ。default があれば最初に選んでおく。"""
         members = self.work.settings.members if self.work else []
-        return self._choose("議員を選ぶ", "どの議員の原稿ですか。", members)
+        return self._choose("議員を選ぶ", "どの議員の原稿ですか。", members, default=default)
 
-    def _choose(self, title: str, prompt: str, values, editable: bool = False) -> str:
+    def _selected_member(self) -> str:
+        """一般質問の一覧で選んでいる議員の名前（選んでいなければ空）。"""
+        index = self.list_selection.get(9) if self.step == 9 else None
+        people = self.data.get("questions", []) or []
+        return str(people[index].get("member", "")) if index is not None and index < len(people) else ""
+
+    def _choose(self, title: str, prompt: str, values, editable: bool = False, default: str = "") -> str:
         """プルダウンから 1 つ選ぶ小さな窓。editable なら一覧にないものも書き込める。やめたら空。"""
         dialog = tk.Toplevel(self.root)
         dialog.title(title)
@@ -1516,7 +1525,7 @@ class App:
         body = ttk.Frame(dialog, padding=14)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text=prompt, font=(self.font, INPUT_PT)).pack(anchor="w")
-        var = tk.StringVar(value=values[0] if values and not editable else "")
+        var = tk.StringVar(value=default if default in values else (values[0] if values and not editable else ""))
         box = ttk.Combobox(body, textvariable=var, values=list(values), font=(self.font, INPUT_PT),
                            state="normal" if editable else "readonly", width=30)
         box.pack(fill="x", pady=8)
@@ -1570,7 +1579,7 @@ class App:
         dialog.grab_set()
 
     def import_question_word(self, path=None) -> None:
-        member = self._choose_member()
+        member = self._choose_member(self._selected_member())
         if not member:
             return
         path = path or filedialog.askopenfilename(title="Word 原稿を選ぶ", parent=self.root,
