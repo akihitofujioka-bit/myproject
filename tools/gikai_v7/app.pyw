@@ -1164,9 +1164,11 @@ class App:
 
         tabs = ttk.Notebook(dialog)
         tabs.pack(fill="both", expand=True, padx=12)
-        fields = []
+        groups = items.group_questions(questions)
+        fields = []   # 質問ごとに (見出し, 見出しの答, [やりとりごとの (問, 答, 答弁者)])
         for number in range(self.QUESTION_LIMIT):
-            question = questions[number] if number < len(questions) else {}
+            group = groups[number] if number < len(groups) else [{}]
+            question = group[0]
             page = ttk.Frame(tabs, padding=8)
             tabs.add(page, text=f" {number + 1}番目の質問 " + ("（大見出し）" if number == 0 else ""))
 
@@ -1180,41 +1182,74 @@ class App:
                 if note:
                     ttk.Label(page, text=note, foreground="#555").pack(anchor="w", padx=(150, 0))
                 return entry
-
-            def box(label, text):
-                ttk.Label(page, text=label, font=(self.font, INPUT_PT)).pack(anchor="w", pady=(6, 2))
-                frame = ttk.Frame(page)
-                frame.pack(fill="both", expand=True)
-                widget = tk.Text(frame, height=4, wrap="word", font=(self.font, INPUT_PT), undo=True,
-                                 padx=6, pady=4, relief="solid", borderwidth=1, highlightthickness=1)
-                widget.insert("1.0", text)
-                bar = ttk.Scrollbar(frame, orient="vertical", command=widget.yview)
-                widget.configure(yscrollcommand=bar.set)
-                bar.pack(side="right", fill="y")
-                widget.pack(side="left", fill="both", expand=True)
-                return widget
             heading = line("見出し", str(question.get("heading", "")),
                            "大まかな質問。紙面では青字。" + ("1番目は大見出しになります。" if number == 0 else "2番目からは中見出しになります。"))
             heading_answer = line("見出しの答", str(question.get("heading_answer", "")), "大まかな質問への答（見出しの2行目）。")
-            asked = box("問（詳しい質問）", str(question.get("question", "")))
-            answered = box("答（詳しい答弁）", str(question.get("answer", "")))
-            row = ttk.Frame(page)
-            row.pack(fill="x", pady=(6, 0))
-            ttk.Label(row, text="答弁者", width=16, font=(self.font, INPUT_PT)).pack(side="left")
-            answerer = ttk.Combobox(row, values=answerers, font=(self.font, INPUT_PT), width=20)
-            answerer.set(str(question.get("answerer", "")))
-            answerer.pack(side="left")
-            ttk.Label(row, text="選ぶか、書き込みます。", foreground="#555").pack(side="left", padx=8)
-            fields.append((heading, heading_answer, asked, answered, answerer))
+            # 1 つの質問の中の問と答のやりとり（再質問・再答弁）。つまみで切り替え、足せる
+            exchanges_tabs = ttk.Notebook(page)
+            exchanges = []
+
+            def add_exchange(value=None, tabs_=exchanges_tabs, list_=exchanges):
+                value = value or {}
+                frame = ttk.Frame(tabs_, padding=6)
+                tabs_.add(frame, text=f" やりとり{len(list_) + 1} ")
+
+                def box(label, text):
+                    ttk.Label(frame, text=label, font=(self.font, INPUT_PT)).pack(anchor="w", pady=(4, 2))
+                    holder = ttk.Frame(frame)
+                    holder.pack(fill="both", expand=True)
+                    widget = tk.Text(holder, height=3, wrap="word", font=(self.font, INPUT_PT), undo=True,
+                                     padx=6, pady=4, relief="solid", borderwidth=1, highlightthickness=1)
+                    widget.insert("1.0", text)
+                    bar = ttk.Scrollbar(holder, orient="vertical", command=widget.yview)
+                    widget.configure(yscrollcommand=bar.set)
+                    bar.pack(side="right", fill="y")
+                    widget.pack(side="left", fill="both", expand=True)
+                    return widget
+                asked = box("質問（詳しい質問）", str(value.get("question", "")))
+                answered = box("答弁（詳しい答弁）", str(value.get("answer", "")))
+                row = ttk.Frame(frame)
+                row.pack(fill="x", pady=(6, 0))
+                ttk.Label(row, text="答弁者", width=16, font=(self.font, INPUT_PT)).pack(side="left")
+                answerer = ttk.Combobox(row, values=answerers, font=(self.font, INPUT_PT), width=20)
+                answerer.set(str(value.get("answerer", "")))
+                answerer.pack(side="left")
+                ttk.Label(row, text="選ぶか、書き込みます。", foreground="#555").pack(side="left", padx=8)
+                list_.append((asked, answered, answerer))
+                tabs_.select(frame)
+                return asked
+            buttons = ttk.Frame(page)
+            buttons.pack(fill="x", pady=(8, 2))
+            ttk.Label(buttons, text="この質問の中のやりとり（再質問と答弁）", font=(self.font, INPUT_PT)).pack(side="left")
+            ttk.Button(buttons, text="やりとりを足す",
+                       command=lambda f=add_exchange: f().focus_set()).pack(side="left", padx=8)
+            exchanges_tabs.pack(fill="both", expand=True)
+            for exchange in group:   # value（議員 1 人分）と取り違えないよう別の名前にする
+                add_exchange(exchange)
+            exchanges_tabs.select(0)
+            fields.append((heading, heading_answer, exchanges))
 
         def accept():
             collected = []
-            for heading, heading_answer, asked, answered, answerer in fields:
-                one = {"heading": heading.get().strip(), "heading_answer": heading_answer.get().strip(),
-                       "question": asked.get("1.0", "end-1c").strip(),
-                       "answer": answered.get("1.0", "end-1c").strip(), "answerer": answerer.get().strip()}
-                if any(one.values()):
-                    collected.append(one)
+            for heading, heading_answer, exchanges in fields:
+                head = {"heading": heading.get().strip(), "heading_answer": heading_answer.get().strip()}
+                rows = []
+                for asked, answered, answerer in exchanges:
+                    one = {"question": asked.get("1.0", "end-1c").strip(),
+                           "answer": answered.get("1.0", "end-1c").strip(), "answerer": answerer.get().strip()}
+                    if any(one.values()):
+                        rows.append(one)
+                if not rows and not any(head.values()):
+                    continue
+                rows = rows or [{"question": "", "answer": "", "answerer": ""}]
+                if collected and not head["heading"]:
+                    messagebox.showwarning("見出しを入れてください",
+                                           "2番目からの質問は、見出し（大まかな質問）を入れてください。"
+                                           "見出しがないと、前の質問の続きのやりとりになります。", parent=dialog)
+                    return
+                # 見出しは 1 つ目のやりとりに付け、2 つ目からは見出しなし（＝同じ質問の続き）
+                collected.append(dict(head, **rows[0]))
+                collected.extend(dict(row, heading="", heading_answer="") for row in rows[1:])
             value["member"] = member.get().strip()
             value["confirmed"] = confirmed.get().strip() or "未"
             value["questions"] = collected
@@ -1223,7 +1258,7 @@ class App:
             done()
         ttk.Button(footer, text="この内容にする", command=accept).pack(side="right")
         ttk.Button(footer, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
-        ttk.Label(footer, text="質問は4つまで。使わない質問の欄は空のままにします。上のつまみで質問を切り替えます。",
+        ttk.Label(footer, text="質問は4つまで。上のつまみで質問を、その中のつまみでやりとりを切り替えます。使わない欄は空のままにします。",
                   foreground="#555").pack(side="left")
         fields[0][0].focus_set()
         dialog.grab_set()

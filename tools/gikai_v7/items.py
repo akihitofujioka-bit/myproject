@@ -255,14 +255,32 @@ def bulk_text(questions: Iterable[dict]) -> str:
     return "\n".join(lines)
 
 
+def group_questions(values: Iterable[dict]) -> List[List[dict]]:
+    """問答の並びを、質問ごとのまとまりに分ける。
+
+    見出しのある問答から新しい質問が始まり、見出しのない問答は、その前の質問の続きの
+    やりとり（再質問と答弁）とする。最初の問答は、見出しがなくても 1 つ目の質問。
+    """
+    groups: List[List[dict]] = []
+    for value in values or []:
+        if not groups or _text(value.get("heading") or value.get("title")) or _text(value.get("heading_answer")):
+            groups.append([value])
+        else:
+            groups[-1].append(value)
+    return groups
+
+
 def limit_questions(values: Iterable[dict], maximum: int = 4) -> List[dict]:
-    """質問数を上限へ収める。超過分は最後の答へ追記し、文字を捨てない。"""
-    copied = [copy.deepcopy(value) for value in (values or [])]
-    if len(copied) <= maximum:
-        return copied
-    kept, extra = copied[:maximum], copied[maximum:]
+    """質問数（見出しごとのまとまりの数）を上限へ収める。超過分は最後の答へ追記し、文字を捨てない。
+
+    1 つの質問の中のやりとり（見出しのない問答）は、いくつあっても 1 つと数える。
+    """
+    groups = [[copy.deepcopy(value) for value in group] for group in group_questions(values)]
+    if len(groups) <= maximum:
+        return [value for group in groups for value in group]
+    kept = [value for group in groups[:maximum] for value in group]
     tail = []
-    for value in extra:
+    for value in (value for group in groups[maximum:] for value in group):
         if _text(value.get("heading")):
             tail.append(_text(value.get("heading")))
         if _text(value.get("question") or value.get("q")):

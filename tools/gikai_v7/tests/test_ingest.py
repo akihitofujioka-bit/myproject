@@ -117,11 +117,17 @@ class TextReadTest(unittest.TestCase):
 
 class CheckAndFitTest(unittest.TestCase):
     def test_fifth_question_and_missing_photo_warnings(self):
-        parts = []
+        parts = [I.Part("大見出し", "架空の題")]
         for n in range(5):
+            if n:
+                parts.append(I.Part("中見出し", f"見出し{n}"))
             parts.extend([I.Part("質問", f"問　質問{n}。"), I.Part("答弁", "答　答弁です。")])
         self.assertEqual(I.check_ippan(parts),
                          ["質問が 5 つあります（4 つまで）", "顔写真がありません"])
+        # 1 つの質問の中で何回やりとりしても、1 つと数える
+        again = [I.Part("大見出し", "架空の題")] + [I.Part(kind, text) for _ in range(5)
+                                                  for kind, text in (("質問", "問　再質問。"), ("答弁", "答　答弁。"))]
+        self.assertEqual(I.check_ippan(again), ["顔写真がありません"])
 
     def test_continuous_question_paragraphs_count_once(self):
         parts = [I.Part("質問", "問　一つ目。"), I.Part("質問", "続きです。"),

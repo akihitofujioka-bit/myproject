@@ -188,5 +188,54 @@ class OpenFileTest(unittest.TestCase):
         self.assertEqual(opened, ["確認用.docx"])
 
 
+class QuestionEditorTest(unittest.TestCase):
+    """一般質問の入力の窓で、1 つの質問にやりとりを足して保存できる（窓は画面に出さない）。"""
+
+    def test_add_exchange_and_save(self):
+        if tk is None:
+            self.skipTest("tkinter がありません")
+        try:
+            root = tk.Tk()
+        except tk.TclError:
+            self.skipTest("画面を出せない環境です")
+        root.withdraw()
+        import tempfile
+        app_module = _load_app()
+        import edition
+        import layout
+        saved_argv = sys.argv
+        sys.argv = ["app.pyw"]
+        try:
+            with tempfile.TemporaryDirectory() as folder:
+                app_module.RESUME_PATH = Path(folder) / "前回の続き.json"
+                app = app_module.App(root)
+                app._big_window = lambda dialog: dialog.withdraw()
+                app.work = edition.Edition.create(Path(folder) / "号", layout.Issue(998, 4, "令和8年4月30日"))
+                app.work.save_settings(["見本 太郎"], "見本 太郎")
+                app.data = app.work.item_data()
+                value = {"member": "見本 太郎", "qa_bulk": "【見出し】架空の見出し\n問　最初。\n答　答え。"}
+                finished = []
+                app._question_editor(value, lambda: finished.append(True))
+                top = next(w for w in root.winfo_children()
+                           if isinstance(w, tk.Toplevel) and w.title() == "一般質問を入力")
+
+                def find(widget, cls):
+                    found = [widget] if widget.winfo_class() == cls else []
+                    for child in widget.winfo_children():
+                        found += find(child, cls)
+                    return found
+                next(b for b in find(top, "TButton") if b.cget("text") == "やりとりを足す").invoke()
+                texts = find(top, "Text")
+                texts[2].insert("1.0", "架空の再質問。")
+                texts[3].insert("1.0", "架空の再答弁。")
+                next(b for b in find(top, "TButton") if b.cget("text") == "この内容にする").invoke()
+                self.assertEqual(finished, [True])
+                self.assertEqual([q["question"] for q in value["questions"]], ["最初。", "架空の再質問。"])
+                self.assertEqual(value["questions"][1]["heading"], "")
+        finally:
+            sys.argv = saved_argv
+            root.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()

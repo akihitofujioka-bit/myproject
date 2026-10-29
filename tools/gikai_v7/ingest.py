@@ -490,12 +490,10 @@ def ingest(path: Path) -> IngestResult:
 def check_ippan(parts: List[Part]) -> List[str]:
     """一般質問のページで人が直す必要のある点を返す。"""
     warnings = []
-    questions = 0
-    previous = ""
-    for part in parts:
-        if part.kind == "質問" and previous != "質問":
-            questions += 1
-        previous = part.kind
+    # 質問の数は見出しで数える（1 つ目は大見出し、2 つ目からは中見出し）。
+    # 1 つの質問の中で問と答を何回やりとりしても 1 つと数える。
+    asked = any(part.kind == "質問" for part in parts)
+    questions = (1 + sum(1 for part in parts if part.kind == "中見出し")) if asked else 0
     if questions >= 5:
         warnings.append(f"質問が {questions} つあります（4 つまで）")
     if not any(p.kind == "写真" for p in parts):

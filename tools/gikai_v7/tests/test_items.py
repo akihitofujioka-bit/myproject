@@ -47,6 +47,18 @@ class ConversionTest(unittest.TestCase):
         self.assertEqual(sections, [("", "前置きの文。"), ("調査日", "令和８年１月"), ("所感", "架空の所感。\n二行目。")])
         self.assertEqual(items.join_sections(sections + [("", "")]), body)
 
+    def test_one_question_can_have_several_exchanges(self):
+        """見出しのない問答は、前の質問の続きのやりとり。質問の数（4 つまで）にも数えない。"""
+        pairs = [{"heading": "甲", "question": "問1", "answer": "答1"},
+                 {"heading": "", "question": "再質問", "answer": "再答弁"},
+                 {"heading": "乙", "question": "問2", "answer": "答2"}]
+        self.assertEqual([len(g) for g in items.group_questions(pairs)], [2, 1])
+        many = [{"heading": f"見出し{n}", "question": f"問{n}", "answer": f"答{n}"} for n in range(4)]
+        many[1:1] = [{"heading": "", "question": "再質問", "answer": "再答弁"}] * 3
+        self.assertEqual(len(items.limit_questions(many)), 7)   # 4 つの質問のまま、やりとりも残す
+        back = items.parse_bulk(items.bulk_text(pairs))["questions"]
+        self.assertEqual([len(g) for g in items.group_questions(back)], [2, 1])
+
     def test_bulk_reads_summary_answer(self):
         parsed = items.parse_bulk("【見出し】防災対策の強化を\n【見出しの答】計画的に進める\n"
                                   "問　備えは。\n答　増やす。\n答弁者　見本課長\n"
