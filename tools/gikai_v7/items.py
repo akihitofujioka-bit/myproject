@@ -214,6 +214,22 @@ def _qa_lines(values: Iterable[dict], answerer: bool = False) -> List[str]:
     return lines
 
 
+def bulk_text(questions: Iterable[dict]) -> str:
+    """質問ごとの欄の内容を、まとめ欄の形（【見出し】【見出しの答】問 答 答弁者）にする。parse_bulk で元に戻る。"""
+    lines: List[str] = []
+    for value in questions or []:
+        for mark, key in (("【見出し】", "heading"), ("【見出しの答】", "heading_answer")):
+            if _text(value.get(key)):
+                lines.append(mark + _text(value.get(key)))
+        if _text(value.get("question")):
+            lines.append("問　" + _text(value.get("question")))
+        if _text(value.get("answer")):
+            lines.append("答　" + _text(value.get("answer")))
+        if _text(value.get("answerer")):
+            lines.append("答弁者　" + _text(value.get("answerer")))
+    return "\n".join(lines)
+
+
 def limit_questions(values: Iterable[dict], maximum: int = 4) -> List[dict]:
     """質問数を上限へ収める。超過分は最後の答へ追記し、文字を捨てない。"""
     copied = [copy.deepcopy(value) for value in (values or [])]

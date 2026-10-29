@@ -30,6 +30,17 @@ class ConversionTest(unittest.TestCase):
         # 前の版の「題」だけのデータも大見出しに出す
         self.assertIn("【大見出し】古い題", items.question_text({"title": "古い題", "questions": []}))
 
+    def test_question_fields_round_trip_through_bulk_text(self):
+        """質問ごとの欄の内容をまとめ欄の形にしても、読み直すと同じ欄に戻る。"""
+        questions = [{"heading": "防災は", "heading_answer": "進める", "question": "備えは。\n二行目。",
+                      "answer": "増やす。", "answerer": "見本課長"},
+                     {"heading": "子育て", "heading_answer": "", "question": "保育は。", "answer": "下げる。", "answerer": ""}]
+        back = items.parse_bulk(items.bulk_text(questions))["questions"]
+        for before, after in zip(questions, back):
+            for key in ("heading", "question", "answer", "answerer"):
+                self.assertEqual(after.get(key, ""), before[key])
+            self.assertEqual(after.get("heading_answer", ""), before["heading_answer"])
+
     def test_bulk_reads_summary_answer(self):
         parsed = items.parse_bulk("【見出し】防災対策の強化を\n【見出しの答】計画的に進める\n"
                                   "問　備えは。\n答　増やす。\n答弁者　見本課長\n"

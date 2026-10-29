@@ -271,7 +271,9 @@ class App:
         widget.pack(side="left", fill="both", expand=True)
         self.getters.append(lambda w=widget, s=setter: s(w.get("1.0", "end-1c").strip()))
 
-    def _list_editor(self, label, values, fields, summary, max_items=None) -> None:
+    def _list_editor(self, label, values, fields, summary, max_items=None, editor=None) -> None:
+        """一覧と「＋追加・編集・削除・上へ・下へ」。editor を渡すと、編集の窓をその関数で開く
+        （editor(value, done) を呼び、入れ終わったら done() を呼んでもらう）。"""
         box = ttk.LabelFrame(self.inner, text=label, padding=7)
         box.pack(fill="both", expand=True, pady=5)
         listing = tk.Listbox(box, height=min(12, max(4, len(values) + 1)),
@@ -301,6 +303,13 @@ class App:
             if not new and not selected:
                 return
             value = {field[0]: "" for field in fields} if new else values[selected[0]]
+            if editor is not None:
+                def done():
+                    if new:
+                        values.append(value)
+                    refresh(len(values) - 1 if new else selected[0])
+                editor(value, done)
+                return
             dialog = tk.Toplevel(self.root)
             dialog.title("項目を入力")
             # 画面の高さいっぱいに広げ、複数行の欄が残りの高さを分け合う（本文・問・答が書きやすいように）
@@ -968,8 +977,9 @@ class App:
                            ("confirmed", "議員の確認", False, ("未", "済")),
                            ("qa_bulk", "質問（質問ごとに【見出し】大まかな質問、【見出しの答】それへの答、"
                                        "問、答、答弁者 の順。1番目の見出しが大見出しになります）", True)],
-                          _question_summary, max_items=10)
-        ttk.Label(self.inner, text=("書き方の例:\n"
+                          _question_summary, max_items=10, editor=self._question_editor)
+        ttk.Label(self.inner, text=("「＋追加」「編集」では、質問ごとに 見出し・見出しの答・問・答・答弁者 の欄へ入れます。\n"
+                                    "「まとめて貼る」で原稿をまとめて貼るときの書き方の例:\n"
                                     "【見出し】防災対策の強化を（大まかな質問。紙面では青字）\n"
                                     "【見出しの答】計画的に進める（それへの答）\n"
                                     "問　詳しい質問\n答　詳しい答\n答弁者　見本課長\n"
@@ -1112,6 +1122,106 @@ class App:
                     lambda v: value.__setitem__("hearing_title", v))
         self._entry("傍聴の呼びかけ", value.get("invitation", "お気軽に傍聴に、お越し下さい。"),
                     lambda v: value.__setitem__("invitation", v))
+
+    QUESTION_LIMIT = 4
+    ANSWERERS = ("村長", "副村長", "教育長")   # ほかの役職は、この号で一度入れると選べるようになる
+
+    def _question_editor(self, value: dict, done) -> None:
+        """一般質問 1 人分を、質問ごとの欄で入れる窓（【見出し】などの印を打たなくてよい）。
+
+        入れた内容は、これまでと同じ「まとめ欄」（qa_bulk）の形にもして残す。
+        """
+        dialog = tk.Toplevel(self.root)
+        dialog.title("一般質問を入力")
+        self._big_window(dialog)
+        dialog.transient(self.root)
+        footer = ttk.Frame(dialog, padding=(12, 6))
+        footer.pack(side="bottom", fill="x")
+        top = ttk.Frame(dialog, padding=(12, 10, 12, 4))
+        top.pack(fill="x")
+        members = self.work.settings.members if self.work else []
+        ttk.Label(top, text="議員名", font=(self.font, INPUT_PT)).pack(side="left")
+        member = ttk.Combobox(top, values=members, font=(self.font, INPUT_PT), state="readonly", width=16)
+        member.set(str(value.get("member", "")))
+        member.pack(side="left", padx=(6, 20))
+        ttk.Label(top, text="議員の確認", font=(self.font, INPUT_PT)).pack(side="left")
+        confirmed = ttk.Combobox(top, values=("未", "済"), font=(self.font, INPUT_PT), state="readonly", width=4)
+        confirmed.set(str(value.get("confirmed") or "未"))
+        confirmed.pack(side="left", padx=6)
+
+        questions = value.get("questions") or []
+        if value.get("qa_bulk"):
+            questions = items.parse_bulk(value["qa_bulk"])["questions"] or questions
+        # 答弁者は、よく使う役職に、この号でもう入れた役職を足して選べるようにする（書き込みもできる）
+        used = [str(q.get("answerer", "")) for person in self.data.get("questions", [])
+                for q in (person.get("questions") or []) if q.get("answerer")]
+        answerers = list(dict.fromkeys(list(self.ANSWERERS) + used))
+
+        tabs = ttk.Notebook(dialog)
+        tabs.pack(fill="both", expand=True, padx=12)
+        fields = []
+        for number in range(self.QUESTION_LIMIT):
+            question = questions[number] if number < len(questions) else {}
+            page = ttk.Frame(tabs, padding=8)
+            tabs.add(page, text=f" {number + 1}番目の質問 " + ("（大見出し）" if number == 0 else ""))
+
+            def line(label, text, note=""):
+                row = ttk.Frame(page)
+                row.pack(fill="x", pady=3)
+                ttk.Label(row, text=label, width=16, font=(self.font, INPUT_PT)).pack(side="left")
+                entry = ttk.Entry(row, font=(self.font, INPUT_PT))
+                entry.insert(0, text)
+                entry.pack(side="left", fill="x", expand=True, ipady=2)
+                if note:
+                    ttk.Label(page, text=note, foreground="#555").pack(anchor="w", padx=(150, 0))
+                return entry
+
+            def box(label, text):
+                ttk.Label(page, text=label, font=(self.font, INPUT_PT)).pack(anchor="w", pady=(6, 2))
+                frame = ttk.Frame(page)
+                frame.pack(fill="both", expand=True)
+                widget = tk.Text(frame, height=4, wrap="word", font=(self.font, INPUT_PT), undo=True,
+                                 padx=6, pady=4, relief="solid", borderwidth=1, highlightthickness=1)
+                widget.insert("1.0", text)
+                bar = ttk.Scrollbar(frame, orient="vertical", command=widget.yview)
+                widget.configure(yscrollcommand=bar.set)
+                bar.pack(side="right", fill="y")
+                widget.pack(side="left", fill="both", expand=True)
+                return widget
+            heading = line("見出し", str(question.get("heading", "")),
+                           "大まかな質問。紙面では青字。" + ("1番目は大見出しになります。" if number == 0 else "2番目からは中見出しになります。"))
+            heading_answer = line("見出しの答", str(question.get("heading_answer", "")), "大まかな質問への答（見出しの2行目）。")
+            asked = box("問（詳しい質問）", str(question.get("question", "")))
+            answered = box("答（詳しい答弁）", str(question.get("answer", "")))
+            row = ttk.Frame(page)
+            row.pack(fill="x", pady=(6, 0))
+            ttk.Label(row, text="答弁者", width=16, font=(self.font, INPUT_PT)).pack(side="left")
+            answerer = ttk.Combobox(row, values=answerers, font=(self.font, INPUT_PT), width=20)
+            answerer.set(str(question.get("answerer", "")))
+            answerer.pack(side="left")
+            ttk.Label(row, text="選ぶか、書き込みます。", foreground="#555").pack(side="left", padx=8)
+            fields.append((heading, heading_answer, asked, answered, answerer))
+
+        def accept():
+            collected = []
+            for heading, heading_answer, asked, answered, answerer in fields:
+                one = {"heading": heading.get().strip(), "heading_answer": heading_answer.get().strip(),
+                       "question": asked.get("1.0", "end-1c").strip(),
+                       "answer": answered.get("1.0", "end-1c").strip(), "answerer": answerer.get().strip()}
+                if any(one.values()):
+                    collected.append(one)
+            value["member"] = member.get().strip()
+            value["confirmed"] = confirmed.get().strip() or "未"
+            value["questions"] = collected
+            value["qa_bulk"] = items.bulk_text(collected)
+            dialog.destroy()
+            done()
+        ttk.Button(footer, text="この内容にする", command=accept).pack(side="right")
+        ttk.Button(footer, text="やめる", command=dialog.destroy).pack(side="right", padx=6)
+        ttk.Label(footer, text="質問は4つまで。使わない質問の欄は空のままにします。上のつまみで質問を切り替えます。",
+                  foreground="#555").pack(side="left")
+        fields[0][0].focus_set()
+        dialog.grab_set()
 
     def _free_images(self, value: dict) -> None:
         """自由欄に、写真や Word の図形を画像にしたものを、そのまま置く。"""
