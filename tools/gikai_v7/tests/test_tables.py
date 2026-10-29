@@ -228,6 +228,10 @@ class ManuscriptAndChairTest(unittest.TestCase):
         self.assertIn("【顔写真枠】\n▲見本 太郎委員長", text)
         result = compose.compose_page(layout.IINKAI, ingest.ingest_text(text).parts, {}, Geometry())
         self.assertTrue(any(isinstance(i, dx.Placeholder) for i in result.page.items))
+        # 顔写真の枠は見出しのすぐあと（本文より前の行）に入る
+        face = next(p.rect for p in result.placements if p.part.kind == "写真")
+        text_rect = next(p.rect for p in result.placements if p.part.kind == "本文")
+        self.assertLess((face.dan, face.line), (text_rect.dan, text_rect.line))
         self.assertIn("見本 太郎委員長", ["".join(i.lines) for i in result.page.items
                                        if getattr(i, "name", "") == "顔写真の議員名"])
 

@@ -720,7 +720,14 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             line_span = photo_rect(g, size, 0, 0).line_span
             start_dan = last_rect.dan if last_rect else 0
             rect = None
-            for dan in range(start_dan, g.dans):
+            if part.reason == "印刷所が入れる顔写真の空欄":
+                # 顔写真の枠（委員長報告など）は、見出しのすぐあと（本文の流れの続き）に置く
+                for run in free_runs(g, whole_page(g), occupied):
+                    candidate = photo_rect(g, size, run.dan, run.line)
+                    if run.line_span >= line_span and _fits(g, candidate, occupied):
+                        rect = candidate
+                        break
+            for dan in (range(start_dan, g.dans) if rect is None else ()):
                 candidate = photo_rect(g, size, dan, g.lines_per_dan - line_span)
                 if _fits(g, candidate, occupied):
                     rect = candidate
