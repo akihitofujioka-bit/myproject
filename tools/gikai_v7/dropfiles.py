@@ -48,7 +48,29 @@ def _enable_windows(widget, callback) -> bool:
     shell32.DragFinish.argtypes = [ctypes.c_void_p]
     shell32.DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
 
+    # Tk の窓は、中身の窓（winfo_id）と、その外側の枠の窓の二重になっている。
+    # どちらの上に落としても受け取れるよう、両方に受け付けの印と受け取り口を付ける。
     hwnd = widget.winfo_id()
+    user32.GetParent.restype = wintypes.HWND
+    user32.GetParent.argtypes = [wintypes.HWND]
+    targets = [hwnd]
+    outer = user32.GetParent(hwnd)
+    if outer:
+        targets.append(outer)
+    kept = []
+    for target in targets:
+        hook = _hook(ctypes, user32, shell32, set_long, wndproc, target, widget, callback)
+        if hook is not None:
+            kept.append(hook)
+    if not kept:
+        return False
+    # 呼び出し先が消えないよう、画面の部品に持たせておく。
+    widget._gikai_drop = kept
+    return True
+
+
+def _hook(ctypes, user32, shell32, set_long, wndproc, hwnd, widget, callback):
+    """1 つの窓に、ドロップの受け付けと受け取り口（窓の処理の差し替え）を付ける。"""
     previous = [None]
 
     def handle(window, message, wparam, lparam):
@@ -73,7 +95,5 @@ def _enable_windows(widget, callback) -> bool:
     previous[0] = set_long(hwnd, GWLP_WNDPROC, ctypes.cast(procedure, ctypes.c_void_p))
     if not previous[0]:
         shell32.DragAcceptFiles(hwnd, False)
-        return False
-    # 呼び出し先が消えないよう、画面の部品に持たせておく。
-    widget._gikai_drop = (procedure, previous)
-    return True
+        return None
+    return (procedure, previous)

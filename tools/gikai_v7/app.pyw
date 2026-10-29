@@ -50,7 +50,9 @@ class App:
         self.font = "TkDefaultFont"
         self._style()
         self._build()
-        self.drop_ready = dropfiles.enable(root, self.on_drop)
+        # ドロップの受け付けは、窓が画面に出てから付ける（Windows の Tk は、出るときに外側の枠の窓を作るため）
+        self.drop_ready = sys.platform == "win32"
+        root.after(400, self._enable_drop)
         # マウスのホイール（トラックパッド）を、画面のどこで回してもその場所をスクロールする。
         root.bind_all("<MouseWheel>", self._on_wheel)
         root.bind_all("<Shift-MouseWheel>", lambda e: self._on_wheel(e, across=True))
@@ -1077,6 +1079,16 @@ class App:
                             "\n".join(added) + "\n\n最後の特集の本文の終わりに【表】の行を書き足しました。"
                             "表を入れたい所へ、その行を動かしてください。", parent=self.root)
 
+    def _enable_drop(self) -> None:
+        self.drop_ready = dropfiles.enable(self.root, self.on_drop)
+
+    @staticmethod
+    def _word_has_tables(path) -> bool:
+        try:
+            return bool(tables.read_word_tables(path))
+        except Exception:
+            return False
+
     def import_table_word(self, path=None) -> None:
         path = path or filedialog.askopenfilename(title="表のある Word を選ぶ", parent=self.root,
                                                   filetypes=[("Word", "*.docx")])
@@ -1793,7 +1805,18 @@ class App:
         path = Path(paths[0])
         suffix = path.suffix.lower()
         self.save(silent=True)
-        if suffix in (".docx", ".doc") and self.step in self.ARTICLE_STEPS:
+        if suffix == ".docx" and self.step == 10 and self._word_has_tables(path):
+            # 特集の Word に表があれば、表として取り込むか聞く（記事の文には表が入らないため）
+            answer = messagebox.askyesnocancel(
+                "Word の表", "この Word には表があります。\n\n"
+                "はい: 表として取り込む（色・つないだセル・罫線をそのまま）\n"
+                "いいえ: 表のほかの文を、特集の記事として取り込む\n"
+                "やめる: 何もしない", parent=self.root)
+            if answer is True:
+                self.import_table_word(path)
+            elif answer is False:
+                self.import_article_word(path)
+        elif suffix in (".docx", ".doc") and self.step in self.ARTICLE_STEPS:
             self.import_article_word(path)
         elif suffix in (".docx", ".doc") and self.step == 9:
             self.import_question_word(path)

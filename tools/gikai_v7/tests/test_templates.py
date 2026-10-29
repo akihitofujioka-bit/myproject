@@ -111,6 +111,18 @@ class TemplateTest(unittest.TestCase):
                     if isinstance(item, dx.TextBox) and item.name == "答弁")
         self.assertEqual(shown, sum(p.rect.line_span for p in answers))
 
+    def test_heading_answer_never_blue(self):
+        """見出しの答の行は、質問に空きがあっても、折り返しても青字にならない。"""
+        import compose
+        for question in ("今後の　村の方向は", "人口減少が進む中で今後の村政運営の方針と財政見通しは"):
+            text = question + "｜大きな決断をする時期に来ている"
+            for per_line in (6, 9, 20):
+                lines = compose._heading_lines(text, per_line)
+                colors = compose._heading_colors(text, lines)
+                for line, color in zip(lines, colors):
+                    if "決断" in line or "時期" in line:
+                        self.assertIsNone(color, (question, per_line, lines))
+
     def test_summary_question_heading_is_blue(self):
         """一般質問の見出しは「｜」で行を変え、前の大まかな質問を青字にする（Word にも色が出る）。"""
         import compose

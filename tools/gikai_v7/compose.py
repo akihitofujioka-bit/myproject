@@ -212,11 +212,7 @@ def _heading_lines(text: str, per_line: int, max_lines: int = 2) -> List[str]:
     収まらなければ最大 max_lines 行へほぼ均等に分ける。文字自体は削らない。
     「｜」があれば、そこで必ず行を変え、それぞれを同じ決まりで分ける。"""
     if HEADING_BREAK in text:
-        lines: List[str] = []
-        for piece in text.split(HEADING_BREAK):
-            if piece.strip():
-                lines.extend(_heading_lines(piece.strip(), per_line, max_lines))
-        return lines or [""]
+        return _split_pieces(text, lambda piece: _heading_lines(piece, per_line, max_lines))
     if not text:
         return [""]
     if text_width(text) <= per_line:
@@ -229,19 +225,42 @@ def _heading_lines(text: str, per_line: int, max_lines: int = 2) -> List[str]:
     return lines[:max_lines - 1] + ["".join(lines[max_lines - 1:])]
 
 
+class HeadingLines(list):
+    """見出しの行。blue は、先頭から何行が大まかな質問（青字）か。"""
+    blue = 0
+
+
+def _split_pieces(text: str, split) -> List[str]:
+    """「大まかな質問｜答」を、それぞれ split で行に分けて並べる。質問の行の数を覚えておく。"""
+    lines = HeadingLines()
+    pieces = [piece.strip() for piece in text.split(HEADING_BREAK)]
+    for number, piece in enumerate(pieces):
+        if piece:
+            lines.extend(split(piece))
+        if number == 0:
+            lines.blue = len(lines)
+    if not lines:
+        lines.append("")
+    return lines
+
+
 def _heading_colors(text: str, lines: List[str]) -> Optional[List[Optional[str]]]:
-    """「｜」の前（大まかな質問）の行を青、後の行を黒にする色の並び。「｜」がなければ None。"""
+    """「｜」の前（大まかな質問）の行を青、後の行（見出しの答）を黒にする色の並び。「｜」がなければ None。
+
+    行に分けたときに覚えた質問の行の数で決める（字数を数え直すと、空きなどで食い違うことがあった）。
+    """
     if HEADING_BREAK not in text:
         return None
-    first = text.split(HEADING_BREAK)[0].strip()
-    colors: List[Optional[str]] = []
-    taken = ""
-    for line in lines:
-        blue = len(taken) < len(first)
-        colors.append(QUESTION_COLOR if blue else None)
-        if blue:
-            taken += line
-    return colors
+    blue = getattr(lines, "blue", None)
+    if blue is None:   # 行の数を覚えていないとき（字数で数える。空きは数えない）
+        first = re.sub(r"\s", "", text.split(HEADING_BREAK)[0])
+        blue, taken = 0, ""
+        for line in lines:
+            if len(taken) >= len(first):
+                break
+            taken += re.sub(r"\s", "", line)
+            blue += 1
+    return [QUESTION_COLOR if index < blue else None for index in range(len(lines))]
 
 
 ROLE_ENDINGS = ("長", "参事", "主幹", "室長", "所長", "局長")
@@ -372,11 +391,7 @@ def _heading_lines_for(g: Geometry, part: I.Part, rect: Rect, pt: float) -> List
         return _heading_lines(part.text, _per_line(g, rect, pt))
     per_line = max(1, int((to_box(g, rect).w - dx.SLACK_PT - 2 * dx.HEADING_INSET_PT) / pt))
     if HEADING_BREAK in part.text:
-        lines = []
-        for piece in part.text.split(HEADING_BREAK):
-            if piece.strip():
-                lines.extend(split_lines(piece.strip(), per_line, indent=False))
-        return lines or [""]
+        return _split_pieces(part.text, lambda piece: split_lines(piece, per_line, indent=False))
     return split_lines(part.text, per_line, indent=False) or [""]
 
 
