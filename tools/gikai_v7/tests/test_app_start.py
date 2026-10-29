@@ -148,5 +148,17 @@ class PreviewQaHitTest(unittest.TestCase):
         self.assertEqual(app_module._qa_text(data["shingi"]["bills"][1]), "問　問三。\n答　答三。")
 
 
+class ButtonTipTest(unittest.TestCase):
+    """ボタンにマウスを合わせたときの説明。"""
+
+    def test_every_step_and_common_button_has_tip(self):
+        import guide
+        for number, name in enumerate(guide.STEPS, 1):
+            self.assertTrue(guide.button_tip(f"{number}. {name}"), name)
+        for text in ("紙面を見る", "次へ", "まとめて貼る", "Word から読み込む", "直す"):
+            self.assertTrue(guide.button_tip(text), text)
+        self.assertEqual(guide.button_tip("知らないボタン"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

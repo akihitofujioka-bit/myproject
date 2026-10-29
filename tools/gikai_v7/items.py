@@ -250,6 +250,20 @@ def committee_text(values: Iterable[dict]) -> str:
     return "\n".join(lines)
 
 
+def ippan_title(count: int) -> str:
+    """一般質問の大見出し。「一般質問に◯氏が立つ」に決まっていて、◯は質問者の数。"""
+    return f"一般質問に{str(count).translate(layout.ZEN)}氏が立つ"
+
+
+def ippan_texts(values: Iterable[dict]) -> List[str]:
+    """一般質問のページ（1人1ページ）。最初のページの頭に、ほかの区分と同じ縦書きの囲みで大見出しを入れる。"""
+    people = list(values or [])
+    pages = [question_text(value) for value in people]
+    if pages:
+        pages[0] = "【大見出し】" + ippan_title(len(people)) + "\n" + pages[0]
+    return pages
+
+
 def question_text(value: dict) -> str:
     """一般質問1人分。顔写真は印刷所差し替え用の枠を必ず入れる。"""
     # 一般質問の題は、ほかの記事の大見出しと同じ縦書きの囲み（V5 設計図 §3.3）。
@@ -312,7 +326,7 @@ def marked_pages(data: dict, issue: layout.Issue) -> Dict[str, List[str]]:
     pages = {
         layout.GYOSEI: [gyosei_text(data.get("gyosei", {}))],
         layout.IINKAI: [committee_text(data.get("committees", []))],
-        layout.IPPAN: [question_text(value) for value in data.get("questions", [])],
+        layout.IPPAN: ippan_texts(data.get("questions", [])),
         layout.TOKUSHU: [feature_text(data.get("feature", {}))],
     }
     # 当初予算・決算は決まった型のページなので、流し込みの原稿は作らない。

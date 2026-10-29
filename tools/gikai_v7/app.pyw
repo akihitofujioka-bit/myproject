@@ -18,6 +18,7 @@ import guide
 import items
 import layout
 import sources
+import tooltip
 import templates
 import docx_out as dx
 from grid import TATECHUYOKO, Rect, to_box, unit_width, units
@@ -52,6 +53,8 @@ class App:
         root.bind_all("<Shift-MouseWheel>", lambda e: self._on_wheel(e, across=True))
         root.bind_all("<Button-4>", lambda e: self._on_wheel(e, step=-1))
         root.bind_all("<Button-5>", lambda e: self._on_wheel(e, step=1))
+        # ボタンにマウスを合わせると、そのボタンの働きを出す
+        self.tooltips = tooltip.Tooltips(root, self._tip_for)
         # 複数行の欄でも TAB で次の欄、Shift+TAB で前の欄へ移る（字の間にタブを入れない）。
         root.bind_class("Text", "<Tab>", _focus_next)
         root.bind_class("Text", "<Shift-Tab>", _focus_previous)
@@ -938,10 +941,12 @@ class App:
             ttk.Label(self.inner, text="受付状況: " + "／".join(
                 f"{v['member']} {v['status']}" for v in statuses), wraplength=900,
                 justify="left").pack(anchor="w", pady=5)
+        ttk.Label(self.inner, text="最初のページの大見出しは「" + items.ippan_title(len(self.data.get("questions", []) or []))
+                  + "」になります（質問者の数から自動。入力は要りません）。", foreground="#555").pack(anchor="w")
         self._list_editor("質問者", self.data.setdefault("questions", []),
                           [("member", "議員名", False,
                             members),
-                           ("title", "題（横の大見出し）", False),
+                           ("title", "題（大見出し）", False),
                            ("delivery", "届き方", False,
                             ("Word", "メール", "手書き", "その他")),
                            ("received_date", "受け取った日", False),
@@ -950,8 +955,13 @@ class App:
                           lambda v: f"{v.get('member', '')}　{v.get('title', '')}", max_items=10)
         row = ttk.Frame(self.inner)
         row.pack(fill="x", pady=5)
-        ttk.Button(row, text="まとめて貼る", command=self.bulk_question).pack(side="left")
-        ttk.Button(row, text="Word から読み込む", command=self.import_question_word).pack(side="left")
+        bulk = ttk.Button(row, text="まとめて貼る", command=self.bulk_question)
+        bulk.pack(side="left")
+        bulk._tip = ("1人分の原稿の文章をまとめて貼ると、見出し・問・答・答弁者に分けて入れます。"
+                     "【】の行は見出し、「問　」「答　」で始まる行は問と答、「答弁者」で始まる行は答弁した人です。")
+        word = ttk.Button(row, text="Word から読み込む", command=self.import_question_word)
+        word.pack(side="left")
+        word._tip = "議員から Word で届いた1人分の原稿を読み込み、問と答に分けて入れます。"
         ttk.Button(row, text="メール本文を貼る", command=self.import_question_email).pack(side="left", padx=5)
         ttk.Button(row, text="確認用に印刷（1人）",
                    command=lambda: self.print_question_confirmation(True)).pack(side="left")
@@ -1242,6 +1252,16 @@ class App:
 
     # ---- 行政報告・委員会報告・特集の Word ----
     ARTICLE_STEPS = {4: "行政報告", 8: "委員会報告", 10: "特集"}
+
+    @staticmethod
+    def _tip_for(widget) -> str:
+        """マウスを合わせた部品の説明。widget._tip があればそれ、無ければボタンの字から探す。"""
+        own = getattr(widget, "_tip", None)
+        if own:
+            return own
+        if widget.winfo_class() in ("TButton", "TCheckbutton"):
+            return guide.button_tip(str(widget.cget("text")))
+        return ""
 
     def _word_button(self) -> None:
         row = ttk.Frame(self.inner)

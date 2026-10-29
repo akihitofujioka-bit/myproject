@@ -38,6 +38,12 @@ class ConversionTest(unittest.TestCase):
         self.assertIn("【大見出し】閉会中の委員会活動報告\n【見出し】見本委員会\n【見出し】調査",
                       pages[layout.IINKAI][0])
         self.assertIn("【大見出し】架空の防災", pages[layout.IPPAN][0])
+        # 一般質問の最初のページの頭は「一般質問に◯氏が立つ」（◯は質問者の数）
+        self.assertTrue(pages[layout.IPPAN][0].startswith("【大見出し】一般質問に１氏が立つ\n"))
+        self.assertEqual(items.ippan_title(12), "一般質問に１２氏が立つ")
+        two = items.ippan_texts([{"member": "見本 太郎", "title": "甲"}, {"member": "見本 花子", "title": "乙"}])
+        self.assertIn("一般質問に２氏が立つ", two[0])
+        self.assertNotIn("氏が立つ", two[1])
         self.assertIn("【顔写真枠】", pages[layout.IPPAN][0])
         self.assertIn("答　見本課長　進めます。", pages[layout.IPPAN][0])
         self.assertIn("【大見出し】架空の特集", pages[layout.TOKUSHU][0])

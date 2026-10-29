@@ -334,9 +334,26 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             warnings.append("大見出しの決まった位置が、区分の固定枠と重なります")
             overflow_by_index[title_index] = title
 
+    skip = {title_index} if title_index is not None else set()
+    # 一般質問の最初のページは「一般質問に◯氏が立つ」の次に質問の題が続く。
+    # 題もその左の定位置へ並べ、顔写真はさらにその左へ置く。
+    if (section == layout.IPPAN and title_rect is not None and parts[title_index].vertical
+            and len(parts) > 1 and parts[1].kind == "大見出し" and parts[1].vertical
+            and 1 not in manual and not overrides.get(1, {}).get("removed")):
+        second = parts[1]
+        second_pt = _heading_pt(section, "大見出し", second.text)
+        rect = _heading_rect(g, second, 0, title_rect.line + title_rect.line_span, second_pt)
+        if _fits(g, rect, occupied):
+            occupied.append(rect)
+            placements.append(Placement(second, rect, 1))
+            _add_text(page, g, rect, _heading_lines_for(g, second, rect, second_pt),
+                      font=dx.GOTHIC, pt=second_pt, pitch=max(34.0, second_pt * dx.AT_LEAST_RATIO),
+                      border=True, center=True, name="大見出し", vertical=True, align="中央")
+            skip.add(1)
+            title_rect = rect
+
     photo_indices = [n for n, p in enumerate(parts) if p.kind == "写真"]
     first_face = photo_indices[0] if section == layout.IPPAN and photo_indices else None
-    skip = {title_index} if title_index is not None else set()
     if first_face is not None:
         reserve_space(first_face)
         change = overrides.get(first_face, {})
@@ -349,7 +366,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             skip.add(first_face + 1)
         if size is not None:
             face_line = (title_rect.line + title_rect.line_span
-                         if title_rect is not None and not parts[title_index].vertical else 4)
+                         if title_rect is not None and (1 in skip or not parts[title_index].vertical)
+                         else 4)
             rect = manual.get(first_face, photo_rect(g, size, 0, face_line))
             if first_face in manual or _fits(g, rect, occupied):
                 if first_face not in manual:
