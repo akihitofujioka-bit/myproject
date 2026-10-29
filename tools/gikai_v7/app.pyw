@@ -1286,12 +1286,12 @@ class App:
                         original: str = "") -> None:
         dialog = tk.Toplevel(self.root)
         dialog.title("取り込む前の確認")
-        dialog.geometry("760x620")
+        self._big_window(dialog)
         body = ttk.Frame(dialog, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="問と答の分け方が正しいか、原稿と見比べてください。",
                   foreground="#933").pack(anchor="w")
-        preview = tk.Text(body, wrap="word", font=(self.font, INPUT_PT))
+        preview = tk.Text(body, height=8, wrap="word", font=(self.font, INPUT_PT))
         preview.insert("1.0", parsed.get("cleaned") or parsed.get("text") or original)
         preview.configure(state="disabled")
         preview.pack(fill="both", expand=True, pady=6)
@@ -1336,11 +1336,11 @@ class App:
             return
         dialog = tk.Toplevel(self.root)
         dialog.title("まとめて貼る")
-        dialog.geometry("760x600")
+        self._big_window(dialog)
         body = ttk.Frame(dialog, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="見出し、問、答を含む原稿を貼ってください。").pack(anchor="w")
-        widget = tk.Text(body, wrap="word", font=(self.font, INPUT_PT), undo=True)
+        widget = tk.Text(body, height=8, wrap="word", font=(self.font, INPUT_PT), undo=True)
         widget.pack(fill="both", expand=True, pady=6)
 
         def preview():
@@ -1358,11 +1358,11 @@ class App:
             return
         dialog = tk.Toplevel(self.root)
         dialog.title("メール本文を貼る")
-        dialog.geometry("760x620")
+        self._big_window(dialog)
         body = ttk.Frame(dialog, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="メール本文をそのまま貼ってください。候補は勝手に消しません。").pack(anchor="w")
-        widget = tk.Text(body, wrap="word", font=(self.font, INPUT_PT), undo=True)
+        widget = tk.Text(body, height=8, wrap="word", font=(self.font, INPUT_PT), undo=True)
         widget.pack(fill="both", expand=True, pady=6)
 
         def next_step():
@@ -1371,7 +1371,7 @@ class App:
             dialog.destroy()
             choice = tk.Toplevel(self.root)
             choice.title("外す候補と整えた結果")
-            choice.geometry("820x660")
+            self._big_window(choice)
             frame = ttk.Frame(choice, padding=10)
             frame.pack(fill="both", expand=True)
             ttk.Label(frame, text="外す行だけにチェックしてください。チェックしない行は残ります。").pack(anchor="w")
@@ -1381,7 +1381,7 @@ class App:
                 flags.append((var, candidate["line"]))
                 ttk.Checkbutton(frame, variable=var,
                                 text=f"{candidate['line']}行目 {candidate['reason']}: {candidate['text'][:70]}").pack(anchor="w")
-            preview = tk.Text(frame, height=18, wrap="word", font=(self.font, INPUT_PT))
+            preview = tk.Text(frame, height=8, wrap="word", font=(self.font, INPUT_PT))
             preview.pack(fill="both", expand=True, pady=6)
 
             def refresh():
@@ -1430,6 +1430,12 @@ class App:
     # ---- 行政報告・委員会報告・特集の Word ----
     ARTICLE_STEPS = {4: "行政報告", 8: "委員会報告", 10: "特集"}
 
+    def _big_window(self, dialog) -> None:
+        """取り込み・貼り付けの窓を、画面の高さいっぱいにする（役場の 1366×768 の画面でも欄が広く、ボタンも隠れない）。"""
+        width = min(self.root.winfo_screenwidth() - 60, 1000)
+        height = max(520, self.root.winfo_screenheight() - 100)
+        dialog.geometry(f"{width}x{height}+20+10")
+
     @staticmethod
     def _tip_for(widget) -> str:
         """マウスを合わせた部品の説明。widget._tip があればそれ、無ければボタンの字から探す。"""
@@ -1467,7 +1473,7 @@ class App:
         """読み込んだ中身を見せ、「これで入れる」を押したときだけ入れる。"""
         dialog = tk.Toplevel(self.root)
         dialog.title(label + "の Word を確かめる")
-        dialog.geometry("760x600")
+        self._big_window(dialog)
         body = ttk.Frame(dialog, padding=10)
         body.pack(fill="both", expand=True)
         articles = parsed["articles"]
@@ -1479,7 +1485,7 @@ class App:
                          "紙面には「写真」の手順で置いてください。")
         notes.extend(parsed["warnings"])
         ttk.Label(body, text="\n".join(notes), wraplength=720, justify="left").pack(anchor="w")
-        view = tk.Text(body, wrap="word", font=(self.font, INPUT_PT))
+        view = tk.Text(body, height=8, wrap="word", font=(self.font, INPUT_PT))
         for article in articles:
             view.insert("end", "■ " + (article["heading"] or "（見出しなし）") + "\n")
             view.insert("end", article["body"] + "\n\n")
