@@ -165,6 +165,16 @@ class App:
             step = -int(delta / 120) if abs(delta) >= 120 else (-1 if delta > 0 else 1)
         widget = self.root.winfo_containing(event.x_root, event.y_root)
         while widget is not None:
+            # 紙面を見るの紙面は、下の端（上の端）まで来てさらに回すと、次（前）のページへ送る
+            turn = getattr(widget, "_turn_page", None)
+            if turn is not None and not across:
+                try:
+                    top, bottom = widget.yview()
+                except tk.TclError:
+                    top, bottom = 0.0, 1.0
+                if (step > 0 and bottom >= 0.999) or (step < 0 and top <= 0.001):
+                    turn(1 if step > 0 else -1)
+                    return "break"
             view = None
             try:
                 if across and hasattr(widget, "xview"):
@@ -1795,6 +1805,24 @@ class App:
             page_var.set(max(1, min(len(self.work.pages), page_var.get() + delta)))
             draw()
             paper.yview_moveto(0)
+
+        wheel_turn = {"at": 0.0}
+
+        def turn_by_wheel(delta: int) -> None:
+            """ホイールでのページ送り。次のページは上から、前のページは下から見せる。
+            続けて回したときに何ページも飛ばないよう、送ったあと少しのあいだは送らない。"""
+            import time
+            now = time.monotonic()
+            if now - wheel_turn["at"] < 0.6:
+                return
+            number = page_var.get() + delta
+            if not 1 <= number <= len(self.work.pages):
+                return
+            wheel_turn["at"] = now
+            page_var.set(number)
+            draw()
+            paper.yview_moveto(0 if delta > 0 else 1)
+        paper._turn_page = turn_by_wheel
         ttk.Button(top, text="◀ 前のページ", command=lambda: turn(-1)).pack(side="left", padx=(0, 4))
         chooser = ttk.Combobox(top, textvariable=page_var, values=[p["no"] for p in self.work.pages],
                                state="readonly", width=5)
