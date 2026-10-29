@@ -227,7 +227,11 @@ def _heading_pt(section: str, kind: str, text: str = "") -> float:
 
 def _horizontal_heading_span(g: Geometry, text: str, pt: float) -> int:
     """横見出しは同じ段の横幅を使い、長ければ枠内で折り返す。"""
-    text = text.replace(HEADING_BREAK, "　")
+    if HEADING_BREAK in text:
+        # 「大まかな質問｜答」は、長い方が 1 行に入る幅を取る（入らなければ枠の中で折り返す）
+        widest = max(text_width(piece.strip()) for piece in text.split(HEADING_BREAK))
+        needed = math.ceil((widest * pt + dx.SLACK_PT) / g.line_pitch_pt) + 1
+        return min(g.lines_per_dan, max(8, needed))
     needed = math.ceil(text_width(text) * pt / (2 * g.line_pitch_pt))
     return min(g.lines_per_dan, max(8, min(22, needed)))
 
@@ -246,7 +250,13 @@ def _heading_lines_for(g: Geometry, part: I.Part, rect: Rect, pt: float) -> List
     if part.vertical:
         return _heading_lines(part.text, _per_line(g, rect, pt))
     per_line = max(1, int((to_box(g, rect).w - dx.SLACK_PT) / pt))
-    return split_lines(part.text.replace(HEADING_BREAK, "　"), per_line, indent=False) or [""]
+    if HEADING_BREAK in part.text:
+        lines = []
+        for piece in part.text.split(HEADING_BREAK):
+            if piece.strip():
+                lines.extend(split_lines(piece.strip(), per_line, indent=False))
+        return lines or [""]
+    return split_lines(part.text, per_line, indent=False) or [""]
 
 
 def _same_text_style(a: dx.TextBox, b: dx.TextBox) -> bool:
@@ -385,7 +395,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
     # 一般質問の最初のページは「一般質問に◯氏が立つ」の次に質問の題が続く。
     # 題もその左の定位置へ並べ、顔写真はさらにその左へ置く。
     if (section == layout.IPPAN and title_rect is not None and parts[title_index].vertical
-            and len(parts) > 1 and parts[1].kind == "大見出し" and parts[1].vertical
+            and len(parts) > 1 and parts[1].kind == "大見出し"
             and 1 not in manual and not overrides.get(1, {}).get("removed")):
         second = parts[1]
         second_pt = _heading_pt(section, "大見出し", second.text)
@@ -395,8 +405,11 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             placements.append(Placement(second, rect, 1))
             second_lines = _heading_lines_for(g, second, rect, second_pt)
             _add_text(page, g, rect, second_lines, line_colors=_heading_colors(second.text, second_lines),
-                      font=dx.GOTHIC, pt=second_pt, pitch=max(34.0, second_pt * dx.AT_LEAST_RATIO),
-                      border=True, center=True, name="大見出し", vertical=True, align="中央")
+                      font=dx.GOTHIC, pt=second_pt,
+                      pitch=max(34.0, second_pt * dx.AT_LEAST_RATIO) if second.vertical
+                      else dx.effective_pitch(second_pt, PITCH),
+                      border=True, center=second.vertical, name="大見出し",
+                      vertical=second.vertical, align="中央")
             skip.add(1)
             title_rect = rect
 

@@ -275,9 +275,12 @@ def ippan_title(count: int) -> str:
 
 
 def ippan_texts(values: Iterable[dict]) -> List[str]:
-    """一般質問のページ（1人1ページ）。最初のページの頭に、ほかの区分と同じ縦書きの囲みで大見出しを入れる。"""
+    """一般質問のページ（1人1ページ）。最初のページの頭に、ほかの区分と同じ縦書きの囲みで大見出しを入れる。
+
+    質問者ごとの 1 番目の見出しは、1 人目が横書き、2 人目が縦書き、3 人目が横書き…と交互にする。
+    """
     people = list(values or [])
-    pages = [question_text(value) for value in people]
+    pages = [question_text(value, horizontal=number % 2 == 0) for number, value in enumerate(people)]
     if pages:
         pages[0] = "【大見出し】" + ippan_title(len(people)) + "\n" + pages[0]
     return pages
@@ -292,16 +295,17 @@ def summary_heading(value: dict) -> str:
     return question or answer
 
 
-def question_text(value: dict) -> str:
+def question_text(value: dict, horizontal: bool = False) -> str:
     """一般質問1人分。顔写真は印刷所差し替え用の枠を必ず入れる。
 
     1 番目の質問は、大まかな質問とその答を大見出し（縦書きの囲み）にし、詳しい問と答を続ける。
     2 番目からは、大まかな質問とその答を中見出しにし、詳しい問と答を続ける。
+    horizontal が真なら、1 番目の大見出しを横書きにする（質問者ごとに横・縦を交互にするため）。
     """
     questions = limit_questions(value.get("questions") or [])
     first = dict(questions[0]) if questions else {}
     big = summary_heading(first) or _text(value.get("title"))   # 前の版の「題」だけのデータも出す
-    lines = ["【大見出し】" + big, "【顔写真枠】"]
+    lines = [("【大見出し・横】" if horizontal else "【大見出し】") + big, "【顔写真枠】"]
     member = _text(value.get("member"))
     if member:
         lines.append("▲" + member + "議員")

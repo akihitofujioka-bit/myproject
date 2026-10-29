@@ -59,13 +59,18 @@ class ConversionTest(unittest.TestCase):
         self.assertIn("【大見出し】閉会中の委員会活動報告\n【見出し】見本委員会\n【見出し】調査",
                       pages[layout.IINKAI][0])
         # 1 番目の質問の大まかな質問が大見出しになる（題は使わない）
-        self.assertIn("【大見出し】備え\n【顔写真枠】", pages[layout.IPPAN][0])
+        self.assertIn("【大見出し・横】備え\n【顔写真枠】", pages[layout.IPPAN][0])
         # 一般質問の最初のページの頭は「一般質問に◯氏が立つ」（◯は質問者の数）
         self.assertTrue(pages[layout.IPPAN][0].startswith("【大見出し】一般質問に１氏が立つ\n"))
         self.assertEqual(items.ippan_title(12), "一般質問に１２氏が立つ")
         two = items.ippan_texts([{"member": "見本 太郎", "title": "甲"}, {"member": "見本 花子", "title": "乙"}])
         self.assertIn("一般質問に２氏が立つ", two[0])
         self.assertNotIn("氏が立つ", two[1])
+        # 1 番目の見出しは、1 人目が横書き、2 人目が縦書き、3 人目が横書き…と交互
+        three = items.ippan_texts([{"questions": [{"heading": name}]} for name in ("甲", "乙", "丙")])
+        self.assertIn("【大見出し・横】甲", three[0])
+        self.assertIn("【大見出し】乙", three[1])
+        self.assertIn("【大見出し・横】丙", three[2])
         self.assertIn("【顔写真枠】", pages[layout.IPPAN][0])
         self.assertIn("答　見本課長　進めます。", pages[layout.IPPAN][0])
         self.assertIn("【大見出し】架空の特集", pages[layout.TOKUSHU][0])
