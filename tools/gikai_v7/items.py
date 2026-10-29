@@ -187,7 +187,35 @@ def parse_bulk(text: str) -> dict:
                 return _label(later)
         return None
 
+    def heading_block(index):
+        """ここから始まる、問・答の印のない行のかたまり（空き行まで）が、次の問の見出しなら、その行を返す。
+
+        1 行なら見出し、2 行なら見出しと見出しの答。かたまりのすぐあとが問の行のときだけ。
+        前の行が空き行でないとき（答の続きと区別しにくいとき）は、見出しらしい短い行だけにする。
+        """
+        block = []
+        for later in lines[index:]:
+            text = later.strip()
+            if not text or _label(text) or len(block) > 2:
+                break
+            block.append(text)
+        after = index + len(block)
+        following = next((later for later in lines[after:] if later.strip()), "")
+        if not block or len(block) > 2 or (_label(following.strip()) or ("", ""))[0] != "問":
+            return None
+        separated = index == 0 or not lines[index - 1].strip()
+        if not separated and not all(_looks_like_heading(text) for text in block):
+            return None
+        # 空き行がなく、頭を下げた行（答の本文の続きによくある形）は見出しにしない
+        if not separated and any(raw[:1] in (" ", "　") for raw in lines[index:after]):
+            return None
+        return block
+
+    skip_to = -1
+
     for index, line in enumerate(lines):
+        if index < skip_to:
+            continue
         stripped = line.strip()
         if pending and stripped:
             # 「（見出し）」「（見出しの答）」だけの行の、次の行がその中身
@@ -247,11 +275,16 @@ def parse_bulk(text: str) -> dict:
         if current is not None and stripped.startswith("答弁者"):
             current["answerer"] = stripped.replace("答弁者", "", 1).lstrip(" ：:　")
             continue
-        # 答のあとの短い行で、次の行が問なら、次の質問の見出し（答の続きにしない）
-        if (current is not None and current.get("_answering") and _looks_like_heading(stripped)
-                and (next_label(index) or ("", ""))[0] == "問"):
-            heading = stripped
+        # 問・答の印のない 1〜2 行のかたまりで、すぐあとが問なら、次の質問の見出し（と見出しの答）
+        block = heading_block(index) if stripped and (current is None or current.get("_answering")) else None
+        if block:
+            if heading:
+                body.append(heading)
+            heading = block[0]
+            if len(block) > 1:
+                heading_answer = block[1]
             current = None
+            skip_to = index + len(block)
             continue
         # 「答弁」の行のすぐ次の、役職だけの行は答弁者
         if current is not None and current.get("_answering") and not current.get("answer") \

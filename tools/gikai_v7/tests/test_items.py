@@ -83,6 +83,17 @@ class ConversionTest(unittest.TestCase):
         self.assertEqual([(q["heading"], q.get("heading_answer"), q["answerer"]) for q in found],
                          [("防災対策の強化を", "計画的に進める", "村長"), ("子育て支援の拡充は", "保育料を下げる", "教育長")])
 
+    def test_bulk_unlabeled_block_before_question_is_heading(self):
+        """問・答の印のない 1〜2 行のかたまりのすぐあとが質問なら、見出し（と見出しの答）。"""
+        text = ("防災対策の強化を\n計画的に進める\n質問　備えは。\n答弁　村長\n　増やす。\n　続ける予定である。\n\n"
+                "子育て支援の拡充は\n保育料を下げる\n質問　保育料は。\n答弁　教育長\n　下げる。\n"
+                "道路の整備について\n質問　舗装は。\n答弁　建設課長\n　計画的に進める\n再質問　時期は。\n答弁　建設課長\n　来年度。")
+        found = items.parse_bulk(text)["questions"]
+        self.assertEqual([(q["heading"], q.get("heading_answer", "")) for q in found], [
+            ("防災対策の強化を", "計画的に進める"), ("子育て支援の拡充は", "保育料を下げる"),
+            ("道路の整備について", ""), ("", "")])
+        self.assertEqual(found[2]["answer"], "計画的に進める")   # 頭を下げた答の続きは見出しにしない
+
     def test_bulk_reads_summary_answer(self):
         parsed = items.parse_bulk("【見出し】防災対策の強化を\n【見出しの答】計画的に進める\n"
                                   "問　備えは。\n答　増やす。\n答弁者　見本課長\n"
