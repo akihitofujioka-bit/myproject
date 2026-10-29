@@ -199,11 +199,13 @@ def write_confirmation(path, people: Iterable[dict]) -> Path:
     for person_no, person in enumerate(people or []):
         if person_no:
             body.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
-        body.append(_paragraph(str(person.get("title") or "一般質問 確認用"), True, 28))
+        body.append(_paragraph("一般質問 確認用", True, 28))
         body.append(_paragraph(str(person.get("member") or "（議員名）") + " 議員", True, 24))
         questions = person.get("questions") or items.parse_bulk(person.get("qa_bulk", ""))["questions"]
         for number, qa in enumerate(questions, 1):
             body.append(_paragraph(f"{number}. {qa.get('heading', '')}", True, 24))
+            if qa.get("heading_answer"):
+                body.append(_paragraph("（見出しの答）" + str(qa.get("heading_answer")), True, 22))
             body.append(_paragraph("問　" + str(qa.get("question", ""))))
             body.append(_paragraph("答　" + str(qa.get("answer", ""))))
             if qa.get("answerer"):

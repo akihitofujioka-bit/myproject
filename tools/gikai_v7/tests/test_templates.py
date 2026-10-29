@@ -111,6 +111,19 @@ class TemplateTest(unittest.TestCase):
                     if isinstance(item, dx.TextBox) and item.name == "答弁")
         self.assertEqual(shown, sum(p.rect.line_span for p in answers))
 
+    def test_summary_question_heading_is_blue(self):
+        """一般質問の見出しは「｜」で行を変え、前の大まかな質問を青字にする（Word にも色が出る）。"""
+        import compose
+        lines = compose._heading_lines("防災対策の強化を｜計画的に進める", 20)
+        self.assertEqual(lines, ["防災対策の強化を", "計画的に進める"])
+        self.assertEqual(compose._heading_colors("防災対策の強化を｜計画的に進める", lines),
+                         [compose.QUESTION_COLOR, None])
+        self.assertIsNone(compose._heading_colors("見出し", ["見出し"]))
+        box = dx.TextBox(Box(0, 0, 40, 200), lines, dx.GOTHIC, 18, 34, True, True, "大見出し",
+                         line_colors=[compose.QUESTION_COLOR, None])
+        xml = dx._text_para(box, [0])
+        self.assertEqual(xml.count('w:color w:val="0070C0"'), 1)
+
     def test_shingi_answer_and_last_page_body_are_gothic(self):
         shingi = templates.build(
             layout.SHINGI, {"body": "問　架空の質問です。\n答　架空の答弁です。"},

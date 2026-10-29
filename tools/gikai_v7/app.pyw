@@ -946,19 +946,23 @@ class App:
         self._list_editor("質問者", self.data.setdefault("questions", []),
                           [("member", "議員名", False,
                             members),
-                           ("title", "題（大見出し）", False),
-                           ("delivery", "届き方", False,
-                            ("Word", "メール", "手書き", "その他")),
-                           ("received_date", "受け取った日", False),
                            ("confirmed", "議員の確認", False, ("未", "済")),
-                           ("qa_bulk", "質問（見出し、問、答、答弁者 で入力）", True)],
-                          lambda v: f"{v.get('member', '')}　{v.get('title', '')}", max_items=10)
+                           ("qa_bulk", "質問（質問ごとに【見出し】大まかな質問、【見出しの答】それへの答、"
+                                       "問、答、答弁者 の順。1番目の見出しが大見出しになります）", True)],
+                          _question_summary, max_items=10)
+        ttk.Label(self.inner, text=("書き方の例:\n"
+                                    "【見出し】防災対策の強化を（大まかな質問。紙面では青字）\n"
+                                    "【見出しの答】計画的に進める（それへの答）\n"
+                                    "問　詳しい質問\n答　詳しい答\n答弁者　見本課長\n"
+                                    "（2番目の質問も【見出し】から同じように続けます）"),
+                  foreground="#555", justify="left").pack(anchor="w", pady=(0, 4))
         row = ttk.Frame(self.inner)
         row.pack(fill="x", pady=5)
         bulk = ttk.Button(row, text="まとめて貼る", command=self.bulk_question)
         bulk.pack(side="left")
-        bulk._tip = ("1人分の原稿の文章をまとめて貼ると、見出し・問・答・答弁者に分けて入れます。"
-                     "【】の行は見出し、「問　」「答　」で始まる行は問と答、「答弁者」で始まる行は答弁した人です。")
+        bulk._tip = ("1人分の原稿の文章をまとめて貼ると、質問ごとに見出し・問・答・答弁者に分けて入れます。"
+                     "【見出し】の行は大まかな質問、【見出しの答】の行はそれへの答、"
+                     "「問　」「答　」で始まる行は詳しい問と答、「答弁者」で始まる行は答弁した人です。")
         word = ttk.Button(row, text="Word から読み込む", command=self.import_question_word)
         word.pack(side="left")
         word._tip = "議員から Word で届いた1人分の原稿を読み込み、問と答に分けて入れます。"
@@ -1095,7 +1099,7 @@ class App:
         found = next((value for value in people if value.get("member") == member), None)
         if found is None:
             found = {"member": member, "title": "", "questions": [],
-                     "delivery": "その他", "received_date": "", "confirmed": "未"}
+                     "confirmed": "未"}
             people.append(found)
         return found
 
@@ -1854,20 +1858,22 @@ def _draw_text(canvas, item, x1, y1, x2, y2, scale, family) -> None:
     size = max(4, round(item.pt * scale))
     font = (family, -size, "bold" if item.bold else "normal")
     pitch = dx.effective_pitch(item.pt, item.pitch_pt) * scale
+    colors = getattr(item, "line_colors", None) or []
     if item.vertical:
         total = len(item.lines) * pitch
         first = ((x1 + x2) / 2 + total / 2 - pitch / 2) if item.center else (x2 - pitch / 2)
         for index, line in enumerate(item.lines):
             x, y = first - index * pitch, y1 + 2
+            fill = "#" + colors[index] if index < len(colors) and colors[index] else "black"
             for unit in units(line):
                 height = unit_width(unit) * size
                 if TATECHUYOKO.fullmatch(unit):
-                    canvas.create_text(x, y + height / 2, text=unit,
+                    canvas.create_text(x, y + height / 2, text=unit, fill=fill,
                                        font=_tcy_font(family, size, item.bold, unit))
                 elif unit in TURN_IN_VERTICAL or (len(unit) > 1 or ord(unit[0]) < 0x80):
-                    _turned(canvas, x, y + height / 2, unit, font)
+                    _turned(canvas, x, y + height / 2, unit, font, fill)
                 else:
-                    canvas.create_text(x, y + height / 2, text=unit, font=font)
+                    canvas.create_text(x, y + height / 2, text=unit, font=font, fill=fill)
                 y += height
         return
     anchor, x = {"中央": ("center", (x1 + x2) / 2), "右": ("e", x2 - 2)}.get(item.align, ("w", x1 + 2))
@@ -1899,11 +1905,11 @@ def _tcy_font(family, size: int, bold: bool, digits: str):
     return _TCY_FONTS[key]
 
 
-def _turned(canvas, x, y, text, font) -> None:
+def _turned(canvas, x, y, text, font, fill="black") -> None:
     try:
-        canvas.create_text(x, y, text=text, font=font, angle=-90)
+        canvas.create_text(x, y, text=text, font=font, angle=-90, fill=fill)
     except tk.TclError:   # 字を回せない古い Tk では、そのまま描く
-        canvas.create_text(x, y, text=text, font=font)
+        canvas.create_text(x, y, text=text, font=font, fill=fill)
 
 
 def _draw_table(canvas, table, x, y, scale, family) -> None:
@@ -1972,6 +1978,16 @@ def _last_day(reiwa_year: int, month: int) -> str:
         return ""
     last = calendar.monthrange(2018 + reiwa_year, month)[1]
     return f"令和{reiwa_year}年{month}月{last}日"
+
+
+def _question_summary(value: dict) -> str:
+    """質問者の一覧に出す 1 行（議員名と 1 番目の大まかな質問）。"""
+    questions = value.get("questions") or []
+    first = questions[0].get("heading", "") if questions else ""
+    if not first and value.get("qa_bulk"):
+        parsed = items.parse_bulk(value["qa_bulk"])["questions"]
+        first = parsed[0].get("heading", "") if parsed else ""
+    return f"{value.get('member', '')}　{first or value.get('title', '')}".strip() or "（議員名なし）"
 
 
 def _plain_title(text: str) -> str:

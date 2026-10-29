@@ -66,6 +66,16 @@ def _mid_heading(g: Geometry, text: str, base_pt: float = 16.0) -> Tuple[float, 
         need = math.ceil(len(lines) * dx.effective_pitch(pt, PITCH) / g.line_pitch_pt - 1e-6)
         return max(len(lines) + 1, need)
     sample = Rect(0, 0, 1, 2)
+    if HEADING_BREAK in text:
+        # 「大まかな質問｜答」は、それぞれを 1〜2 行にして並べる
+        # まず字を小さくしてでも、それぞれ 1 行に収める。無理なら 2 行ずつにする
+        for max_lines in (1, 2):
+            for pt in (float(value) for value in range(int(base_pt), 11, -1)):
+                per_line = _per_line(g, sample, pt)
+                pieces = [piece.strip() for piece in text.split(HEADING_BREAK) if piece.strip()]
+                lines = _heading_lines(text, per_line, 2)
+                if len(lines) <= max_lines * len(pieces) and max(text_width(l) for l in lines) <= per_line:
+                    return pt, lines, span(lines, pt)
     for pt in (float(value) for value in range(int(base_pt), 11, -1)):
         per_line = _per_line(g, sample, pt)
         for max_lines in (1, 2, 3):
@@ -108,9 +118,22 @@ def _per_line(g: Geometry, rect: Rect, pt: float) -> int:
     return max(1, int(to_box(g, rect).h // pt))
 
 
+# 見出しの中の「｜」は、そこで行を変える印（一般質問の「大まかな質問｜それへの答」）。
+# 「｜」より前の行は青い字にする。
+HEADING_BREAK = "｜"
+QUESTION_COLOR = "0070C0"
+
+
 def _heading_lines(text: str, per_line: int, max_lines: int = 2) -> List[str]:
     """見出しを行に分ける。per_line（1 行に入る字数）に収まれば 1 行のまま、
-    収まらなければ最大 max_lines 行へほぼ均等に分ける。文字自体は削らない。"""
+    収まらなければ最大 max_lines 行へほぼ均等に分ける。文字自体は削らない。
+    「｜」があれば、そこで必ず行を変え、それぞれを同じ決まりで分ける。"""
+    if HEADING_BREAK in text:
+        lines: List[str] = []
+        for piece in text.split(HEADING_BREAK):
+            if piece.strip():
+                lines.extend(_heading_lines(piece.strip(), per_line, max_lines))
+        return lines or [""]
     if not text:
         return [""]
     if text_width(text) <= per_line:
@@ -121,6 +144,21 @@ def _heading_lines(text: str, per_line: int, max_lines: int = 2) -> List[str]:
         return lines
     # 半角を含む長い見出しでも、最後の行へ残りをつないで全文を保つ。
     return lines[:max_lines - 1] + ["".join(lines[max_lines - 1:])]
+
+
+def _heading_colors(text: str, lines: List[str]) -> Optional[List[Optional[str]]]:
+    """「｜」の前（大まかな質問）の行を青、後の行を黒にする色の並び。「｜」がなければ None。"""
+    if HEADING_BREAK not in text:
+        return None
+    first = text.split(HEADING_BREAK)[0].strip()
+    colors: List[Optional[str]] = []
+    taken = ""
+    for line in lines:
+        blue = len(taken) < len(first)
+        colors.append(QUESTION_COLOR if blue else None)
+        if blue:
+            taken += line
+    return colors
 
 
 ROLE_ENDINGS = ("長", "参事", "主幹", "室長", "所長", "局長")
@@ -189,6 +227,7 @@ def _heading_pt(section: str, kind: str, text: str = "") -> float:
 
 def _horizontal_heading_span(g: Geometry, text: str, pt: float) -> int:
     """横見出しは同じ段の横幅を使い、長ければ枠内で折り返す。"""
+    text = text.replace(HEADING_BREAK, "　")
     needed = math.ceil(text_width(text) * pt / (2 * g.line_pitch_pt))
     return min(g.lines_per_dan, max(8, min(22, needed)))
 
@@ -196,7 +235,10 @@ def _horizontal_heading_span(g: Geometry, text: str, pt: float) -> int:
 def _heading_rect(g: Geometry, part: I.Part, dan: int, line: int, pt: float) -> Rect:
     if not part.vertical:
         return Rect(dan, line, 1, _horizontal_heading_span(g, part.text, pt))
-    span = max(4, math.ceil(2 * dx.effective_pitch(pt, PITCH) / g.line_pitch_pt))
+    # 大見出しの行送りは max(34pt, 字×1.4)。実際の行数ぶんの幅を取る（2 行の「大まかな質問｜答」も欠けないように）
+    count = len(_heading_lines(part.text, _per_line(g, Rect(dan, line, 2, 4), pt)))
+    pitch = max(34.0, pt * dx.AT_LEAST_RATIO)
+    span = max(4, math.ceil(count * pitch / g.line_pitch_pt - 1e-6))
     return Rect(dan, line, 2, span)
 
 
@@ -204,7 +246,7 @@ def _heading_lines_for(g: Geometry, part: I.Part, rect: Rect, pt: float) -> List
     if part.vertical:
         return _heading_lines(part.text, _per_line(g, rect, pt))
     per_line = max(1, int((to_box(g, rect).w - dx.SLACK_PT) / pt))
-    return split_lines(part.text, per_line, indent=False) or [""]
+    return split_lines(part.text.replace(HEADING_BREAK, "　"), per_line, indent=False) or [""]
 
 
 def _same_text_style(a: dx.TextBox, b: dx.TextBox) -> bool:
@@ -217,10 +259,11 @@ def _add_text(page: dx.Page, g: Geometry, rect: Rect, lines: List[str], *,
               font: str, pt: float, pitch: float, name: str,
               border: bool = False, center: bool = False,
               line_runs: Optional[List[List[Tuple[str, str]]]] = None,
-              vertical: bool = True, align: str = "左") -> None:
+              vertical: bool = True, align: str = "左",
+              line_colors: Optional[List[Optional[str]]] = None) -> None:
     """同じ段で同じ書式が続く枠は、Word 上の 1 枠へまとめる。"""
     item = dx.TextBox(to_box(g, rect), lines, font, pt, pitch, border, center, name,
-                      vertical=vertical, align=align, line_runs=line_runs)
+                      vertical=vertical, align=align, line_runs=line_runs, line_colors=line_colors)
     if page.items and isinstance(page.items[-1], dx.TextBox):
         previous = page.items[-1]
         previous_rect = getattr(previous, "_grid_rect", None)
@@ -230,6 +273,9 @@ def _add_text(page: dx.Page, g: Geometry, rect: Rect, lines: List[str], *,
             merged = Rect(rect.dan, previous_rect.line, 1,
                           previous_rect.line_span + rect.line_span)
             previous.box = to_box(g, merged)
+            if previous.line_colors is not None or line_colors is not None:
+                previous.line_colors = ((previous.line_colors or [None] * len(previous.lines))
+                                        + (line_colors or [None] * len(lines)))
             previous.lines.extend(lines)
             if previous.line_runs is not None and line_runs is not None:
                 previous.line_runs.extend(line_runs)
@@ -324,7 +370,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             if title_index not in manual:
                 occupied.append(rect)
             placements.append(Placement(title, rect, title_index))
-            _add_text(page, g, rect, _heading_lines_for(g, title, rect, title_pt),
+            title_lines = _heading_lines_for(g, title, rect, title_pt)
+            _add_text(page, g, rect, title_lines, line_colors=_heading_colors(title.text, title_lines),
                       font=dx.GOTHIC, pt=title_pt,
                       pitch=max(34.0, title_pt * dx.AT_LEAST_RATIO) if title.vertical
                       else dx.effective_pitch(title_pt, PITCH),
@@ -346,7 +393,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
         if _fits(g, rect, occupied):
             occupied.append(rect)
             placements.append(Placement(second, rect, 1))
-            _add_text(page, g, rect, _heading_lines_for(g, second, rect, second_pt),
+            second_lines = _heading_lines_for(g, second, rect, second_pt)
+            _add_text(page, g, rect, second_lines, line_colors=_heading_colors(second.text, second_lines),
                       font=dx.GOTHIC, pt=second_pt, pitch=max(34.0, second_pt * dx.AT_LEAST_RATIO),
                       border=True, center=True, name="大見出し", vertical=True, align="中央")
             skip.add(1)
@@ -449,7 +497,8 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
             if index not in manual:
                 occupied.append(rect)
             placements.append(Placement(part, rect, index))
-            _add_text(page, g, rect, _heading_lines_for(g, part, rect, heading_pt),
+            big_lines = _heading_lines_for(g, part, rect, heading_pt)
+            _add_text(page, g, rect, big_lines, line_colors=_heading_colors(part.text, big_lines),
                       font=dx.GOTHIC, pt=heading_pt,
                       pitch=max(34.0, heading_pt * dx.AT_LEAST_RATIO) if part.vertical
                       else dx.effective_pitch(heading_pt, PITCH),
@@ -521,6 +570,7 @@ def _compose(section: str, parts: List[I.Part], images: Dict[str, bytes], g: Geo
                      if part.vertical else dx.effective_pitch(heading_pt, PITCH))
             _add_text(page, g, rect, heading_lines, font=dx.GOTHIC,
                       pt=heading_pt, pitch=pitch, center=part.vertical, name="中見出し",
+                      line_colors=_heading_colors(part.text, heading_lines),
                       vertical=part.vertical, align="中央")
             last_rect = rect
             continue

@@ -76,6 +76,8 @@ class TextBox:
     # 行分けそのものは lines が正で、書体を変えても字数計算には影響させない。
     line_runs: list[list[tuple[str, str]]] | None = None
     shape: str = "rect"               # 囲みの形。rect（四角）か ellipse（楕円）
+    # 行ごとの字の色（"0070C0" のような 16 進）。None の行は黒。
+    line_colors: list | None = None
 
 
 @dataclass
@@ -133,22 +135,23 @@ class Page:
 # ---------------------------------------------------------------- XML
 
 
-def _rpr(font: str, pt: float, bold: bool = False) -> str:
+def _rpr(font: str, pt: float, bold: bool = False, color: str | None = None) -> str:
     f = escape(font, {'"': "&quot;"})
     return (f'<w:rPr><w:rFonts w:ascii="{f}" w:eastAsia="{f}" w:hAnsi="{f}"/>'
-            f'<w:sz w:val="{round(pt * 2)}"/><w:szCs w:val="{round(pt * 2)}"/>'
-            f'{"<w:b/>" if bold else ""}</w:rPr>')
+            f'{"<w:b/>" if bold else ""}'
+            f'{f"<w:color w:val={chr(34)}{color}{chr(34)}/>" if color else ""}'
+            f'<w:sz w:val="{round(pt * 2)}"/><w:szCs w:val="{round(pt * 2)}"/></w:rPr>')
 
 
 def _line_runs(line: str, font: str, pt: float, ids: list[int], *,
-               vertical: bool = True, bold: bool = False) -> list[str]:
+               vertical: bool = True, bold: bool = False, color: str | None = None) -> list[str]:
     """1 行を run に分ける。2〜3 桁の半角数字は縦中横の run にする。
 
     縦中横は `w:eastAsianLayout w:vert="1" w:vertCompress="1"`（Word の「拡張書式→縦中横」で
     「行内に収める」）。`w:combine="1"` は割注（2 行に分けて小さく詰める）なので使わない。
     文書の中で一意の id が要る（gikai_template §11）。
     """
-    rpr = _rpr(font, pt, bold)
+    rpr = _rpr(font, pt, bold, color)
     if not vertical:
         return [f'<w:r>{rpr}<w:t xml:space="preserve">{escape(line)}</w:t></w:r>']
     out, pos = [], 0
@@ -205,8 +208,9 @@ def _text_para(t: TextBox, ids: list[int]) -> str:
         styled = t.line_runs[i] if t.line_runs and i < len(t.line_runs) else [(line, t.font)]
         for text, font in styled:
             if text:
+                color = t.line_colors[i] if t.line_colors and i < len(t.line_colors) else None
                 runs.extend(_line_runs(text, font, t.pt, ids,
-                                       vertical=t.vertical, bold=t.bold))
+                                       vertical=t.vertical, bold=t.bold, color=color))
     pitch = t.pitch_pt
     # autoSpaceDE/DN: 日本語と英字・数字のあいだに Word が自動で入れるすき間を止める。
     # 入れられると行が計算より長くなり、最後の字が次の行へ送られる（段階 1 で確認）

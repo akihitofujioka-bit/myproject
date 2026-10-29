@@ -76,7 +76,7 @@ class SourcesTest(unittest.TestCase):
         self.assertEqual(first.read_bytes(), before)
         with zipfile.ZipFile(first) as package:
             xml = package.read("word/document.xml").decode("utf-8")
-        self.assertIn("架空の防災", xml)
+        self.assertIn("1. 備え", xml)   # 1 番目の大まかな質問
         self.assertIn('w:sz w:val="22"', xml)
         self.assertIn('w:lineRule="atLeast"', xml)
 

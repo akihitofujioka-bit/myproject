@@ -17,6 +17,27 @@ import layout  # noqa: E402
 
 
 class ConversionTest(unittest.TestCase):
+    def test_question_headings_summary_question_and_answer(self):
+        """1 番目は大見出しに「大まかな質問｜答」、2 番目からは中見出しに同じ形、そのあと詳しい問と答。"""
+        text = items.question_text({"member": "見本 太郎", "title": "使わない題", "questions": [
+            {"heading": "防災対策の強化を", "heading_answer": "計画的に進める",
+             "question": "備えは。", "answer": "増やす。", "answerer": "見本課長"},
+            {"heading": "子育て支援は", "heading_answer": "拡充する", "question": "保育料は。", "answer": "下げる。"}]})
+        self.assertEqual(text.splitlines(), [
+            "【大見出し】防災対策の強化を｜計画的に進める", "【顔写真枠】", "▲見本 太郎議員",
+            "問　備えは。", "答　見本課長　増やす。",
+            "【見出し】子育て支援は｜拡充する", "問　保育料は。", "答　下げる。"])
+        # 前の版の「題」だけのデータも大見出しに出す
+        self.assertIn("【大見出し】古い題", items.question_text({"title": "古い題", "questions": []}))
+
+    def test_bulk_reads_summary_answer(self):
+        parsed = items.parse_bulk("【見出し】防災対策の強化を\n【見出しの答】計画的に進める\n"
+                                  "問　備えは。\n答　増やす。\n答弁者　見本課長\n"
+                                  "【子育て支援は】\n【見出しの答】拡充する\n問　保育料は。\n答　下げる。")
+        self.assertEqual([(q["heading"], q.get("heading_answer"), q["question"]) for q in parsed["questions"]],
+                         [("防災対策の強化を", "計画的に進める", "備えは。"), ("子育て支援は", "拡充する", "保育料は。")])
+        self.assertEqual(parsed["questions"][0]["answerer"], "見本課長")
+
     def test_each_section_becomes_marked_text(self):
         issue = layout.Issue(999, 4, questioners=1, committee_pages=1)
         data = items.default_data(issue)
@@ -37,7 +58,8 @@ class ConversionTest(unittest.TestCase):
         # 大見出しは「閉会中の委員会活動報告」に決まっている。その下に委員会名、記事の見出しの順
         self.assertIn("【大見出し】閉会中の委員会活動報告\n【見出し】見本委員会\n【見出し】調査",
                       pages[layout.IINKAI][0])
-        self.assertIn("【大見出し】架空の防災", pages[layout.IPPAN][0])
+        # 1 番目の質問の大まかな質問が大見出しになる（題は使わない）
+        self.assertIn("【大見出し】備え\n【顔写真枠】", pages[layout.IPPAN][0])
         # 一般質問の最初のページの頭は「一般質問に◯氏が立つ」（◯は質問者の数）
         self.assertTrue(pages[layout.IPPAN][0].startswith("【大見出し】一般質問に１氏が立つ\n"))
         self.assertEqual(items.ippan_title(12), "一般質問に１２氏が立つ")

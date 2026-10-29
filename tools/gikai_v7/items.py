@@ -7,6 +7,7 @@ Edition が保存・紙面への反映を担当する。
 from __future__ import annotations
 
 import copy
+import re
 import json
 import shutil
 from dataclasses import asdict
@@ -131,11 +132,26 @@ def parse_bulk(text: str) -> dict:
     問または答へ連結するため、入力文字を捨てない。
     """
     heading = ""
+    heading_answer = ""
     body: List[str] = []
     pairs: List[dict] = []
     current = None
     for raw in str(text or "").splitlines():
         line = raw.rstrip()
+        # 【見出しの答】は、直前の見出し（大まかな質問）に対する答。次の問の見出しに添える
+        answer_mark = re.match(r"^\s*[【［\[]見出しの答[】］\]]\s*(.*)$", line)
+        if answer_mark:
+            heading_answer = answer_mark.group(1).strip()
+            current = None
+            continue
+        # 【見出し】大まかな質問 の形でも見出しにする
+        heading_mark = re.match(r"^\s*[【［\[]見出し[】］\]]\s*(.+)$", line)
+        if heading_mark:
+            if heading:
+                body.append(heading)
+            heading = heading_mark.group(1).strip()
+            current = None
+            continue
         match = ingest.QA_LINE.match(line.strip())
         if match:
             kind = match.group("kind")
@@ -143,8 +159,11 @@ def parse_bulk(text: str) -> dict:
             if kind == "問":
                 current = {"heading": heading, "question": value, "answer": "",
                            "answerer": ""}
+                if heading_answer:
+                    current["heading_answer"] = heading_answer
                 pairs.append(current)
                 heading = ""
+                heading_answer = ""
             elif current is not None:
                 current["answer"] = value
             else:
@@ -181,7 +200,7 @@ def parse_bulk(text: str) -> dict:
 def _qa_lines(values: Iterable[dict], answerer: bool = False) -> List[str]:
     lines: List[str] = []
     for value in values or []:
-        heading = _text(value.get("heading") or value.get("title"))
+        heading = summary_heading(value)
         question = _text(value.get("question") or value.get("q"))
         answer = _text(value.get("answer") or value.get("a"))
         if heading:
@@ -264,14 +283,34 @@ def ippan_texts(values: Iterable[dict]) -> List[str]:
     return pages
 
 
+def summary_heading(value: dict) -> str:
+    """質問の見出し。「大まかな質問｜それへの答」の形（｜で行を変え、前を青字にする）。"""
+    question = _text(value.get("heading") or value.get("title"))
+    answer = _text(value.get("heading_answer"))
+    if question and answer:
+        return question + "｜" + answer
+    return question or answer
+
+
 def question_text(value: dict) -> str:
-    """一般質問1人分。顔写真は印刷所差し替え用の枠を必ず入れる。"""
-    # 一般質問の題は、ほかの記事の大見出しと同じ縦書きの囲み（V5 設計図 §3.3）。
-    lines = ["【大見出し】" + _text(value.get("title")), "【顔写真枠】"]
+    """一般質問1人分。顔写真は印刷所差し替え用の枠を必ず入れる。
+
+    1 番目の質問は、大まかな質問とその答を大見出し（縦書きの囲み）にし、詳しい問と答を続ける。
+    2 番目からは、大まかな質問とその答を中見出しにし、詳しい問と答を続ける。
+    """
+    questions = limit_questions(value.get("questions") or [])
+    first = dict(questions[0]) if questions else {}
+    big = summary_heading(first) or _text(value.get("title"))   # 前の版の「題」だけのデータも出す
+    lines = ["【大見出し】" + big, "【顔写真枠】"]
     member = _text(value.get("member"))
     if member:
         lines.append("▲" + member + "議員")
-    lines.extend(_qa_lines(limit_questions(value.get("questions") or []), answerer=True))
+    if first:
+        first.pop("heading", None)
+        first.pop("heading_answer", None)
+        first.pop("title", None)
+        lines.extend(_qa_lines([first], answerer=True))
+    lines.extend(_qa_lines(questions[1:], answerer=True))
     return "\n".join(line for line in lines if line)
 
 
