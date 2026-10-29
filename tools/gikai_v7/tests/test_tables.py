@@ -210,5 +210,26 @@ class FacePhotoTest(unittest.TestCase):
             again = next(p for p in work.compose(page).placements if p.part.kind == "写真")
             self.assertEqual(again.rect, moved)
 
+
+class ManuscriptAndChairTest(unittest.TestCase):
+    def test_manuscript_template_reads_back(self):
+        """議員に配る原稿のひな形は、そのまま読み込むと見出し・見出しの答・質問・答弁に分かれる。"""
+        import sources
+        with tempfile.TemporaryDirectory() as folder:
+            made = sources.write_manuscript_template(Path(folder) / "ひな形.docx")
+            again = sources.write_manuscript_template(Path(folder) / "ひな形.docx")
+            self.assertNotEqual(made, again)   # 同じ名前は上書きしない
+            found = sources.read_word(made)["questions"]
+            self.assertEqual(len(items.group_questions(found)), 4)
+            self.assertTrue(all(q["heading"] and q.get("heading_answer") and q["answerer"] for q in found))
+
+    def test_committee_chair_face_and_name(self):
+        text = items.committee_text([{"committee": "架空総務常任委員会", "chair": "見本 太郎", "body": "架空の本文です。"}])
+        self.assertIn("【顔写真枠】\n▲見本 太郎委員長", text)
+        result = compose.compose_page(layout.IINKAI, ingest.ingest_text(text).parts, {}, Geometry())
+        self.assertTrue(any(isinstance(i, dx.Placeholder) for i in result.page.items))
+        self.assertIn("見本 太郎委員長", ["".join(i.lines) for i in result.page.items
+                                       if getattr(i, "name", "") == "顔写真の議員名"])
+
 if __name__ == "__main__":
     unittest.main()

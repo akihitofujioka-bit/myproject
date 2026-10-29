@@ -435,6 +435,9 @@ def committee_text(values: Iterable[dict]) -> str:
         for key in ("committee", "heading"):
             if _text(report.get(key)):
                 lines.append("【見出し】" + _text(report.get(key)))
+        if _text(report.get("chair")):
+            # 委員長報告: 委員長の顔写真の枠（印刷所が写真を入れる空欄）と、その下の名前
+            lines.extend(["【顔写真枠】", "▲" + _text(report.get("chair")) + "委員長"])
         if _text(report.get("body")):
             lines.append(_text(report.get("body")))
     return "\n".join(lines)

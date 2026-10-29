@@ -210,6 +210,12 @@ def write_confirmation(path, people: Iterable[dict]) -> Path:
             body.append(_paragraph("質問　" + str(qa.get("question", ""))))
             body.append(_paragraph("答弁　" + str(qa.get("answerer", "")), True))
             body.append(_paragraph(str(qa.get("answer", ""))))
+    return _write_simple_docx(target, body)
+
+
+
+def _write_simple_docx(target: Path, body: list) -> Path:
+    """段落の XML を並べた、横書きの普通の Word を新しく作る（同じ名前のファイルは上書きしない）。"""
     document = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
                 + "".join(body) + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
@@ -230,3 +236,35 @@ def write_confirmation(path, people: Iterable[dict]) -> Path:
         package.writestr("_rels/.rels", rels)
         package.writestr("word/document.xml", document)
     return target.resolve()
+
+
+MANUSCRIPT_GUIDE = (
+    "この用紙に一般質問の原稿を書いて、議会事務局へ出してください。",
+    "・質問ごとに、（見出し）（見出しの答）質問・答弁 の順で書きます。質問は4つまでです。",
+    "・（見出し）には、大まかな質問を短く書きます（紙面では青い字の見出しになります）。",
+    "・（見出しの答）には、それに対する答を短く書きます（見出しの2行目になります）。",
+    "・「質問」のあとに全角の空きを入れて、質問の本文を書きます。",
+    "・「答弁」のあとに全角の空きを入れて答弁した人（村長・教育長など）を書き、次の行から答弁の本文を書きます。",
+    "・同じ質問の中で再質問・再答弁をしたときは、「質問」「答弁」をくり返して書きます（（見出し）は書きません）。",
+    "・「（見出し）」などの印の言葉は消さずに残してください。印の後ろの見本の文は書きかえてください。",
+)
+
+
+def write_manuscript_template(path) -> Path:
+    """議員に配る一般質問の原稿のひな形（書き方の説明と、書き込む見本）を新しく作る。"""
+    target = Path(path)
+    if target.suffix.lower() != ".docx":
+        target = target.with_suffix(".docx")
+    target = _unique(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    body = [_paragraph("一般質問　原稿", True, 32), _paragraph("議員名　", True, 24)]
+    body.extend(_paragraph(line, False, 20) for line in MANUSCRIPT_GUIDE)
+    for number in range(1, 5):
+        body.append(_paragraph(""))
+        body.append(_paragraph(f"―――― {number}番目の質問 ――――", True, 22))
+        body.append(_paragraph("（見出し）ここに大まかな質問を書きます"))
+        body.append(_paragraph("（見出しの答）ここにその答を書きます"))
+        body.append(_paragraph("質問　ここに質問の本文を書きます。"))
+        body.append(_paragraph("答弁　村長"))
+        body.append(_paragraph("　ここに答弁の本文を書きます。"))
+    return _write_simple_docx(target, body)

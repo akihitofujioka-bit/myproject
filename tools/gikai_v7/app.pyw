@@ -1002,6 +1002,7 @@ class App:
         ttk.Button(row, text="確認用に印刷（1人）",
                    command=lambda: self.print_question_confirmation(True)).pack(side="left")
         ttk.Button(row, text="確認用に印刷（全員）", command=self.print_question_confirmation).pack(side="left")
+        ttk.Button(row, text="原稿のひな形を作る", command=self.make_manuscript_template).pack(side="left", padx=5)
         ttk.Label(self.inner, text=(("議員から届いた Word ファイルは、上の質問者の一覧の白い所（この画面のどこでも）へ"
                                      "ドロップしても読み込めます。一覧で議員を選んでから落とすと、その議員の原稿として読みます。"
                                      if self.drop_ready else "")
@@ -1308,6 +1309,15 @@ class App:
         committee = line(top, "委員会名", str(value.get("committee", "")), "見出しになります。例 総務常任委員会")
         heading = line(top, "記事の見出し", str(value.get("heading", "")),
                        "任意。委員会名の次に入ります。例 国・県にも要望")
+        row = ttk.Frame(top)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text="委員長名", width=16, font=(self.font, INPUT_PT)).pack(side="left")
+        chair = ttk.Combobox(row, values=self.work.settings.members if self.work else [],
+                             font=(self.font, INPUT_PT), width=20)
+        chair.set(str(value.get("chair", "")))
+        chair.pack(side="left")
+        ttk.Label(top, text="任意。入れると、委員長の顔写真の枠と「◯◯委員長」の名前が入ります（紙面を見るで動かせます）。",
+                  foreground="#555").pack(anchor="w", padx=(150, 0))
         sections = items.split_sections(str(value.get("body", "")))
         tabs = ttk.Notebook(dialog)
         tabs.pack(fill="both", expand=True, padx=12)
@@ -1332,6 +1342,7 @@ class App:
         def accept():
             value["committee"] = committee.get().strip()
             value["heading"] = heading.get().strip()
+            value["chair"] = chair.get().strip()
             value["body"] = items.join_sections(
                 [(small.get().strip(), text.get("1.0", "end-1c").strip()) for small, text in fields])
             dialog.destroy()
@@ -1684,6 +1695,22 @@ class App:
             choice.grab_set()
         ttk.Button(body, text="外す候補と整えた結果を見る", command=next_step).pack(anchor="e")
         dialog.grab_set()
+
+    def make_manuscript_template(self) -> None:
+        """議員に配る一般質問の原稿のひな形（Word）を作って開く。"""
+        path = filedialog.asksaveasfilename(title="原稿のひな形の保存先", parent=self.root,
+                                            initialfile="一般質問_原稿のひな形.docx", defaultextension=".docx",
+                                            filetypes=[("Word", "*.docx")])
+        if not path:
+            return
+        try:
+            made = sources.write_manuscript_template(path)
+        except Exception as error:
+            messagebox.showerror("ひな形を作れません", str(error), parent=self.root)
+            return
+        if not _open_file(made):
+            messagebox.showinfo("ひな形を作りました", str(made), parent=self.root)
+        self.fit_label.configure(text="原稿のひな形を作りました: " + str(made))
 
     def print_question_confirmation(self, one: bool = False) -> None:
         try:
