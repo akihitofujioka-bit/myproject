@@ -24,6 +24,7 @@ PREVIOUS_FILE = "項目_前回.json"
 
 # 行政報告の大見出しの決まった書き方（従来の紙面どおり）。
 GYOSEI_TITLE = "行政報告（要旨）"
+IINKAI_TITLE = "閉会中の委員会活動報告"   # 委員会報告の大見出し（決まっている）
 
 def _text(value) -> str:
     return str(value or "").strip()
@@ -231,15 +232,19 @@ def budget_text(value: dict, section: str) -> str:
 
 
 def committee_text(values: Iterable[dict]) -> str:
-    lines: List[str] = []
-    for report in values or []:
-        committee = _text(report.get("committee"))
-        heading = _text(report.get("heading"))
-        # 第204号の形: 記事の見出しを大きく囲み、委員会名はその左に小さめの見出しで入れる。
-        if heading or committee:
-            lines.append("【大見出し】" + (heading or committee))
-        if committee and heading:
-            lines.append("【見出し】" + committee)
+    """委員会報告のページ。大見出しは「閉会中の委員会活動報告」に決まっている。
+
+    その下に委員会ごとに、委員会名・記事の見出し（あれば）・本文の順で入れる。
+    """
+    reports = [report for report in values or []
+               if any(_text(report.get(key)) for key in ("committee", "heading", "body"))]
+    if not reports:
+        return ""
+    lines: List[str] = ["【大見出し】" + IINKAI_TITLE]
+    for report in reports:
+        for key in ("committee", "heading"):
+            if _text(report.get(key)):
+                lines.append("【見出し】" + _text(report.get(key)))
         if _text(report.get("body")):
             lines.append(_text(report.get("body")))
     return "\n".join(lines)

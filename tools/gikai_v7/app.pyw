@@ -921,9 +921,11 @@ class App:
 
     def _step_8(self):
         self._title("委員会報告")
+        ttk.Label(self.inner, text="ページの大見出しは「" + items.IINKAI_TITLE + "」に決まっています（入力は要りません）。",
+                  foreground="#555").pack(anchor="w", pady=(0, 4))
         self._list_editor("報告", self.data.setdefault("committees", []),
-                          [("heading", "記事の見出し（大きく囲む。例 国・省等にも要望）", False),
-                           ("committee", "委員会名（見出しの左に入る。例 総務常任委員会）", False),
+                          [("committee", "委員会名（見出しになる。例 総務常任委員会）", False),
+                           ("heading", "記事の見出し（任意。委員会名の次に入る。例 国・省等にも要望）", False),
                            ("body", "本文（途中の小見出しは、行の頭に【見出し】を付ける）", True)],
                           lambda v: f"{v.get('committee', '')}　{v.get('heading', '')}".strip() or "（名称なし）")
         self._word_button()
