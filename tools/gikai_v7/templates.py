@@ -184,6 +184,11 @@ def meeting_name(issue: layout.Issue) -> str:
     return f"令和{str(year).translate(layout.ZEN)}年第{str(number).translate(layout.ZEN)}回定例会"
 
 
+def default_opinion(settings: Settings) -> str:
+    """最終ページの意見・提言の決まった文（入力欄が空のときに使う）。"""
+    return f"{settings.committee}へのご意見・ご提言を、よろしくお願い申し上げます。"
+
+
 def summary_text(counts, month: Optional[int] = None) -> str:
     """種類と件数から審議ページのまとめ文を作る。"""
     pairs = []
@@ -707,8 +712,7 @@ def _last(form: dict, settings: Settings, g: Geometry) -> compose.PageResult:
            form.get("invitation") or "お気軽に傍聴に、お越し下さい。", 14,
            font=dx.GOTHIC, align="中央", name="傍聴の呼びかけ", warnings=warnings)
 
-    opinion = (form.get("opinion")
-               or f"{settings.committee}へのご意見・ご提言を、よろしくお願い申し上げます。")
+    opinion = form.get("opinion") or default_opinion(settings)
     # 縦書きの 2 つは、ページ下端の再生紙のお知らせ（上端 279.8mm）の手前で止める。
     # 段の高さいっぱいにすると最後の行がお知らせに重なった（Mac の Word で確認）
     v_height = mm2pt(278.5) - fifth.y

@@ -1087,8 +1087,15 @@ class App:
         self._title("最終ページ")
         value = self.data.setdefault("last", {})
         for key, label, height in (("editorial", "編集後記", 5), ("free", "自由欄", 7),
-                                   ("next_meeting", "次回定例会", 2), ("opinion", "意見・提言", 3)):
+                                   ("next_meeting", "次回定例会", 2)):
             self._text(label, value.get(key, ""), lambda v, k=key: value.__setitem__(k, v), height)
+        # 意見・提言は決まった文を使う。変える時だけ書く（空のままなら決まった文が入る）
+        standard = templates.default_opinion(self.work.settings) if self.work else ""
+        ttk.Label(self.inner, text="意見・提言は、ふだんは決まった文が入ります（下の欄は空のままで構いません）。"
+                                   "変える時だけ書いてください。\n決まった文: " + standard,
+                  foreground="#555", wraplength=900, justify="left").pack(anchor="w", pady=(6, 0))
+        self._text("意見・提言（変える時だけ）", value.get("opinion", ""),
+                   lambda v: value.__setitem__("opinion", "" if v.strip() == standard.strip() else v), 3)
         self._entry("傍聴案内の見出し", value.get("hearing_title", "議会を傍聴してみませんか"),
                     lambda v: value.__setitem__("hearing_title", v))
         self._entry("傍聴の呼びかけ", value.get("invitation", "お気軽に傍聴に、お越し下さい。"),
@@ -1658,6 +1665,27 @@ class App:
         top.pack(fill="x")
         page_var = tk.IntVar(value=self._preview_page())
         # ページの状況（あふれ・余り）は、ボタンの下の段に出す（窓が狭くてもボタンが隠れないように）
+        # 写真を置く: ここで写真を選んでから、紙面の置きたい所をクリックする（どの手順からでも置ける）
+        NONE = "（置かない）"
+        photo_row = ttk.Frame(dialog, padding=(6, 4, 6, 0))
+        photo_row.pack(fill="x")
+        ttk.Label(photo_row, text="置く写真").pack(side="left")
+        photo_names = [value["name"] for value in self.work.photo_files()]
+        chosen = getattr(self, "photo_var", None)
+        place_var = tk.StringVar(value=NONE)
+        place_box = ttk.Combobox(photo_row, textvariable=place_var, values=[NONE] + photo_names,
+                                 state="readonly", width=34)
+        place_box.pack(side="left", padx=4)
+        place_size = tk.StringVar(value=getattr(self, "photo_size", None).get()
+                                  if getattr(self, "photo_size", None) else "中")
+        ttk.Label(photo_row, text="大きさ").pack(side="left", padx=(8, 0))
+        ttk.Combobox(photo_row, textvariable=place_size, values=["特大", "大", "中", "小", "顔"],
+                     state="readonly", width=5).pack(side="left", padx=4)
+        ttk.Label(dialog, text="写真を選んでから、紙面の置きたい所をクリックします。置いた写真はドラッグで動かせます。"
+                               "（写真は『写真』の手順の『写真を追加』で号に入れておきます）",
+                  foreground="#555", padding=(8, 2, 8, 0)).pack(fill="x")
+        if self.step == 12 and chosen is not None and chosen.get() in photo_names:
+            place_var.set(chosen.get())
         status = ttk.Label(dialog, padding=(8, 2, 8, 4))
         status.pack(fill="x")
         drag = {"part": None}
@@ -1770,8 +1798,6 @@ class App:
                         max(0, min(g.lines_per_dan - 1, line)), 1, 1)
 
         def press(event):
-            if self.step != 12:
-                return
             point_x, point_y = page_point(event)
             result = self.work.compose(page_var.get())
             drag["part"] = None
@@ -1784,16 +1810,16 @@ class App:
                     return
 
         def release(event):
-            if self.step != 12:
-                return
             try:
                 target = grid_at(event)
                 if drag["part"] is None:
-                    if not getattr(self, "photo_var", None) or not self.photo_var.get():
-                        raise ValueError("写真の手順で、置く写真を選んでください。")
+                    if place_var.get() in ("", NONE):
+                        return   # 写真を選んでいないクリックは何もしない（ダブルクリックで直す窓を開くため）
+                    caption = self.photo_caption.get() if getattr(self, "photo_caption", None) else ""
                     actual, shifted = self.work.place_photo_near(
-                        page_var.get(), self.photo_var.get(), target,
-                        self.photo_size.get(), self.photo_caption.get())
+                        page_var.get(), place_var.get(), target, place_size.get(), caption)
+                    place_var.set(NONE)   # 続けてクリックしても同じ写真が増えないように
+                    self.save(silent=True)
                 else:
                     actual, shifted = self.work.move_part_near(page_var.get(), drag["part"], target)
                 if shifted:
