@@ -2,6 +2,7 @@
 //  ContentView.swift
 //
 //  手首で見る画面。上から「会議」「期限」「買い物」。
+//  次の予定がある日に会議が2件以上あるときは、いちばん上に10秒ごとに切り替わる欄を出す。
 //  操作（消し込みや状態の変更）はここでは行わない。見るための画面に絞っている。
 //
 import SwiftUI
@@ -16,6 +17,7 @@ struct ContentView: View {
                     if store.snapshot.isEmpty {
                         emptyView
                     } else {
+                        rotatingSection
                         meetingSection
                         deadlineSection
                         shoppingSection
@@ -55,6 +57,37 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+    }
+
+    /// 次の予定がある日の会議を、10秒ごとに1件ずつ順に出す（文字盤と同じ並び）。
+    /// 2件未満の日は出さない（下の「予定」の一覧で足りるため）
+    @ViewBuilder
+    private var rotatingSection: some View {
+        if nextDayMeetings(from: store.snapshot).count >= 2 {
+            Section("次の予定") {
+                TimelineView(.periodic(from: .now, by: 10)) { context in
+                    let group = nextDayMeetings(from: store.snapshot, at: context.date)
+                    if group.isEmpty {
+                        Text("予定なし")
+                            .font(.headline)
+                    } else {
+                        // 時刻から何件目かを決めるので、画面を開き直しても順番は続きから進む
+                        let i = Int(context.date.timeIntervalSince1970 / 10) % group.count
+                        let item = group[i]
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                                .font(.headline)
+                                .lineLimit(2)
+                            Text("\(dayLabel(item.days)) \(item.startTime ?? "終日")　\(i + 1)/\(group.count)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
