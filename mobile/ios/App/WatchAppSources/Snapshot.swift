@@ -219,6 +219,26 @@ func upNext(from snapshot: Snapshot, at now: Date = Date()) -> UpNextItem? {
     return past.max { $0.days < $1.days }
 }
 
+/// 次の予定がある日（今日とは限らない）のこれから始まる会議を、upNext と同じ順に並べる。
+/// 2件以上あるとき、ウィジェットと文字盤で1件ずつ順に切り替えて出すのに使う。
+/// 書類の期限は入れず、それより前に期限があるときは空にする（upNext がその期限を出すため）
+func nextDayMeetings(from snapshot: Snapshot, at now: Date = Date()) -> [UpNextItem] {
+    let open = (snapshot.meetings ?? []).filter { !$0.hasStarted(at: now) }
+    let days = open.compactMap { remainingDays(date: $0.date, stored: $0.days, from: now) }.filter { $0 >= 0 }
+    guard let day = days.min() else { return [] }
+    let deadlineDays = (snapshot.deadlines ?? []).compactMap { remainingDays(date: $0.date, stored: $0.days, from: now) }
+    if deadlineDays.contains(where: { $0 >= 0 && $0 < day }) { return [] }
+    var list: [(key: Date, item: UpNextItem)] = []
+    for m in open {
+        guard remainingDays(date: m.date, stored: m.days, from: now) == day, let range = m.startEnd else { continue }
+        var item = UpNextItem(title: m.title ?? "（会議）", days: day, docId: m.docId)
+        if !m.isAllDay { item.startTime = hmFormatter.string(from: range.start) }
+        let key = m.isAllDay ? (dateAt(m.date, 23, 58) ?? range.start) : range.start
+        list.append((key, item))
+    }
+    return list.sorted { $0.key < $1.key }.map { $0.item }
+}
+
 /// 表示を切り替える時刻（これから始まる会議の開始時刻など）。ウィジェットの予定表に使う
 func upNextChangeTimes(from snapshot: Snapshot, after now: Date = Date(), within hours: Double = 24, limit: Int = 12) -> [Date] {
     let until = now.addingTimeInterval(hours * 3600)

@@ -3,7 +3,8 @@
 //
 //  iPhoneのロック画面（および StandBy）に出すウィジェット。
 //  Watchのコンプリケーションと同じく、会議・書類の期限のうち一番近いものを
-//  ひとつだけ表示する。タップすると、書類・回覧・会議の期限トラッカーの
+//  ひとつだけ表示する。
+//  次の予定がある日に会議が2件以上あるときは1分ごとに順に切り替え、四角い枠には2件並べる。タップすると、書類・回覧・会議の期限トラッカーの
 //  該当項目を直接開く（既存の myproject://docs?id=xxx を使う）。
 //
 //  データは WatchBridgePlugin が App Group に書き込んだものを読むだけで、
@@ -18,7 +19,19 @@ struct NextUpEntryIOS: TimelineEntry {
     let dayLabel: String
     let hasItem: Bool
     let docId: String?
+    /// その日の会議を順に出しているときの「何件目／全何件」。それ以外は 0
+    var index = 0
+    var count = 0
+    /// 四角い枠に並べるその日の会議（「13:00 件名」）。会議が2件以上あるときだけ入る
+    var dayLines: [String] = []
+    /// 四角い枠の見出しに出す日（「今日」「明日」など）
+    var groupLabel = ""
 }
+
+/// その日の会議を順に出すときの切り替え間隔。
+/// ウィジェットは決めた時刻に絵を差し替えるだけで、1分より短い間隔は OS が守らない
+/// （常時表示の Watch は1分に1回しか描き直さない）ため、1分にしている。
+private let rotateInterval: TimeInterval = 60
 
 struct NextUpProviderIOS: TimelineProvider {
     func placeholder(in context: Context) -> NextUpEntryIOS {
@@ -38,6 +51,13 @@ struct NextUpProviderIOS: TimelineProvider {
         let midnight = Calendar.current.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0),
                                                  matchingPolicy: .nextTime) ?? hourLater
         let next = min(hourLater, midnight)
+        if nextDayMeetings(from: snapshot, at: now).count >= 2 {
+            // 次の予定がある日に会議が2件以上あるときは、次の作り直しまで1分ごとに1件ずつ順に出す。
+            // 毎分その時点の一覧で作るので、始まった会議は自然に外れる
+            let turns = stride(from: now, to: next, by: rotateInterval).enumerated()
+            completion(Timeline(entries: turns.map { entry(snapshot, at: $0.element, turn: $0.offset) }, policy: .after(next)))
+            return
+        }
         let times = [now] + upNextChangeTimes(from: snapshot, after: now)
         completion(Timeline(entries: times.map { entry(snapshot, at: $0) }, policy: .after(next)))
     }
@@ -46,7 +66,18 @@ struct NextUpProviderIOS: TimelineProvider {
         entry(SharedDefaults.loadSnapshot(), at: Date())
     }
 
-    private func entry(_ snapshot: Snapshot, at date: Date) -> NextUpEntryIOS {
+    private func entry(_ snapshot: Snapshot, at date: Date, turn: Int = 0) -> NextUpEntryIOS {
+        let group = nextDayMeetings(from: snapshot, at: date)
+        if group.count >= 2 {
+            let i = turn % group.count
+            let item = group[i]
+            // 今日の時刻のある会議は開始時刻、それ以外は「明日」など（日数が2箇所に出ないように）
+            let label = item.days == 0 ? (item.startTime ?? dayLabel(0)) : dayLabel(item.days)
+            let lines = group.map { "\($0.startTime ?? "終日") \($0.title)" }
+            return NextUpEntryIOS(date: date, title: item.title, dayLabel: label, hasItem: true,
+                docId: item.docId, index: i + 1, count: group.count, dayLines: lines,
+                groupLabel: dayLabel(item.days))
+        }
         guard let item = upNext(from: snapshot, at: date) else {
             return NextUpEntryIOS(date: date, title: "予定なし", dayLabel: "", hasItem: false, docId: nil)
         }
@@ -92,11 +123,42 @@ struct NextUpEntryViewIOS: View {
                 .font(.system(size: 12, weight: .semibold))
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
+            if entry.count >= 2 {
+                Text("\(entry.index)/\(entry.count)")
+                    .font(.system(size: 10))
+                    .lineLimit(1)
+            }
         }
         .widgetBackground()
     }
 
+    @ViewBuilder
     private var rectangularView: some View {
+        if entry.dayLines.count >= 2 {
+            dayListView
+        } else {
+            singleView
+        }
+    }
+
+    /// 同じ日に会議が複数あるときは、2件並べて残りは「ほかN件」と出す
+    private var dayListView: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(entry.count > 2 ? "\(entry.groupLabel) \(entry.count)件・ほか\(entry.count - 2)件" : "\(entry.groupLabel) \(entry.count)件")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            ForEach(Array(entry.dayLines.prefix(2).enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .widgetBackground()
+    }
+
+    private var singleView: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(entry.hasItem ? entry.title : "予定なし")
                 .font(.headline)
@@ -110,8 +172,13 @@ struct NextUpEntryViewIOS: View {
         .widgetBackground()
     }
 
+    /// その日の会議を順に出しているときは「 1/3」を添える。それ以外は空
+    private var position: String {
+        entry.count >= 2 ? " \(entry.index)/\(entry.count)" : ""
+    }
+
     private var inlineView: some View {
-        Text(entry.hasItem ? "\(entry.title)・\(entry.dayLabel)" : "予定なし")
+        Text(entry.hasItem ? "\(entry.title)・\(entry.dayLabel)\(position)" : "予定なし")
     }
 }
 
