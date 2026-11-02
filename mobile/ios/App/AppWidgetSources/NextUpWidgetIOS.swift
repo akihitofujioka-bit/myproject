@@ -4,7 +4,7 @@
 //  iPhoneのロック画面（および StandBy）に出すウィジェット。
 //  Watchのコンプリケーションと同じく、会議・書類の期限のうち一番近いものを
 //  ひとつだけ表示する。
-//  次の予定がある日に会議が2件以上あるときは1分ごとに順に切り替え、四角い枠には2件並べる。タップすると、書類・回覧・会議の期限トラッカーの
+//  次の予定がある日に会議が2件以上あるときは10秒ごとに順に切り替え、四角い枠には2件並べる。タップすると、書類・回覧・会議の期限トラッカーの
 //  該当項目を直接開く（既存の myproject://docs?id=xxx を使う）。
 //
 //  データは WatchBridgePlugin が App Group に書き込んだものを読むだけで、
@@ -29,9 +29,10 @@ struct NextUpEntryIOS: TimelineEntry {
 }
 
 /// その日の会議を順に出すときの切り替え間隔。
-/// ウィジェットは決めた時刻に絵を差し替えるだけで、1分より短い間隔は OS が守らない
-/// （常時表示の Watch は1分に1回しか描き直さない）ため、1分にしている。
-private let rotateInterval: TimeInterval = 60
+/// ウィジェットは決めた時刻に絵を差し替えるだけで、1分より短い間隔を OS が守るとは限らない
+/// （常時表示の Watch は1分に1回しか描き直さない）。利用者の希望で10秒を試している（2026-11-02）。
+/// 実機でうまく切り替わらなければ 60 に戻す
+private let rotateInterval: TimeInterval = 10
 
 struct NextUpProviderIOS: TimelineProvider {
     func placeholder(in context: Context) -> NextUpEntryIOS {
@@ -52,8 +53,8 @@ struct NextUpProviderIOS: TimelineProvider {
                                                  matchingPolicy: .nextTime) ?? hourLater
         let next = min(hourLater, midnight)
         if nextDayMeetings(from: snapshot, at: now).count >= 2 {
-            // 次の予定がある日に会議が2件以上あるときは、次の作り直しまで1分ごとに1件ずつ順に出す。
-            // 毎分その時点の一覧で作るので、始まった会議は自然に外れる
+            // 次の予定がある日に会議が2件以上あるときは、次の作り直しまで10秒ごとに1件ずつ順に出す。
+            // そのつどその時点の一覧で作るので、始まった会議は自然に外れる
             let turns = stride(from: now, to: next, by: rotateInterval).enumerated()
             completion(Timeline(entries: turns.map { entry(snapshot, at: $0.element, turn: $0.offset) }, policy: .after(next)))
             return
