@@ -3,7 +3,7 @@
 //
 //  Watch の文字盤（インフォグラフなど）に出すコンプリケーション。
 //  会議・書類の期限のうち、一番近いものをひとつだけ表示する。
-//  次の予定がある日に会議が2件以上あるときは10秒ごとに順に切り替え、四角い枠には2件並べる。
+//  次の予定がある日に会議が2件以上あるときは10秒ごとに順に切り替え、四角い枠には2件並べて1件ずつずらす。
 //  買い物リストは緊急性が低いためここには出さない（アプリ本体では見られる）。
 //
 //  データは WatchStore が App Group に書き込んだものを読むだけで、
@@ -73,7 +73,10 @@ struct NextUpProvider: TimelineProvider {
             let item = group[i]
             // 今日の時刻のある会議は開始時刻、それ以外は「明日」など（日数が2箇所に出ないように）
             let label = item.days == 0 ? (item.startTime ?? dayLabel(0)) : dayLabel(item.days)
-            let lines = group.map { "\($0.startTime ?? "終日") \($0.title)" }
+            // 四角い枠は先頭の2件を出すので、3件以上なら今の1件が先頭に来るよう回しておく
+            // （1・2 → 2・3 → 3・1）。2件だけのときは入れ替わると読みにくいので並びを変えない
+            let all = group.map { "\($0.startTime ?? "終日") \($0.title)" }
+            let lines = all.count > 2 ? Array(all[i...] + all[..<i]) : all
             return NextUpEntry(date: date, title: item.title, dayLabel: label, hasItem: true,
                 docId: item.docId, index: i + 1, count: group.count, dayLines: lines,
                 groupLabel: dayLabel(item.days))
@@ -145,10 +148,10 @@ struct NextUpEntryView: View {
         }
     }
 
-    /// 同じ日に会議が複数あるときは、2件並べて残りは「ほかN件」と出す
+    /// 同じ日に会議が複数あるときは2件並べる。3件以上なら切り替えのたびに1件ずつずれて全件が順に出る
     private var dayListView: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(entry.count > 2 ? "\(entry.groupLabel) \(entry.count)件・ほか\(entry.count - 2)件" : "\(entry.groupLabel) \(entry.count)件")
+            Text("\(entry.groupLabel) \(entry.count)件")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             ForEach(Array(entry.dayLines.prefix(2).enumerated()), id: \.offset) { _, line in
