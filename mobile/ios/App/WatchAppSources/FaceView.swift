@@ -37,6 +37,28 @@ private struct FaceButton {
     let count: Int
 }
 
+/// 漫画の効果線を思わせる、角の立ったボタン枠
+private struct ComicBadgeShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let points: [CGPoint] = [
+            CGPoint(x: 0.18, y: 0.02), CGPoint(x: 0.76, y: 0.00),
+            CGPoint(x: 1.00, y: 0.25), CGPoint(x: 0.94, y: 0.78),
+            CGPoint(x: 0.70, y: 1.00), CGPoint(x: 0.19, y: 0.95),
+            CGPoint(x: 0.00, y: 0.72), CGPoint(x: 0.04, y: 0.23),
+        ]
+        var path = Path()
+        for (index, point) in points.enumerated() {
+            let position = CGPoint(
+                x: rect.minX + point.x * rect.width,
+                y: rect.minY + point.y * rect.height
+            )
+            if index == 0 { path.move(to: position) } else { path.addLine(to: position) }
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
 struct FaceView: View {
     @ObservedObject var store: WatchStore
     let open: (FacePanel) -> Void
@@ -83,16 +105,34 @@ struct FaceView: View {
             if let panel = b.panel { open(panel) } else { store.requestLatest() }
         } label: {
             ZStack(alignment: .topTrailing) {
-                Circle()
+                ComicBadgeShape()
+                    .fill(JojoPalette.ink)
+                    .offset(x: 2, y: 3)
+                ComicBadgeShape()
                     .fill(b.color)
-                    .overlay(Circle().stroke(JojoPalette.ink, lineWidth: 2.5))
+                    .overlay(ComicBadgeShape().stroke(.white, lineWidth: 1).padding(3))
+                    .overlay(ComicBadgeShape().stroke(JojoPalette.ink, lineWidth: 2.5))
                     .overlay(
-                        Image(systemName: b.symbol)
-                            .font(.system(size: size * 0.42, weight: .heavy))
-                            .foregroundStyle(.white)
-                            .shadow(color: .black, radius: 0, x: 1, y: 1)
-                            .rotationEffect(.degrees(b.panel == nil && store.isRequesting ? 180 : 0))
+                        Capsule()
+                            .fill(.white.opacity(0.65))
+                            .frame(width: size * 0.34, height: 2)
+                            .rotationEffect(.degrees(-28))
+                            .offset(x: -size * 0.20, y: -size * 0.24)
                     )
+                VStack(spacing: 1) {
+                    Image(systemName: b.symbol)
+                        .font(.system(size: size * 0.35, weight: .heavy))
+                        .rotationEffect(.degrees(b.panel == nil && store.isRequesting ? 180 : 0))
+                    Text(b.label)
+                        .font(.system(size: max(7, size * 0.17), weight: .black, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, 3)
+                        .background(JojoPalette.ink)
+                }
+                .foregroundStyle(.white)
+                .shadow(color: JojoPalette.ink, radius: 0, x: 1, y: 1)
+                .frame(width: size, height: size)
                 if b.count > 0 {
                     Text(b.count > 99 ? "99+" : "\(b.count)")
                         .font(.system(size: 9, weight: .black))
