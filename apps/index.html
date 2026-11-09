@@ -62,6 +62,12 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
   max-width: 90vw; text-align: center;
 }
 .toast.show { opacity: 1; }
+a.nextup { display: block; text-decoration: none; color: inherit; }
+a.nextup[hidden] { display: none; }
+a.nextup:hover, a.nextup:focus-visible { border-color: var(--accent); background: var(--accent-weak); }
+.nextup .label { font-size: 12px; color: var(--muted); }
+.nextup .title { display: block; font-weight: 600; font-size: 16px; margin: 2px 0; overflow-wrap: anywhere; }
+.nextup .detail { font-size: 13px; color: var(--muted); }
 </style>
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -70,6 +76,13 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 <div class="wrap">
   <h1>壱師</h1>
   <p class="lead">入力した内容はこの端末の中だけに保存され、どこにも送信されません。</p>
+
+  <!-- 次の予定がある日に会議が2件以上あるときだけ出し、10秒ごとに切り替える（shared/nextup.js） -->
+  <a class="card nextup" id="nextUpCard" href="schedule/index.html" hidden>
+    <span class="label">📅 次の予定</span>
+    <span class="title" id="nextUpTitle"></span>
+    <span class="detail" id="nextUpDetail"></span>
+  </a>
 
   <section class="card" id="scanCard" hidden>
     <h2>📷 撮って振り分ける</h2>
@@ -176,6 +189,14 @@ button.small { padding: 6px 12px; min-height: 36px; font-size: 13px; }
 <script src="shared/character.js"></script>
 <script src="shared/character-settings.js"></script>
 <script src="shared/watch.js"></script>
+<script src="shared/nextup.js"></script>
+<script>
+window.NextUp.mount({
+  card: document.getElementById("nextUpCard"),
+  title: document.getElementById("nextUpTitle"),
+  detail: document.getElementById("nextUpDetail")
+});
+</script>
 <script src="shared/receiptscan.js"></script>
 <script src="shared/scanrouter.js"></script>
 <script src="shared/schedulemove.js"></script>
