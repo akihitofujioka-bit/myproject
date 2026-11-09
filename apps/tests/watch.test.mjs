@@ -150,7 +150,10 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
         { id: "4", title: "期限切れの届出", kind: "提出", dest: "県", dueOn: day(-2), status: "未着手" },
         { id: "7", title: "架空の旧TODO", kind: "やること", dest: "", dueOn: day(2), status: "未着手" },
         { id: "5", title: "終わった書類", kind: "提出", dest: "県", dueOn: day(1), status: "完了" },
-        { id: "6", title: "ずっと先の提出", kind: "提出", dest: "県", dueOn: day(40), status: "未着手" }
+        { id: "6", title: "ずっと先の提出", kind: "提出", dest: "県", dueOn: day(40), status: "未着手" },
+        { id: "8", title: "架空の期限なしTODO", kind: "TODO", dest: "", dueOn: "", status: "未着手" },
+        { id: "9", title: "架空の先のTODO", kind: "TODO", dest: "", dueOn: day(30), status: "対応中" },
+        { id: "10", title: "架空の済んだTODO", kind: "TODO", dest: "", dueOn: day(1), status: "完了" }
       ]
     },
     "fridge.v1": {
@@ -185,6 +188,11 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
   ok(!titles.includes("架空の定例会"), "期限：予定は期限の欄に重ねない");
   ok(snap.deadlines[0].title === "期限切れの届出", "期限：差し迫った順に並ぶ");
   ok(snap.deadlines.find((item) => item.id === "7").kind === "TODO", "期限：旧表現の種別をTODOとして送る");
+
+  const todos = snap.todos.map((t) => t.title);
+  ok(todos.join("|") === "架空の旧TODO|架空の先のTODO|架空の期限なしTODO", "TODO：未完了を期限の近い順に送り、期限なしは後ろ");
+  ok(!todos.includes("架空の済んだTODO"), "TODO：完了したものは送らない");
+  ok(!todos.includes("○○協議会の回答"), "TODO：TODO 以外の書類は入れない");
 
   const shopping = snap.shopping.map((s) => s.name);
   ok(shopping.includes("牛乳"), "買い物：使い切って在庫に無いものを送る");
