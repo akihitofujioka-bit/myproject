@@ -109,21 +109,29 @@ struct FaceView: View {
     }
 }
 
-/// 背景。紫のグラデーションに、漫画のトーンのような斜めの線を薄く重ねる
+/// 背景。人物画に紫のグラデーションと漫画のトーンを重ねる
 private struct ScreentoneBackground: View {
     var body: some View {
-        ZStack {
-            JojoPalette.backdrop
-            Canvas { ctx, size in
-                var path = Path()
-                let step: CGFloat = 7
-                var x: CGFloat = -size.height
-                while x < size.width {
-                    path.move(to: CGPoint(x: x, y: size.height))
-                    path.addLine(to: CGPoint(x: x + size.height, y: 0))
-                    x += step
+        GeometryReader { geo in
+            ZStack {
+                JojoPalette.backdrop
+                Image("ComicPortrait")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+                    .opacity(0.9)
+                Canvas { ctx, size in
+                    var path = Path()
+                    let step: CGFloat = 7
+                    var x: CGFloat = -size.height
+                    while x < size.width {
+                        path.move(to: CGPoint(x: x, y: size.height))
+                        path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                        x += step
+                    }
+                    ctx.stroke(path, with: .color(.white.opacity(0.05)), lineWidth: 1)
                 }
-                ctx.stroke(path, with: .color(.white.opacity(0.06)), lineWidth: 1)
             }
         }
         .ignoresSafeArea()
