@@ -5,6 +5,7 @@
 //  Watchのコンプリケーションと同じく、会議・書類の期限のうち一番近いものを
 //  ひとつだけ表示する。
 //  次の予定がある日に会議が2件以上あるときは10秒ごとに順に切り替え、四角い枠には2件並べて1件ずつずらす。
+//  丸い枠だけは予定ではなく未完了の TODO を、10秒ごとに1件ずつ順に出す。
 //  タップすると、書類・回覧・会議の期限トラッカーの
 //  該当項目を直接開く（既存の myproject://docs?id=xxx を使う）。
 //
@@ -27,6 +28,11 @@ struct NextUpEntryIOS: TimelineEntry {
     var dayLines: [String] = []
     /// 四角い枠の見出しに出す日（「今日」「明日」など）
     var groupLabel = ""
+    /// 丸い枠に出す TODO。todoCount が 0 なら TODO なし
+    var todoTitle = ""
+    var todoId: String? = nil
+    var todoIndex = 0
+    var todoCount = 0
 }
 
 /// その日の会議を順に出すときの切り替え間隔。
@@ -53,8 +59,8 @@ struct NextUpProviderIOS: TimelineProvider {
         let midnight = Calendar.current.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0),
                                                  matchingPolicy: .nextTime) ?? hourLater
         let next = min(hourLater, midnight)
-        if nextDayMeetings(from: snapshot, at: now).count >= 2 {
-            // 次の予定がある日に会議が2件以上あるときは、次の作り直しまで10秒ごとに1件ずつ順に出す。
+        if nextDayMeetings(from: snapshot, at: now).count >= 2 || (snapshot.todos ?? []).count >= 2 {
+            // 次の予定がある日に会議が2件以上あるとき（丸い枠は TODO が2件以上あるとき）は、次の作り直しまで10秒ごとに1件ずつ順に出す。
             // そのつどその時点の一覧で作るので、始まった会議は自然に外れる
             let turns = stride(from: now, to: next, by: rotateInterval).enumerated()
             completion(Timeline(entries: turns.map { entry(snapshot, at: $0.element, turn: $0.offset) }, policy: .after(next)))
@@ -69,12 +75,25 @@ struct NextUpProviderIOS: TimelineProvider {
     }
 
     private func entry(_ snapshot: Snapshot, at date: Date, turn: Int = 0) -> NextUpEntryIOS {
+        var e = scheduleEntry(snapshot, at: date, turn: turn)
+        let todos = snapshot.todos ?? []
+        if !todos.isEmpty {
+            let i = turn % todos.count
+            e.todoTitle = todos[i].title ?? "（TODO）"
+            e.todoId = todos[i].docId
+            e.todoIndex = i + 1
+            e.todoCount = todos.count
+        }
+        return e
+    }
+
+    /// 四角・1行の枠に出す予定（会議・書類の期限）
+    private func scheduleEntry(_ snapshot: Snapshot, at date: Date, turn: Int) -> NextUpEntryIOS {
         let group = nextDayMeetings(from: snapshot, at: date)
         if group.count >= 2 {
             let i = turn % group.count
             let item = group[i]
-            // 今日の時刻のある会議は開始時刻、それ以外は「明日」など（日数が2箇所に出ないように）
-            let label = item.days == 0 ? (item.startTime ?? dayLabel(0)) : dayLabel(item.days)
+            let label = timedLabel(item)
             // 四角い枠は先頭の2件を出すので、3件以上なら今の1件が先頭に来るよう回しておく
             // （1・2 → 2・3 → 3・1）。2件だけのときは入れ替わると読みにくいので並びを変えない
             let all = group.map { "\($0.startTime ?? "終日") \($0.title)" }
@@ -86,8 +105,14 @@ struct NextUpProviderIOS: TimelineProvider {
         guard let item = upNext(from: snapshot, at: date) else {
             return NextUpEntryIOS(date: date, title: "予定なし", dayLabel: "", hasItem: false, docId: nil)
         }
-        return NextUpEntryIOS(date: date, title: item.title, dayLabel: dayLabel(item.days), hasItem: true, docId: item.docId)
+        return NextUpEntryIOS(date: date, title: item.title, dayLabel: timedLabel(item), hasItem: true, docId: item.docId)
     }
+}
+
+/// 「今日 13:00」「明日」のように、日数に開始時刻を添える。
+/// 時刻のある会議は件数に関係なくいつも時刻を出す（書類の期限と終日の会議は日数だけ）
+private func timedLabel(_ item: UpNextItem) -> String {
+    [dayLabel(item.days), item.startTime ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
 }
 
 private extension View {
@@ -117,19 +142,21 @@ struct NextUpEntryViewIOS: View {
                 rectangularView
             }
         }
-        .widgetURL(DeepLink.docsURL(id: entry.docId))
+        // 丸い枠は TODO を出しているので、その TODO を開く
+        .widgetURL(DeepLink.docsURL(id: family == .accessoryCircular ? entry.todoId : entry.docId))
     }
 
+    /// 丸い枠は未完了の TODO を出す。2件以上なら10秒ごとに順に切り替え、「1/3」を添える
     private var circularView: some View {
         VStack(spacing: 1) {
-            Image(systemName: "calendar")
+            Image(systemName: "checklist")
                 .font(.caption2)
-            Text(entry.hasItem ? entry.dayLabel : "なし")
+            Text(entry.todoCount > 0 ? entry.todoTitle : "なし")
                 .font(.system(size: 12, weight: .semibold))
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
-            if entry.count >= 2 {
-                Text("\(entry.index)/\(entry.count)")
+            if entry.todoCount >= 2 {
+                Text("\(entry.todoIndex)/\(entry.todoCount)")
                     .font(.system(size: 10))
                     .lineLimit(1)
             }
@@ -195,7 +222,7 @@ struct NextUpWidgetIOS: Widget {
             NextUpEntryViewIOS(entry: entry)
         }
         .configurationDisplayName("次の予定")
-        .description("会議・書類の期限のうち、一番近いものを表示します。")
+        .description("丸い枠は TODO、四角と1行の枠は会議・書類の期限のうち一番近いものを表示します。")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }

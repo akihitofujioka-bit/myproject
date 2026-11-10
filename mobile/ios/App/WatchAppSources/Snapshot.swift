@@ -61,6 +61,8 @@ struct Snapshot: Codable {
     var meetings: [Meeting]?
     var deadlines: [Deadline]?
     var shopping: [ShoppingItem]?
+    /// 未完了の TODO（期限の近い順、期限なしは後ろ）。iPhone のロック画面の丸い枠で使う。形は期限と同じ
+    var todos: [Deadline]?
 
     static let empty = Snapshot()
 

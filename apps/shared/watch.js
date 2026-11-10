@@ -1,8 +1,8 @@
 /*
  * Apple Watch へ送る一覧を組み立て、iPhone アプリ側のプラグインに渡す。
  *
- * 送るのは次の3つだけで、どれも「手首を見て動けるか」を基準に選んでいる。
- *   今日と明日の会議 / 期限が近い書類 / 買い物リスト
+ * 送るのは次の4つだけで、どれも「手首を見て動けるか」を基準に選んでいる。
+ *   今日と明日の会議 / 期限が近い書類 / 買い物リスト / 未完了の TODO（iPhone のロック画面の丸い枠で使う）
  *
  * アプリはどれも同じ場所（localStorage）に保存しているため、どのアプリを開いていても
  * 全体をまとめて作れる（inbox.js と同じ考え方）。
@@ -75,7 +75,7 @@
   function scheduleAndDocsLists(today, nowMinutes) {
     var schedule = read("schedule.v1");
     var docs = read("docs-tracker.v1");
-    var meetings = [], deadlines = [];
+    var meetings = [], deadlines = [], todos = [];
     ((schedule && schedule.items) || []).forEach(function (it) {
       if (!isOpen(it)) return;
       var days = daysUntil(today, it.dueOn);
@@ -97,6 +97,10 @@
     ((docs && docs.items) || []).forEach(function (it) {
       if (!isOpen(it) || it.kind === "会議" || it.kind === "予定") return;
       var days = daysUntil(today, it.dueOn);
+      // TODO は期限の無いものも含めて全部（期限の近い順、期限なしは後ろ）
+      if (it.kind === "TODO" || it.kind === "やること") {
+        todos.push({ id: it.id, title: it.title, date: it.dueOn || "", days: days });
+      }
       if (days === null) return;
       if (days > DEADLINE_DAYS) return;   // 期限切れ（マイナス）は残す。まだ終わっていないため
       deadlines.push({
@@ -110,7 +114,14 @@
       });
     });
     var byDays = function (a, b) { return a.days - b.days; };
-    return { meetings: meetings.sort(byDays).slice(0, MAX), deadlines: deadlines.sort(byDays).slice(0, MAX) };
+    var byDue = function (a, b) {
+      return (a.days === null ? Infinity : a.days) - (b.days === null ? Infinity : b.days);
+    };
+    return {
+      meetings: meetings.sort(byDays).slice(0, MAX),
+      deadlines: deadlines.sort(byDays).slice(0, MAX),
+      todos: todos.sort(byDue).slice(0, MAX)
+    };
   }
 
   // 冷蔵庫：直近に使い切り、いま在庫に無いもの（廃棄したものは買い直すとは限らないため入れない）
@@ -149,6 +160,7 @@
       updatedAt: new Date(now).toISOString(),
       meetings: lists.meetings,
       deadlines: lists.deadlines,
+      todos: lists.todos,
       shopping: fridgeShopping(now).slice(0, MAX)
     };
   }
