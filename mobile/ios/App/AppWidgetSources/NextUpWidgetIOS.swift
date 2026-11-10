@@ -93,8 +93,7 @@ struct NextUpProviderIOS: TimelineProvider {
         if group.count >= 2 {
             let i = turn % group.count
             let item = group[i]
-            // 今日の時刻のある会議は開始時刻、それ以外は「明日」など（日数が2箇所に出ないように）
-            let label = item.days == 0 ? (item.startTime ?? dayLabel(0)) : dayLabel(item.days)
+            let label = timedLabel(item)
             // 四角い枠は先頭の2件を出すので、3件以上なら今の1件が先頭に来るよう回しておく
             // （1・2 → 2・3 → 3・1）。2件だけのときは入れ替わると読みにくいので並びを変えない
             let all = group.map { "\($0.startTime ?? "終日") \($0.title)" }
@@ -106,8 +105,14 @@ struct NextUpProviderIOS: TimelineProvider {
         guard let item = upNext(from: snapshot, at: date) else {
             return NextUpEntryIOS(date: date, title: "予定なし", dayLabel: "", hasItem: false, docId: nil)
         }
-        return NextUpEntryIOS(date: date, title: item.title, dayLabel: dayLabel(item.days), hasItem: true, docId: item.docId)
+        return NextUpEntryIOS(date: date, title: item.title, dayLabel: timedLabel(item), hasItem: true, docId: item.docId)
     }
+}
+
+/// 「今日 13:00」「明日」のように、日数に開始時刻を添える。
+/// 時刻のある会議は件数に関係なくいつも時刻を出す（書類の期限と終日の会議は日数だけ）
+private func timedLabel(_ item: UpNextItem) -> String {
+    [dayLabel(item.days), item.startTime ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
 }
 
 private extension View {
