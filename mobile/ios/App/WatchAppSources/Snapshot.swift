@@ -35,10 +35,12 @@ struct Deadline: Codable, Identifiable {
     var kind: String?
     var dest: String?
     var status: String?
+    /// 期限の時刻（"15:00"）。TODO だけが持つ。無ければ nil か空
+    var time: String?
 
     enum CodingKeys: String, CodingKey {
         case docId = "id"
-        case title, date, days, kind, dest, status
+        case title, date, days, kind, dest, status, time
     }
 
     var id: String { docId ?? ((date ?? "") + "/" + (title ?? "")) }
@@ -209,9 +211,12 @@ func upNext(from snapshot: Snapshot, at now: Date = Date()) -> UpNextItem? {
     }
     for d in snapshot.deadlines ?? [] {
         guard let days = remainingDays(date: d.date, stored: d.days, from: now) else { continue }
-        let item = UpNextItem(title: d.title ?? "（書類）", days: days, docId: d.docId)
+        var item = UpNextItem(title: d.title ?? "（書類）", days: days, docId: d.docId)
+        // 時刻のある期限（TODO）は、その時刻を添え、その時刻まで残す
+        let due = deadlineTime(d)
+        if due != nil { item.startTime = d.time }
         if days >= 0 {
-            let end = dateAt(d.date, 23, 59) ?? now.addingTimeInterval(Double(days) * 86400)
+            let end = due ?? dateAt(d.date, 23, 59) ?? now.addingTimeInterval(Double(days) * 86400)
             upcoming.append((end, item))
         } else {
             past.append(item)
@@ -239,6 +244,13 @@ func nextDayMeetings(from snapshot: Snapshot, at now: Date = Date()) -> [UpNextI
         list.append((key, item))
     }
     return list.sorted { $0.key < $1.key }.map { $0.item }
+}
+
+/// 期限の時刻（"15:00"）をその日の日時にする。時刻が無い・読めないときは nil
+private func deadlineTime(_ d: Deadline) -> Date? {
+    let parts = (d.time ?? "").split(separator: ":").compactMap { Int($0) }
+    guard parts.count == 2 else { return nil }
+    return dateAt(d.date, parts[0], parts[1])
 }
 
 /// 表示を切り替える時刻（これから始まる会議の開始時刻など）。ウィジェットの予定表に使う

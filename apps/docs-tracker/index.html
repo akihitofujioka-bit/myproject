@@ -51,7 +51,7 @@
 /* iOS の日付入力は独自の最小幅を持つため、隣の欄と横並びにすると重なる。
    見た目（「年/月/日」の表記）は残したいので、外観の指定は変えず、
    狭い画面では下の .field.date で1行を占有させることで重なりを防ぐ。 */
-input[type="date"] { min-width: 0; }
+input[type="date"], input[type="time"] { min-width: 0; }
 body {
   margin: 0;
   background: var(--bg);
@@ -242,8 +242,8 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
 .bargroup[hidden] { display: none; }
 @media (max-width: 640px) {
   .wrap { padding-left: 12px; padding-right: 12px; }
-  /* 日付欄は横幅を取るので、狭い画面では1行を占有させる */
-  .field.date { flex: 1 1 100%; }
+  /* 日付・時刻欄は横幅を取るので、狭い画面ではそれぞれ1行を占有させる */
+  .field.date, .field.time { flex: 1 1 100%; }
   button { min-height: 44px; }
   .item-actions button { flex: 1 1 auto; }
   .chip { min-height: 36px; }
@@ -426,6 +426,10 @@ input, select, textarea { font-size: 16px; } /* iOS で入力時に拡大され�
           <div class="field date">
             <label for="todo-due">期限（任意）</label>
             <input id="todo-due" name="dueOn" type="date">
+          </div>
+          <div class="field time">
+            <label for="todo-due-time">時刻（任意）</label>
+            <input id="todo-due-time" name="dueTime" type="time">
           </div>
         </div>
         <div class="row">
@@ -614,7 +618,10 @@ function normalize(data) {
         planKey: it.planKey || "",
         scheduleId: it.scheduleId || ""
       };
-      if (kind === "TODO" && window.TodoChecklist) item.checklist = window.TodoChecklist.normalize(it.checklist);
+      if (kind === "TODO") {
+        item.dueTime = item.dueOn && /^\d{2}:\d{2}$/.test(String(it.dueTime || "")) ? String(it.dueTime) : "";
+        if (window.TodoChecklist) item.checklist = window.TodoChecklist.normalize(it.checklist);
+      }
       return item;
     })
   };
@@ -669,10 +676,11 @@ function dueLevel(item) {
 function dueText(item) {
   var d = daysUntil(item.dueOn);
   if (d === null) return "期限なし";
-  if (!isOpen(item)) return "期限 " + item.dueOn;
-  if (d < 0) return item.dueOn + "（" + (-d) + "日超過）";
-  if (d === 0) return item.dueOn + "（今日まで）";
-  return item.dueOn + "（あと" + d + "日）";
+  var due = item.dueOn + (item.kind === "TODO" && item.dueTime ? " " + item.dueTime : "");
+  if (!isOpen(item)) return "期限 " + due;
+  if (d < 0) return due + "（" + (-d) + "日超過）";
+  if (d === 0) return due + "（今日まで）";
+  return due + "（あと" + d + "日）";
 }
 
 function esc(s) {
@@ -801,7 +809,11 @@ function todoByDue(a, b) {
   if (da === null && db === null) return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
   if (da === null) return 1;
   if (db === null) return -1;
-  return da === db ? String(a.createdAt || "").localeCompare(String(b.createdAt || "")) : da - db;
+  if (da !== db) return da - db;
+  if (a.dueTime && b.dueTime && a.dueTime !== b.dueTime) return a.dueTime.localeCompare(b.dueTime);
+  if (a.dueTime && !b.dueTime) return -1;
+  if (!a.dueTime && b.dueTime) return 1;
+  return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
 }
 
 function todoRow(it) {
@@ -1073,6 +1085,7 @@ document.getElementById("memoList").addEventListener("click", function (event) {
       window.TodoChecklist.fromMemo(memo.text, window.MemoCheck.parse(memo.text), uid) : null;
     document.getElementById("todo-title").value = converted ? converted.title : String(todoText.split(/\r?\n/)[0] || "").trim().slice(0, 40);
     document.getElementById("todo-due").value = candidates.length ? candidates[0].dueOn : "";
+    document.getElementById("todo-due-time").value = "";
     document.getElementById("todo-note").value = memo.text;
     document.getElementById("todo-checklist").value = converted && converted.checklist.length ?
       window.TodoChecklist.toLines(converted.checklist) : "";
@@ -1116,6 +1129,7 @@ function startTodoEditing(item) {
   pendingTodoChecklist = [];
   document.getElementById("todo-title").value = item.title;
   document.getElementById("todo-due").value = item.dueOn;
+  document.getElementById("todo-due-time").value = item.dueTime || "";
   document.getElementById("todo-note").value = item.note;
   document.getElementById("todo-checklist").value = window.TodoChecklist ? window.TodoChecklist.toLines(item.checklist) : "";
   document.getElementById("todoFormTitle").textContent = "TODO を編集";
@@ -1131,11 +1145,13 @@ todoForm.addEventListener("submit", function (e) {
   var title = document.getElementById("todo-title").value.trim();
   if (!title) return;
   var target = editingTodoId ? state.items.find(function (it) { return it.id === editingTodoId; }) : null;
+  var dueOn = document.getElementById("todo-due").value;
   var values = {
     title: title,
     kind: "TODO",
     dest: "",
-    dueOn: document.getElementById("todo-due").value,
+    dueOn: dueOn,
+    dueTime: dueOn ? document.getElementById("todo-due-time").value : "",
     priority: "中",
     note: document.getElementById("todo-note").value.trim(),
     checklist: window.TodoChecklist ? window.TodoChecklist.fromLines(
@@ -1462,7 +1478,8 @@ function toCalendarEvent(item) {
   parts.push("（書類・TODOから登録）");
   return {
     uid: item.id + "@docs-tracker",
-    title: "【" + item.kind + "】" + item.title,
+    title: "【" + item.kind + "】" + item.title +
+      (item.kind === "TODO" && item.dueTime ? "（" + item.dueTime + "まで）" : ""),
     date: item.dueOn,
     time: "09:00",
     location: item.dest,
