@@ -18,6 +18,7 @@ import Foundation
 import UIKit
 import Capacitor
 import Vision
+import CoreImage
 import VisionKit
 import AVFoundation
 import Photos
@@ -112,7 +113,8 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
             silent.minimumDocumentArea = self.purpose == "card" ? 0.05 : 0.3
             switch self.purpose {
             case "card":
-                silent.guidanceText = "名刺を枠いっぱいに写してください"
+                silent.isCard = true
+                silent.guidanceText = "名刺を枠いっぱいに、真上から写してください。暗いときは「ライト」を使ってください（音は鳴りません）"
             case "planner":
                 silent.guidanceText = "手帳のページ全体（上の「◯月」の見出しも）が入るようにし、真上から「撮る」を押してください。暗いときは「ライト」を使ってください（音は鳴りません）"
             case "document":
@@ -177,8 +179,11 @@ public class ReceiptScannerPlugin: CAPPlugin, CAPBridgedPlugin, VNDocumentCamera
             savePages(images, call: call)
             return
         }
-        // 1枚目だけを使う（レシートは1枚で完結するため）
-        let image = scan.imageOfPage(at: 0)
+        // 1枚目だけを使う（レシートは1枚で完結するため）。名刺は暗いときに明るく補正する
+        var image = scan.imageOfPage(at: 0)
+        if purpose == "card", let cg = image.cgImage {
+            image = UIImage(cgImage: DocumentCorrector.enhanceCard(cg, context: CIContext()))
+        }
         recognize(image: image, purpose: purpose) { result in
             switch result {
             case .success(let sets):

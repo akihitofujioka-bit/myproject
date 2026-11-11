@@ -36,6 +36,8 @@ final class SilentCameraViewController: UIViewController, AVCaptureVideoDataOutp
     var autoCrop: Bool = true
     /// 書類として採用する領域の最小面積（画像全体を 1 とした割合）
     var minimumDocumentArea: CGFloat = 0.3
+    /// 名刺を撮るか。名刺だけを切り出し、暗いときは明るく補正する
+    var isCard: Bool = false
 
     private let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
@@ -169,6 +171,10 @@ final class SilentCameraViewController: UIViewController, AVCaptureVideoDataOutp
             }
             if device.isExposureModeSupported(.continuousAutoExposure) {
                 device.exposureMode = .continuousAutoExposure
+            }
+            // 暗い場所でも明るく写るようにする（対応している端末だけ）
+            if device.isLowLightBoostSupported {
+                device.automaticallyEnablesLowLightBoostWhenAvailable = true
             }
             // 複数レンズのカメラは、広角（いわゆる 1x）に当たる倍率で始める。
             // 近づいたときに超広角のマクロへ切り替わるのは、カメラ側が自動で行う
@@ -371,9 +377,9 @@ final class SilentCameraViewController: UIViewController, AVCaptureVideoDataOutp
         capturing = false
         bestImage = nil
         DispatchQueue.main.async { self.signalCaptured() }
-        let result = autoCrop
-            ? Self.cropToPaper(picked, context: context, minimumArea: minimumDocumentArea)
-            : picked
+        let result = !autoCrop ? picked
+            : isCard ? DocumentCorrector.correctCard(picked, context: context)
+            : Self.cropToPaper(picked, context: context, minimumArea: minimumDocumentArea)
         finish(with: UIImage(cgImage: result))
     }
 

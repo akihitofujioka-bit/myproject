@@ -147,7 +147,7 @@ public class DocumentReaderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                 do {
                     if withPhoto {
                         let upright = Self.uprightCGImage(cgImage, orientation: orientation, context: self.imageContext)
-                        let corrected = DocumentCorrector.correct(upright, context: self.imageContext, minimumArea: 0.05)
+                        let corrected = DocumentCorrector.correctCard(upright, context: self.imageContext)
                         let boxes = try Self.recognizeImageBoxes(corrected)
                         call.resolve([
                             "cancelled": false,
