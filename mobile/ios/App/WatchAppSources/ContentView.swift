@@ -1,48 +1,149 @@
 //
 //  ContentView.swift
 //
-//  手首で見る画面。上から「会議」「期限」「買い物」。
-//  次の予定がある日に会議が2件以上あるときは、いちばん上に10秒ごとに切り替わる欄を出す。
+//  手首で見る画面。最初に「文字盤」（FaceView.swift。アナログ針とデジタル時刻、周りに8つのボタン）を出し、
+//  ボタンから「予定」「期限」「TODO」「買い物」などの一覧へ進む。
+//  次の予定がある日に会議が2件以上あるときは、一覧のいちばん上に10秒ごとに切り替わる欄を出す。
 //  操作（消し込みや状態の変更）はここでは行わない。見るための画面に絞っている。
 //
 import SwiftUI
 
+/// 文字盤のボタンから開く一覧の種類
+enum FacePanel: Hashable {
+    case meetings, deadlines, todos, shopping, next, all, info
+}
+
 struct ContentView: View {
     @ObservedObject var store: WatchStore
+    @State private var path: [FacePanel] = []
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-                List {
-                    if store.snapshot.isEmpty {
-                        emptyView
-                    } else {
-                        rotatingSection
-                        meetingSection
-                        deadlineSection
-                        shoppingSection
-                    }
+        NavigationStack(path: $path) {
+            FaceView(store: store) { panel in path = [panel] }
+                .navigationDestination(for: FacePanel.self) { panel in
+                    ItemsView(store: store, panel: panel)
+                }
+        }
+        .onChange(of: store.focusedId) { id in
+            // コンプリケーションから開いたときは、全部の一覧へ進んで該当の項目までスクロールする
+            if id != nil { path = [.all] }
+        }
+    }
+}
+
+/// 一覧の画面。panel で出す欄を絞る（.all は全部）
+struct ItemsView: View {
+    @ObservedObject var store: WatchStore
+    let panel: FacePanel
+
+    private func shows(_ p: FacePanel) -> Bool { panel == .all || panel == p }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            List {
+                if panel == .info {
                     footer
+                } else if store.snapshot.isEmpty && (store.snapshot.todos ?? []).isEmpty {
+                    emptyView
+                } else {
+                    if shows(.next) { rotatingSection }
+                    if panel == .next { upNextSection }
+                    if shows(.meetings) { meetingSection }
+                    if shows(.deadlines) { deadlineSection }
+                    if shows(.todos) { todoSection }
+                    if shows(.shopping) { shoppingSection }
+                    if panel != .all && isPanelEmpty { Text("いまは何もありません").font(.footnote) }
                 }
-                .scrollContentBackground(.hidden)
-                .background {
-                    if let background = store.background {
-                        ZStack {
-                            Image(uiImage: background)
-                                .resizable()
-                                .scaledToFill()
-                            Color.black.opacity(0.55)
+                if panel == .all { footer }
+            }
+            .scrollContentBackground(.hidden)
+            .background {
+                if let background = store.background {
+                    ZStack {
+                        Image(uiImage: background)
+                            .resizable()
+                            .scaledToFill()
+                        Color.black.opacity(0.55)
+                    }
+                    .clipped()
+                    .ignoresSafeArea()
+                } else {
+                    JojoPalette.backdrop.opacity(0.6).ignoresSafeArea()
+                }
+            }
+            .navigationTitle(title)
+            .onAppear { scroll(proxy, to: store.focusedId) }
+            .onChange(of: store.focusedId) { id in scroll(proxy, to: id) }
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to id: String?) {
+        guard let id = id else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation { proxy.scrollTo(id, anchor: .center) }
+        }
+    }
+
+    private var title: String {
+        switch panel {
+        case .meetings: return "予定"
+        case .deadlines: return "期限"
+        case .todos: return "TODO"
+        case .shopping: return "買い物"
+        case .next: return "次"
+        case .all: return "全部"
+        case .info: return "情報"
+        }
+    }
+
+    private var isPanelEmpty: Bool {
+        let s = store.snapshot
+        switch panel {
+        case .meetings: return (s.meetings ?? []).filter { !$0.hasEnded() }.isEmpty
+        case .deadlines: return (s.deadlines ?? []).isEmpty
+        case .todos: return (s.todos ?? []).isEmpty
+        case .shopping: return (s.shopping ?? []).isEmpty
+        case .next: return upNext(from: s) == nil
+        default: return false
+        }
+    }
+
+    /// いちばん近い予定・期限をひとつ大きく出す
+    @ViewBuilder
+    private var upNextSection: some View {
+        if let item = upNext(from: store.snapshot) {
+            Section("いちばん近い") {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title).font(.headline).lineLimit(3)
+                    Text("\(dayLabel(item.days)) \(item.startTime ?? "")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    /// 未完了の TODO（形は期限と同じ）
+    @ViewBuilder
+    private var todoSection: some View {
+        let list = store.snapshot.todos ?? []
+        if !list.isEmpty {
+            Section("TODO") {
+                ForEach(list) { t in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t.title ?? "（件名なし）")
+                            .font(.headline)
+                            .lineLimit(2)
+                        let label = dayLabel(t.remaining)
+                        if !label.isEmpty {
+                            Text(label)
+                                .font(.caption)
+                                .foregroundStyle((t.remaining ?? 99) <= 0 ? .red : .secondary)
                         }
-                        .clipped()
-                        .ignoresSafeArea()
                     }
-                }
-                .navigationTitle("壱師")
-                .onChange(of: store.focusedId) { id in
-                    guard let id = id else { return }
-                    withAnimation {
-                        proxy.scrollTo(id, anchor: .center)
-                    }
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
