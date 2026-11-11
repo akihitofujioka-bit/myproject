@@ -44,6 +44,7 @@
 		689B9E964FC64B47BCD87A3C /* WatchBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16CC8752ABB94607A8D30419 /* WatchBridgePlugin.swift */; };
 		76AB76FDE32A9CB4FA83CB66 /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A62F74C8E035A000749C1 /* SharedDefaults.swift */; };
 		8390EA21F5CF4B29C78B9553 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415B60332CAD09296F351F12 /* ContentView.swift */; };
+		A1F00D0E5ACE000000000001 /* FaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F00D0E5ACE000000000002 /* FaceView.swift */; };
 		83E05A527EA019FE6A32B013 /* WatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D00B639C754BBD25B2D1DE75 /* WatchApp.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		92AFFAB40C67383F99E2EF4B /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
@@ -139,6 +140,7 @@
 		2FFB402144413474A0F0F175 /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		36A65E078DFA7C4947AA2458 /* WatchApp.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = WatchApp.entitlements; sourceTree = "<group>"; };
 		415B60332CAD09296F351F12 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A1F00D0E5ACE000000000002 /* FaceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FaceView.swift; sourceTree = "<group>"; };
 		4EF42E97F1B12C6CD46DE141 /* AppWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AppWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -215,6 +217,7 @@
 			children = (
 				607E95DE886257AE57E3296B /* DailyAppsWatchApp.swift */,
 				415B60332CAD09296F351F12 /* ContentView.swift */,
+				A1F00D0E5ACE000000000002 /* FaceView.swift */,
 				AC2F563FC6B160E963ECF379 /* WatchStore.swift */,
 				A1C0FFEE0000000000000012 /* Assets.xcassets */,
 				6B7D1900FB1AD1A29EC0C8EB /* Snapshot.swift */,
@@ -530,6 +533,7 @@
 			files = (
 				B94C93F625E50D3B33F93159 /* DailyAppsWatchApp.swift in Sources */,
 				8390EA21F5CF4B29C78B9553 /* ContentView.swift in Sources */,
+				A1F00D0E5ACE000000000001 /* FaceView.swift in Sources */,
 				CE2147F1B5E9F903940FE5FA /* WatchStore.swift in Sources */,
 				F1E03E5B237860CA8CAE856B /* Snapshot.swift in Sources */,
 				76AB76FDE32A9CB4FA83CB66 /* SharedDefaults.swift in Sources */,

@@ -75,7 +75,7 @@ echo "▶ Apple Watch へインストール中（版 ${VERSION}）…"
 xcrun devicectl device install app --device "${DEVICE}" "$WATCH_APP" | grep -E "App installed|bundleID"
 
 # 起動はおまけ。Apple Watch がロック中だと拒否されるので、その場合は手で開いてもらう。
-BUNDLE_ID="jp.myproject.dailyapps.watchkit"
+BUNDLE_ID="jp.myproject.dailyapps.watchkitapp"
 if xcrun devicectl device process launch --device "${DEVICE}" "$BUNDLE_ID" >/dev/null 2>&1; then
   echo "✓ 完了。Watch アプリを起動しました。"
 else
