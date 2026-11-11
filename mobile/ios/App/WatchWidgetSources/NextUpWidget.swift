@@ -2,9 +2,11 @@
 //  NextUpWidget.swift
 //
 //  Watch の文字盤（インフォグラフなど）に出すコンプリケーション。
-//  会議・書類の期限のうち、一番近いものをひとつだけ表示する。
+//  これから始まる予定（会議）のうち、一番近いものをひとつだけ表示する。書類・TODO の期限は出さない。
 //  次の予定がある日に会議が2件以上あるときは10秒ごとに順に切り替え、四角い枠には2件並べて1件ずつずらす。
 //  買い物リストは緊急性が低いためここには出さない（アプリ本体では見られる）。
+//
+//  未完了の TODO を出す「TODO」も同じファイルに置き、別の枠として選べるようにしている。
 //
 //  データは WatchStore が App Group に書き込んだものを読むだけで、
 //  ここから新たに何かを取得したり外部へ送ったりはしない。
@@ -46,7 +48,7 @@ struct NextUpProvider: TimelineProvider {
         // 予定が始まった時刻に次の予定へ切り替えるため、その時刻ごとの表示を先に並べておく。
         // 残り日数は日付が変わると変わるため、次の正時と翌0時の早いほうで一覧を作り直す
         let now = Date()
-        let snapshot = SharedDefaults.loadSnapshot()
+        let snapshot = SharedDefaults.loadSnapshot().meetingsOnly
         let hourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now.addingTimeInterval(3600)
         let midnight = Calendar.current.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0),
                                                  matchingPolicy: .nextTime) ?? hourLater
@@ -63,7 +65,7 @@ struct NextUpProvider: TimelineProvider {
     }
 
     private func currentEntry() -> NextUpEntry {
-        entry(SharedDefaults.loadSnapshot(), at: Date())
+        entry(SharedDefaults.loadSnapshot().meetingsOnly, at: Date())
     }
 
     private func entry(_ snapshot: Snapshot, at date: Date, turn: Int = 0) -> NextUpEntry {
@@ -211,7 +213,135 @@ struct NextUpWidget: Widget {
             NextUpEntryView(entry: entry)
         }
         .configurationDisplayName("次の予定")
-        .description("会議・書類の期限のうち、一番近いものを表示します。")
+        .description("これから始まる予定のうち、一番近いものを表示します。")
+        .supportedFamilies([.accessoryCorner, .accessoryCircular, .accessoryRectangular, .accessoryInline])
+    }
+}
+
+// MARK: - TODO（インフォグラフなどの枠に、次の予定とは別に置く）
+
+struct TodoEntry: TimelineEntry {
+    let date: Date
+    let title: String
+    /// 「15:00」「明日 10:00」「期限なし」など
+    let label: String
+    let docId: String?
+    /// 何件目／全何件。TODO が無ければ count は 0
+    var index = 0
+    var count = 0
+}
+
+/// TODO の期限を手首で読める言葉にする。今日で時刻があれば時刻だけ（次の予定と同じ考え方）
+private func todoLabel(_ todo: Deadline) -> String {
+    guard let days = todo.remaining else { return "期限なし" }
+    let time = todo.time ?? ""
+    if days == 0 && !time.isEmpty { return time }
+    return [dayLabel(days), time].filter { !$0.isEmpty }.joined(separator: " ")
+}
+
+struct TodoProvider: TimelineProvider {
+    func placeholder(in context: Context) -> TodoEntry {
+        TodoEntry(date: Date(), title: "資料を準備", label: "15:00", docId: nil, index: 1, count: 3)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (TodoEntry) -> Void) {
+        completion(entry(SharedDefaults.loadSnapshot(), at: Date(), turn: 0))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TodoEntry>) -> Void) {
+        // 残り日数は日付が変わると変わるため、次の正時と翌0時の早いほうで作り直す。
+        // 2件以上あるときは、それまで10秒ごとに1件ずつ順に出す（次の予定と同じ間隔）
+        let now = Date()
+        let snapshot = SharedDefaults.loadSnapshot()
+        let hourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now.addingTimeInterval(3600)
+        let midnight = Calendar.current.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0),
+                                                 matchingPolicy: .nextTime) ?? hourLater
+        let next = min(hourLater, midnight)
+        let turns = (snapshot.todos ?? []).count >= 2
+            ? Array(stride(from: now, to: next, by: rotateInterval).enumerated()).map { ($0.element, $0.offset) }
+            : [(now, 0)]
+        completion(Timeline(entries: turns.map { entry(snapshot, at: $0.0, turn: $0.1) }, policy: .after(next)))
+    }
+
+    private func entry(_ snapshot: Snapshot, at date: Date, turn: Int) -> TodoEntry {
+        let todos = snapshot.todos ?? []
+        guard !todos.isEmpty else {
+            return TodoEntry(date: date, title: "TODOなし", label: "", docId: nil)
+        }
+        let i = turn % todos.count
+        return TodoEntry(date: date, title: todos[i].title ?? "（TODO）", label: todoLabel(todos[i]),
+                         docId: todos[i].docId, index: i + 1, count: todos.count)
+    }
+}
+
+struct TodoEntryView: View {
+    var entry: TodoProvider.Entry
+    @Environment(\.widgetFamily) private var family
+
+    /// 2件以上を順に出しているときは「 1/3」を添える
+    private var position: String {
+        entry.count >= 2 ? " \(entry.index)/\(entry.count)" : ""
+    }
+
+    var body: some View {
+        Group {
+            switch family {
+            case .accessoryCorner:
+                Image(systemName: "checklist")
+                    .font(.system(size: 18, weight: .semibold))
+                    .widgetLabel {
+                        Text(entry.count > 0 ? "\(entry.title)\(position)" : entry.title)
+                    }
+                    .widgetBackground()
+            case .accessoryCircular:
+                VStack(spacing: 1) {
+                    Image(systemName: "checklist")
+                        .font(.caption2)
+                    Text(entry.count > 0 ? entry.title : "なし")
+                        .font(.system(size: 12, weight: .semibold))
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    if entry.count >= 2 {
+                        Text("\(entry.index)/\(entry.count)")
+                            .font(.system(size: 10))
+                            .lineLimit(1)
+                    }
+                }
+                .widgetBackground()
+            case .accessoryInline:
+                Text(entry.count > 0 ? "\(entry.label)\(position)・\(entry.title)" : entry.title)
+            default:
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("TODO\(position)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(entry.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                    if !entry.label.isEmpty {
+                        Text(entry.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .widgetBackground()
+            }
+        }
+        .widgetURL(DeepLink.watchItemURL(id: entry.docId))
+    }
+}
+
+struct TodoWidget: Widget {
+    let kind = "TodoWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: TodoProvider()) { entry in
+            TodoEntryView(entry: entry)
+        }
+        .configurationDisplayName("TODO")
+        .description("未完了の TODO を期限の近い順に、10秒ごとに1件ずつ表示します。")
         .supportedFamilies([.accessoryCorner, .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }
@@ -220,5 +350,6 @@ struct NextUpWidget: Widget {
 struct DailyAppsWidgetBundle: WidgetBundle {
     var body: some Widget {
         NextUpWidget()
+        TodoWidget()
     }
 }

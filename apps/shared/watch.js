@@ -98,8 +98,11 @@
       if (!isOpen(it) || it.kind === "会議" || it.kind === "予定") return;
       var days = daysUntil(today, it.dueOn);
       // TODO は期限の無いものも含めて全部（期限の近い順、期限なしは後ろ）
-      if (it.kind === "TODO" || it.kind === "やること") {
-        todos.push({ id: it.id, title: it.title, date: it.dueOn || "", days: days });
+      // TODO だけは期限に時刻（dueTime "HH:MM"）を入れられる
+      var isTodo = it.kind === "TODO" || it.kind === "やること";
+      var time = isTodo && /^\d{2}:\d{2}$/.test(it.dueTime || "") && it.dueOn ? it.dueTime : "";
+      if (isTodo) {
+        todos.push({ id: it.id, title: it.title, date: it.dueOn || "", days: days, time: time });
       }
       if (days === null) return;
       if (days > DEADLINE_DAYS) return;   // 期限切れ（マイナス）は残す。まだ終わっていないため
@@ -110,16 +113,20 @@
         days: days,
         kind: it.kind === "やること" ? "TODO" : (it.kind || ""),
         dest: it.dest || "",
-        status: it.status || ""
+        status: it.status || "",
+        time: time
       });
     });
     var byDays = function (a, b) { return a.days - b.days; };
+    // 同じ日なら時刻のあるものを早い順に先に、時刻なしは後ろ（書類・TODO アプリの並びと同じ）
+    var byTime = function (a, b) { return (a.time || "99:99").localeCompare(b.time || "99:99"); };
+    var byDeadline = function (a, b) { return byDays(a, b) || byTime(a, b); };
     var byDue = function (a, b) {
-      return (a.days === null ? Infinity : a.days) - (b.days === null ? Infinity : b.days);
+      return (a.days === null ? Infinity : a.days) - (b.days === null ? Infinity : b.days) || byTime(a, b);
     };
     return {
       meetings: meetings.sort(byDays).slice(0, MAX),
-      deadlines: deadlines.sort(byDays).slice(0, MAX),
+      deadlines: deadlines.sort(byDeadline).slice(0, MAX),
       todos: todos.sort(byDue).slice(0, MAX)
     };
   }
