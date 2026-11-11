@@ -1,10 +1,9 @@
 //
 //  FaceView.swift
 //
-//  Watch アプリを開いたときの最初の画面。アナログの針とデジタルの時刻を重ね、
-//  周りに8つのボタン（予定・期限・TODO・買い物・次・全部・更新・情報）を並べる。
-//  色は、紫・金・桃・緑などの強い色を黒い太線で縁取る、劇画風の配色にしている。
-//  （watchOS では、アプリが本物の文字盤を差し替えることはできないため、アプリの画面として作っている）
+//  Watch アプリを開いたときの最初の画面。機能にすぐ進めるショートカットの画面で、
+//  8つのボタン（予定・期限・TODO・買い物・次・全部・更新・情報）を2列に並べる。
+//  背景には利用者のイラストを透かして敷き、ボタンは強い色を黒い太線で縁取る劇画風の配色にしている。
 //
 import SwiftUI
 
@@ -67,10 +66,10 @@ struct FaceView: View {
         let s = store.snapshot
         let meetings = (s.meetings ?? []).filter { !$0.hasEnded() }.count
         return [
-            // 上から時計回り
+            // 左上から右へ、よく使う順
             FaceButton(label: "予定", symbol: "calendar", color: JojoPalette.magenta, panel: .meetings, count: meetings),
-            FaceButton(label: "期限", symbol: "doc.text", color: JojoPalette.gold, panel: .deadlines, count: s.deadlines?.count ?? 0),
             FaceButton(label: "TODO", symbol: "checklist", color: JojoPalette.lime, panel: .todos, count: s.todos?.count ?? 0),
+            FaceButton(label: "期限", symbol: "doc.text", color: JojoPalette.gold, panel: .deadlines, count: s.deadlines?.count ?? 0),
             FaceButton(label: "買い物", symbol: "cart", color: JojoPalette.orange, panel: .shopping, count: s.shopping?.count ?? 0),
             FaceButton(label: "次", symbol: "forward.fill", color: JojoPalette.cyan, panel: .next, count: 0),
             FaceButton(label: "全部", symbol: "list.bullet", color: JojoPalette.violet, panel: .all, count: 0),
@@ -81,26 +80,25 @@ struct FaceView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            let size = min(w, h) * 0.22
-            let rx = w / 2 - size / 2
-            let ry = h / 2 - size / 2
-            let dial = max((min(rx, ry) - size / 2) * 0.86, 30)
-            ZStack {
-                ScreentoneBackground()
-                DialView(radius: dial, isRequesting: store.isRequesting)
-                    .position(x: w / 2, y: h / 2)
-                ForEach(Array(buttons.enumerated()), id: \.offset) { i, b in
-                    let angle = Double(i) * .pi / 4 - .pi / 2
-                    buttonView(b, size: size)
-                        .position(x: w / 2 + rx * cos(angle), y: h / 2 + ry * sin(angle))
+            let gap: CGFloat = 6
+            let width = (geo.size.width - gap * 3) / 2
+            // 4段が1画面に収まり、ボタンの間からイラストが見える高さにする
+            let height = max(34, min(width * 0.46, (geo.size.height - gap * 5) / 4))
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.fixed(width), spacing: gap), GridItem(.fixed(width), spacing: gap)],
+                          spacing: gap) {
+                    ForEach(Array(buttons.enumerated()), id: \.offset) { _, b in
+                        buttonView(b, width: width, height: height)
+                    }
                 }
+                .padding(.vertical, gap)
             }
+            .background(ScreentoneBackground())
         }
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private func buttonView(_ b: FaceButton, size: CGFloat) -> some View {
+    private func buttonView(_ b: FaceButton, width: CGFloat, height: CGFloat) -> some View {
         Button {
             if let panel = b.panel { open(panel) } else { store.requestLatest() }
         } label: {
@@ -109,165 +107,52 @@ struct FaceView: View {
                     .fill(JojoPalette.ink)
                     .offset(x: 2, y: 3)
                 ComicBadgeShape()
-                    .fill(b.color)
+                    .fill(b.color.opacity(0.92))
                     .overlay(ComicBadgeShape().stroke(.white, lineWidth: 1).padding(3))
                     .overlay(ComicBadgeShape().stroke(JojoPalette.ink, lineWidth: 2.5))
-                    .overlay(
-                        Capsule()
-                            .fill(.white.opacity(0.65))
-                            .frame(width: size * 0.34, height: 2)
-                            .rotationEffect(.degrees(-28))
-                            .offset(x: -size * 0.20, y: -size * 0.24)
-                    )
-                VStack(spacing: 1) {
+                HStack(spacing: 4) {
                     Image(systemName: b.symbol)
-                        .font(.system(size: size * 0.35, weight: .heavy))
+                        .font(.system(size: height * 0.42, weight: .heavy))
                         .rotationEffect(.degrees(b.panel == nil && store.isRequesting ? 180 : 0))
                     Text(b.label)
-                        .font(.system(size: max(7, size * 0.17), weight: .black, design: .rounded))
+                        .font(.system(size: max(11, height * 0.34), weight: .black, design: .rounded))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding(.horizontal, 3)
-                        .background(JojoPalette.ink)
+                        .minimumScaleFactor(0.7)
                 }
                 .foregroundStyle(.white)
                 .shadow(color: JojoPalette.ink, radius: 0, x: 1, y: 1)
-                .frame(width: size, height: size)
+                .frame(width: width, height: height)
                 if b.count > 0 {
                     Text(b.count > 99 ? "99+" : "\(b.count)")
-                        .font(.system(size: 9, weight: .black))
+                        .font(.system(size: 10, weight: .black))
                         .foregroundStyle(.black)
-                        .padding(.horizontal, 3)
+                        .padding(.horizontal, 4)
                         .background(Capsule().fill(.white).overlay(Capsule().stroke(.black, lineWidth: 1)))
-                        .offset(x: 4, y: -3)
+                        .offset(x: 3, y: -3)
                 }
             }
-            .frame(width: size, height: size)
+            .frame(width: width, height: height)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(b.count > 0 ? "\(b.label) \(b.count)件" : b.label)
     }
 }
 
-/// 背景。人物画に紫のグラデーションと漫画のトーンを重ねる
+/// 背景。利用者のイラストを透かして敷き、上のボタンが読めるよう暗い紫を重ねる
 private struct ScreentoneBackground: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 JojoPalette.backdrop
-                Image("ComicPortrait")
+                Image("ShortcutBackground")
                     .resizable()
                     .scaledToFill()
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
-                    .opacity(0.9)
-                Canvas { ctx, size in
-                    var path = Path()
-                    let step: CGFloat = 7
-                    var x: CGFloat = -size.height
-                    while x < size.width {
-                        path.move(to: CGPoint(x: x, y: size.height))
-                        path.addLine(to: CGPoint(x: x + size.height, y: 0))
-                        x += step
-                    }
-                    ctx.stroke(path, with: .color(.white.opacity(0.05)), lineWidth: 1)
-                }
+                    .opacity(0.55)
+                Color.black.opacity(0.25)
             }
         }
         .ignoresSafeArea()
-    }
-}
-
-/// 中央の時計。アナログの針と、針の下にデジタルの時刻・日付を重ねる
-private struct DialView: View {
-    let radius: CGFloat
-    let isRequesting: Bool
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let date = context.date
-            let cal = Calendar.current
-            let hour = Double(cal.component(.hour, from: date) % 12)
-            let minute = Double(cal.component(.minute, from: date))
-            let second = Double(cal.component(.second, from: date))
-            ZStack {
-                // 盤面: 金の太い縁と黒の縁取り、内側は紫
-                Circle()
-                    .fill(RadialGradient(colors: [JojoPalette.violet, JojoPalette.deepPurple],
-                                         center: .center, startRadius: 0, endRadius: radius))
-                Circle()
-                    .stroke(JojoPalette.gold, lineWidth: radius * 0.10)
-                Circle()
-                    .stroke(JojoPalette.ink, lineWidth: 2)
-                    .padding(-radius * 0.05)
-                Circle()
-                    .stroke(JojoPalette.ink, lineWidth: 1.5)
-                    .padding(radius * 0.05)
-
-                // 目盛り（3・6・9・12 は太く桃色）
-                ForEach(0..<12) { i in
-                    let major = i % 3 == 0
-                    Capsule()
-                        .fill(major ? JojoPalette.magenta : .white)
-                        .overlay(Capsule().stroke(.black, lineWidth: major ? 1 : 0))
-                        .frame(width: major ? 3.5 : 1.5, height: radius * (major ? 0.20 : 0.12))
-                        .offset(y: -radius * 0.78)
-                        .rotationEffect(.degrees(Double(i) * 30))
-                }
-
-                // デジタル: 上に日付、下に時刻
-                Text(dateText(date))
-                    .font(.system(size: radius * 0.20, weight: .heavy, design: .rounded))
-                    .foregroundStyle(JojoPalette.lime)
-                    .shadow(color: .black, radius: 0, x: 1, y: 1)
-                    .offset(y: -radius * 0.38)
-                Text(timeText(date))
-                    .font(.system(size: radius * 0.30, weight: .black, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(JojoPalette.gold)
-                    .padding(.horizontal, 4)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(.black.opacity(0.75)))
-                    .offset(y: radius * 0.40)
-
-                // 針（時: 金、分: 桃、秒: 緑）。黒で縁取る
-                hand(length: radius * 0.50, width: 5, color: JojoPalette.gold,
-                     degrees: (hour + minute / 60) * 30)
-                hand(length: radius * 0.72, width: 3.5, color: JojoPalette.magenta,
-                     degrees: (minute + second / 60) * 6)
-                hand(length: radius * 0.80, width: 1.5, color: JojoPalette.lime,
-                     degrees: second * 6)
-                Circle()
-                    .fill(JojoPalette.gold)
-                    .overlay(Circle().stroke(.black, lineWidth: 1.5))
-                    .frame(width: 7, height: 7)
-            }
-            .frame(width: radius * 2, height: radius * 2)
-            .opacity(isRequesting ? 0.7 : 1)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("時計")
-    }
-
-    private func hand(length: CGFloat, width: CGFloat, color: Color, degrees: Double) -> some View {
-        Capsule()
-            .fill(color)
-            .overlay(Capsule().stroke(.black, lineWidth: 1))
-            .frame(width: width, height: length)
-            .offset(y: -length / 2)
-            .rotationEffect(.degrees(degrees))
-    }
-
-    private func timeText(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "H:mm"
-        return f.string(from: date)
-    }
-
-    private func dateText(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "M/d(E)"
-        return f.string(from: date)
     }
 }
