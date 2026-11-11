@@ -2,7 +2,7 @@
 //  DailyAppsWatchApp.swift
 //
 //  Apple Watch 側アプリの入口。
-//  iPhone の「日常アプリ」から送られた一覧を表示するだけの、見るためのアプリ。
+//  iPhone の「壱師」アプリから送られた一覧を表示するだけの、見るためのアプリ。
 //
 import SwiftUI
 

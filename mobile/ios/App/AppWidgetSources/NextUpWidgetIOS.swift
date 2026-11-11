@@ -2,8 +2,8 @@
 //  NextUpWidgetIOS.swift
 //
 //  iPhoneのロック画面（および StandBy）に出すウィジェット。
-//  Watchのコンプリケーションと同じく、会議・書類の期限のうち一番近いものを
-//  ひとつだけ表示する。
+//  Watchのコンプリケーションと同じく、これから始まる予定（会議）のうち一番近いものを
+//  ひとつだけ表示する（書類・TODO の期限は出さない）。
 //  次の予定がある日に会議が2件以上あるときは10秒ごとに順に切り替え、四角い枠には2件並べて1件ずつずらす。
 //  丸い枠だけは予定ではなく未完了の TODO を、10秒ごとに1件ずつ順に出す。
 //  タップすると、書類・回覧・会議の期限トラッカーの
@@ -59,7 +59,7 @@ struct NextUpProviderIOS: TimelineProvider {
         let midnight = Calendar.current.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0),
                                                  matchingPolicy: .nextTime) ?? hourLater
         let next = min(hourLater, midnight)
-        if nextDayMeetings(from: snapshot, at: now).count >= 2 || (snapshot.todos ?? []).count >= 2 {
+        if nextDayMeetings(from: snapshot.meetingsOnly, at: now).count >= 2 || (snapshot.todos ?? []).count >= 2 {
             // 次の予定がある日に会議が2件以上あるとき（丸い枠は TODO が2件以上あるとき）は、次の作り直しまで10秒ごとに1件ずつ順に出す。
             // そのつどその時点の一覧で作るので、始まった会議は自然に外れる
             let turns = stride(from: now, to: next, by: rotateInterval).enumerated()
@@ -75,7 +75,7 @@ struct NextUpProviderIOS: TimelineProvider {
     }
 
     private func entry(_ snapshot: Snapshot, at date: Date, turn: Int = 0) -> NextUpEntryIOS {
-        var e = scheduleEntry(snapshot, at: date, turn: turn)
+        var e = scheduleEntry(snapshot.meetingsOnly, at: date, turn: turn)
         let todos = snapshot.todos ?? []
         if !todos.isEmpty {
             let i = turn % todos.count
@@ -87,7 +87,7 @@ struct NextUpProviderIOS: TimelineProvider {
         return e
     }
 
-    /// 四角・1行の枠に出す予定（会議・書類の期限）
+    /// 四角・1行の枠に出す予定（会議だけ。書類・TODO の期限は出さない）
     private func scheduleEntry(_ snapshot: Snapshot, at date: Date, turn: Int) -> NextUpEntryIOS {
         let group = nextDayMeetings(from: snapshot, at: date)
         if group.count >= 2 {
@@ -222,7 +222,7 @@ struct NextUpWidgetIOS: Widget {
             NextUpEntryViewIOS(entry: entry)
         }
         .configurationDisplayName("次の予定")
-        .description("丸い枠は TODO、四角と1行の枠は会議・書類の期限のうち一番近いものを表示します。")
+        .description("丸い枠は TODO、四角と1行の枠はこれから始まる予定のうち一番近いものを表示します。")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }

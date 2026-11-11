@@ -37,7 +37,7 @@ struct ContentView: View {
                         .ignoresSafeArea()
                     }
                 }
-                .navigationTitle("日常")
+                .navigationTitle("壱師")
                 .onChange(of: store.focusedId) { id in
                     guard let id = id else { return }
                     withAnimation {
@@ -52,7 +52,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("まだ何も届いていません")
                 .font(.headline)
-            Text("iPhone の「日常アプリ」を一度開くと、この画面に送られます。")
+            Text("iPhone の「壱師」アプリを一度開くと、この画面に送られます。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

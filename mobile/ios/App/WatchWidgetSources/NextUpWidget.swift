@@ -2,7 +2,7 @@
 //  NextUpWidget.swift
 //
 //  Watch の文字盤（インフォグラフなど）に出すコンプリケーション。
-//  会議・書類の期限のうち、一番近いものをひとつだけ表示する。
+//  これから始まる予定（会議）のうち、一番近いものをひとつだけ表示する。書類・TODO の期限は出さない。
 //  次の予定がある日に会議が2件以上あるときは10秒ごとに順に切り替え、四角い枠には2件並べて1件ずつずらす。
 //  買い物リストは緊急性が低いためここには出さない（アプリ本体では見られる）。
 //
@@ -48,7 +48,7 @@ struct NextUpProvider: TimelineProvider {
         // 予定が始まった時刻に次の予定へ切り替えるため、その時刻ごとの表示を先に並べておく。
         // 残り日数は日付が変わると変わるため、次の正時と翌0時の早いほうで一覧を作り直す
         let now = Date()
-        let snapshot = SharedDefaults.loadSnapshot()
+        let snapshot = SharedDefaults.loadSnapshot().meetingsOnly
         let hourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now.addingTimeInterval(3600)
         let midnight = Calendar.current.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0),
                                                  matchingPolicy: .nextTime) ?? hourLater
@@ -65,7 +65,7 @@ struct NextUpProvider: TimelineProvider {
     }
 
     private func currentEntry() -> NextUpEntry {
-        entry(SharedDefaults.loadSnapshot(), at: Date())
+        entry(SharedDefaults.loadSnapshot().meetingsOnly, at: Date())
     }
 
     private func entry(_ snapshot: Snapshot, at date: Date, turn: Int = 0) -> NextUpEntry {
@@ -213,7 +213,7 @@ struct NextUpWidget: Widget {
             NextUpEntryView(entry: entry)
         }
         .configurationDisplayName("次の予定")
-        .description("会議・書類の期限のうち、一番近いものを表示します。")
+        .description("これから始まる予定のうち、一番近いものを表示します。")
         .supportedFamilies([.accessoryCorner, .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }

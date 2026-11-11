@@ -68,6 +68,14 @@ struct Snapshot: Codable {
 
     static let empty = Snapshot()
 
+    /// 書類・TODO の期限を除いた、予定（会議）だけの一覧。
+    /// ウィジェットと文字盤の「次の予定」は予定だけを出す（TODO は別の枠で出すため。2026-11-11 利用者の指示）
+    var meetingsOnly: Snapshot {
+        var s = self
+        s.deadlines = nil
+        return s
+    }
+
     var isEmpty: Bool {
         (meetings?.isEmpty ?? true) && (deadlines?.isEmpty ?? true) && (shopping?.isEmpty ?? true)
     }
