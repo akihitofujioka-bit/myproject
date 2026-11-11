@@ -1,0 +1,612 @@
+"""V7 の項目テンプレートと、印付き原稿への変換。
+
+tkinter やファイル選択画面には依存しない。画面はこのモジュールの辞書を編集し、
+Edition が保存・紙面への反映を担当する。
+"""
+
+from __future__ import annotations
+
+import copy
+import re
+import json
+import shutil
+from dataclasses import asdict
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
+
+import ingest
+import layout
+import templates
+
+
+ITEMS_FILE = "項目.json"
+PREVIOUS_FILE = "項目_前回.json"
+
+
+# 行政報告の大見出しの決まった書き方（従来の紙面どおり）。
+GYOSEI_TITLE = "行政報告（要旨）"
+IINKAI_TITLE = "閉会中の委員会活動報告"   # 委員会報告の大見出し（決まっている）
+
+def _text(value) -> str:
+    return str(value or "").strip()
+
+
+def default_data(issue: Optional[layout.Issue] = None) -> dict:
+    """新しい号の入力欄を返す。呼び出すたびに独立した辞書になる。"""
+    issue = issue or layout.Issue(0, 4)
+    budget_name = layout.KESSAN if issue.month == 10 else layout.YOSAN
+    return {
+        "version": 1,
+        "issue": asdict(issue),
+        "cover": templates.default_form(layout.COVER),
+        "gyosei": {"title": GYOSEI_TITLE, "reports": []},
+        "budget_kind": budget_name,
+        "budget": {"title": budget_name, "summary": "", "questions": []},
+        "kessan": default_kessan(),
+        "yosan": default_yosan(),
+        "shingi": {"meeting": templates.meeting_name(issue), "period": "",
+                   "counts": [], "bills": []},
+        "votes": [],
+        "votes_import": {},
+        "votes_warnings": [],
+        "committees": [],
+        "questions": [],
+        "features": [], "tables": [],
+        "last": templates.default_form(layout.LAST),
+        "photos": [],
+        "completed": [],
+    }
+
+
+# 画面が入力欄を作るときに使う、表示順と説明。データ変換の規則は下の関数に置く。
+TEMPLATES = {
+    layout.GYOSEI: ("title", "reports"),
+    layout.YOSAN: ("title", "summary", "questions"),
+    layout.KESSAN: ("title", "kinds", "photo", "chart_note", "accounts", "questions"),
+    layout.SHINGI: ("meeting", "period", "counts", "bills"),
+    "賛否表": ("votes",),
+    layout.IINKAI: ("committees",),
+    layout.IPPAN: ("questions",),
+    layout.TOKUSHU: ("title", "body"),
+}
+
+
+def default_kessan() -> dict:
+    """決算ページ（10 月号）の入力欄。会計の並びは第204号の表に合わせた見本で、金額は空。"""
+    accounts = [("特別会計", "国民健康保険特別会計"), ("特別会計", "介護保険特別会計"),
+                ("特別会計", "後期高齢者医療特別会計"),
+                ("簡易水道事業会計", "収益的収支"), ("簡易水道事業会計", "資本的収支")]
+    return {"title": "", "kinds": "一般会計\n特別会計\n公営企業会計", "photo": "",
+            "chart_note": "一般会計の円グラフはひだか広報１１月号のを使用",
+            "accounts": [{"group": group, "name": name, "revenue": "", "expense": ""}
+                         for group, name in accounts],
+            "questions": []}
+
+
+def default_yosan() -> dict:
+    """当初予算の見開き（4・5 月号）の入力欄。会計の並びは第202号に合わせた見本で、金額は空。"""
+    accounts = [("公営企業会計", "簡易水道事業"), ("特別会計", "国民健康保険"),
+                ("特別会計", "介護保険"), ("特別会計", "後期高齢者医療")]
+    return {"title": "", "kinds": "一般会計\n特別会計\n公営企業会計", "chart_title": "",
+            "chart_note": "一般会計（歳出）の円グラフは、ひだか広報のものを使用",
+            "general_total": "", "chart_items": [],
+            "accounts": [{"group": group, "name": name, "amount": "", "note": ""}
+                         for group, name in accounts],
+            "headline": "", "focus": [], "previous_title": "", "previous": []}
+
+
+def yosan_form(data: dict, issue: layout.Issue) -> dict:
+    """当初予算の入力を、templates の当初予算の型へ渡す形にする。"""
+    value = dict(default_yosan())
+    value.update(data.get("yosan", {}) or {})
+    value["title"] = _text(value.get("title")) or templates.yosan_title(issue)
+    return value
+
+
+def kessan_form(data: dict, issue: layout.Issue, photo_folder: Optional[Path] = None) -> dict:
+    """決算ページの入力を、templates の決算の型へ渡す形にする。"""
+    value = dict(default_kessan())
+    value.update(data.get("kessan", {}) or {})
+    lines: List[str] = []
+    for question in value.get("questions", []) or []:
+        account = _text(question.get("heading") or question.get("account"))
+        if account:
+            lines.append("【区分】" + account.strip("【】"))
+        if _text(question.get("question")):
+            lines.append("問　" + _text(question.get("question")))
+        if _text(question.get("answer")):
+            lines.append("答　" + _text(question.get("answer")))
+    photo = _text(value.get("photo"))
+    if photo and photo_folder is not None:
+        photo = str(Path(photo_folder) / Path(photo).name)
+    return {"title": _text(value.get("title")) or templates.kessan_title(issue),
+            "kinds": value.get("kinds", ""), "photo": photo,
+            "chart_note": value.get("chart_note", ""),
+            "accounts": list(value.get("accounts", []) or []), "body": "\n".join(lines)}
+
+
+# 問・答の印。「問　」「答　」のほか、紙面と同じ「質問　」「答弁　村長」、「【質問】」「Ｑ．」「Ａ：」
+# 「○質問」のような書き方も読む。印のすぐあとは空き・記号・行の終わりのどれか（「問題」などを問にしない）。
+_LABEL = re.compile(
+    r"^[\s　]*[〇○◎●■◆◇□・▼▽]?[\s　]*[【［\[（(〈]?"
+    r"(?P<kind>質問|再質問|答弁|再答弁|回答|問|答|Ｑ|Q|Ａ|A)[０-９0-9]*"
+    r"(?:[】］\]）)〉][\s　：:．.、]*|[\s　：:．.、]+|(?=[（(〈])|$)(?P<rest>.*)$")
+_QUESTION_KINDS = ("質問", "再質問", "問", "Ｑ", "Q")
+_ROLE_ENDINGS = ("長", "参事", "主幹", "室長", "所長", "局長", "理事", "監")
+
+
+def _label(line: str):
+    """行が問・答の印で始まれば ("問" か "答", 残りの文)。そうでなければ None。"""
+    match = _LABEL.match(line)
+    if not match:
+        return None
+    kind = "問" if match.group("kind") in _QUESTION_KINDS else "答"
+    return kind, match.group("rest").strip()
+
+
+def _is_role(text: str) -> bool:
+    value = str(text or "").strip()
+    return bool(value) and len(value) <= 12 and value.endswith(_ROLE_ENDINGS)
+
+
+def _split_answerer(rest: str):
+    """「答弁　村長」「答弁（村長）」「答　村長　本文」から (答弁者, 本文) を分ける。"""
+    paren = re.match(r"^[（(〈]\s*(?P<role>[^）)〉]{1,12})[）)〉][\s　：:]*(?P<body>.*)$", rest)
+    if paren and _is_role(paren.group("role")):
+        return paren.group("role").strip(), paren.group("body").strip()
+    pieces = re.split(r"[\s　：:]+", rest, maxsplit=1)
+    if pieces and _is_role(pieces[0]):
+        return pieces[0].strip(), (pieces[1] if len(pieces) > 1 else "").strip()
+    return "", rest
+
+
+_DIVIDER = re.compile(r"^[―ー－—━─=＝＊*・\-\s]*(?:[０-９0-9]+番目の質問)?[―ー－—━─=＝＊*・\-\s]*$")
+
+
+def _is_divider(line: str) -> bool:
+    """区切りの行（線だけ、または「―― 2番目の質問 ――」）。"""
+    value = line.strip()
+    return bool(value) and bool(_DIVIDER.match(value)) and any(ch in value for ch in "―－—━─=＝＊*-")
+
+
+def _looks_like_heading(line: str) -> bool:
+    """見出しらしい短い行（句点で終わらない 30 字まで）。"""
+    value = line.strip()
+    return bool(value) and len(value) <= 30 and not value.endswith(("。", "、", "．"))
+
+
+def parse_bulk(text: str) -> dict:
+    """まとめて貼った文章（Word・メール本文も）を見出し・概要・問答へ分ける。
+
+    問答と判断できない行は ``body`` に順番どおり残す。問答の継続行も直前の
+    問または答へ連結するため、入力文字を捨てない。
+    答のあとに来る短い行で、すぐ次が問の印の行なら、次の質問の見出しとする。
+    """
+    heading = ""
+    heading_answer = ""
+    body: List[str] = []
+    pairs: List[dict] = []
+    current = None
+    pending = ""   # 「（見出し）」だけの行のあと、次の行をどちらに入れるか（"見出し" か "見出しの答"）
+    lines = [raw.rstrip() for raw in str(text or "").splitlines()]
+
+    def next_label(index):
+        for later in lines[index + 1:]:
+            if later.strip():
+                return _label(later)
+        return None
+
+    def heading_block(index):
+        """ここから始まる、問・答の印のない行のかたまり（空き行まで）が、次の問の見出しなら、その行を返す。
+
+        1 行なら見出し、2 行なら見出しと見出しの答。かたまりのすぐあとが問の行のときだけ。
+        前の行が空き行でないとき（答の続きと区別しにくいとき）は、見出しらしい短い行だけにする。
+        """
+        block = []
+        for later in lines[index:]:
+            text = later.strip()
+            if not text or _label(text) or len(block) > 2:
+                break
+            block.append(text)
+        after = index + len(block)
+        following = next((later for later in lines[after:] if later.strip()), "")
+        if not block or len(block) > 2 or (_label(following.strip()) or ("", ""))[0] != "問":
+            return None
+        separated = index == 0 or not lines[index - 1].strip()
+        if not separated and not all(_looks_like_heading(text) for text in block):
+            return None
+        # 空き行がなく、頭を下げた行（答の本文の続きによくある形）は見出しにしない
+        if not separated and any(raw[:1] in (" ", "　") for raw in lines[index:after]):
+            return None
+        return block
+
+    skip_to = -1
+
+    for index, line in enumerate(lines):
+        if index < skip_to:
+            continue
+        stripped = line.strip()
+        if _is_divider(stripped):
+            continue   # 原稿のひな形の「―― 2番目の質問 ――」のような区切りの行は読まない
+        if pending and stripped:
+            # 「（見出し）」「（見出しの答）」だけの行の、次の行がその中身
+            if pending == "見出し":
+                if heading:
+                    body.append(heading)
+                heading = stripped
+            else:
+                heading_answer = stripped
+            pending = ""
+            current = None
+            continue
+        # 【見出し】【見出しの答】（見出し）（見出しの答）の印。議員の原稿に書き足してもらう印も読む。
+        # 見出しの答は、その見出し（大まかな質問）への答。次の問の見出しに添える
+        mark = re.match(r"^\s*[【［\[（(〈]\s*(?P<kind>見出しの答え?|見出し)\s*[】］\]）)〉][\s　：:]*(?P<rest>.*)$", line)
+        if mark:
+            rest = mark.group("rest").strip()
+            kind = "見出し" if mark.group("kind") == "見出し" else "見出しの答"
+            if not rest:
+                pending = kind
+            elif kind == "見出し":
+                if heading:
+                    body.append(heading)
+                heading = rest
+            else:
+                heading_answer = rest
+            current = None
+            continue
+        label = _label(stripped) if stripped else None
+        if label:
+            kind, value = label
+            if kind == "問":
+                current = {"heading": heading, "question": value, "answer": "",
+                           "answerer": ""}
+                if heading_answer:
+                    current["heading_answer"] = heading_answer
+                pairs.append(current)
+                heading = ""
+                heading_answer = ""
+            elif current is not None:
+                role, value = _split_answerer(value)
+                if role and not current.get("answerer"):
+                    current["answerer"] = role
+                current["answer"] = (current.get("answer", "") + "\n" + value).strip() if current.get("answer") else value
+                current["_answering"] = True
+            else:
+                body.append(line)
+            continue
+        if (stripped.startswith(("【", "［", "[")) and stripped.endswith(("】", "］", "]"))
+                and len(stripped) <= 30):
+            # 【一般会計】のような見出しは、答の続きにせず次の問の見出しにする。
+            if heading:
+                body.append(heading)
+            heading = stripped.strip("【】［］[]")
+            current = None
+            continue
+        if current is not None and stripped.startswith("答弁者"):
+            current["answerer"] = stripped.replace("答弁者", "", 1).lstrip(" ：:　")
+            continue
+        # 問・答の印のない 1〜2 行のかたまりで、すぐあとが問なら、次の質問の見出し（と見出しの答）
+        block = heading_block(index) if stripped and (current is None or current.get("_answering")) else None
+        if block:
+            if heading:
+                body.append(heading)
+            heading = block[0]
+            if len(block) > 1:
+                heading_answer = block[1]
+            current = None
+            skip_to = index + len(block)
+            continue
+        # 「答弁」の行のすぐ次の、役職だけの行は答弁者
+        if current is not None and current.get("_answering") and not current.get("answer") \
+                and not current.get("answerer") and _is_role(stripped):
+            current["answerer"] = stripped
+            continue
+        if current is not None and stripped:
+            key = "answer" if current.get("_answering") else "question"
+            current[key] = (current[key] + "\n" + line).strip()
+        elif stripped:
+            if not heading and _looks_like_heading(stripped):
+                heading = stripped
+            else:
+                if heading:
+                    body.append(heading)
+                    heading = ""
+                body.append(line)
+    if heading:
+        body.append(heading)
+    for pair in pairs:
+        pair.pop("_answering", None)
+    return {"body": "\n".join(body), "questions": pairs}
+
+
+def _qa_lines(values: Iterable[dict], answerer: bool = False) -> List[str]:
+    lines: List[str] = []
+    for value in values or []:
+        heading = summary_heading(value)
+        question = _text(value.get("question") or value.get("q"))
+        answer = _text(value.get("answer") or value.get("a"))
+        if heading:
+            lines.append("【見出し】" + heading)
+        if question:
+            lines.append("問　" + question)
+        role = _text(value.get("answerer")) if answerer else ""
+        if answer:
+            # 「答　役職名　本文」の形にすると、既存 compose が役職名までをゴシックにする。
+            lines.append("答　" + (role + "　" if role else "") + answer)
+    return lines
+
+
+def split_sections(body: str) -> List[Tuple[str, str]]:
+    """委員会報告の本文を、(小見出し, 本文) のまとまりに分ける。【見出し】の行で区切る。"""
+    sections: List[Tuple[str, List[str]]] = []
+    for raw in str(body or "").splitlines():
+        line = raw.strip()
+        if line.startswith("【見出し】"):
+            sections.append((line[len("【見出し】"):].strip(), []))
+            continue
+        if not sections:
+            sections.append(("", []))
+        sections[-1][1].append(raw.rstrip())
+    return [(title, "\n".join(lines).strip()) for title, lines in sections if title or "".join(lines).strip()]
+
+
+def join_sections(sections: Iterable[Tuple[str, str]]) -> str:
+    """(小見出し, 本文) のまとまりを、本文（小見出しの行の頭に【見出し】）の形にする。"""
+    lines: List[str] = []
+    for title, body in sections:
+        if title:
+            lines.append("【見出し】" + title)
+        if body:
+            lines.append(body)
+    return "\n".join(lines)
+
+
+def bulk_text(questions: Iterable[dict]) -> str:
+    """質問ごとの欄の内容を、まとめ欄の形（【見出し】【見出しの答】問 答 答弁者）にする。parse_bulk で元に戻る。"""
+    lines: List[str] = []
+    for value in questions or []:
+        for mark, key in (("【見出し】", "heading"), ("【見出しの答】", "heading_answer")):
+            if _text(value.get(key)):
+                lines.append(mark + _text(value.get(key)))
+        if _text(value.get("question")):
+            lines.append("問　" + _text(value.get("question")))
+        if _text(value.get("answer")):
+            lines.append("答　" + _text(value.get("answer")))
+        if _text(value.get("answerer")):
+            lines.append("答弁者　" + _text(value.get("answerer")))
+    return "\n".join(lines)
+
+
+def group_questions(values: Iterable[dict]) -> List[List[dict]]:
+    """問答の並びを、質問ごとのまとまりに分ける。
+
+    見出しのある問答から新しい質問が始まり、見出しのない問答は、その前の質問の続きの
+    やりとり（再質問と答弁）とする。最初の問答は、見出しがなくても 1 つ目の質問。
+    """
+    groups: List[List[dict]] = []
+    for value in values or []:
+        if not groups or _text(value.get("heading") or value.get("title")) or _text(value.get("heading_answer")):
+            groups.append([value])
+        else:
+            groups[-1].append(value)
+    return groups
+
+
+def limit_questions(values: Iterable[dict], maximum: int = 4) -> List[dict]:
+    """質問数（見出しごとのまとまりの数）を上限へ収める。超過分は最後の答へ追記し、文字を捨てない。
+
+    1 つの質問の中のやりとり（見出しのない問答）は、いくつあっても 1 つと数える。
+    """
+    groups = [[copy.deepcopy(value) for value in group] for group in group_questions(values)]
+    if len(groups) <= maximum:
+        return [value for group in groups for value in group]
+    kept = [value for group in groups[:maximum] for value in group]
+    tail = []
+    for value in (value for group in groups[maximum:] for value in group):
+        if _text(value.get("heading")):
+            tail.append(_text(value.get("heading")))
+        if _text(value.get("question") or value.get("q")):
+            tail.append("問　" + _text(value.get("question") or value.get("q")))
+        if _text(value.get("answer") or value.get("a")):
+            tail.append("答　" + _text(value.get("answer") or value.get("a")))
+    kept[-1]["answer"] = (_text(kept[-1].get("answer")) + "\n" + "\n".join(tail)).strip()
+    return kept
+
+
+def gyosei_text(value: dict) -> str:
+    lines = ["【大見出し】" + (_text(value.get("title")) or GYOSEI_TITLE)]
+    for report in value.get("reports", []) or []:
+        if _text(report.get("heading")):
+            lines.append("【見出し】" + _text(report.get("heading")))
+        if _text(report.get("body")):
+            lines.append(_text(report.get("body")))
+    return "\n".join(lines)
+
+
+def budget_text(value: dict, section: str) -> str:
+    lines = ["【大見出し】" + (_text(value.get("title")) or section)]
+    if _text(value.get("summary")):
+        lines.append(_text(value.get("summary")))
+    lines.extend(_qa_lines(value.get("questions", [])))
+    return "\n".join(lines)
+
+
+def committee_text(values: Iterable[dict]) -> str:
+    """委員会報告のページ。大見出しは「閉会中の委員会活動報告」に決まっている。
+
+    その下に委員会ごとに、委員会名・記事の見出し（あれば）・本文の順で入れる。
+    """
+    reports = [report for report in values or []
+               if any(_text(report.get(key)) for key in ("committee", "heading", "body"))]
+    if not reports:
+        return ""
+    lines: List[str] = ["【大見出し】" + IINKAI_TITLE]
+    for report in reports:
+        for key in ("committee", "heading"):
+            if _text(report.get(key)):
+                lines.append("【見出し】" + _text(report.get(key)))
+        if _text(report.get("chair")):
+            # 委員長報告: 委員長の顔写真の枠（印刷所が写真を入れる空欄）と、その下の名前
+            lines.extend(["【顔写真枠】", "▲" + _text(report.get("chair")) + "委員長"])
+        if _text(report.get("body")):
+            lines.append(_text(report.get("body")))
+    return "\n".join(lines)
+
+
+def ippan_title(count: int) -> str:
+    """一般質問の大見出し。「一般質問に◯氏が立つ」に決まっていて、◯は質問者の数。"""
+    return f"一般質問に{str(count).translate(layout.ZEN)}氏が立つ"
+
+
+def ippan_texts(values: Iterable[dict]) -> List[str]:
+    """一般質問のページ（1人1ページ）。最初のページの頭に、ほかの区分と同じ縦書きの囲みで大見出しを入れる。
+
+    質問者ごとの 1 番目の見出しは、1 人目が横書き、2 人目が縦書き、3 人目が横書き…と交互にする。
+    """
+    people = list(values or [])
+    pages = [question_text(value, horizontal=number % 2 == 0) for number, value in enumerate(people)]
+    if pages:
+        pages[0] = "【大見出し】" + ippan_title(len(people)) + "\n" + pages[0]
+    return pages
+
+
+def summary_heading(value: dict) -> str:
+    """質問の見出し。「大まかな質問｜それへの答」の形（｜で行を変え、前を青字にする）。"""
+    question = _text(value.get("heading") or value.get("title"))
+    answer = _text(value.get("heading_answer"))
+    if question and answer:
+        return question + "｜" + answer
+    return question or answer
+
+
+def question_text(value: dict, horizontal: bool = False) -> str:
+    """一般質問1人分。顔写真は印刷所差し替え用の枠を必ず入れる。
+
+    1 番目の質問は、大まかな質問とその答を大見出し（縦書きの囲み）にし、詳しい問と答を続ける。
+    2 番目からは、大まかな質問とその答を中見出しにし、詳しい問と答を続ける。
+    horizontal が真なら、1 番目の大見出しを横書きにする（質問者ごとに横・縦を交互にするため）。
+    """
+    questions = limit_questions(value.get("questions") or [])
+    first = dict(questions[0]) if questions else {}
+    big = summary_heading(first) or _text(value.get("title"))   # 前の版の「題」だけのデータも出す
+    lines = [("【大見出し・横】" if horizontal else "【大見出し】") + big, "【顔写真枠】"]
+    member = _text(value.get("member"))
+    if member:
+        lines.append("▲" + member + "議員")
+    if first:
+        first.pop("heading", None)
+        first.pop("heading_answer", None)
+        first.pop("title", None)
+        lines.extend(_qa_lines([first], answerer=True))
+    lines.extend(_qa_lines(questions[1:], answerer=True))
+    return "\n".join(line for line in lines if line)
+
+
+def feature_text(value: dict, tables: Optional[List[dict]] = None) -> str:
+    """特集 1 つ分。本文の【表】名前 の行には、その表の中身を入れる。"""
+    import tables as table_marks
+    lines = ["【大見出し】" + _text(value.get("title"))]
+    if _text(value.get("body")):
+        body, _missing = table_marks.fill_marks(_text(value.get("body")), tables or [])
+        lines.append(body)
+    return "\n".join(line for line in lines if line)
+
+
+def features(data: dict) -> List[dict]:
+    """特集の一覧。前の版の 1 つだけの特集（data["feature"]）も一覧として返す。"""
+    values = data.get("features")
+    if isinstance(values, list) and values:
+        return values
+    old = data.get("feature") or {}
+    if _text(old.get("title")) or _text(old.get("body")):
+        return [old]
+    return values if isinstance(values, list) else []
+
+
+def features_text(data: dict) -> str:
+    """特集のページの原稿。複数の特集を、それぞれの大見出しから順に続けて入れる。"""
+    tables = data.get("tables", []) or []
+    return "\n".join(text for text in (feature_text(value, tables) for value in features(data)) if text)
+
+
+def shingi_form(data: dict, issue: layout.Issue) -> dict:
+    value = data.get("shingi", {})
+    lines: List[str] = []
+    for bill in value.get("bills", []) or []:
+        if _text(bill.get("kind")):
+            lines.append("【区分】" + _text(bill.get("kind")))
+        if _text(bill.get("title")):
+            lines.append("◎" + _text(bill.get("title")))
+        if _text(bill.get("description")):
+            lines.append(_text(bill.get("description")))
+        if bill.get("questions"):
+            lines.append("質疑")
+            lines.extend(_qa_lines(bill.get("questions", [])))
+    form = templates.default_form(layout.SHINGI)
+    form.update({"meeting": _text(value.get("meeting")) or templates.meeting_name(issue),
+                 "period": _text(value.get("period")),
+                 "counts": copy.deepcopy(value.get("counts", [])),
+                 "body": "\n".join(lines),
+                 "votes": copy.deepcopy(data.get("votes", []))})
+    return form
+
+
+def build_votes(rows: Iterable[dict], members: Iterable[str], chair: str = "") -> List[dict]:
+    """名簿順の賛否表を作る。未指定は賛成、議長は議長とする。"""
+    names = [str(name).strip() for name in members if str(name).strip()]
+    output = []
+    for row in rows or []:
+        old = row.get("marks", {}) or {}
+        # Excel で明示された空欄は「印なし」。値が無い場合だけ既定値を使う。
+        marks = {name: str(old[name]) if name in old
+                 else ("議長" if name == chair else "○") for name in names}
+        vote = {"kind": _text(row.get("kind")), "title": _text(row.get("title")),
+                "result": _text(row.get("result")) or "可決", "marks": marks}
+        if row.get("source_title"):   # エクセルにあった元の件名（手直しを当て直すときの目印）
+            vote["source_title"] = row["source_title"]
+        output.append(vote)
+    return output
+
+
+def marked_pages(data: dict, issue: layout.Issue) -> Dict[str, List[str]]:
+    """区分ごとのページ原稿を返す。流し込み区分は先頭ページ分だけを返す。"""
+    pages = {
+        layout.GYOSEI: [gyosei_text(data.get("gyosei", {}))],
+        layout.IINKAI: [committee_text(data.get("committees", []))],
+        layout.IPPAN: ippan_texts(data.get("questions", [])),
+        layout.TOKUSHU: [features_text(data)],
+    }
+    # 当初予算・決算は決まった型のページなので、流し込みの原稿は作らない。
+    return pages
+
+
+def issue_from_data(data: dict, fallback: layout.Issue) -> layout.Issue:
+    """入力人数からページ割り用の Issue を作る。エラー判定は layout.make_plan に任せる。"""
+    raw = dict(data.get("issue", {}) or {})
+    known = {name: raw.get(name, getattr(fallback, name))
+             for name in layout.Issue.__dataclass_fields__}
+    known["questioners"] = len(data.get("questions", []) or [])
+    known["committee_pages"] = len(data.get("committees", []) or [])
+    return layout.Issue(**known)
+
+
+def load(folder: Path, issue: Optional[layout.Issue] = None) -> dict:
+    path = Path(folder) / ITEMS_FILE
+    if not path.is_file():
+        return default_data(issue)
+    value = json.loads(path.read_text(encoding="utf-8"))
+    base = default_data(issue)
+    base.update(value)
+    return base
+
+
+def save(folder: Path, data: dict) -> Path:
+    """項目を保存する。既存内容は、上書き前に項目_前回.jsonへ写す。"""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / ITEMS_FILE
+    if target.is_file():
+        shutil.copy2(str(target), str(folder / PREVIOUS_FILE))
+    target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return target
