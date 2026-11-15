@@ -58,9 +58,16 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
 .warn { padding: 9px 10px; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-weak); margin: 0 0 12px; }
 .ai-suggestion { padding: 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-weak); margin: 0 0 12px; }
 .ai-suggestion span { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+.photo-actions { display: flex; gap: 8px; justify-content: center; margin: 0 auto 12px; max-width: 560px; }
+.photo-actions button { flex: 1 1 0; }
+/* fieldset は中身より細くならないため、長い件名が枠からはみ出す。0 まで縮めて折り返す */
+fieldset { min-width: 0; }
 .meeting-options { display: grid; gap: 6px; }
 .meeting-options label { display: flex; align-items: flex-start; gap: 8px; color: var(--text); margin: 0; padding: 8px; border: 1px solid var(--border); border-radius: 7px; }
-.meeting-options input { width: auto; min-height: 0; margin-top: 5px; }
+.meeting-options input { width: auto; min-height: 0; margin-top: 5px; flex: none; }
+.meeting-options span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+/* 背景にイラストがあるとき、入力欄や登録内容が絵と重なって読めないので、画面ごと白地の板にのせる */
+html.has-char-bg #editView, html.has-char-bg #detailView { background: var(--surface); border-radius: var(--radius); padding: 14px; }
 .details { margin: 0; }
 .details dt { color: var(--muted); font-size: 13px; margin-top: 10px; }
 .details dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -94,6 +101,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     </div>
     <img class="photo" id="editPhoto" alt="名刺の写真" hidden>
     <div class="photo-empty" id="editPhotoEmpty">写真なし</div>
+    <div class="photo-actions">
+      <button type="button" id="retakeBtn">📷 撮り直す</button>
+      <button type="button" id="repickBtn">🖼 写真を選び直す</button>
+    </div>
     <form id="editForm" autocomplete="off">
       <div class="row">
         <div><label for="f-name">氏名</label><input id="f-name" type="text" maxlength="80"></div>
@@ -496,6 +507,27 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     fillForm(blankCard(parsed), readableLines.length === 0);
     requestAISuggestion(readableLines);
   }
+  // 写真だけ差し替える。入力済みの内容はそのまま残し、空の欄だけ読み取った文字で埋める
+  function replacePhoto(result, lines) {
+    var photo;
+    var parsed;
+    if (!result || result.cancelled) return;
+    photo = base64Blob(result.photo);
+    if (!photo) { toast("写真を読み込めませんでした"); return; }
+    editPhoto = photo;
+    showPhoto("edit", editPhoto);
+    parsed = window.Meishi.parse((lines || []).filter(function (line) {
+      var text = typeof line === "string" ? line : line && line.text;
+      return typeof text === "string" && text.trim().length !== 0;
+    }));
+    ["name", "company", "department", "title", "email", "url", "address"].forEach(function (key) {
+      var input = document.getElementById("f-" + key);
+      if (!input.value.trim() && parsed[key]) input.value = parsed[key];
+    });
+    var phones = document.getElementById("f-phones");
+    if (!phones.value.trim() && Array.isArray(parsed.phones) && parsed.phones.length) phones.value = parsed.phones.join("\n");
+    toast("写真を差し替えました");
+  }
   // ask が false のときは、許可済みの場合だけ読む（起動時に許可を求めない）。
   function loadCalendar(ask) {
     if (!window.CalendarRead || !window.CalendarRead.available()) return Promise.resolve();
@@ -536,6 +568,16 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px
     window.DocumentReader.pickImage({ withPhoto: true }).then(function (result) {
       scanResult(result, result && (result.boxes || result.lines) || []);
     }).catch(function () { toast("名刺を読み取れませんでした"); });
+  });
+  document.getElementById("retakeBtn").addEventListener("click", function () {
+    window.ReceiptScan.scan({ purpose: "card" }).then(function (result) {
+      replacePhoto(result, result && result.lines || []);
+    }).catch(function () { toast("名刺を撮れませんでした"); });
+  });
+  document.getElementById("repickBtn").addEventListener("click", function () {
+    window.DocumentReader.pickImage({ withPhoto: true }).then(function (result) {
+      replacePhoto(result, result && (result.boxes || result.lines) || []);
+    }).catch(function () { toast("写真を読み込めませんでした"); });
   });
   document.getElementById("f-receivedOn").addEventListener("change", function () { renderMeetings(null); });
   document.getElementById("editForm").addEventListener("input", function (event) {

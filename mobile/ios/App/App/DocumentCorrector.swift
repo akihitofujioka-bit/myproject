@@ -23,6 +23,72 @@ enum DocumentCorrector {
         return image
     }
 
+    // MARK: - 名刺
+
+    /// 名刺だけを切り出し、暗い写真を明るく・くっきりさせる。
+    /// 書類より小さく写りやすいので小さな領域も採用し、周りの机などが残らないよう余白はほとんど付けない。
+    /// 名刺が見つからないときも、明るさの補正だけは行う。
+    static func correctCard(_ image: CGImage, context: CIContext) -> CGImage {
+        let cropped: CGImage
+        if let rectangle = cardRectangle(in: image) {
+            cropped = correct(image, rectangle: rectangle, context: context, margin: 0.01)
+        } else if let document = documentRectangle(in: image), area(of: document) >= 0.03 {
+            cropped = correct(image, rectangle: document, context: context, margin: 0.01)
+        } else {
+            cropped = image
+        }
+        return enhanceCard(cropped, context: context)
+    }
+
+    /// 名刺の形（縦横比 約 0.6）に近い四角形を探す。いちばん大きいものを名刺とみなす
+    private static func cardRectangle(in image: CGImage) -> VNRectangleObservation? {
+        let request = VNDetectRectanglesRequest()
+        request.maximumObservations = 6
+        request.minimumConfidence = 0.5
+        request.minimumAspectRatio = 0.45
+        request.maximumAspectRatio = 0.8
+        request.minimumSize = 0.15
+        request.quadratureTolerance = 30
+        do {
+            try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        } catch {
+            return nil
+        }
+        return (request.results ?? []).filter { area(of: $0) >= 0.03 }.max { area(of: $0) < area(of: $1) }
+    }
+
+    /// 暗い名刺を明るくし、文字の輪郭を少し立てる。明るい写真はほとんど変えない
+    static func enhanceCard(_ image: CGImage, context: CIContext) -> CGImage {
+        var picture = CIImage(cgImage: image)
+        let brightness = averageLuminance(of: picture, context: context)
+        // 名刺の地は白いことが多いので、平均が 0.62 くらいになるまで露出を上げる（最大 +2 段）
+        if brightness > 0.01 && brightness < 0.55 {
+            let ev = min(2.0, log2(0.62 / brightness))
+            picture = picture.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: ev])
+        }
+        // 影になった部分を持ち上げる
+        picture = picture.applyingFilter("CIHighlightShadowAdjust", parameters: [
+            "inputShadowAmount": 0.5, "inputHighlightAmount": 1.0
+        ])
+        picture = picture.applyingFilter("CIColorControls", parameters: [
+            kCIInputContrastKey: 1.12, kCIInputSaturationKey: 1.0, kCIInputBrightnessKey: 0.0
+        ])
+        picture = picture.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.5])
+        guard let output = context.createCGImage(picture, from: CIImage(cgImage: image).extent) else { return image }
+        return output
+    }
+
+    /// 画像の平均の明るさ（0〜1）
+    private static func averageLuminance(of image: CIImage, context: CIContext) -> Double {
+        guard let average = CIFilter(name: "CIAreaAverage", parameters: [
+            kCIInputImageKey: image, kCIInputExtentKey: CIVector(cgRect: image.extent)
+        ])?.outputImage else { return 1 }
+        var pixel = [Float](repeating: 0, count: 4)
+        context.render(average, toBitmap: &pixel, rowBytes: 16,
+                       bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBAf, colorSpace: nil)
+        return Double(0.299 * pixel[0] + 0.587 * pixel[1] + 0.114 * pixel[2])
+    }
+
     /// 短い辺が最大 shortSide になるよう縮小し、JPEG の Base64 文字列へ変換する。
     static func jpegBase64(
         _ image: CGImage,
@@ -92,7 +158,8 @@ enum DocumentCorrector {
     private static func correct(
         _ image: CGImage,
         rectangle: VNRectangleObservation,
-        context: CIContext
+        context: CIContext,
+        margin: CGFloat = 0.06
     ) -> CGImage {
         let width = CGFloat(image.width)
         let height = CGFloat(image.height)
@@ -102,9 +169,8 @@ enum DocumentCorrector {
             y: corners.map(\.y).reduce(0, +) / 4
         )
 
-        // 見出しなどを紙の端と一緒に切らないよう、四隅を中心から 6% 外へ広げる。
+        // 見出しなどを紙の端と一緒に切らないよう、四隅を中心から margin（書類は 6%）外へ広げる。
         func pixel(_ point: CGPoint) -> CIVector {
-            let margin: CGFloat = 0.06
             let x = min(max(point.x + (point.x - center.x) * margin, 0), 1) * width
             let y = min(max(point.y + (point.y - center.y) * margin, 0), 1) * height
             return CIVector(x: x, y: y)
