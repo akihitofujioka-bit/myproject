@@ -87,6 +87,7 @@
    *   date: "YYYY-MM-DD"（期限の日）
    *   time: "HH:MM"（省略時は09:00）
    *   allDay: true なら終日の予定にする（time と durationMinutes は使わない）
+   *   endOn: 期間予定の最終日（省略時は date の 1 日だけ）
    *   durationMinutes: 予定の長さ（省略時は30分）
    *   description / location: 任意
    *   alarms: 何分前に鳴らすかの配列。既定は [1440, 0]（前日の同時刻と当日）
@@ -113,8 +114,9 @@
       lines.push("DTSTAMP:" + utcStamp(now));
       lines.push("SEQUENCE:" + (ev.sequence || 0));
       if (ev.allDay) {
-        // 終日の予定。終わりは翌日（DTEND は含まない日を指す決まり）
-        var d = ev.date.split("-").map(Number);
+        // 終日の予定。DTEND は含まない日を指すため、最終日の翌日にする
+        var last = ev.endOn && ev.endOn > ev.date ? ev.endOn : ev.date;
+        var d = last.split("-").map(Number);
         var next = new Date(d[0], d[1] - 1, d[2] + 1);
         lines.push("DTSTART;VALUE=DATE:" + ev.date.replace(/-/g, ""));
         lines.push("DTEND;VALUE=DATE:" + next.getFullYear() + pad(next.getMonth() + 1) + pad(next.getDate()));

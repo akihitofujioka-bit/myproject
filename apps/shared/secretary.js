@@ -207,19 +207,25 @@
     var rows = [];
     var linkedIds = {};
 
+    var appEvents = [];
     (data.items || []).forEach(function (item, index) {
-      if (!item || !inRange(String(item.dueOn || ""), selectedRange || {})) return;
-      var start = helpers.timeOf ? helpers.timeOf(item) : item.time;
-      var end = helpers.endTimeOf ? helpers.endTimeOf(item) : item.endTime;
+      if (!item) return;
       if (item.calEventId) linkedIds[String(item.calEventId)] = true;
-      rows.push({
-        date: String(item.dueOn),
-        start: cleanTime(start),
-        end: cleanTime(end),
+      appEvents.push({
+        id: item.id,
+        date: String(item.dueOn || ""),
+        endDate: item.endOn > item.dueOn ? item.endOn : "",
+        startTime: helpers.timeOf ? helpers.timeOf(item) : item.time,
+        endTime: helpers.endTimeOf ? helpers.endTimeOf(item) : item.endTime,
         title: String(item.title || "").trim(),
         place: String(item.dest || "").trim(),
-        todo: false,
         order: index
+      });
+    });
+    expandEvents(selectedRange || {}, appEvents).forEach(function (event) {
+      rows.push({
+        date: event.date, start: event.start, end: event.end, title: event.title,
+        place: event.place, todo: false, order: event.order
       });
     });
 

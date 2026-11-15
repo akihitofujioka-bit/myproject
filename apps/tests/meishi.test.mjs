@@ -161,6 +161,12 @@ if (M) {
     { id: "s-start", title: "開始時刻つきの架空会議", dueOn: "2026-10-14", startTime: "08:30" }
   ], []);
   ok(scheduleTime[0].time === "08:30", "予定候補: 予定アプリの開始時刻を使う");
+
+  const periodCandidates = M.meetingCandidates("2026-10-16", [
+    { id: "s-period", title: "架空の連続研修", dueOn: "2026-10-15", endOn: "2026-10-17" }
+  ], []);
+  ok(periodCandidates.length === 1 && periodCandidates[0].date === "2026-10-16",
+    "予定候補: 期間中のどの日でも候補に出す");
 }
 
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて成功");

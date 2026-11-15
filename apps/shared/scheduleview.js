@@ -20,6 +20,44 @@
     return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS);
   }
 
+  function normalizedEndOn(item) {
+    var start = parseYmd(item && (item.dueOn || item.date));
+    var end = parseYmd(item && item.endOn);
+    return start && end && dayNumber(end) > dayNumber(start) ? String(item.endOn) : "";
+  }
+
+  function isOnDate(item, ymd) {
+    var start = parseYmd(item && (item.dueOn || item.date));
+    var target = parseYmd(ymd);
+    if (!start || !target) return false;
+    var end = parseYmd(normalizedEndOn(item)) || start;
+    var number = dayNumber(target);
+    return number >= dayNumber(start) && number <= dayNumber(end);
+  }
+
+  // 一括登録で使う日付を、空欄と重複を除いて入力順に返す。
+  function registrationDates(dueOn, extraDates) {
+    var seen = {}, out = [];
+    [dueOn].concat(extraDates || []).forEach(function (value) {
+      var date = String(value || "");
+      if (!parseYmd(date) || seen[date]) return;
+      seen[date] = true;
+      out.push(date);
+    });
+    return out;
+  }
+
+  // 元の期間と同じ日数になるよう、一括登録先ごとの終了日を求める。
+  function shiftedEndOn(dueOn, endOn, nextDueOn) {
+    var start = parseYmd(dueOn), end = parseYmd(endOn), next = parseYmd(nextDueOn);
+    if (!start || !end || !next) return "";
+    var span = dayNumber(end) - dayNumber(start);
+    if (span <= 0) return "";
+    var shifted = new Date(next.getFullYear(), next.getMonth(), next.getDate() + span);
+    return shifted.getFullYear() + "-" + String(shifted.getMonth() + 1).padStart(2, "0") + "-" +
+      String(shifted.getDate()).padStart(2, "0");
+  }
+
   function timeOf(item) {
     var direct = String((item && (item.startTime || item.time)) || "");
     var found = /^(\d{1,2}:\d{2})/.exec(direct);
@@ -61,6 +99,9 @@
     (items || []).forEach(function (item) {
       var date = parseYmd(item && (item.dueOn || item.date));
       if (!date) return;
+      var end = parseYmd(normalizedEndOn(item));
+      if (end && dayNumber(date) <= baseDay && dayNumber(end) >= baseDay) date = base;
+      else if (end && dayNumber(end) < baseDay) date = end;
       var diff = dayNumber(date) - baseDay;
       // 今日の予定でも、終わりの時刻を過ぎたものは「終了した予定」として最後に回す
       if (diff === 0) {
@@ -105,7 +146,7 @@
 
   function itemsOn(items, ymd) {
     return (items || []).filter(function (item) {
-      return String((item && (item.dueOn || item.date)) || "") === ymd;
+      return isOnDate(item, ymd);
     }).slice().sort(compareItems);
   }
 
@@ -151,7 +192,11 @@
     hideDuplicateExternal: hideDuplicateExternal,
     groupForList: groupForList,
     isAlreadyRegistered: isAlreadyRegistered,
+    isOnDate: isOnDate,
     monthGrid: monthGrid,
-    itemsOn: itemsOn
+    itemsOn: itemsOn,
+    normalizedEndOn: normalizedEndOn,
+    registrationDates: registrationDates,
+    shiftedEndOn: shiftedEndOn
   };
 })(typeof window !== "undefined" ? window : this);

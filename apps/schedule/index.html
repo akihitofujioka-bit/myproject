@@ -155,6 +155,15 @@ button.small {
   flex-wrap: wrap;
   gap: 7px;
 }
+.additional-date {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 7px;
+  max-width: 360px;
+}
+.additional-date input {
+  flex: 1;
+}
 .view-switch {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -590,9 +599,15 @@ button.small {
       </div>
       <div class="row">
         <div class="field date"><label for="f-date">日付（必須）</label><input id="f-date" name="dueOn" type="date" required></div>
+        <div class="field date"><label for="f-end-on">終了日（任意）</label><input id="f-end-on" name="endOn" type="date"></div>
         <div class="field"><label for="f-start">開始</label><input id="f-start" name="startTime" type="time"></div>
         <div class="field"><label for="f-end">終了</label><input id="f-end" name="endTime" type="time"></div>
         <div class="field wide"><label for="f-place">場所</label><input id="f-place" name="dest" autocomplete="off"></div>
+      </div>
+      <p class="footnote">終了日を入れた予定は終日として登録します。</p>
+      <div id="additionalDatesArea">
+        <div id="additionalDates"></div>
+        <button type="button" class="small" id="addDateBtn">＋ 日付を足す</button>
       </div>
       <div class="row">
         <div class="field"><label class="check"><input id="f-allday" type="checkbox"> 終日</label></div>
@@ -737,6 +752,8 @@ function normalizeItem(item) {
   copy.kind = "予定";
   copy.dest = copy.dest || "";
   copy.dueOn = copy.dueOn || "";
+  copy.endOn = window.ScheduleView.normalizedEndOn(copy);
+  if (!copy.endOn) delete copy.endOn;
   copy.note = copy.note || "";
   copy.createdAt = copy.createdAt || new Date().toISOString();
   copy.icsSeq = Number(copy.icsSeq) || 0;
@@ -814,7 +831,9 @@ function editableNote(item) {
 }
 
 function dateLabel(item) {
-  return item.dueOn + (timeOf(item) ? " " + timeOf(item) : " 終日");
+  var endOn = window.ScheduleView.normalizedEndOn(item);
+  var endLabel = endOn ? "〜" + (endOn.slice(0, 4) === item.dueOn.slice(0, 4) ? endOn.slice(5) : endOn) : "";
+  return item.dueOn + endLabel + (endOn || !timeOf(item) ? " 終日" : " " + timeOf(item));
 }
 
 /* ---------- 一覧とカレンダーの描画 ---------- */
@@ -1215,9 +1234,12 @@ function secretaryData(question) {
     state.items.forEach(function (item) {
       if (item.calEventId) linked[String(item.calEventId)] = true;
     });
-    var busy = state.items.map(function (item) {
-      return { date: item.dueOn, start: timeOf(item), end: endTimeOfItem(item), allDay: !timeOf(item) };
-    }).concat(window.Secretary.expandEvents(range, calendarEvents).filter(function (event) {
+    var busy = window.Secretary.expandEvents(range, state.items.map(function (item) {
+      return {
+        date: item.dueOn, endDate: window.ScheduleView.normalizedEndOn(item),
+        startTime: timeOf(item), endTime: endTimeOfItem(item), title: item.title
+      };
+    })).concat(window.Secretary.expandEvents(range, calendarEvents).filter(function (event) {
       return !linked[String(event.id || "")];
     }));
     var free = window.Secretary.freeSlots(range, busy);
@@ -1679,35 +1701,47 @@ form.addEventListener("submit", function (event) {
   var title = String(data.get("title") || "").trim();
   var dueOn = String(data.get("dueOn") || "");
   if (!title || !dueOn) return;
+  var endOn = window.ScheduleView.normalizedEndOn({ dueOn: dueOn, endOn: data.get("endOn") });
   var values = {
     title: title,
     kind: "予定",
     dueOn: dueOn,
     dest: String(data.get("dest") || "").trim(),
     note: makeNote(
-      allDay.checked ? "" : String(data.get("startTime") || ""),
-      allDay.checked ? "" : String(data.get("endTime") || ""),
+      endOn || allDay.checked ? "" : String(data.get("startTime") || ""),
+      endOn || allDay.checked ? "" : String(data.get("endTime") || ""),
       data.get("note"),
       { has: socialBox.checked, fee: String(document.getElementById("f-fee").value || "").trim() }
     )
   };
+  if (endOn) values.endOn = endOn;
   if (!confirmRegistration(values, editingId)) return;
   if (editingId) {
     var target = state.items.find(function (item) {
       return item.id === editingId;
     });
-    if (target) Object.assign(target, values);
+    if (target) {
+      delete target.endOn;
+      Object.assign(target, values);
+    }
     toast("更新しました");
     loadPhoneCalendar();
   } else {
-    values.id = uid();
-    values.status = "未着手";
-    values.priority = "中";
-    values.createdAt = new Date().toISOString();
-    values.doneAt = "";
-    values.icsSeq = 0;
-    state.items.push(values);
-    toast("登録しました");
+    var extraDates = Array.prototype.map.call(document.querySelectorAll(".additional-date-input"), function (input) {
+      return input.value;
+    });
+    var dates = window.ScheduleView.registrationDates(dueOn, extraDates);
+    dates.forEach(function (date) {
+      var item = Object.assign({}, values, {
+        id: uid(), dueOn: date, status: "未着手", priority: "中",
+        createdAt: new Date().toISOString(), doneAt: "", icsSeq: 0
+      });
+      var shiftedEndOn = window.ScheduleView.shiftedEndOn(dueOn, endOn, date);
+      if (shiftedEndOn) item.endOn = shiftedEndOn;
+      else delete item.endOn;
+      state.items.push(item);
+    });
+    toast(dates.length + "件登録しました");
   }
   save();
   stopEditing();
@@ -1727,16 +1761,37 @@ function updateExtraFields() {
 }
 allDay.addEventListener("change", updateExtraFields);
 socialBox.addEventListener("change", updateExtraFields);
+["f-date", "f-end-on"].forEach(function (id) {
+  document.getElementById(id).addEventListener("change", function () {
+    var endOn = window.ScheduleView.normalizedEndOn({
+      dueOn: document.getElementById("f-date").value,
+      endOn: document.getElementById("f-end-on").value
+    });
+    if (endOn) {
+      allDay.checked = true;
+      updateExtraFields();
+    }
+  });
+});
+document.getElementById("addDateBtn").addEventListener("click", function () {
+  var row = document.createElement("div");
+  row.className = "additional-date";
+  row.innerHTML = '<input type="date" class="additional-date-input" aria-label="追加する日付">' +
+    '<button type="button" class="small link">削除</button>';
+  row.querySelector("button").addEventListener("click", function () { row.remove(); });
+  document.getElementById("additionalDates").appendChild(row);
+});
 
 function startEditing(item) {
   editingId = item.id;
   document.getElementById("f-title").value = item.title;
   document.getElementById("f-date").value = item.dueOn;
+  document.getElementById("f-end-on").value = window.ScheduleView.normalizedEndOn(item);
   document.getElementById("f-start").value = timeOf(item);
   document.getElementById("f-end").value = endTimeOfItem(item);
   document.getElementById("f-place").value = item.dest;
   document.getElementById("f-note").value = editableNote(item);
-  allDay.checked = !timeOf(item);
+  allDay.checked = !!window.ScheduleView.normalizedEndOn(item) || !timeOf(item);
   var social = socialOf(item);
   socialBox.checked = social.has;
   document.getElementById("f-fee").value = social.fee;
@@ -1744,6 +1799,7 @@ function startEditing(item) {
   document.getElementById("formTitle").textContent = "予定を編集";
   document.getElementById("submitBtn").textContent = "更新する";
   document.getElementById("cancelEdit").hidden = false;
+  document.getElementById("additionalDatesArea").hidden = true;
   showMeetingPeople(item);
   // 登録の欄は一覧・カレンダーの下にあるので、そこまで移動して件名の欄にカーソルを置く
   document.getElementById("addCard").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1753,10 +1809,12 @@ function stopEditing() {
   editingId = null;
   clearMeetingPeople();
   form.reset();
+  document.getElementById("additionalDates").innerHTML = "";
   updateExtraFields();
   document.getElementById("formTitle").textContent = "予定を登録";
   document.getElementById("submitBtn").textContent = "登録する";
   document.getElementById("cancelEdit").hidden = true;
+  document.getElementById("additionalDatesArea").hidden = false;
 }
 
 // 編集中の予定に結び付いた名刺だけを表示する。
@@ -1865,17 +1923,19 @@ function calendarUid(item) {
 function calendarEvent(item) {
   var start = timeOf(item);
   var end = endTimeOfItem(item);
+  var periodEnd = window.ScheduleView.normalizedEndOn(item);
   return {
     uid: calendarUid(item),
     calEventId: item.calEventId || "",
     title: item.title,
     date: item.dueOn,
+    endOn: periodEnd,
     time: start || "",
-    allDay: !start,
+    allDay: !!periodEnd || !start,
     durationMinutes: durationMinutes(start, end),
     location: item.dest || "",
     description: cleanNote(item) + "\n（予定アプリから登録）",
-    alarms: start ? [30] : [],
+    alarms: start && !periodEnd ? [30] : [],
     sequence: item.icsSeq || 0,
     sourceItem: item
   };
@@ -1886,6 +1946,8 @@ function eventEnd(ev) {
   return pad(Math.floor(minutes / 60) % 24) + ":" + pad(minutes % 60);
 }
 function writeEvents(events, name, prefix) {
+  // 現在の iPhone 側プラグインは複数日の終了日を受け取れないため、期間予定は .ics で正しく渡す。
+  if (events.some(function (ev) { return !!ev.endOn; })) return writeIcs(events, name, prefix);
   if (window.CalendarWrite && window.CalendarWrite.available()) {
     var entries = events.map(function (ev) {
       return {
@@ -2019,6 +2081,7 @@ function loadPhoneCalendar() {
         title: event.title || "（件名なし）",
         kind: "予定",
         dueOn: event.date,
+        endOn: event.endDate > event.date ? event.endDate : "",
         startTime: event.startTime || "",
         endTime: event.endTime || "",
         dest: event.place || "",

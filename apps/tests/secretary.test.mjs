@@ -103,6 +103,13 @@ if (!S) {
   ok(multiDay.text.includes("10/21(水) 架空の研修（続き） @架空の研修所"), "複数日予定の中日は続きとして終日扱いで書く");
   ok(multiDay.text.includes("10/22(木) -15:00 架空の研修（続き） @架空の研修所"), "複数日予定の終了時刻は最終日だけに書く");
 
+  const appPeriod = S.lines(
+    { from: "2026-10-21", to: "2026-10-21" },
+    { items: [{ title: "架空の連続講座", dueOn: "2026-10-20", endOn: "2026-10-22" }], calendarEvents: [], todos: [] }
+  );
+  ok(appPeriod.count === 1 && appPeriod.text.includes("10/21(水) 架空の連続講座（続き）"),
+    "予定アプリの期間予定も期間中の日に展開する");
+
   const expanded = S.expandEvents({ from: "2026-10-20", to: "2026-10-22" }, multiDayEvents);
   ok(expanded.length === 3 && expanded[1].allDay && expanded[0].continuesAfter && expanded[2].continuesBefore, "空き時間用にも複数日予定を日ごとに展開する");
 

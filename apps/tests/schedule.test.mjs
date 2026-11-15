@@ -7,7 +7,10 @@ const context = { window: {} };
 vm.createContext(context);
 vm.runInContext(source, context);
 
-const { groupForList, monthGrid, itemsOn, hideDuplicateExternal, isAlreadyRegistered } = context.window.ScheduleView;
+const {
+  groupForList, monthGrid, itemsOn, hideDuplicateExternal, isAlreadyRegistered,
+  normalizedEndOn, registrationDates, shiftedEndOn
+} = context.window.ScheduleView;
 
 function item(id, dueOn, note = "") {
   return { id, title: `架空の予定${id}`, dueOn, note };
@@ -80,6 +83,27 @@ function item(id, dueOn, note = "") {
     { ...item("early", "2026-10-05"), startTime: "09:00" }
   ], "2026-10-05");
   assert.deepEqual(Array.from(sorted, (x) => x.id), ["early", "late", "none"]);
+}
+
+// 期間予定は開始日から終了日までの各日に出し、不正な終了日は無視する
+{
+  const period = { ...item("period", "2026-11-20"), endOn: "2026-11-22" };
+  assert.equal(itemsOn([period], "2026-11-19").length, 0);
+  assert.equal(itemsOn([period], "2026-11-20").length, 1);
+  assert.equal(itemsOn([period], "2026-11-21").length, 1);
+  assert.equal(itemsOn([period], "2026-11-22").length, 1);
+  assert.equal(itemsOn([period], "2026-11-23").length, 0);
+  assert.equal(normalizedEndOn({ dueOn: "2026-11-20", endOn: "2026-11-20" }), "");
+  const groups = groupForList([period], new Date(2026, 10, 21, 12));
+  assert.equal(groups[0].label, "今日");
+}
+
+// 一括登録は空欄・重複を除き、期間の日数を各開始日に引き継ぐ
+{
+  assert.deepEqual(Array.from(registrationDates("2026-11-20", ["", "2026-11-22", "2026-11-20", "2026-11-24"])),
+    ["2026-11-20", "2026-11-22", "2026-11-24"]);
+  assert.equal(shiftedEndOn("2026-11-20", "2026-11-22", "2026-12-01"), "2026-12-03");
+  assert.equal(shiftedEndOn("2026-11-20", "2026-11-20", "2026-12-01"), "");
 }
 
 // iPhone のカレンダーの予定のうち、予定アプリの予定と同じものは出さない（表示の重なりを防ぐ）
