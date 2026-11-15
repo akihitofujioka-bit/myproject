@@ -79,15 +79,18 @@
     ((schedule && schedule.items) || []).forEach(function (it) {
       if (!isOpen(it)) return;
       var days = daysUntil(today, it.dueOn);
+      var endDays = it.endOn > it.dueOn ? daysUntil(today, it.endOn) : null;
       if (days === null) return;
-      if (days < 0 || days > MEETING_DAYS) return;
+      if (endDays !== null && endDays >= 0 && days <= 0) days = 0;
+      if (days < 0 || days > MEETING_DAYS || (endDays !== null && endDays < 0)) return;
       var d = meetingDetail(it.note);
       // 終わった今日の会議は Apple Watch に送らない
-      if (days === 0 && nowMinutes !== null && meetingEnded(d.time, nowMinutes)) return;
+      if (endDays === null && days === 0 && nowMinutes !== null && meetingEnded(d.time, nowMinutes)) return;
       meetings.push({
         id: it.id,
         title: it.title,
-        date: it.dueOn,
+        date: days === 0 && endDays !== null ? today : it.dueOn,
+        endDate: endDays !== null ? it.endOn : "",
         days: days,
         time: d.time,
         place: it.dest || "",

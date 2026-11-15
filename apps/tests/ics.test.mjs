@@ -88,5 +88,9 @@ ok(allDay.includes("DTSTART;VALUE=DATE:20261031"), "終日の予定は日付だ�
 ok(allDay.includes("DTEND;VALUE=DATE:20261101"), "終わりは翌日（月をまたいでも正しい）");
 ok(!allDay.includes("BEGIN:VALARM"), "通知を空にすれば通知は付かない");
 
+const period = linesOf(ICS.build([{ uid: "period-1@x", title: "架空の連続研修", date: "2026-11-20", endOn: "2026-11-22", allDay: true, alarms: [] }]));
+ok(period.includes("DTSTART;VALUE=DATE:20261120"), "期間予定は開始日から始まる");
+ok(period.includes("DTEND;VALUE=DATE:20261123"), "期間予定の終わりは最終日の翌日になる");
+
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて通過");
 process.exit(failures ? 1 : 0);

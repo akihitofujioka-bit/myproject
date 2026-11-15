@@ -236,5 +236,20 @@ console.log("== Apple Watch に送る一覧（watch.js）==");
   ok(titles.includes("架空の打合せ") && titles.includes("架空の終日行事"), "予定：開催中と終日の予定は送る");
 }
 
+{
+  // 期間中は今日の予定として送り、終了後は送らない
+  const store = { "schedule.v1": { items: [
+    { id: "period", title: "架空の連続研修", dueOn: "2026-11-20", endOn: "2026-11-22", status: "未着手", note: "" }
+  ] } };
+  const win = { localStorage: { getItem: (k) => (store[k] ? JSON.stringify(store[k]) : null) }, addEventListener: () => {} };
+  load(win, "apps/shared/watch.js");
+  const during = win.Watch.snapshot({ today: "2026-11-21", now: Date.parse("2026-11-21T09:00:00+09:00") });
+  ok(during.meetings.length === 1 && during.meetings[0].date === "2026-11-21" && during.meetings[0].days === 0,
+    "予定：期間中は今日の予定として送る");
+  ok(during.meetings[0].endDate === "2026-11-22", "予定：期間の終了日も送る");
+  const after = win.Watch.snapshot({ today: "2026-11-23", now: Date.parse("2026-11-23T09:00:00+09:00") });
+  ok(after.meetings.length === 0, "予定：期間終了後は送らない");
+}
+
 console.log(failures ? "\n=> 失敗 " + failures + " 件" : "\n=> すべて通過");
 process.exit(failures ? 1 : 0);

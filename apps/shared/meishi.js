@@ -296,12 +296,12 @@
 
     (Array.isArray(items) ? items : []).forEach(function (item) {
       var candidate;
-      if (!item || item.dueOn !== date) return;
+      if (!item || item.dueOn > date || (item.endOn > item.dueOn ? item.endOn < date : item.dueOn !== date)) return;
       candidate = {
         scheduleId: item.id || "",
         calEventId: item.calEventId || "",
         title: item.title || "",
-        date: item.dueOn,
+        date: date,
         time: item.time || item.startTime || ""
       };
       candidates.push(candidate);
